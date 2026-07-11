@@ -1,3 +1,6 @@
+# 密钥
+.env
+
 # macOS
 .DS_Store
 
