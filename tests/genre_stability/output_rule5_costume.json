@@ -1,0 +1,911 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "金缕裙",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "中国古典工笔画风格，电影感光影，宫廷华美质感",
+      "art_style": "guofeng",
+      "color_tone": "暖金色调，石榴红点缀",
+      "negative_prompt": "现代元素，文字水印，畸形手指，多余肢体，低画质，面部崩坏，西式建筑"
+    },
+    "video": {
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920",
+      "target_platform": "抖音"
+    },
+    "narration": {
+      "mode": "selective",
+      "tts_voice": "female_soft"
+    }
+  },
+  "source": {
+    "work_title": "金缕裙",
+    "chapter": "第三章 琼华殿",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "沈知微踏进琼华殿时，殿里的乐声正到急处。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0002",
+        "text": "她今日穿的是一件石榴红的织金舞裙，裙摆上用银线绣了整幅的缠枝莲，腕上一只羊脂玉镯，是母亲留下的。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0003",
+        "text": "她旋身，裙摆扫过金砖，带起一圈红色的涟漪。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0004",
+        "text": "满殿的目光都追着那道红。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0005",
+        "text": "太子妃的指甲掐进了掌心。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0006",
+        "text": "一曲终了，她跪伏于地，水袖铺开如折翼。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0007",
+        "text": "“赏。”皇帝只说了一个字。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0008",
+        "text": "退场时，廊下忽然伸出一只手，攥住了她的衣袖。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0009",
+        "text": "“沈姑娘好舞。”来人压低了声音。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0010",
+        "text": "沈知微用力一挣，袖口撕开了一道口子。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0011",
+        "text": "她顾不上这些，提着裙摆快步穿过长廊。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0012",
+        "text": "回到偏殿，她换下舞裙，将玉镯贴身收好。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0013",
+        "text": "镜子里的人穿一身素青色的宫女常服，再没有半分方才的艳色。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0014",
+        "text": "只有袖中那半页乐谱，还带着琼华殿的檀香气。",
+        "para": 1,
+        "kind": "description"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "沈知微",
+        "aliases": [
+          "她",
+          "沈姑娘",
+          "镜子里的人"
+        ],
+        "appearance": {
+          "age": "十八九岁",
+          "gender": "女",
+          "body": "身姿纤细挺拔，舞者体态，肩颈线条舒展",
+          "face": "鹅蛋脸，眉目清丽，唇色浅淡",
+          "hair": "乌黑长发绾成高舞髻，鬓边簪素银小簪",
+          "eyes": "杏眼，眼尾微挑，目光沉静有神",
+          "distinguishing_marks": "左腕常年佩一只玉镯（见道具卡P01）"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "献舞装：石榴红织金舞裙，裙摆以银线绣整幅缠枝莲，缀同色长水袖；软底绣鞋；左腕佩羊脂白玉镯（母亲遗物，即道具P01）"
+          },
+          {
+            "id": "dance_torn",
+            "description": "同献舞装（石榴红织金舞裙、银线缠枝莲、水袖、羊脂白玉镯），但一侧袖口被撕开一道口子，撕口绽线外翻"
+          },
+          {
+            "id": "maid_plain",
+            "description": "素青色宫女常服，无纹饰，同色布鞋；发髻改为低平样式；不佩任何外露首饰，玉镯收于衣襟内贴身处不可见；袖中藏半页乐谱（道具P02，平时不可见）"
+          }
+        ],
+        "visual_prompt": "全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落；十八九岁少女，身姿纤细挺拔的舞者体态，鹅蛋脸眉目清丽，乌黑长发绾高舞髻簪素银小簪，杏眼眼尾微挑；身着石榴红织金舞裙，裙摆银线绣整幅缠枝莲，垂同色长水袖，左腕羊脂白玉镯，软底绣鞋",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "female_young_gentle",
+          "tone": "语声轻而稳，少言"
+        },
+        "persona_notes": "殿前献舞的女子，舞艺出众；遇变故不慌乱、行动果决（挣脱后径直快走）；玉镯为亡母遗物，极为珍视"
+      },
+      {
+        "id": "C02",
+        "name": "太子妃",
+        "aliases": [
+          "太子妃"
+        ],
+        "appearance": {
+          "age": "二十四五岁",
+          "gender": "女",
+          "body": "身量适中，坐姿端凝，仪态刻意克制",
+          "face": "容色艳丽而神情矜冷，妆容精致",
+          "hair": "高髻，饰金凤步摇与珠翠",
+          "eyes": "丹凤眼，眼神锐利",
+          "distinguishing_marks": "指甲修长，染蔻丹"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "绛紫色织锦宫装，金线绣凤纹，外罩薄纱大袖，珠翠头面齐整，云头履"
+          }
+        ],
+        "visual_prompt": "全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落；二十四五岁贵族女子，仪态端凝，容色艳丽神情矜冷，高髻饰金凤步摇珠翠，丹凤眼；身着绛紫色织锦宫装，金线凤纹，外罩薄纱大袖，云头履，指甲修长染蔻丹",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "female_mature_cold",
+          "tone": "端庄含威，本章无台词"
+        },
+        "persona_notes": "本章仅以掐掌心的动作出场，妒意深藏、外表克制；不得替其增写台词或表情外的心理"
+      },
+      {
+        "id": "C03",
+        "name": "皇帝",
+        "aliases": [
+          "皇帝"
+        ],
+        "appearance": {
+          "age": "五十岁上下",
+          "gender": "男",
+          "body": "中年帝王体态，端坐御座，不怒自威",
+          "face": "面容清癯，颧骨略高，蓄短须",
+          "hair": "须发花白，束于冕冠之下",
+          "eyes": "眼窝略深，目光倦怠而深不可测",
+          "distinguishing_marks": "无"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "明黄色织金龙袍，玄色缘边，腰束玉带，头戴通天冠，皂靴"
+          }
+        ],
+        "visual_prompt": "全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落；五十岁上下的帝王，面容清癯蓄短须，须发花白，头戴通天冠；身着明黄色织金龙袍，玄色缘边，腰束玉带，皂靴",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_elder_deep",
+          "tone": "低沉，极简短，不带情绪"
+        },
+        "persona_notes": "惜字如金，一字定赏罚"
+      },
+      {
+        "id": "C04",
+        "name": "廊下来人",
+        "aliases": [
+          "来人",
+          "一只手"
+        ],
+        "appearance": {
+          "age": "三十岁上下",
+          "gender": "男",
+          "body": "身量颀长，动作利落无声",
+          "face": "面容普通、易没入人群，神色精明",
+          "hair": "乌发束髻，无饰",
+          "eyes": "细长眼，目光警惕",
+          "distinguishing_marks": "无"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "深青色圆领袍（宫中当值男子服色），革带，皂靴，无佩饰"
+          }
+        ],
+        "visual_prompt": "全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落；三十岁上下男子，身量颀长，面容普通神色精明，乌发束髻，细长眼；身着深青色圆领袍，革带皂靴，无佩饰",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_low_whisper",
+          "tone": "刻意压低的气声"
+        },
+        "persona_notes": "身份原文未交代，仅以“来人”出现且刻意压低声音；本卡外貌与服色为出图所需的推导补全，后续章节若揭示身份需回改此卡"
+      },
+      {
+        "id": "C05",
+        "name": "满殿宾客",
+        "aliases": [
+          "满殿的目光",
+          "满殿"
+        ],
+        "appearance": {
+          "body": "宫宴上分席列坐的皇亲与朝臣群像，衣冠济济，人数众多",
+          "distinguishing_marks": "皆着华贵宴服，姿态各异但视线一致，可整体随殿心舞者转动头颈"
+        },
+        "visual_prompt": "群像：古代宫廷夜宴宾客，分席列坐于殿内两侧，衣冠华贵，人数众多，全身入镜，纯白背景",
+        "reference_images": []
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "琼华殿",
+        "era": "架空古代宫廷（形制近唐宋）",
+        "interior_exterior": "interior",
+        "visual_prompt": "宏丽宫殿内景：金砖墁地光可鉴人，朱红立柱高耸，藻井描金，殿心留出空阔舞池，两侧设宴席案几，上首高台设御座，宫灯烛台成列，香炉青烟袅袅，无人物",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "满殿暖金烛光，宫灯自高处垂落光晕，金砖地面映出暖色反光"
+      },
+      {
+        "id": "S02",
+        "name": "琼华殿外长廊",
+        "era": "架空古代宫廷（形制近唐宋）",
+        "interior_exterior": "exterior",
+        "visual_prompt": "宫殿外连廊夜景：朱柱成列延伸至画面深处，廊下阴影深长，柱间悬疏落宫灯，尽头透出殿内暖黄灯火，无人物",
+        "angles": [
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "夜色沉沉，廊灯疏落，明暗带交替，殿内透出的暖光作为远景光源"
+      },
+      {
+        "id": "S03",
+        "name": "偏殿",
+        "era": "架空古代宫廷（形制近唐宋）",
+        "interior_exterior": "interior",
+        "visual_prompt": "陈设简素的偏殿内室：妆台上立一面铜镜，屏风半掩，一座烛台燃着单烛，木柜衣箱靠墙，无人物",
+        "angles": [
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "单烛暖光，光域小，四周沉入昏暗"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "羊脂玉镯",
+        "visual_prompt": "纯白背景单独展示：一只羊脂白玉镯，玉质油润生光，素圆形制无雕饰，内圈有经年佩戴的细微温润包浆",
+        "reference_images": []
+      },
+      {
+        "id": "P02",
+        "name": "半页乐谱",
+        "visual_prompt": "纯白背景单独展示：半页古乐谱（工尺谱式样），纸色微黄，一侧边缘为不规则撕口，墨迹工整密布",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "琼华殿献舞",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0014"
+      },
+      "summary": "沈知微着红裙入琼华殿献舞技惊满座、获皇帝一字之赏，退场时被廊下神秘来人攥袖搭话，她挣脱后回偏殿换回宫女常服，贴身藏起玉镯与半页乐谱。",
+      "tail_frame_description": "最后一帧：昏暗偏殿内，着素色常服的沈知微侧身立于妆台前近景，指尖将袖中露出一角的半页乐谱按回袖内，单烛暖光从画面一侧勾出她的轮廓，背景铜镜泛微光，四周沉入黑暗，画面整体渐暗，氛围隐秘而平静。",
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 5,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "沉静",
+              "action": "自殿门踏入，步态从容",
+              "position": "画面下方殿门处，人影初入"
+            },
+            {
+              "ref": "C05",
+              "action": "分席列坐宴饮",
+              "position": "殿内两侧宴席"
+            }
+          ],
+          "prop_refs": [],
+          "action": "大远景纵观琼华殿：满殿烛火通明，宾客分席列坐，乐声正急；沈知微的身影踏进殿门，镜头缓缓推向殿心。",
+          "atmosphere": "暖金烛光铺满全殿，宫宴的华贵与急促乐声交织出隐隐张力",
+          "sfx": [
+            "急促的宫廷丝竹乐",
+            "殿内人声隐隐"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "沈知微踏进琼华殿时，殿里的乐声正到急处。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 6,
+          "shot_size": "full",
+          "camera": {
+            "movement": "tilt",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "垂眸敛容",
+              "action": "立于殿心，双臂舒展作起舞前的定势",
+              "position": "画面中央全身入镜"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "全景：她立定于殿心，镜头自裙裾底部缓缓上移，掠过裙摆绣纹与垂落的水袖，最终停在她腕间的玉镯上。",
+          "atmosphere": "顶光烛照，衣料的织纹在暖光下流转细碎光泽",
+          "sfx": [
+            "乐声渐密"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "text": "她今日穿的是一件石榴红的织金舞裙，裙摆上用银线绣了整幅的缠枝莲，腕上一只羊脂玉镯，是母亲留下的。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 4,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "orbit",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "神情专注，眼波流转",
+              "action": "原地疾速旋身起舞，裙摆随离心力扬开",
+              "position": "画面中央"
+            }
+          ],
+          "prop_refs": [],
+          "action": "低机位环绕：她旋身而舞，裙摆扫过金砖地面，兜起一圈红色的涟漪般荡开的弧线，衣袂与光影一同旋转。",
+          "atmosphere": "烛光在旋转的裙裾上碎成流光，金砖倒影随之晃动",
+          "sfx": [
+            "乐声急处",
+            "衣料破空的猎猎声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "pan",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C05",
+              "action": "满座宾客的头颈与视线齐齐随殿心舞影转动",
+              "position": "画面前中景，成排席位"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "在景深处持续旋舞",
+              "position": "画面深处殿心，虚焦舞影"
+            }
+          ],
+          "prop_refs": [],
+          "action": "反打横摇：镜头扫过一张张宾客的脸，满殿目光齐齐追着殿心那道旋舞的红色身影移动。",
+          "atmosphere": "宾客面上映着殿心方向的暖光，神情或惊艳或出神",
+          "sfx": [
+            "低低的抽气与赞叹声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 3,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "面上不动声色，眼底压着冷意",
+              "action": "垂在案侧的手缓缓收紧，指甲深深掐进掌心",
+              "position": "画面前景席位，取其手部与侧脸边缘"
+            }
+          ],
+          "prop_refs": [],
+          "action": "插入镜头：太子妃垂在案侧的手缓缓收紧，指甲掐进掌心，指节泛白；画面上缘带到她纹丝不动的侧影。",
+          "atmosphere": "席位处光线略暗，手部被烛光斜照，阴影锋利",
+          "sfx": [],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "text": "太子妃的指甲掐进了掌心。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "crane",
+            "angle": "overhead"
+          },
+          "location_ref": "S01",
+          "location_angle": "overhead",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "屏息垂首",
+              "action": "曲终跪伏于地，双臂前展，水袖向两侧铺开",
+              "position": "画面正中，俯拍构图的几何中心"
+            }
+          ],
+          "prop_refs": [],
+          "action": "俯拍：乐声骤止，她跪伏于金砖之上，双袖向两侧铺展开，如一只折翼的鸟伏在满地光影中央。",
+          "atmosphere": "乐止后的一瞬寂静，顶光将她与铺开的衣袖压成一个平面图案",
+          "sfx": [
+            "乐声戛然而止",
+            "衣料落地的轻响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "不辨喜怒，目光略停",
+              "action": "端坐御座，指尖在扶手上轻轻一点，启唇吐出一字",
+              "position": "画面中央偏上，仰拍"
+            }
+          ],
+          "prop_refs": [],
+          "action": "仰角中近景：高台御座上的皇帝俯视殿心，神色不辨喜怒，只启唇说出一个字。",
+          "atmosphere": "御座区域灯火最盛，皇帝面部半明半暗，威压沉沉",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C03",
+              "text": "赏。",
+              "emotion": "平淡，一锤定音",
+              "verbatim": true
+            }
+          ],
+          "sfx": [
+            "满殿短暂的寂静"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "follow",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "神色初松，随即一惊",
+              "action": "沿廊退场行走，被突然伸出的手攥住衣袖，脚步顿住",
+              "position": "画面右侧，行进中"
+            },
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "action": "自廊柱阴影中探出一只手，攥住她的衣袖",
+              "position": "画面左侧，身形大半没入柱后阴影"
+            }
+          ],
+          "prop_refs": [],
+          "action": "跟拍：退场的沈知微行至廊下，一只手忽然从廊柱阴影里伸出，攥住了她的衣袖；她的脚步猛地顿住。",
+          "atmosphere": "廊下明暗交替，攥袖的手恰在光影分界处，惊疑感陡起",
+          "sfx": [
+            "脚步声骤停",
+            "衣料被攥紧的窸窣声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "expression": "半张脸隐在暗处，唇角微动",
+              "action": "攥着她的衣袖不放，凑近压低声音说话",
+              "position": "画面中央，越过沈知微肩头取景"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "背对镜头，肩线绷紧",
+              "position": "画面前景肩背剪影"
+            }
+          ],
+          "prop_refs": [],
+          "action": "过肩反打：来人立于廊柱暗影中，面目半隐，攥着她的衣袖，压低声音开口。",
+          "atmosphere": "逆着殿内透来的远光，来人几乎只余轮廓，声音贴着阴影传出",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C04",
+              "text": "沈姑娘好舞。",
+              "emotion": "刻意压低的气声，意味不明",
+              "verbatim": true
+            }
+          ],
+          "sfx": [],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 2.5,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "dance_torn",
+              "expression": "咬唇，眼神决绝",
+              "action": "手臂用力向回一挣，袖口被撕开一道口子",
+              "position": "画面中央，取手臂与袖口局部"
+            },
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "action": "手中只余一片撕落的布角，缩回阴影",
+              "position": "画面边缘，仅见手部"
+            }
+          ],
+          "prop_refs": [],
+          "action": "手持近景：她手臂猛地向回一挣，袖口应声撕开一道口子，撕裂的布边在两人之间绷断弹开。",
+          "atmosphere": "手持镜头轻微晃动，撕裂瞬间的张力顶到最满",
+          "sfx": [
+            "布帛撕裂声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "track",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "dance_torn",
+              "expression": "目视前方，不回头",
+              "action": "提着裙摆快步穿过长廊，撕开的袖口随步伐翻动也不去看",
+              "position": "画面中央，横向快速移动"
+            }
+          ],
+          "prop_refs": [],
+          "action": "侧向移动跟拍：她提着裙摆快步穿过长廊，撕开的袖口随步伐翻动，她一眼也不看，径直前行，廊柱在她身前身后连续掠过。",
+          "atmosphere": "疏落廊灯把她的影子一段段拉长又剪断，步频急而稳",
+          "sfx": [
+            "急促的脚步声",
+            "夜风掠廊声"
+          ],
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH012",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "maid_plain",
+              "expression": "平静下来，动作轻而珍重",
+              "action": "已换下舞裙，将叠好的裙装搁在衣箱上，再把腕间褪下的玉镯收进衣襟贴身处",
+              "position": "画面中央偏右，侧身对镜头"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "偏殿内中景：她已换下舞裙，叠好的裙装被轻轻搁在衣箱上；她将褪下的玉镯用指腹摩挲一下，收进衣襟贴身处按了按。",
+          "atmosphere": "单烛暖光只照亮她与妆台一隅，殿内其余陷入安静的昏暗",
+          "sfx": [
+            "衣料摩挲声",
+            "烛芯轻爆声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0012"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH013",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "maid_plain",
+              "expression": "神色敛尽，眼底一点未散的光",
+              "action": "立于铜镜前，静静注视镜中的自己",
+              "position": "以铜镜镜像为画面主体，真身在前景虚化"
+            }
+          ],
+          "prop_refs": [],
+          "action": "推近铜镜：镜中映出她换上常服后的身影，垂手静立，与方才殿上光彩夺目的舞者判若两人。",
+          "atmosphere": "铜镜镜面微昏，烛光柔和，画面色彩沉静内收",
+          "sfx": [],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0013"
+            ],
+            "text": "镜子里的人穿一身素青色的宫女常服，再没有半分方才的艳色。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0013"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH014",
+          "duration_sec": 4.5,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "maid_plain",
+              "expression": "眸光微垂",
+              "action": "抬起手臂，袖中半页乐谱露出一角，她用指尖将它轻轻按回袖内",
+              "position": "画面中央，取手臂与袖口特写"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P02"
+            }
+          ],
+          "action": "插入镜头：她抬手时，袖中那半页乐谱露出一角——纸边的撕口清晰可见；她用指尖把它轻轻按回袖内，指尖停了一瞬。",
+          "atmosphere": "单烛侧光勾出纸页毛边与指尖轮廓，四周黑暗围拢，隐秘而平静",
+          "sfx": [
+            "纸页与衣料的细微摩擦声"
+          ],
+          "transition_out": "fade_to_black",
+          "narration": {
+            "unit_refs": [
+              "u0014"
+            ],
+            "text": "只有袖中那半页乐谱，还带着琼华殿的檀香气。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0014"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.0
+  }
+}

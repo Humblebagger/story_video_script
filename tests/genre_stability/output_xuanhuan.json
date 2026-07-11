@@ -1,0 +1,729 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "焚天诀·剑破苍穹",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "东方玄幻anime风格，绚丽法术特效，史诗感构图",
+      "art_style": "anime",
+      "color_tone": "高饱和，金色与青色主导",
+      "negative_prompt": "低画质，模糊，变形，多余肢体，现代元素，文字水印"
+    },
+    "video": {
+      "aspect_ratio": "16:9",
+      "resolution": "1920x1080",
+      "target_platform": "B站"
+    },
+    "narration": {
+      "mode": "original_text",
+      "tts_voice": "male_epic"
+    }
+  },
+  "source": {
+    "work_title": "焚天诀",
+    "chapter": "第三百一十二章 剑破苍穹",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "雷云在头顶炸开的瞬间，秦烬拔剑了。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0002",
+        "text": "青色剑气如瀑布般倾泻而下，将擂台上的碎石尽数绞成粉末。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0003",
+        "text": "对面的魔修狂笑着张开双臂，漆黑的护体魔焰腾起三丈之高。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0004",
+        "text": "“就凭你这把破剑？”",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0005",
+        "text": "两股力量在半空相撞，气浪掀翻了观战台的旗帜。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0006",
+        "text": "秦烬闷哼一声，左肩的衣袍被魔焰燎穿，露出焦黑的伤口。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0007",
+        "text": "他反手咬破舌尖，一口精血喷在剑身上。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0008",
+        "text": "古剑嗡鸣，剑身浮现出九道金色符文。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0009",
+        "text": "这是他压箱底的杀招，焚天九诀的第一式。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0010",
+        "text": "魔修脸上的狂笑僵住了。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0011",
+        "text": "金色剑光撕裂雷云，整座山门都被照得亮如白昼。",
+        "para": 1,
+        "kind": "action"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "秦烬",
+        "aliases": [
+          "他"
+        ],
+        "appearance": {
+          "age": "二十岁上下的青年",
+          "gender": "男",
+          "body": "身形挺拔精瘦，常年练剑的修长体格",
+          "face": "轮廓分明，剑眉薄唇，神情沉毅",
+          "hair": "黑色长发以木簪束成高马尾，鬓角利落",
+          "eyes": "深褐色，目光锐利如剑锋",
+          "distinguishing_marks": "左肩至锁骨有旧的淡色剑疤"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "青白色交领窄袖道袍，深青色束腰，袖口收紧便于挥剑，背后剑鞘以皮带斜挎，黑色布靴"
+          },
+          {
+            "id": "wounded_left_shoulder",
+            "description": "同款青白色道袍，但左肩衣料被魔焰燎穿出焦黑破洞，边缘碳化卷曲，露出焦黑的灼伤伤口，周围布料染着烟灰"
+          }
+        ],
+        "visual_prompt": "东方玄幻anime风格，二十岁上下的男性青年修士，全身正面站立，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落；黑色长发木簪束高马尾，剑眉深褐色眼睛，身形挺拔精瘦；青白色交领窄袖道袍，深青色束腰，背后斜挎剑鞘，黑色布靴",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_young_firm",
+          "tone": "低沉克制，隐忍中带着决绝"
+        },
+        "persona_notes": "身处劣势仍不退半步的剑修，压箱底杀招为焚天九诀第一式，性格坚韧，习惯以伤换命"
+      },
+      {
+        "id": "C02",
+        "name": "魔修",
+        "aliases": [
+          "对面的魔修"
+        ],
+        "appearance": {
+          "age": "三十余岁",
+          "gender": "男",
+          "body": "高大魁梧，肩宽背厚，气息阴煞",
+          "face": "面容枯槁泛青灰，颧骨高耸，笑时嘴角撕裂般上扬",
+          "hair": "灰白色长发披散，发丝枯乱",
+          "eyes": "眼白泛黑，瞳孔猩红",
+          "distinguishing_marks": "颈侧蔓延至下颌的黑色魔纹"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "漆黑宽袍，袍面绣暗红色扭曲魔纹，袖口宽大破损，赤足，腕上缠黑色骨链"
+          }
+        ],
+        "visual_prompt": "东方玄幻anime风格，三十余岁高大魁梧的男性魔道修士，全身正面站立，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落；灰白色枯乱长发披散，面容青灰，瞳孔猩红，颈侧黑色魔纹；漆黑宽袍绣暗红魔纹，腕缠黑色骨链，赤足",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_deep_raspy",
+          "tone": "狂傲嘶哑，充满讥讽"
+        },
+        "persona_notes": "以护体魔焰见长的魔道修士，狂妄轻敌，见对手底牌后骤然色变"
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "山门比武擂台",
+        "era": "东方玄幻修真世界",
+        "interior_exterior": "exterior",
+        "visual_prompt": "东方玄幻anime风格，宗门山巅巨大石制比武擂台，台面布满裂纹与碎石，四周环绕多层观战台，观战台上插满旗帜，远处群峰与宫殿式山门建筑层叠，头顶浓黑雷云翻滚压顶，电光在云层中隐现，无人物纯场景",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          },
+          {
+            "angle": "overhead"
+          }
+        ],
+        "lighting_defaults": "夜间雷暴天光，冷青色主调，云层电光间歇性照亮场景，后段被金色剑光整体点亮"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "古剑",
+        "visual_prompt": "东方玄幻anime风格，一柄古朴长剑，剑身狭长泛青色寒光，剑格与剑柄为暗铜色缠绳，剑身可浮现九道金色符文（符文点亮状态与熄灭状态两形态），纯白背景，特写质感",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "剑破苍穹",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0011"
+      },
+      "summary": "雷云压顶的擂台之上，秦烬拔剑迎战魔修。首轮对撞中他左肩被魔焰燎伤，遂咬舌喷血激发古剑，剑身浮现九道金色符文——焚天九诀第一式出，金色剑光撕裂雷云，照亮整座山门。",
+      "tail_frame_description": "大远景最后一帧：一道金色剑光自擂台冲天而起，将头顶漆黑雷云撕开巨大裂口，金光如白昼倾洒，山门层叠殿宇与群峰被镀上金边，擂台上秦烬持剑的剪影立于光柱底端，画面上重下轻、竖向光柱构图，氛围壮烈恢弘。",
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 4,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "tilt",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "雷暴，浓黑雷云翻滚",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "凝重",
+              "action": "立于擂台一端，手按剑柄，猛然拔剑出鞘",
+              "position": "画面下方擂台左侧，仰拍中呈小剪影"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "低角度大远景：擂台上空浓黑雷云骤然炸开，电光撕裂云层；镜头下摇落到擂台，秦烬的身影在同一瞬间拔剑出鞘，青色剑光乍现。",
+          "atmosphere": "山雨欲来的压迫感，雷光与青色剑光刺破黑暗",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "雷云在头顶炸开的瞬间，秦烬拔剑了。"
+          },
+          "sfx": [
+            "炸雷轰鸣",
+            "剑鞘出鞘的金属锐响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 4,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "crane",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "overhead",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "全神贯注",
+              "action": "挥剑下劈，剑气自剑尖倾泻",
+              "position": "画面左下，剑气自其位置向前方扇形铺开"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "高角度俯冲镜头：青色剑气如瀑布般自秦烬剑上倾泻而下，横扫擂台，台面上的碎石在剑气中尽数绞成粉末，青色光尘四散。",
+          "atmosphere": "青色剑气的洪流气势，粉尘与光屑弥漫",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "text": "青色剑气如瀑布般倾泻而下，将擂台上的碎石尽数绞成粉末。"
+          },
+          "sfx": [
+            "剑气撕裂空气的尖啸",
+            "碎石绞碎的密集碎裂声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "push_in",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "狂笑",
+              "action": "张开双臂迎向剑气，周身魔焰冲天腾起",
+              "position": "画面中央，魔焰在其身后形成三丈高的黑色火墙"
+            }
+          ],
+          "prop_refs": [],
+          "action": "低角度全身镜头缓推：魔修狂笑着张开双臂，漆黑的护体魔焰自他脚下腾起三丈之高，黑焰吞没半个画面，只余他狂笑的身形立于焰心。",
+          "atmosphere": "黑焰滔天的邪异压迫感，与青色剑气形成色彩对峙",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "text": "对面的魔修狂笑着张开双臂，漆黑的护体魔焰腾起三丈之高。"
+          },
+          "sfx": [
+            "魔焰腾起的闷啸",
+            "狂笑声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "讥讽狂笑",
+              "action": "隔着焰墙俯视对面，开口讥讽",
+              "position": "画面右侧主体，面向镜头左前方"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "不为所动",
+              "action": "持剑而立",
+              "position": "画面左下角虚化的过肩前景"
+            }
+          ],
+          "prop_refs": [],
+          "action": "越过秦烬肩头拍魔修：魔修在黑焰映照下咧嘴狂笑，直视对手掷出讥讽之言。",
+          "atmosphere": "焰光在魔修面上跳动，挑衅意味十足",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "就凭你这把破剑？",
+              "emotion": "狂傲讥讽",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [],
+            "text": ""
+          },
+          "sfx": [
+            "魔焰燃烧的低鸣"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 4,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "weather": "雷暴，狂风",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "咬紧牙关",
+              "action": "持剑抵住冲击，足下石面开裂后滑",
+              "position": "画面左侧"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "狰狞",
+              "action": "双臂前推魔焰，与剑气对撼",
+              "position": "画面右侧"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "侧面手持广角：青色剑气与漆黑魔焰在擂台半空轰然相撞，爆开环状气浪；气浪横扫观战台，成排旗帜被连根掀翻卷上天空。",
+          "atmosphere": "冲击波的混乱与震撼，青黑二色能量在撞点绞缠",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "text": "两股力量在半空相撞，气浪掀翻了观战台的旗帜。"
+          },
+          "sfx": [
+            "能量对撞的巨响",
+            "气浪呼啸",
+            "旗帜布料撕卷声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "wounded_left_shoulder",
+              "expression": "痛苦压抑，闷哼",
+              "action": "身形一晃稳住，左肩冒起焦烟，仍紧握长剑",
+              "position": "画面中央偏左"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "中近景缓推：气浪散去，秦烬闷哼一声踉跄半步，左肩衣袍被魔焰燎穿，焦黑的伤口在破洞下冒着青烟，他握剑的手没有松开。",
+          "atmosphere": "焦烟缭绕，负伤后的沉重与隐忍",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "text": "秦烬闷哼一声，左肩的衣袍被魔焰燎穿，露出焦黑的伤口。"
+          },
+          "sfx": [
+            "压抑的闷哼",
+            "布料余烬的哔剥声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "wounded_left_shoulder",
+              "expression": "决绝",
+              "action": "反手咬破舌尖，将一口精血喷在横举的剑身上",
+              "position": "画面中央，剑身横贯画面下三分之一"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "特写：秦烬猛地咬破舌尖，一口猩红精血喷在横举的剑身上，血珠沿剑脊滚动，被剑身青光映得发亮。",
+          "atmosphere": "以血祭剑的悲壮，血色与青光交映",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "text": "他反手咬破舌尖，一口精血喷在剑身上。"
+          },
+          "sfx": [
+            "喷血的短促声",
+            "血珠落在剑身的嘶响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "track",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "剑身插入特写，镜头沿剑脊横移：古剑发出低沉嗡鸣，精血渗入剑身之处，九道金色符文自剑格向剑尖依次亮起，金光逐节点燃。",
+          "atmosphere": "神兵觉醒的仪式感，金色符文光在黑暗中依次绽亮",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "text": "古剑嗡鸣，剑身浮现出九道金色符文。"
+          },
+          "sfx": [
+            "剑身嗡鸣共振",
+            "符文逐一亮起的清越音"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 4,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "wounded_left_shoulder",
+              "expression": "眼神燃起决死的锋芒",
+              "action": "双手举剑过顶蓄力，金色符文光自下而上映亮面庞",
+              "position": "画面中央，剑柄与面部同框"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "低角度特写缓推：秦烬双手举剑蓄力，九道符文的金光映在他脸上，瞳孔中金光灼灼，周身青色气流开始向剑身汇聚。",
+          "atmosphere": "底牌尽出前的屏息瞬间，金光渐盛",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "text": "这是他压箱底的杀招，焚天九诀的第一式。"
+          },
+          "sfx": [
+            "能量向剑身汇聚的渐强低鸣"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『这是他压箱底的杀招，焚天九诀的第一式』→ 叙述性交代不可直接成像，推导为秦烬举剑蓄力、符文金光映亮面庞与眼神的特写，以蓄势画面呈现『杀招将出』"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "雷暴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "狂笑凝固，转为惊骇",
+              "action": "笑容僵在脸上，瞳孔骤缩，被对面的金光映亮",
+              "position": "画面中央"
+            }
+          ],
+          "prop_refs": [],
+          "action": "特写：金色光辉打在魔修脸上，他脸上的狂笑一寸寸僵住，嘴角还挂着笑，眼神已经变了。",
+          "atmosphere": "骤然的死寂，金光压过黑焰",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "text": "魔修脸上的狂笑僵住了。"
+          },
+          "sfx": [
+            "环境声骤然收束的静默"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 5,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "pull_out",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "雷暴，雷云被撕裂",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "wounded_left_shoulder",
+              "expression": "不可见（剪影）",
+              "action": "挥剑斩出，立于光柱底端",
+              "position": "画面底部中央的微小剪影"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "低角度大远景拉出：一道金色剑光自擂台冲天而起，将头顶漆黑雷云撕开巨大裂口，金光如白昼倾洒而下，整座山门的层叠殿宇与群峰尽被照亮。",
+          "atmosphere": "剑破苍穹的史诗高潮，金光取代黑暗吞没全景",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "text": "金色剑光撕裂雷云，整座山门都被照得亮如白昼。"
+          },
+          "sfx": [
+            "剑光贯空的轰鸣",
+            "雷云被撕裂的闷响余韵"
+          ],
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.09
+  }
+}

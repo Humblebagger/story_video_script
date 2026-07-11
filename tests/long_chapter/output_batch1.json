@@ -1,0 +1,2011 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "玉佩",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "现代都市异能anime风格，电影感光影，雨夜霓虹质感",
+      "art_style": "anime",
+      "color_tone": "冷暗色调，幽绿色点缀",
+      "negative_prompt": "低质量，模糊，变形，多余手指，多余肢体，文字，水印，logo"
+    },
+    "video": {
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920",
+      "target_platform": "抖音"
+    },
+    "narration": {
+      "mode": "selective",
+      "tts_voice": "male_young"
+    }
+  },
+  "source": {
+    "work_title": "玉佩",
+    "chapter": "第一章 雨夜（第1批/共2批）",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "暴雨是从晚上七点开始下的。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0002",
+        "text": "陈野的电动车在积水里碾出两道水痕，雨衣早就湿透了。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0003",
+        "text": "手机导航又一次重新规划路线，屏幕上的红色迟到警告刺得他眼睛疼。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0004",
+        "text": "这是今晚的第十七单。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0005",
+        "text": "说实话，干外卖这行三年，他从来没见过这么大的雨。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0006",
+        "text": "雨大得连路灯都看不清了。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0007",
+        "text": "真的太大了。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0008",
+        "text": "送完这单就收工，他对自己说。",
+        "para": 1,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0009",
+        "text": "订单地址在城东的老巷子里，导航到了巷口就没了信号。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0010",
+        "text": "陈野把车停在巷口，拎着餐盒深一脚浅一脚地往里走。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0011",
+        "text": "巷子深处只有一盏昏黄的灯。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0012",
+        "text": "灯下站着一个老人。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0013",
+        "text": "老人穿一件洗得发白的灰布长衫，手里拄着一根乌木拐杖，浑身上下竟然没有一点被雨淋过的痕迹。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0014",
+        "text": "“小伙子，麻烦你了。”老人接过餐盒，声音沙哑得像砂纸磨过木头。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0015",
+        "text": "陈野愣了一下。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0016",
+        "text": "这么大的雨，老人的长衫竟然是干的。",
+        "para": 1,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0017",
+        "text": "他想问，又觉得不礼貌。",
+        "para": 1,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0018",
+        "text": "三年前父亲失踪之后，母亲总跟他说，遇到解释不了的事就躲远点。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0019",
+        "text": "父亲是地质队的工程师，那年在昆仑山的勘探队里一夜之间没了踪影，连同整支队伍十四个人。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0020",
+        "text": "搜救队找了三个月，只找回来一只登山靴。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0021",
+        "text": "“发什么呆？”老人忽然笑了。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0022",
+        "text": "“钱我扫码付了，这个也给你。”老人从怀里摸出一块玉佩，不由分说塞进陈野手里。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0023",
+        "text": "玉佩入手冰凉，上面刻着一头他没见过的兽，像鹿，又长着鱼的尾巴。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0024",
+        "text": "“我不能要这个。”陈野把手伸回去。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0025",
+        "text": "巷子里已经没有人了。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0026",
+        "text": "灯还亮着，雨还在下，老人就像从来没出现过一样。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0027",
+        "text": "老人站在巷子另一头的黑暗里，看着那个年轻人的背影，浑浊的眼睛里闪过一丝笑意。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0028",
+        "text": "陈野捏着玉佩在原地站了足足一分钟，才骂了一句脏话，转身跑回巷口。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0029",
+        "text": "回到出租屋已经是夜里十一点。",
+        "para": 2,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0030",
+        "text": "陈野把湿透的雨衣和外卖服脱下来扔进桶里，换上那件洗变形的白T恤。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0031",
+        "text": "泡面的水刚烧上，桌上的玉佩忽然亮了。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0032",
+        "text": "幽绿色的光从兽纹的刻痕里渗出来，像活的一样在玉面上游走。",
+        "para": 2,
+        "kind": "description"
+      },
+      {
+        "id": "u0033",
+        "text": "陈野的第一反应是把它扔进水槽。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0034",
+        "text": "玉佩碰到水的瞬间，绿光暴涨。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0035",
+        "text": "一股滚烫的热流顺着他的指尖窜上手臂，他甚至能看见自己的血管在皮肤下面发出微光。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0036",
+        "text": "疼。",
+        "para": 2,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0037",
+        "text": "像有人把烧红的铁丝塞进了他的骨头缝里。",
+        "para": 2,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0038",
+        "text": "陈野咬着牙没喊出声，楼上的房东太太睡眠很浅。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0039",
+        "text": "不知道过了多久，热流退了。",
+        "para": 2,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0040",
+        "text": "他瘫在地板上，大口喘气，右手掌心多了一个淡绿色的印记，形状和玉佩上的兽一模一样。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0041",
+        "text": "窗外的雨不知道什么时候停了。",
+        "para": 2,
+        "kind": "description"
+      },
+      {
+        "id": "u0042",
+        "text": "那一夜，陈野做了一个很长的梦。",
+        "para": 2,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0043",
+        "text": "梦里有雪山，有黑色的湖，有一扇刻满兽纹的石门。",
+        "para": 2,
+        "kind": "description"
+      },
+      {
+        "id": "u0044",
+        "text": "石门后面，有人在喊他的名字。",
+        "para": 2,
+        "kind": "description"
+      },
+      {
+        "id": "u0045",
+        "text": "那个声音，像他爸。",
+        "para": 2,
+        "kind": "psychology"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "陈野",
+        "aliases": [
+          "他",
+          "小伙子",
+          "那个年轻人",
+          "年轻人"
+        ],
+        "appearance": {
+          "age": "24岁左右",
+          "gender": "男",
+          "body": "中等偏瘦，常年骑车送餐练出的精干体型，肩背略有前倾",
+          "face": "轮廓利落的年轻面孔，肤色偏黑，下颌线分明，眉眼间带疲惫",
+          "hair": "黑色短发，微乱，发梢被雨水打湿时贴在额前",
+          "eyes": "黑色，眼神务实中带一点倔强",
+          "distinguishing_marks": "右手掌心有一枚淡绿色兽形印记（出租屋事件之后才出现）"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "藏蓝色外卖骑手制服，外罩一件透明塑料雨衣，深色长裤，黑色运动鞋，斜挎手机"
+          },
+          {
+            "id": "home",
+            "description": "洗变形的宽松白色T恤，深灰色家居短裤，赤脚或塑料拖鞋"
+          }
+        ],
+        "visual_prompt": "现代都市异能anime风格，24岁左右的中国年轻男性外卖员，中等偏瘦精干体型，黑色微乱短发，肤色偏黑，下颌线分明，眉眼疲惫但眼神倔强，藏蓝色外卖骑手制服外罩透明塑料雨衣，深色长裤黑色运动鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_young",
+          "tone": "语速偏快，市井随性，累的时候声音发闷"
+        },
+        "persona_notes": "外卖员三年，务实、嘴硬心软；三年前父亲在昆仑山失踪，母亲叮嘱他远离解释不了的事，因此对怪事本能警惕"
+      },
+      {
+        "id": "C02",
+        "name": "灰衫老人",
+        "aliases": [
+          "老人"
+        ],
+        "appearance": {
+          "age": "七十岁以上",
+          "gender": "男",
+          "body": "清瘦挺直，拄杖而立却不显佝偻",
+          "face": "瘦削多皱，颧骨略高，神情沉静难测",
+          "hair": "花白稀疏的头发向后梳拢，颌下留短须",
+          "eyes": "浑浊的灰褐色眼睛，偶有精光一闪",
+          "distinguishing_marks": "暴雨中周身干燥、不沾一滴雨水的诡异气质"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "一件洗得发白的灰布长衫，黑色布鞋，手中拄一根乌木拐杖"
+          }
+        ],
+        "visual_prompt": "现代都市异能anime风格，七十岁以上的清瘦中国老人，花白头发向后梳拢，颌下短须，瘦削多皱的脸，浑浊的灰褐色眼睛，穿洗得发白的灰布长衫，黑色布鞋，手拄乌木拐杖，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落（一手轻扶拐杖）",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_old",
+          "tone": "沙哑得像砂纸磨过木头，语速缓慢，尾音平"
+        },
+        "persona_notes": "来历不明的神秘老人，言行从容，似乎早已认定陈野，把玉佩不由分说塞给他后无声消失"
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "雨夜城市街道",
+        "era": "现代",
+        "interior_exterior": "exterior",
+        "visual_prompt": "现代都市雨夜街道，暴雨如注，路面大片积水倒映霓虹与红绿灯光，路灯在雨幕中晕成模糊光团，沿街店招灯箱湿漉漉地发亮，无人物，冷暗色调电影感",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          }
+        ],
+        "lighting_defaults": "夜晚，昏黄路灯与霓虹在积水中反光，雨幕散射光，整体冷暗"
+      },
+      {
+        "id": "S02",
+        "name": "城东老巷",
+        "era": "现代",
+        "interior_exterior": "exterior",
+        "visual_prompt": "现代城市老城区的狭长深巷，两侧斑驳砖墙与老式木门，地面湿滑积水，巷子深处一盏昏黄的老式门灯，灯光圈之外沉入浓重黑暗，雨丝在灯光中可见，无人物，冷暗色调",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "夜晚，唯一光源是巷子深处的昏黄门灯，光圈边缘迅速衰减为黑暗"
+      },
+      {
+        "id": "S03",
+        "name": "陈野的出租屋",
+        "era": "现代",
+        "interior_exterior": "interior",
+        "visual_prompt": "老旧单间出租屋内景，狭小拥挤，墙皮微微泛黄，一张小桌上放着电热水壶和泡面，角落有洗衣桶和窄床，一侧是带水槽的简易灶台，窗户对着夜色中的居民楼，无人物，冷色调中透出一点暖黄灯光",
+        "angles": [
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "夜晚，一盏冷白顶灯加桌面暖黄小灯，窗外透进城市微光"
+      },
+      {
+        "id": "S04",
+        "name": "昆仑山雪原（闪回）",
+        "era": "现代",
+        "interior_exterior": "exterior",
+        "visual_prompt": "昆仑山高海拔雪原，风雪弥漫，铅灰色天空，连绵雪峰轮廓模糊，雪地上散落被雪半埋的勘探装备与帐篷残影，无人物，褪色低饱和的回忆色调",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          }
+        ],
+        "lighting_defaults": "惨白天光，风雪散射，低对比褪色调"
+      },
+      {
+        "id": "S05",
+        "name": "梦境·雪山黑湖石门",
+        "era": "超现实梦境",
+        "interior_exterior": "exterior",
+        "visual_prompt": "超现实梦境场景：连绵雪山之下一泓漆黑如墨的湖，湖面平静无波，湖畔尽头矗立一扇巨大石门，门身刻满环环相扣的古老兽纹，刻痕深处隐隐透出幽绿微光，雾气低垂，无人物，幽暗冷色调点缀幽绿",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          }
+        ],
+        "lighting_defaults": "无明确光源的梦境冥光，幽绿微光从石门刻痕渗出，低照度高氛围"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "兽纹玉佩",
+        "visual_prompt": "一块温润的古玉佩，掌心大小，玉质青白微透，正面浅浮雕一头似鹿而生鱼尾的异兽，兽纹刻痕深峻，刻痕深处泛幽绿色微光，顶端穿孔系旧红绳，纯白背景单独展示",
+        "reference_images": []
+      },
+      {
+        "id": "P02",
+        "name": "登山靴（父亲遗物）",
+        "visual_prompt": "一只破旧的专业登山靴，深棕色磨损皮面，鞋带松散，靴身覆着薄霜与残雪，纯白背景单独展示",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "雨夜老巷",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0028"
+      },
+      "summary": "暴雨夜，外卖员陈野送最后一单进城东老巷，遇见浑身不沾雨的神秘老人，被硬塞了一块兽纹玉佩，老人转瞬消失。",
+      "tail_frame_description": "最后一帧：雨夜老巷全景，陈野攥着玉佩转身奔向巷口的背影位于画面中央偏下，身后巷子深处的昏黄门灯缩成一个孤独光点，雨丝斜落，积水反射幽蓝冷光，画面整体冷暗压抑，随后渐隐黑场。",
+      "music": {
+        "mood": "eerie",
+        "style_hint": "环境雨声与低音提琴长音铺底，稀疏失谐钢琴点缀，诡异段渗入玻璃质感泛音与不谐和弦乐，结尾逃离段加入心跳式低频脉冲，冷暗雨夜都市质感",
+        "curve": [
+          {
+            "from_shot": "E01-SH001",
+            "to_shot": "E01-SH005",
+            "mood": "tense",
+            "intensity": "low",
+            "note": "开场基调：暴雨夜赶单，红色迟到警告刺得眼睛疼、雨大得连路灯都看不清，疲惫中透着焦躁压力",
+            "unit_refs": [
+              "u0001",
+              "u0003",
+              "u0005",
+              "u0006"
+            ]
+          },
+          {
+            "from_shot": "E01-SH006",
+            "to_shot": "E01-SH009",
+            "mood": "eerie",
+            "intensity": "mid",
+            "note": "转折：巷子深处只有一盏昏黄的灯，灯下老人在暴雨中浑身干燥没有一点被淋过的痕迹，诡异感进入",
+            "unit_refs": [
+              "u0011",
+              "u0012",
+              "u0013",
+              "u0016"
+            ]
+          },
+          {
+            "from_shot": "E01-SH010",
+            "to_shot": "E01-SH012",
+            "mood": "melancholy",
+            "intensity": "mid",
+            "note": "转折：陈野忆起三年前父亲随勘探队在昆仑山一夜失踪、搜救三个月只找回一只登山靴，褪色回忆的惆怅",
+            "unit_refs": [
+              "u0018",
+              "u0019",
+              "u0020"
+            ]
+          },
+          {
+            "from_shot": "E01-SH013",
+            "to_shot": "E01-SH016",
+            "mood": "eerie",
+            "intensity": "mid",
+            "note": "转折：老人忽然发笑把陈野从回忆里拽回，不由分说塞进刻着陌生异兽的冰凉玉佩",
+            "unit_refs": [
+              "u0021",
+              "u0022",
+              "u0023"
+            ]
+          },
+          {
+            "from_shot": "E01-SH017",
+            "to_shot": "E01-SH019",
+            "mood": "eerie",
+            "intensity": "high",
+            "note": "转折：老人凭空消失『就像从来没出现过一样』，又在黑暗中注视陈野背影闪过笑意，陈野骂了脏话夺路而逃，诡异推至顶点",
+            "unit_refs": [
+              "u0025",
+              "u0026",
+              "u0027",
+              "u0028"
+            ]
+          }
+        ]
+      },
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 5,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "crane",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "骑电动车在积水路面上疾驰，车轮碾出两道水痕",
+              "position": "画面下方三分之一处，由远及近的小小身影"
+            }
+          ],
+          "prop_refs": [],
+          "action": "俯瞰暴雨中的城市街道，雨幕连天，霓虹在积水中晕开，一辆电动车碾过积水，拖出两道细长水痕，骑手的雨衣湿透紧贴在身上，镜头缓缓下降跟向他。",
+          "atmosphere": "暴雨倾盆，霓虹冷光被雨水打散，压抑而喧嚣的都市雨夜",
+          "sfx": [
+            "密集的暴雨声",
+            "轮胎碾过积水的哗啦声",
+            "远处闷雷"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "暴雨是从晚上七点开始下的。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0001",
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 3.5,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "pov"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [],
+          "prop_refs": [],
+          "action": "车把手机支架上的手机屏幕特写：导航界面弹出重新规划路线的提示，醒目的红色迟到警告在屏幕上闪烁，雨点不断砸在屏幕上碎成水花。",
+          "atmosphere": "刺眼的红色警告与幽蓝导航界面在雨水中晃动，焦躁感",
+          "sfx": [
+            "雨点砸击屏幕声",
+            "导航语音提示的电子音"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "text": "这是今晚的第十七单。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眯眼抵着雨，眉头紧皱",
+              "action": "顶着扑面的雨幕骑行",
+              "position": "画面中央"
+            }
+          ],
+          "prop_refs": [],
+          "action": "手持镜头贴近骑行中的陈野，雨水顺着他的脸不断流下，他眯起眼睛；他身后与前方的路灯全部晕成模糊的光团，几乎看不清轮廓，雨幕吞没了街道的纵深。",
+          "atmosphere": "雨大到路灯只剩模糊光晕，视野被白茫茫雨幕吞噬",
+          "sfx": [
+            "风雨扑面声",
+            "电动车电机声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "text": "说实话，干外卖这行三年，他从来没见过这么大的雨。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0006",
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "抿了抿嘴，眼神定下来",
+              "action": "骑行中低声自语，嘴唇微动",
+              "position": "画面中央偏左"
+            }
+          ],
+          "prop_refs": [],
+          "action": "陈野面部特写，雨水在他下颌汇成水线滴落，他抿了抿嘴，嘴唇无声地动了一下，眼神里透出一股撑到头的决意。",
+          "atmosphere": "冷雨中的一点倔强，路灯光晕在他脸侧忽明忽暗",
+          "sfx": [
+            "雨声压低"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "text": "送完这单就收工，他对自己说。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『送完这单就收工，他对自己说』→ 骑行中面部特写：嘴唇微动的自语口型与定下来的眼神"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "把电动车支在巷口，看了一眼没有信号的手机，拎起餐盒深一脚浅一脚地踩着积水往巷子里走",
+              "position": "画面右侧巷口，走向画面深处"
+            }
+          ],
+          "prop_refs": [],
+          "action": "巷口全景：陈野把电动车停在巷口，抬手看了一眼信号全无的手机屏幕，随即拎着餐盒，深一脚浅一脚地踩过积水，走进狭长黑暗的老巷。",
+          "atmosphere": "巷口被城市光污染微微照亮，巷内则是一条吞人的黑暗甬道",
+          "sfx": [
+            "雨声",
+            "鞋底踩进积水的扑哧声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "text": "订单地址在城东的老巷子里，导航到了巷口就没了信号。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0009",
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "push_in",
+            "angle": "pov"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "action": "拄杖立于灯下，静止不动",
+              "position": "画面深处灯光圈正中的剪影"
+            }
+          ],
+          "prop_refs": [],
+          "action": "陈野的主观视角缓缓推进：漆黑的巷子深处只亮着一盏昏黄的灯，昏黄光圈里立着一个拄杖老人的身影，雨丝在灯光中斜斜划过。",
+          "atmosphere": "一点昏黄灯光悬在浓黑巷底，诡静，雨声反而衬得巷子更空",
+          "sfx": [
+            "雨声渐闷",
+            "远处滴水声"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0011",
+              "u0012"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 4.5,
+          "shot_size": "full",
+          "camera": {
+            "movement": "tilt",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "沉静，看不出情绪",
+              "action": "拄着乌木拐杖立于灯下，长衫下摆纹丝不动",
+              "position": "画面中央，昏黄灯光自上方笼罩"
+            }
+          ],
+          "prop_refs": [],
+          "action": "镜头自下而上缓缓摇过灯下的老人全身：洗得发白的灰布长衫、手中乌木拐杖；四周雨丝纷落、地面水花四溅，他的衣衫发肤却干燥如常，没有一点被雨淋过的痕迹。",
+          "atmosphere": "昏黄灯光下干燥的老人与周遭湿透的世界形成刺目反差，诡异感渗出",
+          "sfx": [
+            "雨点落在灯罩上的哒哒声"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0013"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 3.5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "递出餐盒",
+              "position": "画面左前景，背对镜头的肩线"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "平静，眼皮低垂",
+              "action": "伸出枯瘦的手接过餐盒",
+              "position": "画面中央面向镜头"
+            }
+          ],
+          "prop_refs": [],
+          "action": "过陈野肩膀拍老人：老人伸出枯瘦的手接过餐盒，开口道谢，声音沙哑粗粝。",
+          "atmosphere": "昏黄灯下两人一递一接，雨声中沙哑嗓音格外清晰",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "小伙子，麻烦你了。",
+              "emotion": "沙哑平缓，像砂纸磨过木头",
+              "verbatim": true
+            }
+          ],
+          "sfx": [
+            "餐盒塑料袋窸窣声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0014"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 5.5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "怔住，欲言又止",
+              "action": "目光落在老人干燥的长衫上，嘴唇动了动又闭上",
+              "position": "画面中央面向镜头"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "action": "捧着餐盒静立",
+              "position": "画面右前景背对镜头的肩线"
+            }
+          ],
+          "prop_refs": [],
+          "action": "反打陈野：他愣住，视线从老人脸上滑到那件在暴雨里依然干燥的长衫下摆，喉结动了动，话到嘴边又咽了回去。",
+          "atmosphere": "雨声包围下的短暂静默，疑惑在他脸上一闪而过",
+          "sfx": [
+            "雨声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0016",
+              "u0017"
+            ],
+            "text": "这么大的雨，老人的长衫竟然是干的。他想问，又觉得不礼貌。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0015",
+              "u0016"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 6,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眼神飘远，蒙上一层旧事的阴影",
+              "action": "出神，视线失焦",
+              "position": "画面中央"
+            }
+          ],
+          "prop_refs": [],
+          "action": "陈野面部特写缓缓推近：他的眼神从老人身上飘开，渐渐失焦，昏黄灯光在他湿透的发梢上凝成水珠，整个人陷进某段旧事里。",
+          "atmosphere": "灯光昏黄，雨声退远，回忆的阴影漫上面孔",
+          "sfx": [
+            "雨声渐弱"
+          ],
+          "transition_out": "dissolve",
+          "narration": {
+            "unit_refs": [
+              "u0018"
+            ],
+            "text": "三年前父亲失踪之后，母亲总跟他说，遇到解释不了的事就躲远点。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0018"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『三年前父亲失踪之后，母亲总跟他说，遇到解释不了的事就躲远点』→ 陈野视线失焦、陷入回忆的面部特写推近"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 5.5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "pan",
+            "angle": "high"
+          },
+          "location_ref": "S04",
+          "location_angle": "establishing",
+          "time_of_day": "day",
+          "weather": "风雪",
+          "characters": [],
+          "prop_refs": [],
+          "action": "褪色调闪回：昆仑山雪原风雪呼啸，镜头缓缓横摇过被大雪半埋的勘探营地——歪斜的帐篷、翻倒的仪器箱，整片营地空无一人。",
+          "atmosphere": "惨白天光，低饱和褪色回忆调，风雪呜咽，死寂的空营地",
+          "sfx": [
+            "高原风啸声",
+            "帐篷布被风抽打声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0019"
+            ],
+            "text": "父亲是地质队的工程师，那年在昆仑山的勘探队里一夜之间没了踪影，连同整支队伍十四个人。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0019"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『在昆仑山的勘探队里一夜之间没了踪影，连同整支队伍十四个人』→ 褪色闪回：风雪雪原上空无一人的勘探营地空镜（帐篷与仪器为推导补充的画面元素）"
+          }
+        },
+        {
+          "id": "E01-SH012",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "weather": "风雪",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P02"
+            }
+          ],
+          "action": "褪色调闪回插入镜头：雪地里半埋着一只结霜的登山靴，风卷起雪粒从靴面掠过，镜头缓缓推近那只孤零零的靴子。",
+          "atmosphere": "褪色低饱和，空旷雪原上唯一的深色物体，无声的残酷",
+          "sfx": [
+            "风雪声"
+          ],
+          "transition_out": "dissolve",
+          "narration": {
+            "unit_refs": [
+              "u0020"
+            ],
+            "text": "搜救队找了三个月，只找回来一只登山靴。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0020"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH013",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "忽然咧开一个意味不明的笑",
+              "action": "抬眼看向陈野，开口",
+              "position": "画面中央面向镜头"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "回神",
+              "position": "画面左前景背对镜头的肩线"
+            }
+          ],
+          "prop_refs": [],
+          "action": "切回巷中正打：老人忽然笑了，皱纹在昏黄灯下挤成沟壑，沙哑的声音把陈野从出神里拽回来。",
+          "atmosphere": "笑意突兀，昏黄灯光下透着说不出的深意",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "发什么呆？",
+              "emotion": "沙哑，带笑",
+              "verbatim": true
+            }
+          ],
+          "sfx": [
+            "雨声回涌"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0021"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH014",
+          "duration_sec": 4.5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "笑意未散，动作却不容拒绝",
+              "action": "从怀里摸出一块玉佩，一把塞进陈野手里",
+              "position": "画面右侧"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "错愕",
+              "action": "手被塞进一块玉佩，下意识张开手掌",
+              "position": "画面左侧"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "老人说着话，从怀里摸出一块玉佩，不由分说地塞进陈野手里，动作快得不容拒绝；陈野下意识摊开手掌。",
+          "atmosphere": "昏黄灯下玉佩一闪，交接的瞬间空气微微发紧",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "钱我扫码付了，这个也给你。",
+              "emotion": "沙哑，不容分说",
+              "verbatim": true
+            }
+          ],
+          "sfx": [
+            "玉佩落入掌心的轻响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0022"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH015",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "pov"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "摊开手掌托着玉佩",
+              "position": "仅手掌入镜，位于画面中央"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "陈野主观视角的插入镜头：摊开的掌心里躺着一块青白玉佩，玉面沁着凉意，浅浮雕刻着一头陌生的异兽——身形似鹿，尾部却是一条鱼尾，雨珠从玉面滚落。",
+          "atmosphere": "昏黄灯光在玉面流转，异兽纹样透着古老陌生的气息",
+          "sfx": [
+            "雨声细密"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0023"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH016",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "为难而坚决",
+              "action": "攥着玉佩把手伸回去",
+              "position": "画面中央面向镜头"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "反打陈野：他皱着眉把攥着玉佩的手朝老人的方向伸回去，语气推拒。",
+          "atmosphere": "雨幕中的推让，灯光把他伸出的手臂拉出长影",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "我不能要这个。",
+              "emotion": "认真推拒",
+              "verbatim": true
+            }
+          ],
+          "sfx": [
+            "雨声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0024"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH017",
+          "duration_sec": 5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "伸出的手僵在半空，环顾空荡的巷子",
+              "position": "画面左下角背影"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "全景：陈野伸出的手僵在半空——灯下已经空无一人。昏黄的灯依旧亮着，雨丝依旧落着，老人凭空消失，巷子里只剩他一个人。",
+          "atmosphere": "灯还亮、雨还下，人却没了，空巷的诡静瞬间放大",
+          "sfx": [
+            "雨声忽然显得很响",
+            "灯泡轻微的电流嗡声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0026"
+            ],
+            "text": "灯还亮着，雨还在下，老人就像从来没出现过一样。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0025",
+              "u0026"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH018",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "weather": "雨",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "浑浊的眼睛里闪过一丝笑意",
+              "action": "立于黑暗中，注视远处年轻人的背影",
+              "position": "画面右侧前景，半身没入阴影"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "在灯下呆立",
+              "position": "画面左侧远处失焦的背影"
+            }
+          ],
+          "prop_refs": [],
+          "action": "巷子另一头的黑暗里，老人的侧脸半隐在阴影中，静静看着远处灯下那个年轻人的背影，浑浊的眼睛里极快地闪过一丝笑意。",
+          "atmosphere": "前景浓黑、远处一点昏黄，被注视而不自知的寒意",
+          "sfx": [
+            "雨声低沉"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0027"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH019",
+          "duration_sec": 5.5,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "从发懵到烦躁",
+              "action": "捏着玉佩僵立原地许久，低骂一句，猛地转身朝巷口跑去",
+              "position": "画面中央，转身后奔向画面深处"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "灯下的陈野捏着玉佩一动不动地站着，雨水顺着雨衣往下淌；许久，他低声骂了一句脏话，猛地转身，踩着积水朝巷口狂奔而去，身影冲出灯光圈没入黑暗。",
+          "atmosphere": "长久僵立后的爆发式逃离，昏黄灯点在他身后越缩越小",
+          "sfx": [
+            "积水中急促的奔跑脚步声",
+            "雨声"
+          ],
+          "transition_out": "fade_to_black",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0028"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    },
+    {
+      "id": "E02",
+      "title": "玉佩认主",
+      "source_range": {
+        "from_unit": "u0029",
+        "to_unit": "u0045"
+      },
+      "summary": "深夜回到出租屋的陈野被突然发光的玉佩灼入印记，掌心留下兽形绿痕；当夜他梦见雪山、黑湖与兽纹石门，门后传来像父亲的呼唤。",
+      "tail_frame_description": "最后一帧：出租屋窄床上熟睡的陈野面部特写，眉头紧锁，眼球在眼睑下急速转动，摊在枕边的右手掌心兽形印记透出微弱的幽绿光，窗外夜色沉静，画面幽暗冷调只余这一点绿光，随后渐隐黑场。",
+      "music": {
+        "mood": "eerie",
+        "style_hint": "低频合成器嗡鸣铺底，玉佩发光处叠入金属泛音与颤音弦乐，灼痛段以急促弦乐断奏推向高点，梦境段转为空灵冷冽的合成器长音，延续冷暗雨夜余韵",
+        "curve": [
+          {
+            "from_shot": "E02-SH001",
+            "to_shot": "E02-SH002",
+            "mood": "calm",
+            "intensity": "low",
+            "note": "开场基调：深夜十一点收工回到出租屋、扔湿衣换T恤的疲惫日常，情绪平稳",
+            "unit_refs": [
+              "u0029",
+              "u0030"
+            ]
+          },
+          {
+            "from_shot": "E02-SH003",
+            "to_shot": "E02-SH004",
+            "mood": "eerie",
+            "intensity": "mid",
+            "note": "转折：桌上玉佩毫无征兆地亮起，幽绿光从兽纹刻痕渗出、像活物般在玉面游走",
+            "unit_refs": [
+              "u0031",
+              "u0032"
+            ]
+          },
+          {
+            "from_shot": "E02-SH005",
+            "to_shot": "E02-SH009",
+            "mood": "tense",
+            "intensity": "high",
+            "note": "转折：玉佩遇水绿光暴涨，滚烫热流窜上手臂、如烧红铁丝塞进骨缝的剧痛，陈野咬牙硬扛不敢出声",
+            "unit_refs": [
+              "u0033",
+              "u0034",
+              "u0035",
+              "u0036",
+              "u0037",
+              "u0038"
+            ]
+          },
+          {
+            "from_shot": "E02-SH010",
+            "to_shot": "E02-SH012",
+            "mood": "ominous",
+            "intensity": "low",
+            "note": "转折：热流退去、窗外雨停，虚脱的死寂中掌心留下与玉佩异兽一模一样的印记，平静里透着不祥",
+            "unit_refs": [
+              "u0039",
+              "u0040",
+              "u0041"
+            ]
+          },
+          {
+            "from_shot": "E02-SH013",
+            "to_shot": "E02-SH015",
+            "mood": "eerie",
+            "intensity": "mid",
+            "note": "转折：入梦见雪山、黑湖与刻满兽纹的石门，门后有人喊他的名字、声音像他爸",
+            "unit_refs": [
+              "u0042",
+              "u0043",
+              "u0044",
+              "u0045"
+            ]
+          }
+        ]
+      },
+      "shots": [
+        {
+          "id": "E02-SH001",
+          "duration_sec": 4,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "雨渐小",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "疲惫",
+              "action": "推门进屋，浑身滴水，反手带上门",
+              "position": "画面右侧门口"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "出租屋内景全景：房门被推开，浑身滴水的陈野拖着疲惫的步子进屋，反手关门，昏暗的房间里只亮起一盏顶灯。",
+          "atmosphere": "深夜的狭小出租屋，冷白顶灯，湿冷疲惫",
+          "sfx": [
+            "钥匙开门声",
+            "门轴吱呀声",
+            "水滴落地声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0029"
+            ],
+            "text": "回到出租屋已经是夜里十一点。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0029"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH002",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "麻木放空",
+              "action": "把湿透的雨衣和外卖服扔进角落的桶里，套上洗变形的白T恤",
+              "position": "画面中央"
+            }
+          ],
+          "prop_refs": [],
+          "action": "陈野把湿透的雨衣和外卖服团成一团扔进角落的洗衣桶，水在桶沿溅开；他抓过那件洗变形的白T恤套上，领口松垮地挂在肩上。",
+          "atmosphere": "机械的收工日常，顶灯冷白，屋角堆着生活的潦草",
+          "sfx": [
+            "湿衣物砸进塑料桶的闷响",
+            "布料摩擦声"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0030"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH003",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "action": "按下电热水壶开关，背对桌子",
+              "position": "画面左侧灶台边，背对前景桌面"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "前景桌面、后景灶台的纵深构图：陈野按下电热水壶的开关准备泡面，背对桌子；就在水声渐起时，前景桌上的玉佩毫无征兆地亮了起来。",
+          "atmosphere": "暖黄小灯下的日常一角被突兀的幽绿光打破",
+          "sfx": [
+            "电热水壶烧水的嗡嗡声",
+            "低频的微弱嗡鸣渐起"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0031"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH004",
+          "duration_sec": 4,
+          "shot_size": "extreme_close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "玉佩大特写：幽绿色的光从兽纹的刻痕深处一丝丝渗出来，沿着纹路缓缓流动，像有生命一样在玉面上游走，明灭呼吸。",
+          "atmosphere": "幽绿光在黑暗桌面上蔓延，妖异而蛊惑",
+          "sfx": [
+            "细微的嗡鸣声，似有节律"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0032"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH005",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "惊惧",
+              "action": "猛地抓起发光的玉佩，两步冲到水槽前扔进去",
+              "position": "画面中央，冲向右侧水槽"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "手持晃动镜头：陈野猛地回头看见发光的玉佩，几乎没有思考，一把抓起它冲到水槽前狠狠扔了进去。",
+          "atmosphere": "惊惧驱动的本能反应，绿光在晃动的画面里拖出残影",
+          "sfx": [
+            "急促脚步声",
+            "玉佩磕在水槽金属面上的脆响"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0033"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH006",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "俯拍水槽近景：玉佩触到水的一瞬间，幽绿的光猛然暴涨，绿光冲出水槽，把整个金属槽壁映得通绿刺目。",
+          "atmosphere": "绿光爆裂般涨满画面，失控感扑面而来",
+          "sfx": [
+            "水花声",
+            "嗡鸣骤然拔高"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0034"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH007",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "瞳孔骤缩",
+              "action": "抬起右臂，看着自己的手臂",
+              "position": "画面中央，右臂抬于胸前"
+            }
+          ],
+          "prop_refs": [],
+          "action": "陈野的右手和小臂充满画面：一股热流的辉光从指尖窜上手臂，皮肤下的血管清晰地透出幽绿微光，光沿着血管的走向向上蔓延。",
+          "atmosphere": "皮下游走的绿光诡异骇人，手持镜头随他的颤抖轻晃",
+          "sfx": [
+            "血液奔流般的低鸣",
+            "陈野急促的呼吸"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0035"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH008",
+          "duration_sec": 4.5,
+          "shot_size": "extreme_close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "痛苦扭曲，冷汗涔涔，牙关咬得咯咯作响",
+              "action": "承受剧痛，面部肌肉痉挛",
+              "position": "面部充满画面"
+            }
+          ],
+          "prop_refs": [],
+          "action": "陈野面部大特写：五官因剧痛而扭曲，冷汗顺着鬓角滚落，牙关死死咬紧，脖颈青筋暴起，幽绿光在他脸上明灭。",
+          "atmosphere": "剧痛的窒息感，绿光打底的面部阴影抽搐",
+          "sfx": [
+            "牙关摩擦声",
+            "压抑的鼻息"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0036",
+              "u0037"
+            ],
+            "text": "疼。像有人把烧红的铁丝塞进了他的骨头缝里。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0036",
+              "u0037"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『疼』『像有人把烧红的铁丝塞进了他的骨头缝里』→ 咬牙、冷汗、面部肌肉痉挛的痛苦大特写"
+          }
+        },
+        {
+          "id": "E02-SH009",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "咬牙隐忍",
+              "action": "跪倒在水槽前的地板上，蜷起身体死死咬牙不喊出声，抬眼瞥了一下天花板",
+              "position": "画面中央偏下，蜷跪于地"
+            }
+          ],
+          "prop_refs": [],
+          "action": "俯拍中景：陈野跪倒在水槽前的地板上，整个人蜷起来，咬着牙把喊声全部压回喉咙里，只从鼻腔泄出闷哼，他痛得发抖时还下意识瞥了一眼天花板的方向。",
+          "atmosphere": "剧痛与克制的角力，狭小房间里死一般安静，只有绿光在跳",
+          "sfx": [
+            "压抑的闷哼",
+            "指甲抠住地板的声音"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0038"
+            ],
+            "text": "陈野咬着牙没喊出声，楼上的房东太太睡眠很浅。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0038"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH010",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "脱力虚脱",
+              "action": "四肢摊开瘫在地板上，胸口剧烈起伏，大口喘气",
+              "position": "画面中央，仰面躺于地板"
+            }
+          ],
+          "prop_refs": [],
+          "action": "俯拍全景：绿光已经褪尽，陈野四肢摊开瘫在地板上，白T恤被汗浸透，胸口剧烈起伏，大口大口地喘气。",
+          "atmosphere": "风暴过后的虚脱与死寂，冷白顶灯恢复了惨淡的日常感",
+          "sfx": [
+            "粗重的喘息声"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0039"
+            ],
+            "text": "不知道过了多久，热流退了。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0039",
+              "u0040"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH011",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "overhead"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "action": "摊开右手掌",
+              "position": "仅右手掌入镜，充满画面"
+            }
+          ],
+          "prop_refs": [],
+          "action": "插入镜头俯拍陈野摊开的右手：掌心多了一个淡绿色的印记，纹样清晰——正是玉佩上那头似鹿而生鱼尾的异兽，与玉佩兽纹一模一样。",
+          "atmosphere": "淡绿印记像烙进皮肉的封印，安静却不祥",
+          "sfx": [
+            "喘息渐缓"
+          ],
+          "transition_out": "cut",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0040"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH012",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "weather": "雨后初霁",
+          "characters": [],
+          "prop_refs": [],
+          "action": "从屋内望向窗户的空镜：窗玻璃上还挂着残余的水珠，窗外的雨已经停了，对面居民楼零星亮着几扇窗，夜色安静得反常。",
+          "atmosphere": "雨声消失后的空白，湿玻璃折射着城市冷光",
+          "sfx": [
+            "屋檐残水的滴答声",
+            "远处偶尔驶过的车声"
+          ],
+          "transition_out": "dissolve",
+          "narration": {},
+          "source": {
+            "unit_refs": [
+              "u0041"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH013",
+          "duration_sec": 6,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "pan",
+            "angle": "high"
+          },
+          "location_ref": "S05",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "梦境静雪",
+          "characters": [],
+          "prop_refs": [],
+          "action": "梦境大远景横摇：连绵雪山在冥色中起伏，山谷间铺开一泓漆黑如墨、平静无波的湖，镜头摇到湖畔尽头——一扇刻满兽纹的巨大石门矗立在雾气里。",
+          "atmosphere": "超现实的死寂梦境，雪的白、湖的黑、石门刻痕里的幽绿微光",
+          "sfx": [
+            "空旷的风声",
+            "低频的心跳般闷响"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0042"
+            ],
+            "text": "那一夜，陈野做了一个很长的梦。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0043"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH014",
+          "duration_sec": 5,
+          "shot_size": "full",
+          "camera": {
+            "movement": "push_in",
+            "angle": "low"
+          },
+          "location_ref": "S05",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "梦境静雪",
+          "characters": [],
+          "prop_refs": [],
+          "action": "低机位缓推石门：门身兽纹层层叠叠布满整面，刻痕深处幽绿微光呼吸般明灭；镜头逼近时，石门后面传来一个模糊而遥远的呼喊声，一声声喊着他的名字。",
+          "atmosphere": "被呼唤牵引着靠近的压迫感，石门巨大得吞没画面",
+          "sfx": [
+            "石门后传来的模糊呼喊声，遥远而回荡",
+            "低频闷响渐强"
+          ],
+          "transition_out": "cut",
+          "narration": {
+            "unit_refs": [
+              "u0044"
+            ],
+            "text": "石门后面，有人在喊他的名字。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0043",
+              "u0044"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH015",
+          "duration_sec": 4.5,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "home",
+              "expression": "睡梦中眉头紧锁，眼球在眼睑下急速转动",
+              "action": "熟睡，右手摊在枕边，掌心印记透出微光",
+              "position": "面部占画面上半，枕边的右手掌心在画面下角"
+            }
+          ],
+          "prop_refs": [],
+          "action": "切回出租屋：床上熟睡的陈野面部特写缓缓推近，他眉头紧锁，眼球在眼睑下急速转动，呼吸微乱；摊在枕边的右手掌心，淡绿色的兽形印记正随着呼喊声的余韵隐隐发亮。",
+          "atmosphere": "黑暗房间里只剩掌心一点幽绿微光，梦与现实的边界发烫",
+          "sfx": [
+            "极轻的呼喊回声残响",
+            "均匀又微乱的呼吸声"
+          ],
+          "transition_out": "fade_to_black",
+          "narration": {
+            "unit_refs": [
+              "u0045"
+            ],
+            "text": "那个声音，像他爸。"
+          },
+          "source": {
+            "unit_refs": [
+              "u0045"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『那个声音，像他爸』→ 熟睡中陈野眉头紧锁、眼球急转的面部特写，掌心兽形印记随余音隐隐发亮"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.15
+  }
+}

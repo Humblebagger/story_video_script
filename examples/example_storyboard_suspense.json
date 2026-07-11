@@ -1,0 +1,727 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "深夜来电·第一章 十一点十七分",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "写实电影风格，冷峻都市质感，浅景深",
+      "art_style": "realistic",
+      "color_tone": "冷蓝色调，高对比",
+      "negative_prompt": "卡通、动漫、文字、水印、logo、畸形手指、多余肢体、过曝、低分辨率"
+    },
+    "video": {
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920",
+      "target_platform": "抖音"
+    },
+    "narration": {
+      "mode": "original_text",
+      "tts_voice": "female_calm_low"
+    }
+  },
+  "source": {
+    "work_title": "深夜来电",
+    "chapter": "第一章 十一点十七分",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "雨下到第三个小时，城市像被泡在墨水里。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0002",
+        "text": "林晚坐在出租屋的窗边，手机屏幕亮了。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0003",
+        "text": "是一个陌生号码，归属地显示：本市。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0004",
+        "text": "她犹豫了三秒，还是接了。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0005",
+        "text": "“林小姐，你姐姐出事前，最后见的人是我。”",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0006",
+        "text": "电话那头是个男人，声音平静得不像在谈论一桩死亡。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0007",
+        "text": "林晚的呼吸停了半拍，三年了，从没有人主动提起姐姐。",
+        "para": 1,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0008",
+        "text": "“你是谁？”",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0009",
+        "text": "她听见自己的声音在发抖。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0010",
+        "text": "“明天上午十点，老码头咖啡馆。带上你姐姐留给你的那把钥匙。”",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0011",
+        "text": "电话挂断了。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0012",
+        "text": "窗外一道闪电劈开夜空，她才发现自己的指甲已经掐进了掌心。",
+        "para": 1,
+        "kind": "action"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "林晚",
+        "aliases": [
+          "她",
+          "林小姐"
+        ],
+        "appearance": {
+          "gender": "女",
+          "age": "26岁左右",
+          "hair": "黑色及肩直发，微乱，未打理",
+          "face": "脸型清瘦，皮肤偏白，眼下有淡淡的疲惫青影，眼神警觉",
+          "body": "身形清瘦，约165cm",
+          "distinguishing_marks": "左手腕戴一条细旧的红绳（推导补全，姐姐遗物式细节的伏笔留白）"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "深灰色宽松针织开衫，内搭黑色棉质T恤，黑色居家长裤，赤足穿灰色棉拖鞋"
+          }
+        ],
+        "visual_prompt": "写实电影风格，冷峻都市质感，浅景深。全身正面站立，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落。26岁左右的清瘦年轻女性，黑色及肩直发微乱，皮肤偏白，眼下有淡淡疲惫青影，眼神警觉。身穿深灰色宽松针织开衫，内搭黑色棉质T恤，黑色居家长裤，灰色棉拖鞋，左手腕系一条细旧红绳。",
+        "reference_images": [],
+        "voice": {
+          "tone": "低而克制，紧张时带颤音",
+          "tts_voice": "female_young_adult"
+        },
+        "persona_notes": "独居的都市年轻女性，三年前姐姐意外身亡，此后独自压抑地生活；外表平静，内心警觉而未愈合。"
+      },
+      {
+        "id": "C02",
+        "name": "电话中的男人",
+        "aliases": [
+          "男人",
+          "电话那头",
+          "陌生号码来电者"
+        ],
+        "appearance": {
+          "gender": "男",
+          "age": "40岁上下（推导补全，声音沉稳的中年男性）",
+          "hair": "黑色短发，鬓角微白",
+          "face": "面部轮廓硬朗，神情冷静克制，眼神深不见底",
+          "body": "中等偏高身材，约180cm，肩背挺直",
+          "distinguishing_marks": "本章仅以电话声音出场，形象为后续集数预置"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "深色长款风衣，内搭炭灰色高领毛衣，深色西裤，黑色皮鞋"
+          }
+        ],
+        "visual_prompt": "写实电影风格，冷峻都市质感，浅景深。全身正面站立，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落。40岁上下的男性，中等偏高身材，黑色短发鬓角微白，面部轮廓硬朗，眼神深沉冷静。身穿深色长款风衣，内搭炭灰色高领毛衣，深色西裤，黑色皮鞋。",
+        "reference_images": [],
+        "voice": {
+          "tone": "低沉平静，语速缓慢，不带感情起伏",
+          "tts_voice": "male_middle_aged"
+        },
+        "persona_notes": "自称是林晚姐姐出事前最后见到的人，知晓其死亡内情；说话平静得反常，带有掌控感。本章仅有画外音，不在画面中出现。"
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "林晚的出租屋",
+        "era": "现代",
+        "interior_exterior": "interior",
+        "visual_prompt": "写实电影风格，冷峻都市质感。无人物的狭小单间出租屋夜景：靠窗一张旧木桌和一把椅子，窗台上放着水杯，大面积玻璃窗上爬满雨痕，窗外是失焦的城市霓虹与雨幕，室内灯未开，只有窗外冷蓝光线渗入，墙面斑驳，整体冷蓝色调，高对比，浅景深。",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          }
+        ],
+        "lighting_defaults": "夜晚无主灯，光源仅为窗外城市霓虹的冷蓝光、雨夜环境光与手机屏幕的白光，偶有闪电的强冷白光瞬间打亮"
+      },
+      {
+        "id": "S02",
+        "name": "雨夜城市全景",
+        "era": "现代",
+        "interior_exterior": "exterior",
+        "visual_prompt": "写实电影风格，冷峻都市质感。无人物的城市雨夜大全景：密集的高楼轮廓浸在浓重的深蓝黑色雨幕中，如同泡在墨水里，霓虹与窗光被雨水晕开成模糊光斑，天空低沉压抑，雨丝密集可见，冷蓝色调，高对比。",
+        "angles": [
+          {
+            "angle": "establishing"
+          }
+        ],
+        "lighting_defaults": "深夜，无月光，仅有城市霓虹与楼宇灯光在雨中晕散的冷光"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "林晚的手机",
+        "visual_prompt": "写实电影风格。一部黑色直板智能手机，屏幕亮起显示来电界面：陌生号码，归属地标注“本市”，屏幕冷白光，机身有细微使用划痕，纯净背景，特写质感。",
+        "reference_images": []
+      },
+      {
+        "id": "P02",
+        "name": "姐姐留下的钥匙",
+        "visual_prompt": "写实电影风格。一把老式黄铜钥匙，齿纹磨损发亮，钥匙柄上系着一截褪色的红绳，铜面有岁月氧化的暗斑，纯净背景，特写质感。",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "十一点十七分的来电",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0012"
+      },
+      "summary": "雨夜，独居的林晚接到陌生男人来电，对方自称是姐姐出事前最后见的人，并要求她次日携带姐姐留下的钥匙到老码头咖啡馆见面。电话挂断，林晚在闪电中发现自己指甲已掐进掌心。",
+      "tail_frame_description": "俯拍特写：林晚缓缓摊开的掌心上有四道泛红的月牙形指甲压痕，被窗外闪电的冷白光瞬间照亮，背景是失焦的雨痕玻璃窗与深蓝夜色，冷蓝色调高对比，画面渐隐至黑。",
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 4,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S02",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [],
+          "prop_refs": [],
+          "action": "深夜城市大全景，密集的雨幕笼罩高楼群，霓虹光斑在雨中晕散，整座城市浸在墨水般的深蓝黑色里。",
+          "atmosphere": "压抑、阴冷、被雨水浸透的孤城感",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "雨下到第三个小时，城市像被泡在墨水里。"
+          },
+          "sfx": [
+            "持续的密集雨声",
+            "远处闷雷"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "神情倦怠，目光望着窗外发怔",
+              "action": "侧身坐在窗边的椅子上，被桌上突然亮起的手机屏幕光打亮侧脸，视线缓缓移向手机",
+              "position": "画面左侧靠窗，手机在右下方桌面上"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "昏暗的出租屋内，林晚坐在爬满雨痕的窗边，桌上手机屏幕突然亮起，冷白光在黑暗中打亮她的侧脸。",
+          "atmosphere": "孤寂、静谧中被突然打破的一点亮光",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "text": "林晚坐在出租屋的窗边，手机屏幕亮了。"
+          },
+          "sfx": [
+            "雨点敲打玻璃声",
+            "手机震动嗡鸣"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 3,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "pov"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "林晚视角俯看桌面：手机来电界面占满屏幕，一串陌生号码，下方一行小字标注归属地——本市。",
+          "atmosphere": "冷白屏幕光刺破黑暗，未知与不安",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "text": "是一个陌生号码，归属地显示：本市。"
+          },
+          "sfx": [
+            "手机持续震动声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眉头微蹙，眼神在屏幕上停顿",
+              "action": "手指悬在屏幕上方停了三秒，随后按下接听键，将手机贴到耳边",
+              "position": "画面中央，手机由桌面提至耳侧"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "林晚的手指悬在亮起的屏幕上方，停顿三秒，随后滑下接听，把手机缓缓贴到耳边。",
+          "atmosphere": "迟疑与决断之间的短暂静默",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "text": "她犹豫了三秒，还是接了。"
+          },
+          "sfx": [
+            "震动声戛然而止"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 6,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "由平静转为僵住，瞳孔微缩",
+              "action": "手机贴耳静听，身体逐渐绷紧，一动不动",
+              "position": "画面中央偏右，脸部被窗外冷光勾出轮廓"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "林晚持机贴耳的近景，电话里传来男人平静的声音，她听着听着整个人僵住，只有窗上的雨痕影子在她脸上流动。",
+          "atmosphere": "平静话语与死亡话题之间的巨大反差，寒意渗入",
+          "dialogue": [
+            {
+              "type": "voiceover",
+              "character_ref": "C02",
+              "text": "林小姐，你姐姐出事前，最后见的人是我。",
+              "emotion": "平静、不带感情起伏",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "text": "电话那头是个男人，声音平静得不像在谈论一桩死亡。"
+          },
+          "sfx": [
+            "电话电流底噪",
+            "隐约雨声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0005",
+              "u0006"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 3,
+          "shot_size": "extreme_close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "呼吸凝滞，眼眶瞬间泛起水光，睫毛轻颤",
+              "action": "嘴唇微张又抿紧，喉头滚动了一下，呼吸停顿半拍后才缓缓吐出",
+              "position": "面部占满画面"
+            }
+          ],
+          "prop_refs": [],
+          "action": "林晚眼部与面部的大特写：呼吸在一瞬间停住，睫毛颤动，眼中的光被窗外雨影切碎，缓慢推近。",
+          "atmosphere": "被尘封三年的伤口被骤然揭开的窒息感",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "text": "林晚的呼吸停了半拍，三年了，从没有人主动提起姐姐。"
+          },
+          "sfx": [
+            "雨声渐弱，近乎无声",
+            "一次压抑的吸气声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『呼吸停了半拍』『三年了，从没有人主动提起姐姐』→ 将同句身体反应落为面部大特写：呼吸凝滞、睫毛轻颤、眼眶泛起水光，以缓慢推近外化被触碰旧伤的心理震动"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "强作镇定却掩不住恐惧，嘴唇发颤",
+              "action": "攥紧手机贴在耳边，开口发问，握机的指节泛白",
+              "position": "画面中央，背景是失焦的房间深处"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "反打机位：林晚攥紧手机开口质问，声音出口的瞬间连她自己都听出了颤抖，握机的手指关节泛白。",
+          "atmosphere": "恐惧压过警觉，声音在寂静房间里显得单薄",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "你是谁？",
+              "emotion": "发颤、恐惧中带着质问",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "text": "她听见自己的声音在发抖。"
+          },
+          "sfx": [
+            "雨声回归",
+            "电话底噪"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008",
+              "u0009"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 6,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "屏息聆听，眼神随对方话语逐渐睁大",
+              "action": "静止持机贴耳，另一只手无意识地按在窗台上",
+              "position": "画面偏左，右侧留出雨痕玻璃窗"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "正打近景：男人的声音继续从听筒传出，逐字下达指令，林晚一动不动地听着，窗玻璃上的雨影在她脸上缓缓下淌。",
+          "atmosphere": "对方单方面掌控节奏的压迫感，指令如同判决",
+          "dialogue": [
+            {
+              "type": "voiceover",
+              "character_ref": "C02",
+              "text": "明天上午十点，老码头咖啡馆。带上你姐姐留给你的那把钥匙。",
+              "emotion": "平静、不容置疑的命令口吻",
+              "verbatim": true
+            }
+          ],
+          "sfx": [
+            "电话电流底噪",
+            "窗外雨声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 2,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "手机屏幕特写：通话界面跳出“通话结束”，屏幕光暗下去，忙音短促响起后归于死寂。",
+          "atmosphere": "戛然而止的断裂感，问题悬在半空",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "text": "电话挂断了。"
+          },
+          "sfx": [
+            "嘟——的忙音",
+            "屏幕熄灭的静默"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨伴闪电",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "怔忡失神，被闪电惊得瞳孔一缩",
+              "action": "维持持机贴耳的姿势僵在窗边，闪电的冷白强光瞬间打亮她全身，垂在身侧的另一只手攥成拳",
+              "position": "画面中央，身后是被闪电照亮的窗户"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "窗外一道闪电劈开夜空，惨白强光穿透雨痕玻璃瞬间照亮房间，林晚僵在原地，垂在身侧的手攥成一个紧拳。",
+          "atmosphere": "天光炸裂的瞬间，惊惧被照得无所遁形",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0012"
+            ],
+            "text": "窗外一道闪电劈开夜空，她才发现自己的指甲已经掐进了掌心。"
+          },
+          "sfx": [
+            "炸裂的雷声",
+            "雨声骤密"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0012"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 3,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "overhead"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "暴雨伴闪电",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "画外，仅手部入镜",
+              "action": "紧攥的拳缓缓摊开，掌心朝上",
+              "position": "手部占满画面下半部"
+            }
+          ],
+          "prop_refs": [],
+          "action": "俯拍特写：紧攥的手缓缓摊开，掌心上四道月牙形的指甲压痕泛着红，闪电余光在皮肤上明灭。",
+          "atmosphere": "疼痛后知后觉，恐惧在皮肤上留下的实证",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [],
+            "text": ""
+          },
+          "sfx": [
+            "渐远的雷声余音",
+            "雨声延续"
+          ],
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0012"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.09
+  }
+}

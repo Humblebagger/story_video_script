@@ -1,0 +1,859 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "山河故人帖·夜宴",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "中国水墨工笔风格，留白构图，古画质感",
+      "art_style": "ink-wash",
+      "color_tone": "墨色为主，朱砂点缀",
+      "negative_prompt": "现代元素、照片写实、文字水印、鲜艳饱和色、低质量、畸形手部"
+    },
+    "video": {
+      "aspect_ratio": "16:9",
+      "resolution": "1920x1080",
+      "target_platform": "B站"
+    },
+    "narration": {
+      "mode": "selective",
+      "tts_voice": "male_ancient"
+    }
+  },
+  "source": {
+    "work_title": "山河故人帖",
+    "chapter": "卷二 夜宴",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "是夜，雪满长安。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0002",
+        "text": "沈太傅设宴于听雪楼，满座朱紫，觥筹交错。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0003",
+        "text": "李昭衣白衣按剑，立于阶下，不饮不语。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0004",
+        "text": "太傅举杯遥指之，笑曰：“李郎年少成名，何故郁郁？”",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0005",
+        "text": "座中皆笑。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0006",
+        "text": "李昭衣不答，只将腰间旧剑解下，横置于案。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0007",
+        "text": "剑鞘斑驳，隐见血痕。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0008",
+        "text": "满堂笑声渐熄。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0009",
+        "text": "太傅面色微变，杯中酒晃出涟漪。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0010",
+        "text": "昔年北关一役，三千骑尽没于风雪，唯此剑归。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0011",
+        "text": "李昭衣执剑起身，一字一句道：“此剑之主，临终托我问太傅一句话。”",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0012",
+        "text": "烛火摇曳，映得他眉目如霜。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0013",
+        "text": "“粮草，为何迟了七日？”",
+        "para": 1,
+        "kind": "dialogue"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "李昭衣",
+        "aliases": [
+          "李昭衣",
+          "李郎",
+          "他"
+        ],
+        "appearance": {
+          "age": "二十二岁上下",
+          "gender": "男",
+          "body": "身形颀长挺拔，久经战阵的精悍轮廓，肩背笔直",
+          "face": "面容清峻，颧线分明，唇薄而紧抿，神情冷肃",
+          "hair": "乌黑长发以素色木簪束成高髻，鬓发利落",
+          "eyes": "凤目狭长，眼神冷冽如霜，眉锋斜飞入鬓",
+          "distinguishing_marks": "左手常按剑柄，指节因常年握剑生有薄茧"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "通身素白窄袖长衣，白色革带束腰，腰间悬旧剑，白色长靴，无任何纹饰"
+          }
+        ],
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感。全身正面立像，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落。二十二岁上下的年轻男子，身形颀长挺拔，面容清峻，凤目狭长，眉锋斜飞，乌黑长发以素色木簪束高髻，通身素白窄袖长衣，白色革带束腰，白色长靴，腰间悬一柄鞘身斑驳的旧剑。",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_young_cold",
+          "tone": "低沉克制，语速缓慢，一字一顿，压着情绪"
+        },
+        "persona_notes": "年少成名的边军将领，北关一役旧部尽殁的幸存见证者；外表沉静，内里压抑着多年的悲愤与质问。"
+      },
+      {
+        "id": "C02",
+        "name": "沈太傅",
+        "aliases": [
+          "沈太傅",
+          "太傅"
+        ],
+        "appearance": {
+          "age": "六十岁上下",
+          "gender": "男",
+          "body": "体态富贵微丰，久居高位的雍容仪态",
+          "face": "面皮白净微垂，三缕长须修剪齐整，笑纹深而笑意不达眼底",
+          "hair": "花白头发梳理一丝不苟，戴玄色进贤冠",
+          "eyes": "细长老眼，含笑时眯起，惊变时瞳光微缩",
+          "distinguishing_marks": "右手拇指戴白玉扳指，持杯姿势极稳"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "紫色织金大袖官袍，玉带围腰，玄色进贤冠，锦缘广袖"
+          }
+        ],
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感。全身正面立像，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落。六十岁上下的老年高官，体态微丰雍容，面皮白净，三缕齐整长须，花白头发戴玄色进贤冠，身着紫色织金大袖官袍，玉带围腰，右手拇指戴白玉扳指。",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_old_smooth",
+          "tone": "圆滑从容，笑语带锋，遇变时短暂失稳"
+        },
+        "persona_notes": "位极人臣的老太傅，夜宴的主人；谈笑自如的表象下隐藏着与北关粮草延误相关的旧事。"
+      },
+      {
+        "id": "C03",
+        "name": "满座宾客",
+        "aliases": [
+          "满座朱紫",
+          "座中",
+          "满堂"
+        ],
+        "appearance": {
+          "body": "数十名中老年朝官显贵，分列宴席两侧，姿态松弛享乐",
+          "distinguishing_marks": "皆着朱紫官服，冠带齐整，案前杯盏罗列"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "朱色与紫色官袍混列，冠带齐整"
+          }
+        ],
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感。群像：数十名中老年朝官显贵分席而坐，皆着朱紫官服，冠带齐整，举杯谈笑，纯白背景，中性群体姿态，全身完整入镜。",
+        "reference_images": []
+      },
+      {
+        "id": "C04",
+        "name": "北关三千骑",
+        "aliases": [
+          "三千骑"
+        ],
+        "appearance": {
+          "body": "三千名边军骑兵，人马俱疲，在漫天风雪中冲锋、倒下的群体剪影",
+          "distinguishing_marks": "皆披玄色铁甲，甲上覆雪，残破军旗猎猎"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "玄色铁甲覆雪，破损披风，持矛佩刀"
+          }
+        ],
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感。群像：漫天风雪中的边军骑兵队列剪影，玄色铁甲覆雪，残破军旗，人马前仆后继，墨色浓淡表现风雪吞没之势。",
+        "reference_images": []
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "长安城雪夜全景",
+        "era": "古代中国·唐风都城",
+        "interior_exterior": "exterior",
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感。大雪之夜的长安城全景：连绵坊市屋脊覆雪，城楼与塔影层叠远去，夜空墨色晕染，雪片如絮，唯几点朱色灯火点缀，无人物。",
+        "angles": [
+          {
+            "angle": "establishing"
+          }
+        ],
+        "lighting_defaults": "夜色墨蓝，雪面反光微亮，零星暖色灯火"
+      },
+      {
+        "id": "S02",
+        "name": "听雪楼宴厅",
+        "era": "古代中国·唐风都城",
+        "interior_exterior": "interior",
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感。高楼宴厅内景：主位设于高台，两侧长案分列，烛台林立，暖黄烛光，梁柱悬帛，窗外可见落雪，阶下留出开阔空地，无人物。",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "满堂暖黄烛光，明暗层次分明，窗外冷雪蓝光对比"
+      },
+      {
+        "id": "S03",
+        "name": "北关雪原",
+        "era": "古代中国·北地边关",
+        "interior_exterior": "exterior",
+        "visual_prompt": "中国水墨工笔风格，留白构图，古画质感，整体褪色泛灰的回忆调。北地边关雪原：天地一片苍茫，风雪横扫，远处关隘城墙隐没在雪幕中，地面积雪起伏，无人物。",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "overhead"
+          }
+        ],
+        "lighting_defaults": "昼间雪光惨白，天色铅灰，能见度低"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "旧剑",
+        "visual_prompt": "中国水墨工笔风格，古画质感。一柄古朴长剑：剑鞘漆色斑驳剥落，鞘身隐约沁着暗褐色血痕，剑柄缠绳磨损发亮，形制朴实无华，纯白背景。",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "听雪楼夜宴",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0013"
+      },
+      "summary": "雪夜长安，沈太傅设宴听雪楼。李昭衣白衣按剑立于阶下，面对太傅的揶揄不答一语，只解下北关一役唯一归来的旧剑横置案上。满堂笑声渐熄，李昭衣代剑主临终之托，向太傅发出诛心一问：粮草为何迟了七日。",
+      "tail_frame_description": "极近特写：烛光映照下李昭衣冷冽如霜的双眼占据画面，瞳中跳动一点烛焰，背景是虚化的满堂朱紫与凝滞的沈太傅身影，墨色沉沉，朱砂色烛火为唯一暖色，画面渐隐入黑。",
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 4,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "大雪",
+          "characters": [],
+          "prop_refs": [],
+          "action": "大雪之夜的长安城全景，屋脊塔影尽覆白雪，雪片纷落，镜头缓缓推向城中一处灯火通明的高楼。",
+          "atmosphere": "苍茫静谧，雪夜孤清",
+          "sfx": [
+            "风雪声",
+            "远处更漏"
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "是夜，雪满长安。"
+          },
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 6,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "track",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "含笑自得",
+              "action": "居主位举杯，与左右谈笑",
+              "position": "高台主位"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "欢洽",
+              "action": "分列两侧长案，举杯相碰，谈笑宴饮",
+              "position": "两侧宴席"
+            }
+          ],
+          "prop_refs": [],
+          "action": "听雪楼宴厅内景，镜头横移掠过两侧宴席：满座宾客举杯相碰，杯盏交错，烛光煌煌，沈太傅居高台主位谈笑。",
+          "atmosphere": "烛火煌煌，喧闹富贵",
+          "sfx": [
+            "人声笑语",
+            "杯盏碰击"
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "text": "沈太傅设宴于听雪楼，满座朱紫，觥筹交错。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 5,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "冷肃沉默",
+              "action": "独立于阶下，左手按住腰间剑柄，身前案上酒杯未动，一言不发",
+              "position": "阶下，独自一人"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "全景：李昭衣独自立于阶下，左手按住腰间剑柄，身姿笔直不动，身前酒杯满而未饮，与身后喧闹宴席形成一静一动的对照。",
+          "atmosphere": "喧闹中的一点孤冷",
+          "sfx": [
+            "宴席喧闹声压低作背景"
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "text": "李昭衣白衣按剑，立于阶下，不饮不语。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "笑意揶揄",
+              "action": "举起酒杯，遥遥指向阶下的李昭衣，笑着开口",
+              "position": "高台主位"
+            }
+          ],
+          "prop_refs": [],
+          "action": "越过李昭衣肩头拍向高台：沈太傅举杯遥遥一指，面带笑意开口发问。",
+          "atmosphere": "笑里藏锋",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "李郎年少成名，何故郁郁？",
+              "emotion": "揶揄含笑",
+              "verbatim": true
+            }
+          ],
+          "sfx": [],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 2,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "pan",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "哄笑",
+              "action": "纷纷侧身相顾，举袖掩口大笑",
+              "position": "两侧宴席"
+            }
+          ],
+          "prop_refs": [],
+          "action": "镜头横摇掠过两侧宴席，满座宾客相顾哄笑，笑声起伏。",
+          "atmosphere": "哄笑喧腾，带着看客的轻慢",
+          "sfx": [
+            "满座哄笑声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "沉默冷峻",
+              "action": "不作回答，双手将腰间旧剑解下，缓缓横放在身前案上",
+              "position": "阶下案前"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "中景：李昭衣对满堂哄笑不置一词，双手解下腰间旧剑，动作缓慢而郑重地将剑横置于案上，剑身落案发出一声轻响。",
+          "atmosphere": "笑声中一个沉默而郑重的动作",
+          "sfx": [
+            "剑鞘落案的钝响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 3,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S02",
+          "location_angle": "overhead",
+          "time_of_day": "night",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "插入特写：案上旧剑，剑鞘漆色斑驳剥落，鞘身隐约可见暗褐色血痕，烛光在痕迹上微微晃动，镜头缓缓推近。",
+          "atmosphere": "旧物无声，血痕刺目",
+          "sfx": [],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 3,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "笑容僵住，面面相觑",
+              "action": "笑声渐弱，纷纷放下酒杯，目光聚向案上的剑",
+              "position": "两侧宴席"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "冷肃",
+              "action": "立于案后不动",
+              "position": "阶下案前"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "全厅广角：满堂笑声由喧转寂，宾客笑容一个个僵在脸上，杯盏放下，所有目光渐渐聚向阶下案上那柄剑。",
+          "atmosphere": "笑声熄灭后的死寂逼近",
+          "sfx": [
+            "笑声渐弱至无",
+            "杯盏轻放声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "笑意褪去，面色微变，眼神一紧",
+              "action": "持杯的手几不可察地一颤",
+              "position": "高台主位"
+            }
+          ],
+          "prop_refs": [],
+          "action": "近景特写：沈太傅脸上的笑意褪去，面色微微一变，持杯的手指几不可察地收紧、一颤。",
+          "atmosphere": "从容表象出现第一道裂缝",
+          "sfx": [],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 2,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "overhead"
+          },
+          "location_ref": "S02",
+          "location_angle": "overhead",
+          "time_of_day": "night",
+          "characters": [],
+          "prop_refs": [],
+          "action": "插入俯拍特写：太傅手中酒杯，杯中酒液晃出一圈圈细密涟漪，烛影在酒面碎裂晃动。",
+          "atmosphere": "一杯酒的涟漪泄露了内心的震荡",
+          "sfx": [],
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 6,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "track",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "establishing",
+          "time_of_day": "day",
+          "weather": "暴雪",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "expression": "群体剪影，无个体表情",
+              "action": "骑兵队列在漫天风雪中前仆后继，人马接连倒下，被雪幕吞没",
+              "position": "雪原纵深处"
+            }
+          ],
+          "prop_refs": [],
+          "action": "回忆闪回（画面整体褪色泛灰、边缘虚化）：北关雪原，风雪蔽天，三千骑兵的剪影在雪幕中前仆后继，接连倒下，渐次被风雪吞没，残旗倾折。",
+          "atmosphere": "苍茫悲怆，风雪如晦",
+          "sfx": [
+            "狂风呼啸",
+            "闷沉马嘶与金铁声，如隔雪幕"
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "text": "昔年北关一役，三千骑尽没于风雪，唯此剑归。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH012",
+          "duration_sec": 3,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "overhead",
+          "time_of_day": "day",
+          "weather": "暴雪",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "回忆闪回（褪色泛灰调）：雪原上尸骸旗帜俱被白雪掩去轮廓，唯有那柄旧剑斜插雪中，剑鞘上血痕未被雪盖住，镜头推近剑身。",
+          "atmosphere": "万籁俱寂，唯剑独存",
+          "sfx": [
+            "风声渐弱"
+          ],
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH013",
+          "duration_sec": 5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "冷肃，目光直逼高台",
+              "action": "执起案上旧剑，缓缓起身站直，一字一句开口",
+              "position": "阶下案前"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "越过沈太傅肩头拍向阶下：李昭衣执起案上旧剑，缓缓起身，目光直逼高台，一字一句开口。",
+          "atmosphere": "死寂中字字如钉",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "此剑之主，临终托我问太傅一句话。",
+              "emotion": "冷肃克制，一字一句",
+              "verbatim": true
+            }
+          ],
+          "sfx": [],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH014",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眉目冷冽如覆霜雪",
+              "action": "静立不动，烛光在面上明灭",
+              "position": "阶下案前"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "近景特写：烛火摇曳，光影在李昭衣脸上明灭晃动，映得他眉目冷冽如霜。",
+          "atmosphere": "烛影摇红，面如霜雪",
+          "sfx": [
+            "烛芯轻爆的噼啪声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0012"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH015",
+          "duration_sec": 4,
+          "shot_size": "extreme_close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "压抑的悲愤自眼底翻起",
+              "action": "直视高台，缓缓问出最后一句",
+              "position": "阶下案前"
+            }
+          ],
+          "prop_refs": [],
+          "action": "极近特写：李昭衣的双眼占满画面，瞳中一点烛焰跳动，镜头缓缓推近，他一字一顿问出那句话。",
+          "atmosphere": "诛心一问，满堂如坠冰窟",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "粮草，为何迟了七日？",
+              "emotion": "压抑的悲愤，一字一顿",
+              "verbatim": true
+            }
+          ],
+          "sfx": [],
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0013"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.0
+  }
+}

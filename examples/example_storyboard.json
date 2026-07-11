@@ -1,0 +1,440 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "断桥雪（示例章节）",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "中国水墨风格混合anime风格，电影感光影，细腻笔触",
+      "art_style": "ink-wash-anime",
+      "color_tone": "冷色调，低饱和，雪夜青灰",
+      "negative_prompt": "文字，水印，多余肢体，模糊"
+    },
+    "video": {
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920",
+      "target_platform": "抖音"
+    },
+    "narration": {
+      "mode": "original_text",
+      "tts_voice": "male_deep_calm"
+    }
+  },
+  "source": {
+    "work_title": "断桥雪",
+    "chapter": "第一章 雪夜",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "大雪落了三日，断桥上再无行人。",
+        "para": 1,
+        "kind": "description"
+      },
+      {
+        "id": "u0002",
+        "text": "沈孤鸿立在桥头，斗笠上积了厚厚一层白。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0003",
+        "text": "他在等一个人，一个十年未见的人。",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0004",
+        "text": "十年前也是这样的雪夜，师兄把剑抵在他咽喉，说的最后一句话是：再见面，便是生死。",
+        "para": 2,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0005",
+        "text": "桥那头传来踏雪声。",
+        "para": 3,
+        "kind": "action"
+      },
+      {
+        "id": "u0006",
+        "text": "沈孤鸿缓缓抬起头，手已按上刀柄。",
+        "para": 3,
+        "kind": "action"
+      },
+      {
+        "id": "u0007",
+        "text": "“师弟，别来无恙。”来人的声音混在风雪里，冷得像冰。",
+        "para": 4,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0008",
+        "text": "沈孤鸿心口一紧，指节泛白。",
+        "para": 4,
+        "kind": "psychology"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "沈孤鸿",
+        "aliases": [
+          "师弟",
+          "他"
+        ],
+        "appearance": {
+          "age": "28岁",
+          "gender": "男",
+          "body": "清瘦挺拔",
+          "face": "轮廓冷峻，薄唇",
+          "hair": "黑色长发束高马尾，鬓角碎发",
+          "eyes": "细长凤眼，眼神冷冽",
+          "distinguishing_marks": "左眉尾一道旧疤"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "青灰色粗布劲装，黑色束腰，肩披蓑衣，头戴竹斗笠，腰悬黑鞘长刀，黑色长靴"
+          }
+        ],
+        "visual_prompt": "28岁男性，清瘦挺拔，轮廓冷峻，细长凤眼眼神冷冽，左眉尾旧疤，黑色长发束高马尾，青灰色粗布劲装黑色束腰，肩披蓑衣头戴竹斗笠，腰悬黑鞘长刀，黑色长靴，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [
+          {
+            "view": "front",
+            "uri": "assets/C01_front.png"
+          },
+          {
+            "view": "side",
+            "uri": "assets/C01_side.png"
+          }
+        ],
+        "voice": {
+          "tts_voice": "male_low",
+          "tone": "语速慢，尾音短促"
+        },
+        "persona_notes": "寡言，情绪内收；紧张时习惯按刀柄"
+      },
+      {
+        "id": "C02",
+        "name": "谢无衣（师兄）",
+        "aliases": [
+          "师兄",
+          "来人"
+        ],
+        "appearance": {
+          "age": "35岁",
+          "gender": "男",
+          "body": "高大挺直",
+          "face": "面容俊朗但眉目肃杀",
+          "hair": "黑发半束，几缕白发",
+          "eyes": "深邃，含审视"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "玄色大氅内衬暗红武服，背负长剑，皮质护腕，黑色长靴"
+          }
+        ],
+        "visual_prompt": "35岁男性，高大挺直，面容俊朗眉目肃杀，黑发半束夹杂几缕白发，玄色大氅内衬暗红武服，背负长剑，皮质护腕，黑色长靴，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_cold",
+          "tone": "平缓，字字清晰"
+        }
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "断桥（雪夜）",
+        "era": "古代武侠，宋代江南",
+        "interior_exterior": "exterior",
+        "visual_prompt": "古代江南石拱断桥，积雪覆盖桥面与石栏，桥下河面结薄冰，远处村落灯火依稀，夜空飘雪，无人物，纯场景",
+        "angles": [
+          {
+            "angle": "establishing",
+            "uri": "assets/S01_establishing.png"
+          },
+          {
+            "angle": "front",
+            "uri": "assets/S01_front.png"
+          },
+          {
+            "angle": "reverse",
+            "uri": "assets/S01_reverse.png"
+          }
+        ],
+        "lighting_defaults": "夜，雪地反光的冷青色调，远处暖色灯火点缀"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "黑鞘长刀",
+        "visual_prompt": "古代长刀，纯黑刀鞘，鞘身缠深灰刀绳，刀柄缠黑布，纯白背景，单独展示，无文字水印",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "桥头重逢",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0008"
+      },
+      "summary": "雪夜断桥，沈孤鸿等来十年未见的师兄",
+      "tail_frame_description": "近景：沈孤鸿按刀的手部特写，指节泛白，雪花落在手背，背景虚化为谢无衣的玄色身影，冷青色调",
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 4,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "大雪",
+          "characters": [],
+          "action": "俯瞰雪夜中的断桥全景，大雪纷飞，桥面积雪无一个脚印，桥下河面结冰，远处村落灯火稀疏，镜头缓缓推向桥头",
+          "atmosphere": "空寂清冷，雪落无声",
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "大雪落了三日，断桥上再无行人。"
+          },
+          "sfx": [
+            "风雪声",
+            "远处隐约犬吠"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "大雪",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "低垂眼帘，面无表情",
+              "action": "静立桥头一动不动，斗笠和蓑衣上积着厚雪",
+              "position": "画面中央偏右，侧对镜头"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "沈孤鸿立在桥头，斗笠上积了厚厚一层雪，蓑衣边缘结霜，一动不动如同雪雕",
+          "atmosphere": "孤绝，静",
+          "narration": {
+            "unit_refs": [
+              "u0002",
+              "u0003"
+            ],
+            "text": "沈孤鸿立在桥头，斗笠上积了厚厚一层白。他在等一个人，一个十年未见的人。"
+          },
+          "sfx": [
+            "风声渐弱"
+          ],
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0002",
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 5,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "handheld",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "大雪",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "眼神狠戾",
+              "action": "持剑抵向镜头（沈孤鸿视角），剑尖在画面下缘寒光闪动",
+              "position": "画面中央，逼近镜头"
+            }
+          ],
+          "action": "闪回（画面转为褪色的旧记忆色调）：谢无衣持剑抵在镜头咽喉位置（POV视角），剑刃寒光，他俯视镜头开口，雪花在两人之间飘落",
+          "atmosphere": "回忆闪回：画面泛白褪色，边缘虚化，压迫感",
+          "dialogue": [
+            {
+              "type": "voiceover",
+              "character_ref": "C02",
+              "text": "再见面，便是生死。",
+              "emotion": "冷硬，一字一顿",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "text": "十年前也是这样的雪夜，师兄把剑抵在他咽喉，说的最后一句话是：再见面，便是生死。"
+          },
+          "sfx": [
+            "剑刃出鞘余音",
+            "心跳声"
+          ],
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "inferred",
+            "inference_note": "原文为心理回忆描写，无明确画面指示 → 推导为POV低角度闪回镜头+褪色调，剑抵咽喉取自原文『把剑抵在他咽喉』"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "weather": "大雪",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眼神骤然锐利",
+              "action": "缓缓抬头，右手按上刀柄",
+              "position": "画面前景左侧背影"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "看不清（远处剪影）",
+              "action": "踏雪走上桥来",
+              "position": "画面深处，雪幕中的剪影"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "过肩镜头：前景是沈孤鸿抬头的背影，右手按上刀柄；景深处，一个玄色身影踏雪走上断桥，脚步声由远及近",
+          "atmosphere": "紧张感骤起，风雪变急",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "师弟，别来无恙。",
+              "emotion": "混在风雪里，冷得像冰",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0005",
+              "u0006"
+            ],
+            "text": "桥那头传来踏雪声。沈孤鸿缓缓抬起头，手已按上刀柄。"
+          },
+          "sfx": [
+            "踏雪声由远及近",
+            "风声转急"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0005",
+              "u0006",
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 3,
+          "shot_size": "extreme_close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "大雪",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "（画面只有手部）",
+              "action": "按在刀柄上的手指缓缓收紧，指节泛白",
+              "position": "手部占满画面"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "大特写：沈孤鸿按在刀柄上的手，手指缓缓收紧，指节泛白，一片雪花落在手背上融化",
+          "atmosphere": "极静，只有呼吸与风雪",
+          "narration": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "text": "沈孤鸿心口一紧，指节泛白。"
+          },
+          "sfx": [
+            "布料摩擦声",
+            "压抑的呼吸声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『心口一紧』为心理描写不可拍 → 用原文同句已有的『指节泛白』落为手部大特写承载情绪"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.4
+  }
+}

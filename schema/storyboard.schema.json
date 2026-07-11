@@ -1,0 +1,936 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "novel-storyboard/v0.4",
+  "title": "NovelStoryboard",
+  "description": "小说忠实转换模式的结构化分镜脚本。剧情由小说原文固定（通过 source 溯源锚点保证），本 schema 只承载视觉呈现层的决策：镜头切分、景别运镜、资产引用、提示词。",
+  "type": "object",
+  "required": [
+    "meta",
+    "source",
+    "assets",
+    "episodes"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "description": "项目级全局设定，所有下游生成共享",
+      "required": [
+        "schema_version",
+        "title",
+        "style"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "0.4"
+        },
+        "title": {
+          "type": "string",
+          "description": "作品名"
+        },
+        "fidelity_mode": {
+          "type": "string",
+          "enum": [
+            "faithful",
+            "pacing_optimized",
+            "adapted"
+          ],
+          "default": "faithful",
+          "description": "改编强度：faithful=忠实转换（剧情/顺序不动）；pacing_optimized=保剧情调详略；adapted=短剧化改编"
+        },
+        "style": {
+          "type": "object",
+          "description": "视觉风格。style_prefix 会被拼接到每一条出图/出片提示词的最前面，是风格一致性的第一道锁",
+          "required": [
+            "style_prefix"
+          ],
+          "properties": {
+            "style_prefix": {
+              "type": "string",
+              "description": "统一风格前缀，如：中国水墨混合anime风格，电影感光影"
+            },
+            "art_style": {
+              "type": "string",
+              "description": "风格分类标签，如 anime / realistic / ink-wash"
+            },
+            "color_tone": {
+              "type": "string",
+              "description": "全片色调倾向，如：冷色调，低饱和"
+            },
+            "negative_prompt": {
+              "type": "string",
+              "description": "全局负向提示词"
+            }
+          },
+          "additionalProperties": false
+        },
+        "video": {
+          "type": "object",
+          "properties": {
+            "aspect_ratio": {
+              "type": "string",
+              "enum": [
+                "9:16",
+                "16:9",
+                "1:1",
+                "4:3"
+              ],
+              "default": "9:16"
+            },
+            "resolution": {
+              "type": "string",
+              "description": "如 1080x1920 / 2K"
+            },
+            "target_platform": {
+              "type": "string",
+              "description": "如 抖音 / 红果 / B站 / YouTube"
+            }
+          },
+          "additionalProperties": false
+        },
+        "narration": {
+          "type": "object",
+          "description": "旁白策略。忠实模式下旁白即小说原文的 TTS 朗读",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "original_text",
+                "selective",
+                "condensed",
+                "none"
+              ],
+              "default": "selective",
+              "description": "original_text=逐句朗读原文（经典小说推文形态）；selective=选择性旁白：只朗读画面无法承载的句子（时间跳跃/事实交代/心理核心），朗读时仍用原文，环境描写与场景切换交给画面（推荐默认）；condensed=压缩转述；none=无旁白纯画面。无论何种模式，忠实性由 source.unit_refs 溯源保证：句子可由旁白/台词/画面三种方式之一承载"
+            },
+            "tts_voice": {
+              "type": "string",
+              "description": "TTS 音色标识"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "description": "原文切分层：忠实模式的溯源backbone。小说被切成带 ID 的句子，镜头通过 sentence_ids 引用它们，从而保证：1) 剧情可追溯 2) 可做覆盖率检查（哪些句子没被任何镜头覆盖）",
+      "required": [
+        "units"
+      ],
+      "properties": {
+        "work_title": {
+          "type": "string"
+        },
+        "chapter": {
+          "type": "string",
+          "description": "本文件对应的章节标识"
+        },
+        "units": {
+          "type": "array",
+          "description": "切分后的原文最小单元（一般为句子）",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "text"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^u[0-9]{4}$",
+                "description": "句子ID，如 u0001"
+              },
+              "text": {
+                "type": "string",
+                "description": "原文句子，一字不改"
+              },
+              "para": {
+                "type": "integer",
+                "description": "所属段落序号"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "action",
+                  "dialogue",
+                  "psychology",
+                  "description",
+                  "narration_meta"
+                ],
+                "description": "句子类型，决定翻译策略：action=动作(直接成像) dialogue=对白 psychology=心理描写(需补画面) description=环境/外貌描写 narration_meta=叙述性过渡"
+              },
+              "skipped": {
+                "type": "boolean",
+                "default": false,
+                "description": "true 表示该句被有意略过不成像（需人工确认），覆盖率检查时不计为遗漏"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "assets": {
+      "type": "object",
+      "description": "资产库：角色/场景/道具一次定义、全片引用。镜头里只允许写资产 ID，不允许重新描述外貌——这是文本层角色一致性的根本保证",
+      "required": [
+        "characters",
+        "locations"
+      ],
+      "properties": {
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "visual_prompt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^C[0-9]{2}$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "原文中的别称/代称，用于实体识别对齐"
+              },
+              "appearance": {
+                "type": "object",
+                "description": "结构化外貌字段。visual_prompt 由这些字段组装，改字段即全片生效",
+                "properties": {
+                  "age": {
+                    "type": "string"
+                  },
+                  "gender": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "体型体态"
+                  },
+                  "face": {
+                    "type": "string",
+                    "description": "脸型五官特征"
+                  },
+                  "hair": {
+                    "type": "string",
+                    "description": "发型发色"
+                  },
+                  "eyes": {
+                    "type": "string"
+                  },
+                  "distinguishing_marks": {
+                    "type": "string",
+                    "description": "疤痕/纹身等显著标识"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outfits": {
+                "type": "array",
+                "description": "服装状态集。角色跨章节会换装，镜头通过 outfit_id 指定当前着装",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "description"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "如 default / battle / wounded"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "含服装+鞋+配饰的完整描述"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "visual_prompt": {
+                "type": "string",
+                "description": "标准角色出图提示词：全身正面、纯白背景、中性表情、从头到脚入镜（Seedance 资产规范）"
+              },
+              "reference_images": {
+                "type": "array",
+                "description": "已生成的参考图槽位，供 IP-Adapter/垫图使用",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "view": {
+                      "type": "string",
+                      "enum": [
+                        "front",
+                        "side",
+                        "back",
+                        "three_quarter"
+                      ]
+                    },
+                    "uri": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "voice": {
+                "type": "object",
+                "properties": {
+                  "tts_voice": {
+                    "type": "string"
+                  },
+                  "tone": {
+                    "type": "string",
+                    "description": "说话方式提示，如：语速慢，尾音上扬"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "persona_notes": {
+                "type": "string",
+                "description": "性格/口头禅/禁写点摘要（忠实模式主要用于对白情绪标注，非改编依据）"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "visual_prompt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^S[0-9]{2}$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "era": {
+                "type": "string",
+                "description": "时代背景"
+              },
+              "interior_exterior": {
+                "type": "string",
+                "enum": [
+                  "interior",
+                  "exterior",
+                  "both"
+                ]
+              },
+              "visual_prompt": {
+                "type": "string",
+                "description": "纯场景无人物提示词"
+              },
+              "angles": {
+                "type": "array",
+                "description": "机位版本：正打/反打/侧面（对话戏正反打必需）",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "angle": {
+                      "type": "string",
+                      "enum": [
+                        "front",
+                        "reverse",
+                        "side",
+                        "overhead",
+                        "establishing"
+                      ]
+                    },
+                    "uri": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "lighting_defaults": {
+                "type": "string",
+                "description": "该场景默认光线氛围"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "props": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "visual_prompt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^P[0-9]{2}$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "visual_prompt": {
+                "type": "string",
+                "description": "纯白背景单独展示（多状态道具此处写基准态）"
+              },
+              "states": {
+                "type": "array",
+                "description": "道具状态集（对应角色的 outfits）：外观随剧情持续演变的道具（如 鲜红滴血→荷叶包→焦黑 的馒头）按状态建条目，镜头通过 prop_refs[].state 指定当前形态；外观不变的道具省略此字段",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "description"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "如 fresh_bleeding / wrapped / charred"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "该状态下的完整外观描述"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "reference_images": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "creatures": {
+          "type": "array",
+          "description": "动物/生物资产：作为剧情视觉主体、需要资产出图的非人生物（如反复出现的乌鸦、灵兽）。一次性入画的背景动物写在镜头 action 里即可，不建卡",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "visual_prompt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^A[0-9]{2}$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "原文中的指称"
+              },
+              "species": {
+                "type": "string",
+                "description": "物种，如 乌鸦 / 白狐"
+              },
+              "visual_prompt": {
+                "type": "string",
+                "description": "标准生物出图提示词：全身侧面或正面、纯白背景、完整入镜"
+              },
+              "reference_images": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "notes": {
+                "type": "string",
+                "description": "习性/剧情功能备注（如：全程静立坟顶，仅结尾振翅飞离）"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "episodes": {
+      "type": "array",
+      "description": "分集/分段。忠实模式下切分依据是原文自然段落节奏，而非人为造钩子",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "source_range",
+          "shots"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^E[0-9]{2}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "source_range": {
+            "type": "object",
+            "description": "本集覆盖的原文范围",
+            "properties": {
+              "from_unit": {
+                "type": "string"
+              },
+              "to_unit": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "summary": {
+            "type": "string",
+            "description": "本集内容一句话概括（仅供人读）"
+          },
+          "tail_frame_description": {
+            "type": "string",
+            "description": "尾帧描述：最后一帧的主体/背景/光线/构图/氛围，用于下一集抽帧接力衔接"
+          },
+          "shots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/shot"
+            }
+          },
+          "music": {
+            "type": "object",
+            "description": "BGM 情绪标注：给下游选曲/AI配乐的机器可读依据。情绪判定必须有原文依据（明写的氛围、事件性质），不得发明原文没有的情绪转折",
+            "additionalProperties": false,
+            "required": [
+              "mood",
+              "curve"
+            ],
+            "properties": {
+              "mood": {
+                "$ref": "#/$defs/mood",
+                "description": "本集主基调"
+              },
+              "style_hint": {
+                "type": "string",
+                "description": "配器/风格提示，如：低沉弦乐铺底，打击乐在爆发点进入"
+              },
+              "curve": {
+                "type": "array",
+                "minItems": 1,
+                "description": "情绪曲线：按情绪转折把本集切成连续的镜头区间段，段边界即 BGM 切换/推进点",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "from_shot",
+                    "to_shot",
+                    "mood",
+                    "intensity"
+                  ],
+                  "properties": {
+                    "from_shot": {
+                      "type": "string",
+                      "pattern": "^E[0-9]{2}-SH[0-9]{3}$"
+                    },
+                    "to_shot": {
+                      "type": "string",
+                      "pattern": "^E[0-9]{2}-SH[0-9]{3}$"
+                    },
+                    "mood": {
+                      "$ref": "#/$defs/mood"
+                    },
+                    "intensity": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "mid",
+                        "high"
+                      ],
+                      "description": "强度档位"
+                    },
+                    "note": {
+                      "type": "string",
+                      "description": "本段情绪说明/转折依据，如：绿光炸开，冲突爆发"
+                    },
+                    "unit_refs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "情绪依据的原文句 ID（溯源，可选）"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "description": "覆盖率报告（由校验工具生成，非人工维护）：忠实模式的质检产物",
+      "properties": {
+        "unmapped_units": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "未被任何方式承载（旁白朗读/角色台词/画面呈现，口径随 narration.mode 而定）且未标记 skipped 的句子 ID —— 应为空"
+        },
+        "inferred_shot_ratio": {
+          "type": "number",
+          "description": "derivation=inferred 的镜头占比，过高说明补画面太多，偏离忠实"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "shot": {
+      "type": "object",
+      "description": "单个镜头：分镜的原子单元",
+      "required": [
+        "id",
+        "duration_sec",
+        "shot_size",
+        "action",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^E[0-9]{2}-SH[0-9]{3}$",
+          "description": "如 E01-SH003"
+        },
+        "duration_sec": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 15
+        },
+        "shot_size": {
+          "type": "string",
+          "enum": [
+            "extreme_wide",
+            "wide",
+            "full",
+            "medium",
+            "medium_close",
+            "close_up",
+            "extreme_close_up",
+            "insert"
+          ],
+          "description": "景别：大远景/远景/全景/中景/中近景/近景特写/大特写/插入镜头(道具细节)"
+        },
+        "camera": {
+          "type": "object",
+          "properties": {
+            "movement": {
+              "type": "string",
+              "enum": [
+                "static",
+                "push_in",
+                "pull_out",
+                "pan",
+                "tilt",
+                "track",
+                "follow",
+                "orbit",
+                "crane",
+                "handheld",
+                "zoom"
+              ],
+              "description": "运镜：固定/推/拉/摇/俯仰/移/跟/环绕/升降/手持/变焦"
+            },
+            "angle": {
+              "type": "string",
+              "enum": [
+                "eye_level",
+                "high",
+                "low",
+                "overhead",
+                "dutch",
+                "pov",
+                "over_shoulder"
+              ],
+              "description": "机位角度"
+            }
+          },
+          "additionalProperties": false
+        },
+        "location_ref": {
+          "type": "string",
+          "pattern": "^S[0-9]{2}$"
+        },
+        "location_angle": {
+          "type": "string",
+          "enum": [
+            "front",
+            "reverse",
+            "side",
+            "overhead",
+            "establishing"
+          ],
+          "description": "使用场景资产的哪个机位版本"
+        },
+        "time_of_day": {
+          "type": "string",
+          "enum": [
+            "dawn",
+            "day",
+            "dusk",
+            "night"
+          ]
+        },
+        "weather": {
+          "type": "string"
+        },
+        "characters": {
+          "type": "array",
+          "description": "出场主体（角色 C 卡 / 生物 A 卡）。只写资产引用+本镜头的状态，严禁重写外貌",
+          "items": {
+            "type": "object",
+            "required": [
+              "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "pattern": "^[CA][0-9]{2}$"
+              },
+              "outfit": {
+                "type": "string",
+                "description": "引用角色 outfits 里的 id。角色卡有 outfits 时必填；群像卡等省略 outfits 的卡，引用时同样省略此字段；生物 A 卡引用不使用此字段"
+              },
+              "expression": {
+                "type": "string",
+                "description": "表情，如：怒目圆睁"
+              },
+              "action": {
+                "type": "string",
+                "description": "该角色在本镜头的动作"
+              },
+              "position": {
+                "type": "string",
+                "description": "画面中位置，如：画面左侧背对镜头"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "prop_refs": {
+          "type": "array",
+          "description": "入画道具引用。多状态道具必须用 state 指定本镜头形态",
+          "items": {
+            "type": "object",
+            "required": [
+              "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "pattern": "^P[0-9]{2}$"
+              },
+              "state": {
+                "type": "string",
+                "description": "引用道具卡 states 里的 id。道具卡有 states 时必填；无 states 的卡省略此字段。镜头进行中状态变化时填关键帧结果态（同 outfit 口径）"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "action": {
+          "type": "string",
+          "description": "本镜头画面内容的完整描述（视觉语言，可拍的），是组装提示词的主体"
+        },
+        "atmosphere": {
+          "type": "string",
+          "description": "光影与氛围，如：残阳如血，侧逆光"
+        },
+        "dialogue": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "dialogue",
+                  "inner_monologue",
+                  "voiceover"
+                ],
+                "description": "台词/内心独白/画外音"
+              },
+              "character_ref": {
+                "type": "string",
+                "pattern": "^C[0-9]{2}$"
+              },
+              "text": {
+                "type": "string"
+              },
+              "emotion": {
+                "type": "string",
+                "description": "声音情绪，如：颤抖，压低声音"
+              },
+              "verbatim": {
+                "type": "boolean",
+                "default": true,
+                "description": "是否为原文原句。忠实模式下对白应尽量 verbatim=true"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "narration": {
+          "type": "object",
+          "description": "本镜头承载的旁白（忠实模式=原文朗读）。unit_refs 指向 source.units，text 冗余存一份便于直接消费",
+          "properties": {
+            "unit_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "text": {
+              "type": "string"
+            },
+            "order": {
+              "type": "string",
+              "enum": [
+                "before_dialogue",
+                "after_dialogue"
+              ],
+              "description": "本镜头内旁白与台词的成片先后。缺省=按原文语序理解；仅当需要明确声明或与原文语序不同时填写（如台词先出、旁白随后交代身份 → after_dialogue）"
+            }
+          },
+          "additionalProperties": false
+        },
+        "sfx": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "环境/动作音效，不含音乐"
+        },
+        "transition_out": {
+          "type": "string",
+          "enum": [
+            "cut",
+            "dissolve",
+            "fade_to_black",
+            "match_cut",
+            "whip_pan"
+          ],
+          "default": "cut"
+        },
+        "source": {
+          "type": "object",
+          "description": "溯源锚点：忠实模式的核心字段",
+          "required": [
+            "unit_refs",
+            "derivation"
+          ],
+          "properties": {
+            "unit_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "本镜头画面所依据的原文句子 ID"
+            },
+            "derivation": {
+              "type": "string",
+              "enum": [
+                "explicit",
+                "inferred",
+                "transition"
+              ],
+              "description": "explicit=画面为原文明确描写；inferred=画面为转换器推导补充（如心理描写→表情特写/空镜），需人工重点审核；transition=纯转场空镜，无原文依据"
+            },
+            "inference_note": {
+              "type": "string",
+              "description": "derivation=inferred 时必填：说明从什么原文推导出什么画面，如：『心中五味杂陈』→ 面部特写+攥紧的手"
+            }
+          },
+          "additionalProperties": false
+        },
+        "prompts": {
+          "type": "object",
+          "description": "组装后的最终提示词（由生成器产出，= style_prefix + 资产 visual_prompt + action + atmosphere 的确定性拼装，人工可覆写）",
+          "properties": {
+            "image_prompt": {
+              "type": "string"
+            },
+            "video_prompt": {
+              "type": "string",
+              "description": "时间轴格式或单镜头动态描述，按目标模型适配"
+            },
+            "reference_assets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "需要垫图的资产 ID 列表，如 [\"C01\",\"S02\"]"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "mood": {
+      "type": "string",
+      "enum": [
+        "calm",
+        "warm",
+        "playful",
+        "tense",
+        "ominous",
+        "eerie",
+        "sorrow",
+        "melancholy",
+        "triumph",
+        "epic"
+      ],
+      "description": "情绪受控词表：calm=平静 warm=温情 playful=轻快 tense=紧张 ominous=压抑不祥 eerie=诡异 sorrow=悲恸 melancholy=惆怅 triumph=激昂 epic=恢弘"
+    }
+  },
+  "additionalProperties": false
+}

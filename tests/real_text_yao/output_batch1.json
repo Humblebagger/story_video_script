@@ -1,0 +1,3243 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "药",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "民国江南小镇写实风格，电影感光影，青灰冷色调",
+      "art_style": "realistic",
+      "color_tone": "青灰冷色调，晨昏低饱和",
+      "negative_prompt": "现代元素，汽车，电线杆，霓虹灯，现代服饰，塑料制品，文字水印，logo，多余肢体，畸形手指，面部扭曲"
+    },
+    "video": {
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920",
+      "target_platform": "抖音"
+    },
+    "narration": {
+      "mode": "selective",
+      "tts_voice": "male_mature"
+    }
+  },
+  "source": {
+    "work_title": "药",
+    "chapter": "全文（第1批/共2批：第一、二节）",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "一",
+        "para": 1,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0002",
+        "text": "秋天的后半夜，月亮下去了，太阳还没有出，只剩下一片乌蓝的天；除了夜游的东西，什么都睡着。",
+        "para": 2,
+        "kind": "description"
+      },
+      {
+        "id": "u0003",
+        "text": "华老栓忽然坐起身。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0004",
+        "text": "擦着火柴，点上遍身油腻的灯盏，茶馆的两间屋子里，便弥满了青白的光。",
+        "para": 2,
+        "kind": "action"
+      },
+      {
+        "id": "u0005",
+        "text": "‘小栓的爹，你就去么？’是一个老女人的声音。",
+        "para": 3,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0006",
+        "text": "里边的小屋子里，也发出一阵咳嗽。",
+        "para": 3,
+        "kind": "action"
+      },
+      {
+        "id": "u0007",
+        "text": "‘唔。’老栓一面听，一面应，一面扣上衣服；伸手过去说，‘你给我罢。’",
+        "para": 4,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0008",
+        "text": "华大妈在枕头底下掏了半天，掏出一包洋钱，交给老栓，老栓接了，抖抖的装入衣袋，又在外面按了两下；便点上灯笼，吹熄灯盏，走向里屋子去了。",
+        "para": 5,
+        "kind": "action"
+      },
+      {
+        "id": "u0009",
+        "text": "那屋子里面，正在窸窸窣窣​的响，接着便是一通咳嗽。",
+        "para": 5,
+        "kind": "action"
+      },
+      {
+        "id": "u0010",
+        "text": "老栓候他平静下去，才低低的叫道：‘小栓……你不要起来。……店么？你娘会安排的。’",
+        "para": 5,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0011",
+        "text": "老栓听得儿子不再说话，料他安心睡了；便出了门，走到街上。",
+        "para": 6,
+        "kind": "action"
+      },
+      {
+        "id": "u0012",
+        "text": "街上黑沈沈的一无所有，只有一条灰白的路，看得分明。",
+        "para": 6,
+        "kind": "description"
+      },
+      {
+        "id": "u0013",
+        "text": "灯光照着他的两脚，一前一后的走。",
+        "para": 6,
+        "kind": "action"
+      },
+      {
+        "id": "u0014",
+        "text": "有时也遇到几只狗，可是一只也没有叫。",
+        "para": 6,
+        "kind": "action"
+      },
+      {
+        "id": "u0015",
+        "text": "天气比屋子里冷得多了；老栓倒觉爽快，仿佛一旦变了少年，得了神通，有给人生命的本领似的，跨步格外高远。",
+        "para": 6,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0016",
+        "text": "而且路也愈走愈分明，天也愈走愈亮了。",
+        "para": 6,
+        "kind": "description"
+      },
+      {
+        "id": "u0017",
+        "text": "老栓正在专心走路，忽然吃了一惊，远远里看见一条丁字街，明明白白横着。",
+        "para": 7,
+        "kind": "action"
+      },
+      {
+        "id": "u0018",
+        "text": "他便退了几步，寻到一家关着门的铺子，蹩进檐下，靠门立住了。",
+        "para": 7,
+        "kind": "action"
+      },
+      {
+        "id": "u0019",
+        "text": "好一会，身上觉得有些发冷。",
+        "para": 7,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0020",
+        "text": "‘哼，老头子。’",
+        "para": 8,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0021",
+        "text": "‘倒高兴。……’",
+        "para": 9,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0022",
+        "text": "老栓又吃一惊，睁眼看时，几个人从他面前过去了。",
+        "para": 10,
+        "kind": "action"
+      },
+      {
+        "id": "u0023",
+        "text": "一个还回头看他，样子不甚分明，但很像久饿的人见了食物一般，眼里闪出一种攫取的光。",
+        "para": 10,
+        "kind": "action"
+      },
+      {
+        "id": "u0024",
+        "text": "老栓看看灯笼，已经熄了。",
+        "para": 10,
+        "kind": "action"
+      },
+      {
+        "id": "u0025",
+        "text": "按一按衣袋，硬硬的还在。",
+        "para": 10,
+        "kind": "action"
+      },
+      {
+        "id": "u0026",
+        "text": "仰起头两面一望，只见许多古怪的人，三三两两，鬼似的在那里徘徊；​定睛再看，却也看不出什么别的奇怪。",
+        "para": 10,
+        "kind": "action"
+      },
+      {
+        "id": "u0027",
+        "text": "没有多久，又见几个兵，在那边走动；衣服前后的一个大白圆圈，远地里也看得清楚，走过面前的，并且看出号衣上暗红色的镶边。",
+        "para": 11,
+        "kind": "action"
+      },
+      {
+        "id": "u0028",
+        "text": "——一阵脚步声响，一眨眼，已经拥过了一大簇人。",
+        "para": 11,
+        "kind": "action"
+      },
+      {
+        "id": "u0029",
+        "text": "那三三两两的人，也忽然合作一堆，潮一般向前赶；将到丁字街口，便突然立住，簇成一个半圆。",
+        "para": 11,
+        "kind": "action"
+      },
+      {
+        "id": "u0030",
+        "text": "老栓也向那边看，却只见一堆人的后背；颈项都伸得很长，仿佛许多鸭，被无形的手捏住了的，向上提着。",
+        "para": 12,
+        "kind": "action"
+      },
+      {
+        "id": "u0031",
+        "text": "静了一会，似乎有点声音，便又动摇起来，轰的一声，都向后退；一直散到老栓立着的地方，几乎将他挤倒了。",
+        "para": 12,
+        "kind": "action"
+      },
+      {
+        "id": "u0032",
+        "text": "‘喂！一手交钱，一手交货！’一个浑身黑色的人，站在老栓面前，眼光正像两把刀。",
+        "para": 13,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0033",
+        "text": "刺得老栓缩小了一半。",
+        "para": 13,
+        "kind": "action"
+      },
+      {
+        "id": "u0034",
+        "text": "那人一只大手，向他摊着；一只手却撮着一个鲜红的馒头，那红的还是一点一点的往下滴。",
+        "para": 13,
+        "kind": "action"
+      },
+      {
+        "id": "u0035",
+        "text": "老栓慌忙摸出洋钱，扯抖的想交给他，却又不敢去接他的东西。",
+        "para": 14,
+        "kind": "action"
+      },
+      {
+        "id": "u0036",
+        "text": "那人便焦急起来，嚷道，‘怕什么？怎的不拿！’",
+        "para": 14,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0037",
+        "text": "老栓还踌躇着；黑的人便抢过灯笼，一把扯下纸罩，裹了馒头，塞​与老栓；一手抓过洋钱，捏一捏，转身去了。",
+        "para": 14,
+        "kind": "action"
+      },
+      {
+        "id": "u0038",
+        "text": "嘴里哼着说：‘这老东西……。’",
+        "para": 14,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0039",
+        "text": "‘这给谁治病的呀？’老栓也似乎听得有人问他，但他并不答应；他的精神，现在只在一个包上，仿佛抱着一个十世单传的婴儿，别的事情，都已置之度外了。",
+        "para": 15,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0040",
+        "text": "他现在要将这包里的新的生命，移植到他家里，收获许多幸福。",
+        "para": 15,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0041",
+        "text": "太阳也出来了；在他面前，显出一条大道，直到他家中，后面也照见丁字有头破匾上‘古口亭口’这四个黯淡的金字。",
+        "para": 15,
+        "kind": "description"
+      },
+      {
+        "id": "u0042",
+        "text": "二",
+        "para": 16,
+        "kind": "narration_meta"
+      },
+      {
+        "id": "u0043",
+        "text": "老栓走到家，店面早经收拾干净，一排一排的茶桌，滑溜溜的发光。",
+        "para": 17,
+        "kind": "action"
+      },
+      {
+        "id": "u0044",
+        "text": "但是没有客人；只有小栓坐在里排的桌前吃饭，大粒的汗，从额上滚下，夹袄也贴住了脊心，两块肩胛骨高高凸出，印成一个阳文的‘八’字。",
+        "para": 17,
+        "kind": "description"
+      },
+      {
+        "id": "u0045",
+        "text": "老栓见这样子，不免皱一皱展开的眉心。",
+        "para": 17,
+        "kind": "action"
+      },
+      {
+        "id": "u0046",
+        "text": "他的女人，从灶下急急走出，睁着眼睛，嘴唇有些发抖。",
+        "para": 17,
+        "kind": "action"
+      },
+      {
+        "id": "u0047",
+        "text": "‘得了么？’",
+        "para": 18,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0048",
+        "text": "‘得了。’",
+        "para": 19,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0049",
+        "text": "​两个人一齐走进灶下，商量了一会；华大妈便出去了，不多时，拿着一片老荷叶回来，摊在桌上。",
+        "para": 20,
+        "kind": "action"
+      },
+      {
+        "id": "u0050",
+        "text": "老栓也打开灯笼罩，用荷叶重新包了那红的馒头。",
+        "para": 20,
+        "kind": "action"
+      },
+      {
+        "id": "u0051",
+        "text": "小栓也吃完饭，他的母亲慌忙说：——",
+        "para": 20,
+        "kind": "action"
+      },
+      {
+        "id": "u0052",
+        "text": "‘小栓——你坐着，不要到这里来。’",
+        "para": 21,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0053",
+        "text": "一面整顿了灶火，老栓便把一个碧绿的包，一个红红白白的破灯笼，一同塞在灶里，一阵红黑的火焰过去时，店屋里散满了一种奇怪的香味。",
+        "para": 22,
+        "kind": "action"
+      },
+      {
+        "id": "u0054",
+        "text": "‘好香！你们吃什么点心呀？’这是驼背五少爷到了。",
+        "para": 23,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0055",
+        "text": "这人每天总在茶馆里过日，来得最早，去得最迟，此时恰恰蹩到临街的壁角的桌边，便坐下问话，然而没有人答应他。",
+        "para": 23,
+        "kind": "action"
+      },
+      {
+        "id": "u0056",
+        "text": "‘炒米粥么？’仍然没有人应。",
+        "para": 23,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0057",
+        "text": "老栓匆匆走出，给他泡上茶。",
+        "para": 23,
+        "kind": "action"
+      },
+      {
+        "id": "u0058",
+        "text": "‘小栓进来罢！’华大妈叫小栓进了里面的屋子，中间放好一条凳，小栓坐了。",
+        "para": 24,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0059",
+        "text": "他的母亲端过一碟乌黑的圆东西，轻轻说：——",
+        "para": 24,
+        "kind": "action"
+      },
+      {
+        "id": "u0060",
+        "text": "‘吃下去罢，——病便好了。’",
+        "para": 25,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0061",
+        "text": "小栓撮起这黑东西，看了一会，似乎拿着自己的性命一般，心里说不出的奇怪。",
+        "para": 26,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0062",
+        "text": "十分​小心的拗开了，焦皮里面窜出一道白气，白气散了，是两半个白面的馒头。",
+        "para": 26,
+        "kind": "action"
+      },
+      {
+        "id": "u0063",
+        "text": "——不多工夫，已经全在肚里了，却全忘了什么味；面前只剩下一张空盘。",
+        "para": 26,
+        "kind": "action"
+      },
+      {
+        "id": "u0064",
+        "text": "他的旁边，一面立着他的父亲，一面立着他的母亲，两人的眼光，都仿佛要在他身里注进什么又要取出什么似的；便禁不住心跳起来，按着胸膛，又是一阵咳嗽。",
+        "para": 26,
+        "kind": "action"
+      },
+      {
+        "id": "u0065",
+        "text": "‘睡一会罢，——便好了。’",
+        "para": 27,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0066",
+        "text": "小栓依他母亲的话，咳着睡了。",
+        "para": 28,
+        "kind": "action"
+      },
+      {
+        "id": "u0067",
+        "text": "华大妈候他喘气平静，才轻轻的给他盖上了满幅补钉的夹被。",
+        "para": 28,
+        "kind": "action"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "华老栓",
+        "aliases": [
+          "华老栓",
+          "老栓",
+          "小栓的爹",
+          "他的父亲",
+          "老头子",
+          "这老东西"
+        ],
+        "appearance": {
+          "age": "五十岁上下",
+          "gender": "男",
+          "body": "精瘦微驼，常年劳作的枯瘦双手，动作迟缓拘谨",
+          "face": "面颊凹陷，皱纹深刻，颧骨突出，蓄花白短须",
+          "hair": "花白短发，略见稀疏",
+          "eyes": "眼窝深陷，目光温顺而怯懦",
+          "distinguishing_marks": "无"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "深蓝色粗布对襟夹袄，黑色粗布长裤，白布袜，黑面千层底布鞋；外出时另系一条褪色黑布腰带（民国初年江南小镇茶馆店主装束）"
+          }
+        ],
+        "visual_prompt": "民国初年江南小镇茶馆店主，五十岁上下精瘦微驼的男子，面颊凹陷皱纹深刻，花白短发短须，眼窝深陷目光怯懦，身穿深蓝粗布对襟夹袄黑布裤黑布鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_elder",
+          "tone": "低声迟缓，惶恐时气息发紧"
+        },
+        "persona_notes": "老实怯懦、终日劳碌的茶馆店主；深信人血馒头可治儿子痨病，将其视作全部希望"
+      },
+      {
+        "id": "C02",
+        "name": "华大妈",
+        "aliases": [
+          "华大妈",
+          "老女人",
+          "他的女人",
+          "他的母亲",
+          "你娘",
+          "小栓的母亲"
+        ],
+        "appearance": {
+          "age": "四十五至五十岁",
+          "gender": "女",
+          "body": "身形瘦削，操劳粗糙的双手",
+          "face": "面色蜡黄，眼角皱纹密布",
+          "hair": "灰白头发在脑后挽成发髻，插一根木簪",
+          "eyes": "眼睛不大，常带焦虑之色",
+          "distinguishing_marks": "无"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "藏青色粗布大襟上衣，深灰色粗布长裙，黑布鞋，围一条洗旧的靛蓝围裙（民国初年江南小镇劳作妇人装束）"
+          }
+        ],
+        "visual_prompt": "民国初年江南小镇妇人，四十五至五十岁，身形瘦削面色蜡黄，灰白发髻插木簪，穿藏青粗布大襟上衣深灰长裙靛蓝围裙黑布鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "female_elder",
+          "tone": "低声急切，对儿子时放轻放软"
+        },
+        "persona_notes": "华老栓之妻，小栓之母；操持茶馆灶下杂务，为儿子的病忧心如焚"
+      },
+      {
+        "id": "C03",
+        "name": "华小栓",
+        "aliases": [
+          "小栓",
+          "华小栓",
+          "儿子"
+        ],
+        "appearance": {
+          "age": "十六七岁",
+          "gender": "男",
+          "body": "极度消瘦，两块肩胛骨高高凸出，印成一个阳文的'八'字（原文），脖颈细长",
+          "face": "苍白无血色，颧骨微凸，额上时有大粒的汗",
+          "hair": "剃短的黑发",
+          "eyes": "眼神倦怠低垂，眼圈发暗",
+          "distinguishing_marks": "痨病之相，频繁咳嗽，气息短促"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "灰褐色旧布夹袄（常被汗浸贴住脊背），深色粗布长裤，旧布鞋（民国初年小镇病弱少年装束）"
+          }
+        ],
+        "visual_prompt": "民国初年江南小镇少年，十六七岁，极度消瘦肩胛骨凸出，面色苍白眼圈发暗，剃短黑发，穿灰褐旧布夹袄深色布裤旧布鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_young",
+          "tone": "气弱声低，语句常被咳嗽打断"
+        },
+        "persona_notes": "华家独子，身患痨病；顺从沉默"
+      },
+      {
+        "id": "C04",
+        "name": "浑身黑色的人",
+        "aliases": [
+          "一个浑身黑色的人",
+          "黑的人",
+          "那人"
+        ],
+        "appearance": {
+          "age": "四十岁上下",
+          "gender": "男",
+          "body": "高大粗壮，一只大手骨节粗大（原文'一只大手'）",
+          "face": "面色黑红，横肉紧绷，下颌短硬胡茬",
+          "hair": "剃得极短的黑发",
+          "eyes": "眼光锐利逼人，正像两把刀（原文）",
+          "distinguishing_marks": "无"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "一身黑色粗布短打衣裤，黑布鞋，袖口挽起露出粗壮小臂（民国初年市井粗人装束）"
+          }
+        ],
+        "visual_prompt": "民国初年高大粗壮的中年男子，面色黑红横肉紧绷，短硬胡茬，眼神锐利，一身黑色粗布短打衣裤黑布鞋，袖口挽起，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_rough",
+          "tone": "粗嗄大声，不耐烦"
+        },
+        "persona_notes": "匿名角色：原文本批仅称'浑身黑色的人／黑的人'，外貌为推导补全，身份（后文揭示为康大叔）揭示后需回改；凶横粗鲁的人血馒头交易者"
+      },
+      {
+        "id": "C05",
+        "name": "驼背五少爷",
+        "aliases": [
+          "驼背五少爷",
+          "这人"
+        ],
+        "appearance": {
+          "age": "五十余岁",
+          "gender": "男",
+          "body": "干瘦驼背（原文'驼背'），行动蹩脚",
+          "face": "尖瘦蜡黄，常带闲散笑意",
+          "hair": "花白稀疏的短发",
+          "eyes": "细小浑浊，好奇张望",
+          "distinguishing_marks": "背部明显隆起"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "半旧的青灰色绸面长衫，磨白的黑布鞋（破落户少爷装束，体面而陈旧）"
+          }
+        ],
+        "visual_prompt": "民国初年破落户老少爷，五十余岁干瘦驼背，尖瘦蜡黄的脸，花白稀发，穿半旧青灰绸面长衫黑布鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_elder",
+          "tone": "闲散拖长，自说自话"
+        },
+        "persona_notes": "每天在茶馆里过日、来得最早去得最迟的闲客（原文）"
+      },
+      {
+        "id": "C06",
+        "name": "街头看客（群像）",
+        "aliases": [
+          "几个人",
+          "许多古怪的人",
+          "三三两两的人",
+          "一堆人",
+          "一大簇人",
+          "有人"
+        ],
+        "appearance": {
+          "body": "三三两两的男性闲人，多着深色破旧短衣长衫，缩颈拢袖，游走徘徊",
+          "distinguishing_marks": "神情麻木而贪看，颈项伸得很长；有人眼里闪出久饿的人见了食物一般的攫取的光（原文）"
+        },
+        "visual_prompt": "民国初年黎明街头的一群男性看客，深色破旧短衣长衫，缩颈拢袖，神情麻木好奇，三三两两站立，全身，纯白背景，从头到脚完整入镜",
+        "reference_images": []
+      },
+      {
+        "id": "C07",
+        "name": "兵卒（群像）",
+        "aliases": [
+          "几个兵",
+          "兵"
+        ],
+        "appearance": {
+          "body": "数名士兵，灰布号衣，打绑腿，背步枪，队列散漫走动",
+          "distinguishing_marks": "衣服前后各有一个大白圆圈，号衣上有暗红色的镶边（原文）"
+        },
+        "visual_prompt": "民国初年士兵数名，灰布号衣前后各印一个大白圆圈，号衣暗红色镶边，打绑腿背步枪，全身，纯白背景，从头到脚完整入镜",
+        "reference_images": []
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "华家茶馆·店堂",
+        "era": "民国初年江南小镇",
+        "interior_exterior": "interior",
+        "visual_prompt": "老式茶馆店堂，两间打通的屋子，一排一排擦得滑溜发亮的旧茶桌与条凳，临街木板门，粗陶茶具，柜台上油腻灯盏，青砖地面，无人物",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "清晨冷调天光从门板缝隙斜射，室内青灰昏暗"
+      },
+      {
+        "id": "S02",
+        "name": "华家茶馆·里屋（小栓的屋）",
+        "era": "民国初年江南小镇",
+        "interior_exterior": "interior",
+        "visual_prompt": "狭小昏暗的里屋，木板床铺着满幅补钉的旧夹被，一扇小窗，一条长凳，土墙斑驳，无人物",
+        "angles": [
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          }
+        ],
+        "lighting_defaults": "微弱天光，屋内大半沉在阴影里"
+      },
+      {
+        "id": "S03",
+        "name": "华家茶馆·后间卧房",
+        "era": "民国初年江南小镇",
+        "interior_exterior": "interior",
+        "visual_prompt": "茶馆后间简陋卧房，木床粗布枕头，床头小几上一盏遍身油腻的灯盏，土墙木门，无人物",
+        "angles": [
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          }
+        ],
+        "lighting_defaults": "灯盏青白的光，四壁昏暗"
+      },
+      {
+        "id": "S04",
+        "name": "小镇长街",
+        "era": "民国初年江南小镇",
+        "interior_exterior": "exterior",
+        "visual_prompt": "秋夜将尽的小镇长街，一条灰白的石板路伸向远方，两侧铺面木门紧闭，屋檐低垂，天色乌蓝，无人物",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "乌蓝夜色渐转灰白晨光，路面微亮"
+      },
+      {
+        "id": "S05",
+        "name": "丁字街口",
+        "era": "民国初年江南小镇",
+        "interior_exterior": "exterior",
+        "visual_prompt": "丁字形街口，空旷开阔，街头立着破匾，匾上'古口亭口'四个黯淡的金字，青灰砖墙屋檐，无人物",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "overhead"
+          }
+        ],
+        "lighting_defaults": "黎明前昏暗，天际微微泛白"
+      },
+      {
+        "id": "S06",
+        "name": "华家茶馆·灶间",
+        "era": "民国初年江南小镇",
+        "interior_exterior": "interior",
+        "visual_prompt": "茶馆灶下，土砌大灶，灶膛柴火，铁锅木桶，墙面烟熏发黑，堆着柴草，无人物",
+        "angles": [
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          }
+        ],
+        "lighting_defaults": "灶火暖红光与门外冷调天光对比"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "人血馒头",
+        "visual_prompt": "一个白面馒头，表面浸染鲜红血迹，血珠一点一点欲滴，纯白背景单独展示",
+        "reference_images": [],
+        "states": [
+          {
+            "id": "fresh_bleeding",
+            "description": "白面馒头，表面浸染鲜红血迹，血珠一点一点往下滴"
+          },
+          {
+            "id": "paper_wrapped",
+            "description": "被红红白白的破灯笼纸罩胡乱裹成的一包，纸面隐约洇出暗红"
+          },
+          {
+            "id": "lotus_wrapped",
+            "description": "用老荷叶重新包起的碧绿一包"
+          },
+          {
+            "id": "charred",
+            "description": "灶火烤后的乌黑圆东西，焦皮皲裂"
+          },
+          {
+            "id": "split_open",
+            "description": "拗开的两半白面馒头，焦黑外皮内露出白面，裂口冒出白气"
+          }
+        ]
+      },
+      {
+        "id": "P02",
+        "name": "一包洋钱",
+        "visual_prompt": "旧布帕包着的一小包银元，包角磨旧，隐约透出银元圆形轮廓，纯白背景单独展示",
+        "reference_images": []
+      },
+      {
+        "id": "P03",
+        "name": "破纸灯笼",
+        "visual_prompt": "红红白白的破纸灯笼，竹骨外糊纸罩，多处破损，带提梁，可点烛，纯白背景单独展示",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "第一节·黎明的丁字街",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0041"
+      },
+      "summary": "秋夜将尽，华老栓揣着洋钱赶到丁字街口，从浑身黑色的人手里买回一个滴血的红馒头，抱着这'新的生命'迎着朝阳回家。",
+      "tail_frame_description": "画面上方是丁字街头破匾上'古口亭口'四个黯淡的金字，下方一条被朝阳照亮的大道向纵深延伸，老栓抱着纸包的小小背影渐远；金色晨光与青灰街景对比，静穆而隐隐不祥。",
+      "music": {
+        "mood": "ominous",
+        "style_hint": "低音弦乐持续音铺底，稀疏的箫与胡琴点缀；交易段加入心跳般的低鼓，结尾转为清冷的晨光式弦乐上行",
+        "curve": [
+          {
+            "from_shot": "E01-SH001",
+            "to_shot": "E01-SH010",
+            "mood": "calm",
+            "intensity": "low",
+            "note": "秋夜死寂、灯下低语备钱：『只剩下一片乌蓝的天……什么都睡着』的静与压",
+            "unit_refs": [
+              "u0002",
+              "u0010"
+            ]
+          },
+          {
+            "from_shot": "E01-SH011",
+            "to_shot": "E01-SH015",
+            "mood": "warm",
+            "intensity": "low",
+            "note": "老栓上路自觉爽快、跨步高远，怀着'给人生命'的希望，情绪短暂上扬",
+            "unit_refs": [
+              "u0015",
+              "u0016"
+            ]
+          },
+          {
+            "from_shot": "E01-SH016",
+            "to_shot": "E01-SH028",
+            "mood": "eerie",
+            "intensity": "mid",
+            "note": "两度'吃了一惊'、古怪的人'鬼似的'徘徊、看客如鸭伸颈，诡异感层层加码",
+            "unit_refs": [
+              "u0017",
+              "u0026",
+              "u0030"
+            ]
+          },
+          {
+            "from_shot": "E01-SH029",
+            "to_shot": "E01-SH035",
+            "mood": "tense",
+            "intensity": "high",
+            "note": "黑衣人'眼光正像两把刀'、鲜红馒头滴血，交易段冲突顶点",
+            "unit_refs": [
+              "u0032",
+              "u0034"
+            ]
+          },
+          {
+            "from_shot": "E01-SH036",
+            "to_shot": "E01-SH038",
+            "mood": "warm",
+            "intensity": "mid",
+            "note": "'太阳也出来了''新的生命……收获许多幸福'，希望上扬；破匾黯淡金字留一丝阴影收尾",
+            "unit_refs": [
+              "u0040",
+              "u0041"
+            ]
+          }
+        ]
+      },
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 5,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S04",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "weather": "秋夜晴冷",
+          "action": "秋夜将尽的小镇全景：月亮已沉，天际未明，一片乌蓝的天压着连绵屋脊，长街空无一人；画面叠印章节字样'一'。",
+          "atmosphere": "乌蓝天色，万籁俱寂，只余屋脊剪影",
+          "narration": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "text": "秋天的后半夜，月亮下去了，太阳还没有出，只剩下一片乌蓝的天；除了夜游的东西，什么都睡着。"
+          },
+          "sfx": [
+            "远处零星犬吠般的夜声极轻",
+            "秋虫残鸣"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0001",
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "睡意未消而神情一凛",
+              "action": "猛地坐起",
+              "position": "画面中央床沿"
+            }
+          ],
+          "action": "昏黑卧房中，华老栓忽然从床上坐起身，黑暗里只见半个轮廓。",
+          "atmosphere": "近乎全黑，仅窗纸透进一线微光",
+          "sfx": [
+            "床板吱呀一声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 4,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "pull_out",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "擦火柴点灯盏",
+              "position": "画面右侧俯身向灯"
+            }
+          ],
+          "action": "枯瘦的手擦着火柴，点上遍身油腻的灯盏，青白的光晕缓缓漫开，照亮茶馆两间屋子的轮廓。",
+          "atmosphere": "火柴一亮，青白灯光弥满屋内",
+          "sfx": [
+            "火柴擦燃声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "担忧",
+              "action": "撑起半身望向丈夫",
+              "position": "画面左侧床上"
+            }
+          ],
+          "action": "床上的华大妈撑起半身望向老栓，低声发问。",
+          "atmosphere": "青白灯光下的昏暗卧房",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "小栓的爹，你就去么？",
+              "character_ref": "C02",
+              "emotion": "压低的担忧",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 3,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "action": "里边小屋子的黑洞洞门口，无人入镜，屋内传出一阵咳嗽。",
+          "atmosphere": "门口一片深黑，咳声在寂静中格外清晰",
+          "sfx": [
+            "少年压抑的连声咳嗽"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "惦念而急切",
+              "action": "听声、应声、扣衣扣，伸手向床头",
+              "position": "画面中央"
+            }
+          ],
+          "action": "老栓一面侧耳听着里屋，一面应声，一面扣上衣服的布扣；随即向床那边伸出手去。",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "唔。",
+              "character_ref": "C01",
+              "emotion": "低而含混",
+              "verbatim": true
+            },
+            {
+              "type": "dialogue",
+              "text": "你给我罢。",
+              "character_ref": "C01",
+              "emotion": "低声催促",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 5,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S03",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "action": "从枕下掏出洋钱递出",
+              "position": "画面左"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "双手发抖接钱装袋，按了两下",
+              "position": "画面右"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P02"
+            }
+          ],
+          "action": "华大妈在枕头底下掏了半天，掏出一包洋钱交到老栓手中；老栓接了，抖抖的装入衣袋，又在衣袋外面按了两下。",
+          "atmosphere": "灯盏青白光聚在两双手上",
+          "sfx": [
+            "银元隔布轻碰的闷响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "follow",
+            "angle": "eye_level"
+          },
+          "location_ref": "S03",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "点灯笼、吹灯盏、提灯走向里屋",
+              "position": "由画面中央走向纵深"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "老栓点上灯笼，吹熄灯盏，提着灯笼走向里屋子；屋内光线由青白转为灯笼的昏黄。",
+          "atmosphere": "灯盏熄灭一瞬全黑，灯笼昏黄光摇曳",
+          "sfx": [
+            "吹灯声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 3,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "action": "里屋床铺方向窸窸窣窣地响动，黑暗中看不真切，接着便是一通咳嗽。",
+          "atmosphere": "灯笼光只照亮门边一角，床铺沉在黑暗里",
+          "sfx": [
+            "被褥窸窣声",
+            "一通咳嗽"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 6,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "怜惜",
+              "action": "候咳声平息，俯身低声叮嘱",
+              "position": "画面右侧俯向床铺"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "老栓提灯立在床边，候着咳声平静下去，才俯身向床上低低地叮嘱。",
+          "atmosphere": "灯笼昏黄光照亮父亲侧脸",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "小栓……你不要起来。……店么？你娘会安排的。",
+              "character_ref": "C01",
+              "emotion": "低低的，放轻放缓",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "follow",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "静听、出门、掩门、踏上街面",
+              "position": "从门内走向画面中央"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "老栓在门内静听片刻，儿子不再作声；他放下心，开门出屋，走到门外街上，回手掩门。",
+          "atmosphere": "门里昏黄门外乌蓝，两种光色交界",
+          "sfx": [
+            "木门开合吱呀声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH012",
+          "duration_sec": 4,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "establishing",
+          "time_of_day": "night",
+          "action": "黑沉沉的长街一无所有，只有一条灰白的路笔直伸向黑暗深处，看得分明。",
+          "atmosphere": "街面黑沉沉，唯路面灰白反光",
+          "sfx": [
+            "极轻的夜风"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0012"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH013",
+          "duration_sec": 5,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "track",
+            "angle": "low"
+          },
+          "location_ref": "S04",
+          "location_angle": "side",
+          "time_of_day": "night",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "提灯疾走，两脚一前一后",
+              "position": "脚部特写占画面下半"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "灯笼的光照着他的两脚，一前一后地走过石板路；路边偶有几只狗蹲伏在檐下暗影里，竟一只也没有叫。",
+          "atmosphere": "灯笼光圈在脚边晃动，四周死寂",
+          "sfx": [
+            "布鞋踏石板声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0013",
+              "u0014"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH014",
+          "duration_sec": 6,
+          "shot_size": "full",
+          "camera": {
+            "movement": "follow",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "night",
+          "weather": "秋夜寒冷",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眉眼舒展，透着振奋",
+              "action": "呼出白气，跨步高远，越走越快",
+              "position": "画面中央迎镜头而来"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "冷冽的夜气里，老栓呵出白气，却挺直了腰背，跨步格外高远，仿佛年轻了几十岁；灯笼在手中一荡一荡。",
+          "atmosphere": "寒气可见，人影却步步生风",
+          "narration": {
+            "unit_refs": [
+              "u0015"
+            ],
+            "text": "天气比屋子里冷得多了；老栓倒觉爽快，仿佛一旦变了少年，得了神通，有给人生命的本领似的，跨步格外高远。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0015"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH015",
+          "duration_sec": 4,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "establishing",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "沿灰白长路走远",
+              "position": "画面下方小小身影"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "长街尽头天际由乌蓝转向灰白，路面愈来愈分明，老栓的身影在渐亮的天色里前行。",
+          "atmosphere": "黎明前的灰白光线一点点漫上街面",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0016"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH016",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "吃了一惊",
+              "action": "猛然收步，直望前方",
+              "position": "画面中央"
+            }
+          ],
+          "action": "老栓正专心走路，忽然一惊收步——他的视线尽头，远远一条丁字街明明白白横着。",
+          "atmosphere": "灰白晨光中丁字街口空旷逼人",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0017"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH017",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "side",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "惶惑",
+              "action": "倒退几步，闪进檐下，贴门而立",
+              "position": "画面左侧檐影中"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "他退了几步，寻到一家关着门的铺子，蹩进屋檐底下，靠着门板立住了。",
+          "atmosphere": "檐下阴影浓重，只露半个身子",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0018"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH018",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "side",
+          "time_of_day": "dawn",
+          "weather": "黎明寒冷",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "局促不安",
+              "action": "缩颈拢衣，双肩发抖",
+              "position": "画面中央近景"
+            }
+          ],
+          "action": "檐影里，老栓缩起脖颈拢紧衣襟，双肩微微发抖，呵出的白气一阵密过一阵。",
+          "atmosphere": "冷青色调，呵气可见",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0019"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『好一会，身上觉得有些发冷』→ 不可见体感转译为缩颈拢衣、双肩发抖、呵白气的特写"
+          }
+        },
+        {
+          "id": "E01-SH019",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "闭目屏息",
+              "action": "贴门僵立",
+              "position": "画面右侧檐影"
+            },
+            {
+              "ref": "C06",
+              "action": "两三人影踱过前景，低语而去",
+              "position": "前景左至右掠过"
+            }
+          ],
+          "action": "两三个模糊人影从檐下老栓面前晃过，抛下两句低语，径自去了；老栓闭目贴门不敢动。",
+          "atmosphere": "人影虚晃，语声近而人面不清",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "哼，老头子。",
+              "character_ref": "C06",
+              "emotion": "嘲弄低语",
+              "verbatim": true
+            },
+            {
+              "type": "dialogue",
+              "text": "倒高兴。……",
+              "character_ref": "C06",
+              "emotion": "讥诮，尾音拖长",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0020",
+              "u0021"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH020",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "惊惶睁眼",
+              "action": "猛地睁眼张望",
+              "position": "画面中央"
+            },
+            {
+              "ref": "C06",
+              "action": "数人背影走远",
+              "position": "画面边缘虚化"
+            }
+          ],
+          "action": "老栓又吃一惊，睁开眼看时，几个人已从他面前走过去了。",
+          "atmosphere": "晨光微明，人影幢幢",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0022"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH021",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "reverse",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C06",
+              "expression": "贪看，眼中攫取的光",
+              "action": "回头凝视",
+              "position": "画面中央，面部半明半暗"
+            }
+          ],
+          "action": "其中一人回过头来看他，面目在昏光里不甚分明，唯独眼里闪出一种攫取的光，像久饿的人见了食物。",
+          "atmosphere": "侧光只照亮半张脸，眼神刺人",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0023"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH022",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "看灯笼、按衣袋",
+              "position": "手部与衣袋特写"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P03"
+            },
+            {
+              "ref": "P02"
+            }
+          ],
+          "action": "老栓低头看灯笼，烛火已经熄了；另一只手按一按衣袋，里面硬硬的还在。",
+          "atmosphere": "灰白晨光，灯笼纸罩黯淡无光",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0024",
+              "u0025"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH023",
+          "duration_sec": 5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "pan",
+            "angle": "pov"
+          },
+          "location_ref": "S04",
+          "location_angle": "establishing",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C06",
+              "action": "三三两两游走徘徊，忽聚忽散",
+              "position": "散布画面各处"
+            }
+          ],
+          "action": "老栓仰起头向街两面望去：许多古怪的人三三两两，鬼似的在昏暗街面上徘徊；定睛再看，却又看不出什么别的奇怪。",
+          "atmosphere": "灰蓝晨雾，人影如鬼魅浮动",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0026"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH024",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C07",
+              "action": "散漫走动，一人从镜头前走过",
+              "position": "中景至前景"
+            }
+          ],
+          "action": "几个兵在那边走动，号衣前后的大白圆圈远远就看得清楚；走过面前的一个，号衣上暗红色的镶边也看得分明。",
+          "atmosphere": "晨光渐亮，号衣白圈刺眼",
+          "sfx": [
+            "皮靴与枪械碰响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0027"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH025",
+          "duration_sec": 3,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C06",
+              "action": "成簇涌来，脚步杂沓",
+              "position": "由画面深处涌向前景"
+            }
+          ],
+          "action": "一阵脚步声响，一眨眼间，一大簇人从街那头拥了过来。",
+          "atmosphere": "尘土微扬，人潮压迫感骤起",
+          "sfx": [
+            "杂沓脚步声骤密"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0028"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH026",
+          "duration_sec": 5,
+          "shot_size": "extreme_wide",
+          "camera": {
+            "movement": "static",
+            "angle": "overhead"
+          },
+          "location_ref": "S05",
+          "location_angle": "overhead",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C06",
+              "action": "合流疾涌，至街口骤停，围成半圆",
+              "position": "画面中央成半圆阵形"
+            }
+          ],
+          "action": "俯瞰丁字街口：三三两两的人忽然合作一堆，潮一般向前赶；将到街口，突然立住，簇成一个半圆。",
+          "atmosphere": "高处俯瞰，人群如潮水凝住",
+          "sfx": [
+            "人潮涌动声戛然而止"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0029"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH027",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "pov"
+          },
+          "location_ref": "S05",
+          "location_angle": "reverse",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C06",
+              "action": "背对镜头，颈项齐齐伸长",
+              "position": "占满画面的后背与后颈"
+            }
+          ],
+          "action": "老栓视角：只见一堆人的后背，颈项都伸得很长，仿佛许多鸭，被无形的手捏住了向上提着。",
+          "atmosphere": "密集后脑与伸长的脖颈，压抑而荒诞",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0030"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH028",
+          "duration_sec": 5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C06",
+              "action": "轰然后退四散奔涌",
+              "position": "由画面深处冲向镜头两侧"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "惊骇",
+              "action": "被人潮撞得踉跄",
+              "position": "画面右下角"
+            }
+          ],
+          "action": "静了一会，那边似乎有点声音，人堆随即动摇起来，轰的一声齐齐向后退，散开的人潮一直退到老栓立着的檐下，几乎将他挤倒。",
+          "atmosphere": "人潮翻涌，晨光中尘土飞散",
+          "sfx": [
+            "轰的一声闷响",
+            "奔散的脚步与衣料摩擦声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0031"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH029",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "low"
+          },
+          "location_ref": "S05",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "expression": "目光如刀",
+              "action": "逼近站定，厉声喝话",
+              "position": "画面中央压迫性近逼"
+            }
+          ],
+          "action": "一个浑身黑色的人陡然站定在老栓面前，眼光正像两把刀，直刺过来，冲他喝道。",
+          "atmosphere": "逆着微明天光的黑色身影，压迫感极强",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "喂！一手交钱，一手交货！",
+              "character_ref": "C04",
+              "emotion": "粗声厉喝",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0032"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH030",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S05",
+          "location_angle": "reverse",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "畏怯",
+              "action": "浑身一缩，佝偻后退半步",
+              "position": "画面中央偏下"
+            }
+          ],
+          "action": "老栓被那眼光刺得整个人一缩，肩背佝偻下去，仿佛矮了半截。",
+          "atmosphere": "俯角压迫，人影缩小",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0033"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH031",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "action": "一手摊开索钱，一手撮着滴红的馒头",
+              "position": "双手占满画面"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "fresh_bleeding"
+            }
+          ],
+          "action": "黑衣人一只大手向老栓摊着；另一只手撮着一个鲜红的馒头，那红的还在一点一点往下滴。",
+          "atmosphere": "灰蓝晨色中唯一的刺目鲜红",
+          "sfx": [
+            "液体滴落石板的轻响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0034"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH032",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "reverse",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "慌乱惧怕",
+              "action": "摸出洋钱抖着递出，缩手不敢接货",
+              "position": "画面右"
+            },
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "action": "摊手等钱",
+              "position": "画面左入半身"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P02"
+            },
+            {
+              "ref": "P01",
+              "state": "fresh_bleeding"
+            }
+          ],
+          "action": "老栓慌忙摸出洋钱，抖着手想交给他，却又不敢伸手去接他的东西，两只手在半空僵着。",
+          "atmosphere": "两双手在画面中央僵持",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0035"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH033",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "low"
+          },
+          "location_ref": "S05",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "expression": "焦躁瞪眼",
+              "action": "冲老栓嚷叫",
+              "position": "面部占满画面"
+            }
+          ],
+          "action": "黑衣人焦急起来，瞪眼嚷道，脖颈青筋绷起。",
+          "atmosphere": "近逼特写，火气逼人",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "怕什么？怎的不拿！",
+              "character_ref": "C04",
+              "emotion": "不耐烦地嚷",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0036"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH034",
+          "duration_sec": 6,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "side",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "action": "抢灯笼、扯纸罩、裹馒头、塞包、抓钱捏钱、转身",
+              "position": "画面左主导动作"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "措手不及",
+              "action": "被塞了纸包，怔立原地",
+              "position": "画面右"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "paper_wrapped"
+            },
+            {
+              "ref": "P02"
+            },
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "老栓还在踌躇，黑衣人一把抢过灯笼，扯下纸罩裹了馒头，塞进老栓手里；一手抓过洋钱捏一捏，转身便走。",
+          "atmosphere": "动作粗暴迅疾，纸罩撕裂",
+          "sfx": [
+            "纸罩撕裂声",
+            "银元捏响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0037"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH035",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "reverse",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C04",
+              "outfit": "default",
+              "action": "背身远去，边走边哼",
+              "position": "画面中央背影"
+            }
+          ],
+          "action": "黑衣人背身而去，嘴里哼着甩下一句，身影没入散乱人影中。",
+          "atmosphere": "背影融入灰蓝晨色",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "这老东西……。",
+              "character_ref": "C04",
+              "emotion": "鄙夷地低哼",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0038"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH036",
+          "duration_sec": 6,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "follow",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "front",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "目不旁视，郑重如捧至宝",
+              "action": "双手捧包护在胸前疾走",
+              "position": "画面中央"
+            },
+            {
+              "ref": "C06",
+              "action": "散乱人影退居背景，有人画外发问（OS，人未入镜）",
+              "position": "背景虚化"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "paper_wrapped"
+            }
+          ],
+          "action": "老栓双手捧着纸包紧护在胸前，快步离开街口；人群里画外飘来一声问话，他并不答应，眼睛只顾盯着怀里的包。",
+          "atmosphere": "周遭虚化，只有怀中纸包清晰",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "这给谁治病的呀？",
+              "character_ref": "C06",
+              "emotion": "好奇探问（画外音）",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0039"
+            ],
+            "text": "老栓也似乎听得有人问他，但他并不答应；他的精神，现在只在一个包上，仿佛抱着一个十世单传的婴儿，别的事情，都已置之度外了。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0039"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH037",
+          "duration_sec": 5,
+          "shot_size": "full",
+          "camera": {
+            "movement": "track",
+            "angle": "eye_level"
+          },
+          "location_ref": "S04",
+          "location_angle": "side",
+          "time_of_day": "dawn",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "满怀郑重的期待",
+              "action": "抱包疾行",
+              "position": "画面中央侧影"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "paper_wrapped"
+            }
+          ],
+          "action": "老栓抱着纸包沿长街疾行回家，脚步轻快，晨光在他身后一点点铺开。",
+          "atmosphere": "天光渐暖，长街苏醒前的宁静",
+          "narration": {
+            "unit_refs": [
+              "u0040"
+            ],
+            "text": "他现在要将这包里的新的生命，移植到他家里，收获许多幸福。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0040"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『要将这包里的新的生命，移植到他家里，收获许多幸福』→ 心理句转译为抱包疾步归家、晨光渐亮的画面"
+          }
+        },
+        {
+          "id": "E01-SH038",
+          "duration_sec": 6,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "pan",
+            "angle": "eye_level"
+          },
+          "location_ref": "S05",
+          "location_angle": "establishing",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "迎着朝阳走上大道，渐行渐远",
+              "position": "画面下方远去背影"
+            }
+          ],
+          "action": "太阳出来了：老栓面前显出一条大道，直通他的家；镜头随他回望，丁字街头破匾上'古口亭口'四个黯淡的金字在朝阳里依旧灰暗。",
+          "atmosphere": "朝阳金光铺路，唯破匾金字黯淡无光",
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0041"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    },
+    {
+      "id": "E02",
+      "title": "第二节·灶火与药",
+      "source_range": {
+        "from_unit": "u0042",
+        "to_unit": "u0067"
+      },
+      "summary": "老栓带着人血馒头回到茶馆，夫妇二人用荷叶包了在灶火里烤熟；避开闲客驼背五少爷，让病弱的小栓把这'药'吃下，守着他睡去。",
+      "tail_frame_description": "幽暗里屋，华大妈俯身为熟睡的小栓掖好满幅补钉的夹被，俯拍视角，昏黄弱光只照亮被面粗布补钉与母亲的手，四周沉入青灰暗部，安静而压抑。",
+      "music": {
+        "mood": "ominous",
+        "style_hint": "低回弦乐与偶发的单音古筝，灶火段加入细碎打击乐衬底，结尾只留一支孤清的箫",
+        "curve": [
+          {
+            "from_shot": "E02-SH001",
+            "to_shot": "E02-SH006",
+            "mood": "tense",
+            "intensity": "low",
+            "note": "小栓病态毕现、老栓皱眉、华大妈'嘴唇有些发抖'的一问一答，悬着心的紧",
+            "unit_refs": [
+              "u0044",
+              "u0046",
+              "u0047"
+            ]
+          },
+          {
+            "from_shot": "E02-SH007",
+            "to_shot": "E02-SH010",
+            "mood": "ominous",
+            "intensity": "mid",
+            "note": "夫妇密议、荷叶重包'那红的馒头'、红黑火焰与'奇怪的香味'，不祥感升起",
+            "unit_refs": [
+              "u0050",
+              "u0053"
+            ]
+          },
+          {
+            "from_shot": "E02-SH011",
+            "to_shot": "E02-SH014",
+            "mood": "calm",
+            "intensity": "low",
+            "note": "驼背五少爷闲话无人应答，市井日常的松弛过场",
+            "unit_refs": [
+              "u0055",
+              "u0056"
+            ]
+          },
+          {
+            "from_shot": "E02-SH015",
+            "to_shot": "E02-SH020",
+            "mood": "tense",
+            "intensity": "mid",
+            "note": "小栓'似乎拿着自己的性命一般'吃药，父母眼光'注进什么又要取出什么'，他'禁不住心跳起来'",
+            "unit_refs": [
+              "u0061",
+              "u0064"
+            ]
+          },
+          {
+            "from_shot": "E02-SH021",
+            "to_shot": "E02-SH023",
+            "mood": "melancholy",
+            "intensity": "low",
+            "note": "咳着睡去、'满幅补钉的夹被'轻轻盖上，收束于贫病相守的怅然",
+            "unit_refs": [
+              "u0066",
+              "u0067"
+            ]
+          }
+        ]
+      },
+      "shots": [
+        {
+          "id": "E02-SH001",
+          "duration_sec": 5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "抱着纸包进门，环视店堂",
+              "position": "画面右侧门口"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "paper_wrapped"
+            }
+          ],
+          "action": "清晨的茶馆店堂：店面早已收拾干净，一排一排茶桌滑溜溜地发光；老栓抱着纸包跨进门来；画面叠印章节字样'二'。",
+          "atmosphere": "晨光从门板斜入，桌面反着微光，店内空无一客",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0042",
+              "u0043"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH002",
+          "duration_sec": 5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "疲弱",
+              "action": "低头扒饭，额汗滚落",
+              "position": "画面中央侧背对镜头"
+            }
+          ],
+          "action": "店堂里排的桌前，小栓独自坐着吃饭，大粒的汗从额上滚下，夹袄湿得贴住脊心，两块肩胛骨高高凸出，在衣背上印成一个阳文的'八'字。",
+          "atmosphere": "晨光照出汗湿的衣背与嶙峋骨形",
+          "sfx": [
+            "瓷碗轻碰声",
+            "压抑的喘息"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0044"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH003",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "眉心紧皱，喜色收敛",
+              "action": "凝望儿子",
+              "position": "面部特写"
+            }
+          ],
+          "action": "老栓望着儿子的样子，展开的眉心不由得又皱了一皱。",
+          "atmosphere": "面部侧光，喜忧交叠",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0045"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH004",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "睁大眼睛，嘴唇发抖",
+              "action": "从灶间急步走出，直望丈夫",
+              "position": "画面左侧迎面而来"
+            }
+          ],
+          "action": "他的女人从灶下急急走出，睁着眼睛望向老栓，嘴唇有些发抖。",
+          "atmosphere": "急促的脚步打破店堂安静",
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0046"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH005",
+          "duration_sec": 2,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "急切",
+              "action": "低声发问",
+              "position": "画面中央过肩近景"
+            }
+          ],
+          "action": "华大妈紧盯丈夫，颤声急问。",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "得了么？",
+              "character_ref": "C02",
+              "emotion": "压着嗓子的急切",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0047"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH006",
+          "duration_sec": 2,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "郑重",
+              "action": "点头按怀",
+              "position": "画面中央过肩近景"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "paper_wrapped"
+            }
+          ],
+          "action": "老栓点头，低声应答，手往怀里按了按。",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "得了。",
+              "character_ref": "C01",
+              "emotion": "低沉笃定",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0048"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH007",
+          "duration_sec": 6,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S06",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "凑近妻子低声商量",
+              "position": "画面右"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "action": "商量后出门取来老荷叶摊在桌上",
+              "position": "画面左进出"
+            }
+          ],
+          "action": "两个人一齐走进灶下，凑近低声商量了一会；华大妈出去，不多时拿着一片老荷叶回来，摊在桌上。",
+          "atmosphere": "灶间昏暗，二人身影凑作一处",
+          "sfx": [
+            "窃窃低语"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0049"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH008",
+          "duration_sec": 4,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S06",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "拆纸罩、以荷叶重新包馒头",
+              "position": "手部特写"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "lotus_wrapped"
+            },
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "老栓打开灯笼罩，取出那红的馒头，用老荷叶重新包了起来。",
+          "atmosphere": "灶间微光下，荷叶青绿衬着馒头暗红",
+          "sfx": [
+            "纸罩窸窣",
+            "荷叶折叠脆响"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0050"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH009",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "慌忙",
+              "action": "回头急声吩咐",
+              "position": "画面左灶间门口"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "action": "放下碗正要起身",
+              "position": "画面右桌前"
+            }
+          ],
+          "action": "小栓吃完饭放下碗，他的母亲一回头看见，慌忙开口拦住。",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "小栓——你坐着，不要到这里来。",
+              "character_ref": "C02",
+              "emotion": "慌忙拦阻",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0051",
+              "u0052"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH010",
+          "duration_sec": 6,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S06",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "action": "拨旺灶火",
+              "position": "画面左"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "action": "将碧绿荷叶包与破灯笼塞入灶膛",
+              "position": "画面右俯身向灶"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "lotus_wrapped"
+            },
+            {
+              "ref": "P03"
+            }
+          ],
+          "action": "华大妈整顿灶火，老栓把一个碧绿的包、一个红红白白的破灯笼一同塞进灶里；一阵红黑的火焰腾起又落下，青烟散进店屋，弥漫开一种奇怪的香味。",
+          "atmosphere": "红黑火焰映脸，青烟袅袅漫出灶间",
+          "sfx": [
+            "火焰腾起的呼声",
+            "纸与荷叶的爆裂声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0053"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH011",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C05",
+              "outfit": "default",
+              "expression": "嗅着香味的闲散笑意",
+              "action": "踱进店门，扬声问话",
+              "position": "画面中央门口逆光"
+            }
+          ],
+          "action": "临街门口踱进一个驼背身影，边嗅边扬声问话——驼背五少爷到了。",
+          "atmosphere": "门口晨光勾出驼背剪影",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "好香！你们吃什么点心呀？",
+              "character_ref": "C05",
+              "emotion": "拖长的闲适语调",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0054"
+            ],
+            "text": "这是驼背五少爷到了。",
+            "order": "after_dialogue"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0054"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH012",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C05",
+              "outfit": "default",
+              "expression": "讪讪",
+              "action": "蹩到壁角桌边坐下问话",
+              "position": "画面左壁角"
+            }
+          ],
+          "action": "驼背五少爷蹩到临街的壁角桌边坐下，冲店里问话，店内无人应声；他自顾自摩挲着桌面。",
+          "atmosphere": "店堂空旷，问话落在寂静里",
+          "narration": {
+            "unit_refs": [
+              "u0055"
+            ],
+            "text": "这人每天总在茶馆里过日，来得最早，去得最迟，此时恰恰蹩到临街的壁角的桌边，便坐下问话，然而没有人答应他。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0055"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH013",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C05",
+              "outfit": "default",
+              "expression": "疑惑",
+              "action": "偏头再问",
+              "position": "画面中央"
+            }
+          ],
+          "action": "他又追问了一句，店堂里仍然没有人应，只有灶间飘出的余烟。",
+          "atmosphere": "无人应答的尴尬静默",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "炒米粥么？",
+              "character_ref": "C05",
+              "emotion": "自言自语般追问",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0056"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH014",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "敷衍中带心事",
+              "action": "匆匆出来提壶泡茶",
+              "position": "画面右趋向壁角"
+            },
+            {
+              "ref": "C05",
+              "outfit": "default",
+              "action": "端坐等茶",
+              "position": "画面左"
+            }
+          ],
+          "action": "老栓从灶间匆匆走出，提着铜壶给他泡上茶，神色不欲多言。",
+          "sfx": [
+            "沸水注入茶碗声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0057"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH015",
+          "duration_sec": 5,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "action": "唤儿入屋，摆好条凳",
+              "position": "画面左"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "action": "顺从进屋，坐上条凳",
+              "position": "画面中央"
+            }
+          ],
+          "action": "华大妈唤小栓进了里面的屋子，中间放好一条凳，小栓依言坐了。",
+          "atmosphere": "里屋幽暗，一线天光落在条凳上",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "小栓进来罢！",
+              "character_ref": "C02",
+              "emotion": "轻声招唤",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0058"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH016",
+          "duration_sec": 5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "郑重而温柔",
+              "action": "端碟递上，俯身轻语",
+              "position": "画面左俯向儿子"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "疑惑",
+              "action": "望着碟中黑物",
+              "position": "画面右"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "charred"
+            }
+          ],
+          "action": "他的母亲端过一碟乌黑的圆东西，放到小栓面前，俯身轻轻说道。",
+          "atmosphere": "碟中焦黑圆物在幽暗里格外扎眼",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "吃下去罢，——病便好了。",
+              "character_ref": "C02",
+              "emotion": "轻声哄劝，字字郑重",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0059",
+              "u0060"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH017",
+          "duration_sec": 5,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "说不出的奇怪与郑重",
+              "action": "撮起黑馒头端详，指尖轻颤",
+              "position": "面部与双手特写"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "charred"
+            }
+          ],
+          "action": "小栓撮起这黑东西，举在眼前看了一会，指尖微微发颤，像捧着一件说不出来历的物事。",
+          "atmosphere": "一线天光照亮掌中焦黑之物",
+          "narration": {
+            "unit_refs": [
+              "u0061"
+            ],
+            "text": "小栓撮起这黑东西，看了一会，似乎拿着自己的性命一般，心里说不出的奇怪。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0061"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH018",
+          "duration_sec": 4,
+          "shot_size": "extreme_close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "action": "小心拗开焦皮",
+              "position": "双手大特写"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "split_open"
+            }
+          ],
+          "action": "十分小心地拗开焦皮，一道白气从裂口窜出；白气散了，掌中是两半个白面的馒头。",
+          "atmosphere": "白气一闪，焦黑裂开露出惨白",
+          "sfx": [
+            "焦皮碎裂轻响",
+            "热气嘶的一声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0062"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH019",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "茫然",
+              "action": "咽下最后一口，望着空盘发怔",
+              "position": "画面中央"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01",
+              "state": "split_open"
+            }
+          ],
+          "action": "不多工夫，馒头已经全吃进肚里；小栓怔怔坐着，面前只剩下一张空盘。",
+          "atmosphere": "空盘反着微光，静得能听见呼吸",
+          "narration": {
+            "unit_refs": [
+              "u0063"
+            ],
+            "text": "——不多工夫，已经全在肚里了，却全忘了什么味；面前只剩下一张空盘。"
+          },
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0063"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH020",
+          "duration_sec": 6,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "push_in",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "灼灼期盼",
+              "action": "侍立紧盯儿子",
+              "position": "画面左侧"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "灼灼期盼",
+              "action": "侍立紧盯儿子",
+              "position": "画面右侧"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "心慌气促",
+              "action": "按着胸膛，一阵咳嗽",
+              "position": "画面中央条凳上"
+            }
+          ],
+          "action": "小栓的两旁，一面立着他的父亲，一面立着他的母亲，四道目光紧紧罩在他身上；小栓被看得禁不住心慌，按着胸膛，又是一阵咳嗽。",
+          "atmosphere": "对称构图，两侧身影如壁，逼仄压抑",
+          "narration": {
+            "unit_refs": [
+              "u0064"
+            ],
+            "text": "他的旁边，一面立着他的父亲，一面立着他的母亲，两人的眼光，都仿佛要在他身里注进什么又要取出什么似的；便禁不住心跳起来，按着胸膛，又是一阵咳嗽。"
+          },
+          "sfx": [
+            "连声咳嗽"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0064"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH021",
+          "duration_sec": 3,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "怜惜",
+              "action": "抚背哄劝",
+              "position": "画面左俯身"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "action": "咳声渐平",
+              "position": "画面右"
+            }
+          ],
+          "action": "华大妈俯下身，抚着儿子的背，柔声安顿。",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "text": "睡一会罢，——便好了。",
+              "character_ref": "C02",
+              "emotion": "放轻放缓的哄劝",
+              "verbatim": true
+            }
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0065"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH022",
+          "duration_sec": 4,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "expression": "倦极",
+              "action": "咳着侧身躺下入睡",
+              "position": "画面中央床上"
+            }
+          ],
+          "action": "小栓依他母亲的话，咳嗽着在床上躺下睡了，胸口起伏渐缓。",
+          "atmosphere": "幽暗里屋，一线天光落在床沿",
+          "sfx": [
+            "渐弱的咳嗽"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0066"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E02-SH023",
+          "duration_sec": 5,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "push_in",
+            "angle": "high"
+          },
+          "location_ref": "S02",
+          "location_angle": "reverse",
+          "time_of_day": "day",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "悬着心的温柔",
+              "action": "候喘息平静，轻掖补钉夹被",
+              "position": "画面左俯向床铺"
+            },
+            {
+              "ref": "C03",
+              "outfit": "default",
+              "action": "沉沉睡去",
+              "position": "床上"
+            }
+          ],
+          "action": "华大妈守在床边，候他喘气平静，才轻轻地给他盖上满幅补钉的夹被，掖好被角。",
+          "atmosphere": "补钉夹被的粗布纹理占据前景，光线昏黄黯淡",
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0067"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.03
+  }
+}

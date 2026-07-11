@@ -1,0 +1,791 @@
+{
+  "meta": {
+    "schema_version": "0.4",
+    "title": "橘子汽水·第七章 天台",
+    "fidelity_mode": "faithful",
+    "style": {
+      "style_prefix": "日系清新写实风格，柔和自然光，浅景深",
+      "art_style": "realistic",
+      "color_tone": "暖色调，低对比，午后阳光质感",
+      "negative_prompt": "低画质，畸形手指，多余肢体，文字水印，过曝，阴暗恐怖氛围"
+    },
+    "video": {
+      "aspect_ratio": "9:16",
+      "resolution": "1080x1920",
+      "target_platform": "抖音"
+    },
+    "narration": {
+      "mode": "original_text",
+      "tts_voice": "female_soft"
+    }
+  },
+  "source": {
+    "work_title": "橘子汽水",
+    "chapter": "第七章 天台",
+    "units": [
+      {
+        "id": "u0001",
+        "text": "许辞把两瓶橘子汽水放在天台的矮墙上，其中一瓶推到了乔一面前。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0002",
+        "text": "“喝吧，赔罪的。”他说。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0003",
+        "text": "乔一没有伸手，风把她的校服裙摆吹起一个小小的弧度。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0004",
+        "text": "“你昨天为什么不来？”她盯着汽水瓶上凝结的水珠。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0005",
+        "text": "许辞沉默了几秒，指尖在瓶盖上摩挲。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0006",
+        "text": "“我妈住院了。”他的声音很轻，像是怕惊动什么。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0007",
+        "text": "乔一猛地抬头。",
+        "para": 1,
+        "kind": "action"
+      },
+      {
+        "id": "u0008",
+        "text": "她想起昨天在礼堂门口，自己是怎么当着全班的面把节目单摔在地上的。",
+        "para": 1,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0009",
+        "text": "胃里泛起一阵酸涩的悔意。",
+        "para": 1,
+        "kind": "psychology"
+      },
+      {
+        "id": "u0010",
+        "text": "“对不起。”两个人几乎同时开口。",
+        "para": 1,
+        "kind": "dialogue"
+      },
+      {
+        "id": "u0011",
+        "text": "汽水瓶在夕阳里透出橙色的光，像那年夏天所有没说出口的话。",
+        "para": 1,
+        "kind": "description"
+      }
+    ]
+  },
+  "assets": {
+    "characters": [
+      {
+        "id": "C01",
+        "name": "许辞",
+        "aliases": [
+          "他"
+        ],
+        "appearance": {
+          "age": "17岁左右",
+          "gender": "男",
+          "body": "高瘦挺拔的少年身形，肩线平直",
+          "face": "轮廓清秀，眉眼温和，鼻梁挺直",
+          "hair": "黑色短发，发梢微乱，自然垂落于额前",
+          "eyes": "深棕色，眼神安静内敛",
+          "distinguishing_marks": "左手手背有一颗浅浅的小痣"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "夏季高中校服：白色短袖衬衫，领口松开一颗扣，深藏青色长裤，白色运动鞋"
+          }
+        ],
+        "visual_prompt": "日系清新写实风格，17岁左右的高瘦少年，黑色微乱短发，深棕色安静的眼睛，轮廓清秀眉眼温和，左手手背有一颗浅浅的小痣，穿白色短袖校服衬衫、深藏青色长裤、白色运动鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "male_youth_soft",
+          "tone": "轻缓、克制，语速偏慢"
+        },
+        "persona_notes": "隐忍懂事的少年，习惯把心事压在心底，用行动而非语言表达歉意"
+      },
+      {
+        "id": "C02",
+        "name": "乔一",
+        "aliases": [
+          "她"
+        ],
+        "appearance": {
+          "age": "16-17岁",
+          "gender": "女",
+          "body": "纤细匀称的少女身形，身高中等",
+          "face": "鹅蛋脸，眉毛细而直，唇色偏淡",
+          "hair": "黑色及肩直发，耳侧碎发，无刘海或薄刘海",
+          "eyes": "黑亮的杏眼，情绪外露",
+          "distinguishing_marks": "无明显特征"
+        },
+        "outfits": [
+          {
+            "id": "default",
+            "description": "夏季高中女生校服：白色短袖衬衫，深藏青色百褶校服裙，白色短袜，黑色小皮鞋"
+          }
+        ],
+        "visual_prompt": "日系清新写实风格，16-17岁的纤细少女，黑色及肩直发带耳侧碎发，黑亮杏眼，鹅蛋脸，穿白色短袖校服衬衫和深藏青色百褶校服裙、白色短袜、黑色小皮鞋，全身正面，纯白背景，中性表情，从头到脚完整入镜，双手自然垂落",
+        "reference_images": [],
+        "voice": {
+          "tts_voice": "female_youth_clear",
+          "tone": "清亮，带一点倔强和涩意"
+        },
+        "persona_notes": "性子直、情绪来得快，事后容易后悔，嘴硬心软的少女"
+      }
+    ],
+    "locations": [
+      {
+        "id": "S01",
+        "name": "学校天台",
+        "era": "现代",
+        "interior_exterior": "exterior",
+        "visual_prompt": "日系清新写实风格，现代高中教学楼天台，灰色水泥地面，一圈齐腰的水泥矮墙，矮墙外是远处的城市屋顶与天空，角落有通往楼下的铁门和几根晾衣杆，夕阳斜照，暖橙色光线，无人空景",
+        "angles": [
+          {
+            "angle": "establishing"
+          },
+          {
+            "angle": "front"
+          },
+          {
+            "angle": "reverse"
+          },
+          {
+            "angle": "side"
+          }
+        ],
+        "lighting_defaults": "傍晚夕阳暖橙色侧光，长影，低对比"
+      },
+      {
+        "id": "S02",
+        "name": "学校礼堂门口",
+        "era": "现代",
+        "interior_exterior": "exterior",
+        "visual_prompt": "日系清新写实风格，现代高中礼堂正门外，宽阔的水泥台阶，敞开的玻璃门，门口贴有活动海报，白天自然光，无人空景",
+        "angles": [
+          {
+            "angle": "front"
+          }
+        ],
+        "lighting_defaults": "白天柔和自然光"
+      }
+    ],
+    "props": [
+      {
+        "id": "P01",
+        "name": "橘子汽水",
+        "visual_prompt": "一瓶复古玻璃瓶装橘子汽水，橙色透明液体，金属瓶盖，瓶身贴橙色标签，瓶壁凝结细密水珠，纯白背景，特写",
+        "reference_images": []
+      },
+      {
+        "id": "P02",
+        "name": "节目单",
+        "visual_prompt": "一张A4大小的文艺演出节目单，白色纸张，纸面印有整齐的节目列表，边角略有折痕，纯白背景，特写",
+        "reference_images": []
+      }
+    ]
+  },
+  "episodes": [
+    {
+      "id": "E01",
+      "title": "天台上的赔罪汽水",
+      "source_range": {
+        "from_unit": "u0001",
+        "to_unit": "u0011"
+      },
+      "summary": "许辞在天台用两瓶橘子汽水向乔一赔罪。乔一质问他昨天为何缺席，得知他母亲住院后，想起自己当众摔节目单的举动而懊悔。两人几乎同时说出对不起，夕阳中的汽水瓶透出橙光。",
+      "tail_frame_description": "主体：矮墙上两瓶橘子汽水的特写，瓶身水珠折射夕阳；背景：虚化的天台矮墙与远处泛橙的天空；光线：夕阳逆光，瓶中液体透出橙色光晕；构图：瓶子位于画面下三分之一偏左，上方留出大片暖色天空；氛围：温暖、怅惘、青春的余味",
+      "shots": [
+        {
+          "id": "E01-SH001",
+          "duration_sec": 5,
+          "shot_size": "wide",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "establishing",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "平静中带着一丝小心",
+              "action": "把两瓶汽水放在矮墙上，将其中一瓶推到乔一面前",
+              "position": "画面左侧，侧对矮墙"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "淡漠",
+              "action": "站在矮墙前不动",
+              "position": "画面右侧，与许辞隔着一小段距离"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "夕阳下的天台，许辞把两瓶橘子汽水并排放在矮墙上，抬手将其中一瓶缓缓推到乔一面前，玻璃瓶底在水泥墙面上划出轻响",
+          "atmosphere": "傍晚暖橙色光线，安静而微妙的对峙感",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "text": "许辞把两瓶橘子汽水放在天台的矮墙上，其中一瓶推到了乔一面前。"
+          },
+          "sfx": [
+            "玻璃瓶与水泥面的轻磕声",
+            "远处操场隐约人声",
+            "微风"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0001"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH002",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "克制的歉意",
+              "action": "推完汽水后看向乔一，开口说话",
+              "position": "画面中央，面向镜头方向"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "背对镜头",
+              "action": "静立不动",
+              "position": "前景边缘，虚化肩部"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "越过乔一的肩膀拍许辞，他看着乔一，轻声开口",
+          "atmosphere": "夕阳侧光打在许辞脸上，气氛试探而温和",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "喝吧，赔罪的。",
+              "emotion": "低声、带歉意",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [],
+            "text": ""
+          },
+          "sfx": [
+            "微风"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0002"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH003",
+          "duration_sec": 4,
+          "shot_size": "full",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "抿唇，克制的疏离",
+              "action": "双手垂在身侧不去拿汽水，任风吹动衣裙下摆",
+              "position": "画面中央偏右，站在矮墙前"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "乔一全身入镜，她没有伸手去碰面前的汽水，一阵风掠过天台，她的裙摆被吹起一个小小的弧度又落下",
+          "atmosphere": "风声中的沉默，微妙的僵持",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "text": "乔一没有伸手，风把她的校服裙摆吹起一个小小的弧度。"
+          },
+          "sfx": [
+            "风声渐起",
+            "衣料被风吹动的窸窣声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0003"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH004",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "static",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "低垂着眼，语气发紧",
+              "action": "视线落在汽水瓶上凝结的水珠上，开口质问",
+              "position": "画面中央"
+            },
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "背对镜头",
+              "action": "静立",
+              "position": "前景边缘，虚化肩部"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "越过许辞的肩膀拍乔一，她不看许辞，目光死死盯住瓶身上滚落的水珠，开口发问",
+          "atmosphere": "压低的质问，空气凝滞",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "你昨天为什么不来？",
+              "emotion": "压抑的质问，带委屈",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "text": "“你昨天为什么不来？”她盯着汽水瓶上凝结的水珠。"
+          },
+          "sfx": [
+            "风声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0004"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH005",
+          "duration_sec": 4,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "high"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "沉默，眼睫低垂",
+              "action": "指尖在瓶盖边缘来回摩挲",
+              "position": "仅手部与瓶身入镜"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "特写许辞的手：他的指尖在金属瓶盖的锯齿边缘上缓慢地来回摩挲，迟迟没有说话",
+          "atmosphere": "几秒钟被拉长的沉默，只有指尖与瓶盖的细微声响",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "text": "许辞沉默了几秒，指尖在瓶盖上摩挲。"
+          },
+          "sfx": [
+            "指尖摩擦瓶盖的细微声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0005"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH006",
+          "duration_sec": 4,
+          "shot_size": "medium_close",
+          "camera": {
+            "movement": "push_in",
+            "angle": "over_shoulder"
+          },
+          "location_ref": "S01",
+          "location_angle": "front",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "平静下压着脆弱",
+              "action": "抬起视线，用极轻的音量说出实情",
+              "position": "画面中央"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "背对镜头",
+              "action": "静立",
+              "position": "前景边缘，虚化肩部"
+            }
+          ],
+          "prop_refs": [],
+          "action": "镜头缓缓推近许辞，他抬眼看向乔一，用几乎要被风吹散的音量说话",
+          "atmosphere": "轻得像怕惊动什么的一句话，夕阳光线柔和",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "我妈住院了。",
+              "emotion": "极轻，克制的脆弱",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "text": "“我妈住院了。”他的声音很轻，像是怕惊动什么。"
+          },
+          "sfx": [
+            "风声减弱"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0006"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH007",
+          "duration_sec": 2,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "震惊，睁大双眼",
+              "action": "猛地抬起头看向许辞",
+              "position": "画面中央，面部特写"
+            }
+          ],
+          "prop_refs": [],
+          "action": "乔一的头猛地抬起，视线撞向许辞，动作快得带起一缕碎发",
+          "atmosphere": "瞬间的震动，之前的怨气被击碎",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "text": "乔一猛地抬头。"
+          },
+          "sfx": [
+            "急促的一声吸气"
+          ],
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0007"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH008",
+          "duration_sec": 5,
+          "shot_size": "full",
+          "camera": {
+            "movement": "handheld",
+            "angle": "eye_level"
+          },
+          "location_ref": "S02",
+          "location_angle": "front",
+          "time_of_day": "day",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "涨红着脸，愤怒",
+              "action": "当着围观同学的面，把手中的节目单狠狠摔在地上",
+              "position": "画面中央，礼堂门口台阶前"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P02"
+            }
+          ],
+          "action": "回忆闪回（画面整体褪色、边缘轻微泛白）：礼堂门口，乔一在一圈同学的注视下，扬手把节目单摔在地上，纸页散落在台阶前",
+          "atmosphere": "褪色调回忆，喧闹又刺耳的白日，与天台的安静形成对比",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "text": "她想起昨天在礼堂门口，自己是怎么当着全班的面把节目单摔在地上的。"
+          },
+          "sfx": [
+            "纸张摔落声",
+            "同学的低声议论（闷响处理）"
+          ],
+          "transition_out": "dissolve",
+          "source": {
+            "unit_refs": [
+              "u0008"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『她想起昨天在礼堂门口……把节目单摔在地上』→ 以褪色调回忆闪回呈现：礼堂门口，乔一当着围观同学的面将节目单摔在地上"
+          }
+        },
+        {
+          "id": "E01-SH009",
+          "duration_sec": 3,
+          "shot_size": "close_up",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "reverse",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "眼眶微红，懊悔涌上来",
+              "action": "垂下眼，抿紧嘴唇，垂在身侧的手指慢慢蜷起",
+              "position": "画面中央，面部特写"
+            }
+          ],
+          "prop_refs": [],
+          "action": "回到天台，乔一的面部特写：她垂下眼，嘴唇抿成一条线，喉头轻轻滚动，身侧的手指缓缓蜷紧",
+          "atmosphere": "酸涩的悔意在沉默里发酵",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "text": "胃里泛起一阵酸涩的悔意。"
+          },
+          "sfx": [
+            "环境音沉下去，只剩很轻的风"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0009"
+            ],
+            "derivation": "inferred",
+            "inference_note": "『胃里泛起一阵酸涩的悔意』→ 悔意落为身体反应与表情特写：垂眼、抿唇、喉头滚动、手指蜷紧"
+          }
+        },
+        {
+          "id": "E01-SH010",
+          "duration_sec": 3,
+          "shot_size": "medium",
+          "camera": {
+            "movement": "static",
+            "angle": "eye_level"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [
+            {
+              "ref": "C01",
+              "outfit": "default",
+              "expression": "歉疚",
+              "action": "与乔一同时开口道歉，随即一怔",
+              "position": "画面左侧，侧面剪影被夕阳勾边"
+            },
+            {
+              "ref": "C02",
+              "outfit": "default",
+              "expression": "鼻尖发酸的歉疚",
+              "action": "与许辞同时开口道歉，随即一怔",
+              "position": "画面右侧，侧面剪影被夕阳勾边"
+            }
+          ],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "侧面双人镜头，两人隔着矮墙上的汽水相对而立，几乎在同一瞬间开口，话音撞在一起，两人都愣了一下",
+          "atmosphere": "夕阳把两个人的轮廓镀上金边，尴尬又柔软的一瞬",
+          "dialogue": [
+            {
+              "type": "dialogue",
+              "character_ref": "C01",
+              "text": "对不起。",
+              "emotion": "低声，真诚",
+              "verbatim": true
+            },
+            {
+              "type": "dialogue",
+              "character_ref": "C02",
+              "text": "对不起。",
+              "emotion": "带着鼻音，愧疚",
+              "verbatim": true
+            }
+          ],
+          "narration": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "text": "“对不起。”两个人几乎同时开口。"
+          },
+          "sfx": [
+            "两声重叠的话音",
+            "风声"
+          ],
+          "transition_out": "cut",
+          "source": {
+            "unit_refs": [
+              "u0010"
+            ],
+            "derivation": "explicit"
+          }
+        },
+        {
+          "id": "E01-SH011",
+          "duration_sec": 5,
+          "shot_size": "insert",
+          "camera": {
+            "movement": "push_in",
+            "angle": "low"
+          },
+          "location_ref": "S01",
+          "location_angle": "side",
+          "time_of_day": "dusk",
+          "weather": "晴",
+          "characters": [],
+          "prop_refs": [
+            {
+              "ref": "P01"
+            }
+          ],
+          "action": "低角度特写矮墙上的两瓶橘子汽水，镜头缓缓推近：夕阳从瓶身后方穿过，橙色液体透出温暖的光，瓶壁水珠折射出细碎光点，背景中两人的身影虚化成暖色剪影",
+          "atmosphere": "温暖、怅惘，青春里所有没说出口的话都封存在这瓶橙色的光里",
+          "dialogue": [],
+          "narration": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "text": "汽水瓶在夕阳里透出橙色的光，像那年夏天所有没说出口的话。"
+          },
+          "sfx": [
+            "很轻的风",
+            "远处隐约的蝉声"
+          ],
+          "transition_out": "fade_to_black",
+          "source": {
+            "unit_refs": [
+              "u0011"
+            ],
+            "derivation": "explicit"
+          }
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "unmapped_units": [],
+    "inferred_shot_ratio": 0.18
+  }
+}
