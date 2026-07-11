@@ -29,6 +29,8 @@ def main(argv=None) -> int:
     c.add_argument("--tts-voice", default=ConvertParams.tts_voice)
     c.add_argument("--render", metavar="DIR",
                    help="转换成功后附带渲染 Seedance 生产包到该目录（参考实现）")
+    c.add_argument("--review", action="store_true",
+                   help="开启 LLM 评审阶段（等效 STORYBOARD_REVIEW=1，弱模型建议开启）")
 
     args = ap.parse_args(argv)
     text = Path(args.input).read_text(encoding="utf-8")
@@ -39,8 +41,14 @@ def main(argv=None) -> int:
         target_platform=args.platform, narration_mode=args.narration_mode,
         tts_voice=args.tts_voice)
 
+    settings = None
+    if args.review:
+        from .config import load_settings
+        settings = load_settings()
+        settings.review_enabled = True
+
     try:
-        doc = convert_text(text, params)
+        doc = convert_text(text, params, settings=settings)
     except ConversionError as e:
         print(f"\n转换失败：{e}\n{e.report}", file=sys.stderr)
         return 1

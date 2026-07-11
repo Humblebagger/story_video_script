@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from . import validate
+from . import quality, review, validate
 from .config import Settings, load_settings
 from .llm import extract_json
 from .prompt import build_user_message, load_system_prompt
@@ -46,8 +46,38 @@ def _continuation_blocks(outputs: List[dict]) -> (str, str):
     return assets, continuation
 
 
-def _convert_batch(llm, system: str, user: str, batch_text: str,
-                   settings: Settings, workdir: Path, idx: int, log) -> dict:
+def _check_batch(doc: dict, batch_text: str, settings: Settings,
+                 workdir: Path, idx: int, attempt: int,
+                 review_llm, log):
+    """结构校验 → 质量门 → 可选评审。返回 (是否通过, 报告)。"""
+    tmp = workdir / f"batch{idx}_attempt{attempt}.json"
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
+                   encoding="utf-8")
+    lint_ok, lint_out = validate.run_lint(tmp)
+    fid_ok, fid_out = validate.run_fidelity(tmp, batch_text, workdir)
+    if not (lint_ok and fid_ok):
+        return False, lint_out.strip() + "\n" + fid_out.strip()
+
+    gate_ok, gate_report = quality.narration_density_gate(
+        doc, settings.narration_density_max)
+    if not gate_ok:
+        return False, gate_report
+
+    if settings.review_enabled and review_llm is not None:
+        rev_ok, rev_report = review.run_review(review_llm, batch_text, doc,
+                                               settings.review_min_score)
+        if rev_ok is None:
+            log(f"批 {idx} {rev_report}")
+        else:
+            log(rev_report.splitlines()[0])
+            if not rev_ok:
+                return False, rev_report
+    return True, ""
+
+
+def _convert_batch(llm, system: str, user: str, batch_text: str, params,
+                   settings: Settings, workdir: Path, idx: int,
+                   review_llm, log) -> dict:
     messages = [{"role": "user", "content": user}]
     last_report = ""
     for attempt in range(settings.max_retries + 1):
@@ -58,16 +88,13 @@ def _convert_batch(llm, system: str, user: str, batch_text: str,
             last_report = f"输出无法解析为 JSON：{e}"
             log(f"批 {idx} 第 {attempt + 1} 次生成：{last_report}")
         else:
-            tmp = workdir / f"batch{idx}_attempt{attempt + 1}.json"
-            tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
-                           encoding="utf-8")
-            lint_ok, lint_out = validate.run_lint(tmp)
-            fid_ok, fid_out = validate.run_fidelity(tmp, batch_text, workdir)
-            if lint_ok and fid_ok:
+            quality.apply_meta_overrides(doc, params)
+            ok, last_report = _check_batch(doc, batch_text, settings, workdir,
+                                           idx, attempt + 1, review_llm, log)
+            if ok:
                 log(f"批 {idx} 校验通过（第 {attempt + 1} 次生成）")
                 return doc
-            last_report = lint_out.strip() + "\n" + fid_out.strip()
-            log(f"批 {idx} 第 {attempt + 1} 次生成未通过校验")
+            log(f"批 {idx} 第 {attempt + 1} 次生成未通过校验/质量门")
         if attempt < settings.max_retries:
             log(f"批 {idx} 回喂校验报告重试（{attempt + 2}/{settings.max_retries + 1}）…")
             messages.append({"role": "assistant", "content": raw})
@@ -97,6 +124,13 @@ def convert_text(text: str,
     if llm is None:
         from .llm import LLMClient
         llm = LLMClient(settings)
+        review_llm = llm
+        if settings.review_enabled and settings.review_model \
+                and settings.review_model != settings.model:
+            from dataclasses import replace
+            review_llm = LLMClient(replace(settings, model=settings.review_model))
+    else:
+        review_llm = llm  # 注入的客户端（含测试 mock）同时承担评审调用
     if batches is None:
         batches = split_batches(text, settings.batch_target_chars,
                                 settings.single_batch_max_chars)
@@ -114,7 +148,8 @@ def convert_text(text: str,
             assets_block = cont_block = "无"
         user = build_user_message(params, batch, assets_block, cont_block)
         log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
-        doc = _convert_batch(llm, system, user, batch, settings, workdir, i, log)
+        doc = _convert_batch(llm, system, user, batch, params, settings,
+                             workdir, i, review_llm, log)
         path = workdir / f"batch{i}.json"
         path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8")

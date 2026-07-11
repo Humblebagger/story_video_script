@@ -62,7 +62,7 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 
 | 路径 | 内容 |
 |---|---|
-| `pipeline/` | 一键流水线（分批/LLM 调用/校验重试/合并编排），CLI 入口 `python3 -m pipeline` |
+| `pipeline/` | 一键流水线（分批/LLM 调用/校验重试/合并编排 + 质量层），CLI 入口 `python3 -m pipeline` |
 | `server/app.py` | HTTP 服务（FastAPI，异步任务模型），配合 `Dockerfile` 独立部署 |
 | `schema/storyboard.schema.json` | NovelStoryboard v0.4 分镜 JSON Schema（严格模式：拒绝未知字段） |
 | `docs/schema-design.md` | schema 设计决策说明 |
@@ -94,5 +94,6 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 - [x] 真实公版文本端到端测试（鲁迅《药》全文 4584 字 2 批全链路通过；暴露 25 处真实文本特有情形，16 处修入 prompt、4 处结构性缺口记入 v0.4 方向，详见报告）
 - [x] schema v0.4：道具状态机（props.states + prop_refs[].state）、生物资产类别（assets.creatures，A 卡）、镜头内旁白/台词顺序（narration.order）；mood 词表评估后维持不变。《药》归档改造为实战验证件，负例测试 4/4 拦截（变更记录见 `docs/schema-design.md`）
 - [x] 一键流水线与独立部署：`pipeline/`（自动分批 → 内置 LLM 调用 → 校验失败回喂重试 → 合并终检）+ CLI + HTTP 服务 + Docker；离线回归用《药》归档回放，结果与人肉实测逐字一致
+- [x] 弱模型质量层：meta 确定性覆写（参数即标准答案）、selective 旁白密度质量门（占比超阈值回喂可拍句清单）、可选 LLM 评审阶段（评分卡+issues 回喂，`STORYBOARD_REVIEW=1` 开启）。实测 DeepSeek 旁白占比 100% → 三轮收敛到 27%（人工基准 18%–36%），保留句恰为心理+点题句
 
 **产品边界**：本项目的交付物是分镜 JSON 这份中间表示本身——信息完整（资产/镜头/台词/旁白/溯源）、结构合法、机器可校验。下游用剪辑器还是 AI 生视频应用消费它，不在本项目范围内；`adapters/seedance.py` 仅作为"IR 可被下游直接消费"的参考实现保留，不再扩展适配器矩阵。
