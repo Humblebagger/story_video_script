@@ -97,21 +97,23 @@ def main() -> int:
     print("meta 覆写: 缩写的 style_prefix / 漂移的 mode 被纠正 ✓")
 
     # 6. 旁白密度质量门：《药》人工基准通过；逐句朗读式退化被拦截
-    ok, _ = narration_density_gate(doc, 0.6)
+    ok, _, ratio = narration_density_gate(doc, 0.6)
     assert ok, "《药》归档（旁白占比 0.18）不应触发质量门"
+    assert 0.15 < ratio < 0.25, f"《药》归档旁白占比应约 0.18，实际 {ratio}"
     degraded = {
         "meta": {"narration": {"mode": "selective"}},
         "source": {"units": [{"id": f"u{i:04d}", "text": "他推门。", "kind": "action"}
                              for i in range(1, 11)]},
         "episodes": [{"shots": [{"narration": {"unit_refs": [f"u{i:04d}"]}}
                                 for i in range(1, 11)]}]}
-    ok, report = narration_density_gate(degraded, 0.6)
-    assert not ok and "100%" in report and "u0001" in report
-    ok, _ = narration_density_gate(degraded, 1.0)   # >=1 关闭
+    ok, report, ratio = narration_density_gate(degraded, 0.6)
+    assert not ok and "100%" in report and "u0001" in report and ratio == 1.0
+    ok, _, _ = narration_density_gate(degraded, 1.0)   # >=1 关闭
     assert ok
     degraded["meta"]["narration"]["mode"] = "original_text"
-    ok, _ = narration_density_gate(degraded, 0.6)   # 非 selective 不适用
+    ok, _, _ = narration_density_gate(degraded, 0.6)   # 非 selective 不适用
     assert ok
+    degraded["meta"]["narration"]["mode"] = "selective"
     print("旁白密度门: 归档通过 / 100% 旁白拦截 / 关闭与模式豁免生效 ✓")
 
     # 7. 评审阶段流程（mock：生成 1 次 + 评审 1 次通过）
@@ -133,6 +135,46 @@ def main() -> int:
     assert len(mock2.calls) == 2, "应有 1 次生成 + 1 次评审调用"
     assert "评审总分" not in json.dumps(doc2), "评审结果不应混入产物"
     print("评审阶段: 生成 → 评审通过 → 产物返回，调用序列正确 ✓")
+
+    # 8. 软质量门重试耗尽：择优降级交付（strict 时改为直接失败）
+    #    硬校验打桩为通过，只让密度门失败——两次尝试 100% → 80%，应交付 80% 那版
+    from pipeline import convert as convert_mod
+    from pipeline.convert import ConversionError
+
+    def deg_doc(n_narrated):
+        return {"meta": {"narration": {"mode": "selective"}},
+                "source": {"units": [{"id": f"u{i:04d}", "text": "他推门。",
+                                      "kind": "action"} for i in range(1, 11)]},
+                "episodes": [{"shots": [{"narration": {"unit_refs": [f"u{i:04d}"]}}
+                                        for i in range(1, n_narrated + 1)]}]}
+
+    orig_lint = convert_mod.validate.run_lint
+    orig_fid = convert_mod.validate.run_fidelity
+    convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
+    convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
+    try:
+        warnings = []
+        mock3 = MockLLM([json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
+        doc3 = convert_text("他推门。", settings=Settings(max_retries=1),
+                            llm=mock3, batches=["他推门。"],
+                            log=lambda m: None, warnings_out=warnings)
+        narrated = sum(len(s["narration"]["unit_refs"])
+                       for s in doc3["episodes"][0]["shots"])
+        assert narrated == 8, f"应择优交付 80% 那版，实际旁白句数 {narrated}"
+        assert len(warnings) == 1 and "择优交付第 2 次生成" in warnings[0]
+        assert "旁白占比 80%" in warnings[0]
+
+        mock4 = MockLLM([json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
+        try:
+            convert_text("他推门。", settings=Settings(max_retries=1, strict=True),
+                         llm=mock4, batches=["他推门。"], log=lambda m: None)
+            raise AssertionError("strict 模式下软门重试耗尽应抛 ConversionError")
+        except ConversionError:
+            pass
+    finally:
+        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_fidelity = orig_fid
+    print("降级交付: 软门耗尽择优交付+警告 / strict 直接失败 ✓")
 
     print("\nALL PASS")
     return 0

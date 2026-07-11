@@ -3,8 +3,11 @@
 启动：uvicorn server.app:app --host 0.0.0.0 --port 8000
 转换耗时为分钟级（LLM 长输出），故采用异步任务模型：
   POST /convert          → {"job_id": ...}
-  GET  /jobs/{job_id}    → {"status": queued|running|succeeded|failed, "result": 分镜JSON, "log": [...]}
+  GET  /jobs/{job_id}    → {"status": queued|running|succeeded|completed_with_warnings|failed,
+                            "result": 分镜JSON, "quality_report": 降级交付时的质量报告, "log": [...]}
   GET  /healthz          → 存活与配置探针
+completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽，产物结构合法、
+逐字保真但质量未达阈值，已择优交付历次尝试中最优一版（请求置 strict=true 改为直接失败）。
 任务表在内存中，进程重启即清空（结果请在 succeeded 后及时取走）。
 """
 import os
@@ -44,6 +47,7 @@ class ConvertRequest(BaseModel):
     target_platform: str = _D.target_platform
     narration_mode: str = _D.narration_mode
     tts_voice: str = _D.tts_voice
+    strict: bool = False   # True：软质量门重试耗尽直接失败（默认择优降级交付）
 
 
 def _run_job(job: dict, req: ConvertRequest) -> None:
@@ -58,9 +62,17 @@ def _run_job(job: dict, req: ConvertRequest) -> None:
         color_tone=req.color_tone, aspect_ratio=req.aspect_ratio,
         target_platform=req.target_platform, narration_mode=req.narration_mode,
         tts_voice=req.tts_voice)
+    settings = load_settings()
+    settings.strict = settings.strict or req.strict
+    warnings: list = []
     try:
-        job["result"] = convert_text(req.text, params, log=log)
-        job["status"] = "succeeded"
+        job["result"] = convert_text(req.text, params, settings=settings,
+                                     log=log, warnings_out=warnings)
+        if warnings:
+            job["quality_report"] = "\n\n".join(warnings)
+            job["status"] = "completed_with_warnings"
+        else:
+            job["status"] = "succeeded"
     except ConversionError as e:
         job["status"] = "failed"
         job["error"] = f"{e}\n{e.report}"
@@ -72,7 +84,8 @@ def _run_job(job: dict, req: ConvertRequest) -> None:
 @app.post("/convert")
 def submit(req: ConvertRequest):
     job_id = uuid.uuid4().hex[:12]
-    job = {"id": job_id, "status": "queued", "log": [], "result": None, "error": None}
+    job = {"id": job_id, "status": "queued", "log": [], "result": None,
+           "quality_report": None, "error": None}
     with _lock:
         _jobs[job_id] = job
     _executor.submit(_run_job, job, req)

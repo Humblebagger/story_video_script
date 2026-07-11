@@ -26,27 +26,28 @@ def apply_meta_overrides(doc: dict, params) -> None:
     narration["tts_voice"] = params.tts_voice
 
 
-def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str]:
+def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str, float]:
     """selective 模式下"能拍出来的不念"的机器兜底。
 
     人工基准的旁白占比在 18%–36%（《药》0.18、《玉佩》0.36）；弱模型常退化成
     逐句朗读（100%）。占比超过 max_ratio 即不通过，报告列出可拍句清单供模型
     逐句重新裁决。max_ratio >= 1 视为关闭该门。
+    返回 (是否通过, 报告, 实际占比)——占比供重试耗尽后择优降级交付时比较。
     """
     mode = doc.get("meta", {}).get("narration", {}).get("mode")
     if mode != "selective" or max_ratio >= 1.0:
-        return True, ""
+        return True, "", 0.0
 
     units = [u for u in doc.get("source", {}).get("units", []) if not u.get("skipped")]
     if not units:
-        return True, ""
+        return True, "", 0.0
     narrated = set()
     for ep in doc.get("episodes", []):
         for shot in ep.get("shots", []):
             narrated.update(shot.get("narration", {}).get("unit_refs", []))
     ratio = len(narrated & {u["id"] for u in units}) / len(units)
     if ratio <= max_ratio:
-        return True, ""
+        return True, "", ratio
 
     candidates = [u for u in units
                   if u["id"] in narrated
@@ -59,4 +60,4 @@ def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str]:
         f"从 narration.unit_refs 中移除（保持 source.unit_refs 不变）；只保留画面承载"
         f"不了的信息——时间跳跃、人名身份交代、因果前史、心理核心语义、点题句：\n"
         + "\n".join(lines))
-    return False, report
+    return False, report, ratio

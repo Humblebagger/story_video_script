@@ -6,6 +6,7 @@ from pathlib import Path
 
 from . import validate
 from .convert import ConversionError, ConvertParams, convert_text
+from .llm import LLMError
 
 
 def main(argv=None) -> int:
@@ -31,6 +32,9 @@ def main(argv=None) -> int:
                    help="转换成功后附带渲染 Seedance 生产包到该目录（参考实现）")
     c.add_argument("--review", action="store_true",
                    help="开启 LLM 评审阶段（等效 STORYBOARD_REVIEW=1，弱模型建议开启）")
+    c.add_argument("--strict", action="store_true",
+                   help="软质量门（旁白密度/评审分）重试耗尽时直接失败"
+                        "（默认择优降级交付并附质量报告）")
 
     args = ap.parse_args(argv)
     text = Path(args.input).read_text(encoding="utf-8")
@@ -42,15 +46,21 @@ def main(argv=None) -> int:
         tts_voice=args.tts_voice)
 
     settings = None
-    if args.review:
+    if args.review or args.strict:
         from .config import load_settings
         settings = load_settings()
-        settings.review_enabled = True
+        settings.review_enabled = settings.review_enabled or args.review
+        settings.strict = settings.strict or args.strict
 
+    warnings: list = []
     try:
-        doc = convert_text(text, params, settings=settings)
+        doc = convert_text(text, params, settings=settings,
+                           warnings_out=warnings)
     except ConversionError as e:
         print(f"\n转换失败：{e}\n{e.report}", file=sys.stderr)
+        return 1
+    except LLMError as e:
+        print(f"\n转换失败：{e}", file=sys.stderr)
         return 1
 
     out = Path(args.output)
@@ -59,6 +69,12 @@ def main(argv=None) -> int:
     units = len(doc["source"]["units"])
     shots = sum(len(e.get("shots", [])) for e in doc["episodes"])
     print(f"\n完成：{units} 句 / {len(doc['episodes'])} 集 / {shots} 镜 → {out}")
+
+    if warnings:
+        report_path = out.with_name(out.stem + ".quality-report.txt")
+        report_path.write_text("\n\n".join(warnings) + "\n", encoding="utf-8")
+        print(f"⚠ 软质量门未达标，已择优降级交付（--strict 可改为直接失败），"
+              f"质量报告：{report_path}", file=sys.stderr)
 
     if args.render:
         ok, msg = validate.run_adapter(out, Path(args.render))
