@@ -96,5 +96,6 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 - [x] 一键流水线与独立部署：`pipeline/`（自动分批 → 内置 LLM 调用 → 校验失败回喂重试 → 合并终检）+ CLI + HTTP 服务 + Docker；离线回归用《药》归档回放，结果与人肉实测逐字一致
 - [x] 弱模型质量层：meta 确定性覆写（参数即标准答案）、selective 旁白密度质量门（占比超阈值回喂可拍句清单）、可选 LLM 评审阶段（评分卡+issues 回喂，`STORYBOARD_REVIEW=1` 开启）。实测 DeepSeek 旁白占比 100% → 三轮收敛到 27%（人工基准 18%–36%），保留句恰为心理+点题句
 - [x] 失败分档处理：硬校验（schema/lint/保真）失败即产物合同破坏，重试耗尽直接报错（工作目录保留已通过批次与失败报告）；软质量门（旁白密度/评审分）失败产物仍合法可用，重试耗尽默认**择优降级交付**历次尝试中最接近达标的一版并附质量报告（CLI 落 `*.quality-report.txt`，HTTP 返回 `completed_with_warnings` + `quality_report`），`--strict`/`STORYBOARD_STRICT=1` 改为直接失败
+- [x] 入口归一化：剔除原文中的零宽空格/BOM/词连接符等排版噪声后再进流水线（实测弱模型无法在 JSON 输出里逐字复制不可见字符，反复保真失败），`STORYBOARD_NORMALIZE_INPUT=0` 关闭
 
 **产品边界**：本项目的交付物是分镜 JSON 这份中间表示本身——信息完整（资产/镜头/台词/旁白/溯源）、结构合法、机器可校验。下游用剪辑器还是 AI 生视频应用消费它，不在本项目范围内；`adapters/seedance.py` 仅作为"IR 可被下游直接消费"的参考实现保留，不再扩展适配器矩阵。

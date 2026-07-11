@@ -9,7 +9,7 @@ from . import quality, review, validate
 from .config import Settings, load_settings
 from .llm import extract_json
 from .prompt import build_user_message, load_system_prompt
-from .splitter import split_batches
+from .splitter import normalize_source_text, split_batches
 
 
 @dataclass
@@ -149,6 +149,15 @@ def convert_text(text: str,
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
+    if settings.normalize_input:
+        # 剔除后全链路（分批/LLM/保真检查）一律以清洗后文本为"原文"；
+        # 显式传入的 batches 同步清洗，保证批拼接仍等于 text
+        text, removed = normalize_source_text(text)
+        if batches is not None:
+            batches = [normalize_source_text(b)[0] for b in batches]
+        if removed:
+            log(f"输入归一化：剔除 {removed} 个零宽/BOM 噪声字符"
+                f"（STORYBOARD_NORMALIZE_INPUT=0 关闭）")
     if llm is None:
         from .llm import LLMClient
         llm = LLMClient(settings)

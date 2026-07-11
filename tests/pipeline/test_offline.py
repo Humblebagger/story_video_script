@@ -69,9 +69,10 @@ def main() -> int:
         (YAO / "output_batch2.json").read_text(encoding="utf-8"),
     ])
     logs = []
+    # 归档由未清洗原文转换（units 保留 U+200B），关闭入口归一化以逐字回放
     doc = convert_text(full,
                        params=YAO_PARAMS,
-                       settings=Settings(max_retries=0),
+                       settings=Settings(max_retries=0, normalize_input=False),
                        llm=mock, batches=[b1, b2],
                        log=logs.append)
     archived = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
@@ -175,6 +176,24 @@ def main() -> int:
         convert_mod.validate.run_lint = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
     print("降级交付: 软门耗尽择优交付+警告 / strict 直接失败 ✓")
+
+    # 9. 入口归一化：零宽噪声在进 LLM 前被剔除（默认开启）
+    from pipeline.splitter import normalize_source_text
+    cleaned, n = normalize_source_text("徘徊；\u200b定睛\ufeff再看\u2060。")
+    assert (cleaned, n) == ("徘徊；定睛再看。", 3)
+    assert Settings().normalize_input, "归一化应默认开启"
+    convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
+    convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
+    try:
+        mock5 = MockLLM([json.dumps(deg_doc(1))])
+        convert_text("他\u200b推门。", settings=Settings(max_retries=0),
+                     llm=mock5, log=lambda m: None)
+        assert "\u200b" not in mock5.calls[0][0]["content"], \
+            "零宽字符不应出现在发给 LLM 的原文里"
+    finally:
+        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_fidelity = orig_fid
+    print("入口归一化: U+200B/BOM/U+2060 剔除，LLM 输入已清洗 ✓")
 
     print("\nALL PASS")
     return 0
