@@ -1,6 +1,7 @@
 """LLM 客户端（Anthropic Messages API，流式）与模型输出的 JSON 提取。"""
 import json
 import re
+import time
 from typing import List
 
 from .config import Settings
@@ -18,14 +19,37 @@ class LLMClient:
             raise LLMError("未安装 anthropic SDK：pip install -r requirements.txt")
         if not settings.api_key:
             raise LLMError("未配置 ANTHROPIC_API_KEY（写入 .env 或环境变量）")
+        import httpx
         kwargs = {"api_key": settings.api_key}
         if settings.base_url:
             kwargs["base_url"] = settings.base_url
         self._client = anthropic.Anthropic(**kwargs)
         self._settings = settings
+        # 瞬时故障：网络中断/服务端掐流（实测 DeepSeek 流式中途断连）、超时、5xx、限流
+        self._transient_exc = (httpx.HTTPError,
+                               anthropic.APIConnectionError,
+                               anthropic.InternalServerError,
+                               anthropic.RateLimitError)
 
     def complete(self, system: str, messages: List[dict]) -> str:
-        """system + messages → 模型完整文本输出。长输出走流式，系统提示词打缓存标记。"""
+        """system + messages → 模型完整文本输出。瞬时传输故障指数退避重试；
+        确定性错误（max_tokens 截断、4xx）不重试直接抛。"""
+        s = self._settings
+        last_exc = None
+        for attempt in range(s.transport_retries + 1):
+            if attempt:
+                wait = min(2 ** attempt, 30)
+                print(f"LLM 传输故障（{last_exc!r}），{wait}s 后重试"
+                      f"（{attempt}/{s.transport_retries}）…", flush=True)
+                time.sleep(wait)
+            try:
+                return self._stream_once(system, messages)
+            except self._transient_exc as e:
+                last_exc = e
+        raise LLMError(f"LLM 传输重试 {s.transport_retries} 次后仍失败：{last_exc!r}")
+
+    def _stream_once(self, system: str, messages: List[dict]) -> str:
+        """单次流式调用。长输出走流式，系统提示词打缓存标记。"""
         s = self._settings
         with self._client.messages.stream(
             model=s.model,

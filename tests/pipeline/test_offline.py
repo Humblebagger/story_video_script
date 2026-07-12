@@ -195,6 +195,35 @@ def main() -> int:
         convert_mod.validate.run_fidelity = orig_fid
     print("入口归一化: U+200B/BOM/U+2060 剔除，LLM 输入已清洗 ✓")
 
+    # 10. LLM 传输层重试：瞬时断连自动重试，确定性错误直接抛
+    import httpx
+    from pipeline import llm as llm_mod
+    from pipeline.llm import LLMClient, LLMError
+    client = LLMClient(Settings(api_key="offline-test"))
+    calls = []
+
+    def flaky(system, messages):
+        calls.append(1)
+        if len(calls) < 3:
+            raise httpx.RemoteProtocolError("peer closed connection")
+        return "ok"
+
+    client._stream_once = flaky
+    orig_sleep = llm_mod.time.sleep
+    llm_mod.time.sleep = lambda s: None
+    try:
+        assert client.complete("sys", []) == "ok" and len(calls) == 3
+        client._stream_once = lambda s, m: (_ for _ in ()).throw(
+            LLMError("输出被 max_tokens 截断"))
+        try:
+            client.complete("sys", [])
+            raise AssertionError("确定性错误不应被传输重试吞掉")
+        except LLMError:
+            pass
+    finally:
+        llm_mod.time.sleep = orig_sleep
+    print("传输重试: 断连 2 次后第 3 次成功 / 确定性错误直抛 ✓")
+
     print("\nALL PASS")
     return 0
 
