@@ -40,6 +40,7 @@ class Settings:
 
 def load_settings() -> Settings:
     _load_dotenv(ROOT / ".env")
+    _load_dotenv(ROOT.parent / ".env")   # 兼容单仓多项目布局：密钥放仓库根也能读到
     env = os.environ.get
     return Settings(
         api_key=env("ANTHROPIC_API_KEY"),

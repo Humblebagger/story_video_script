@@ -10,6 +10,15 @@ __pycache__/
 .venv/
 venv/
 
+# 转换历史落盘（含小说正文与产物，属本地数据）
+runs/
+
+# Node / 前端
+node_modules/
+dist/
+.vite/
+*.local
+
 # 本地工具/IDE 配置
 .claude/
 .idea/

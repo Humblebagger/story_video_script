@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 from pipeline.config import Settings
-from pipeline.convert import ConvertParams, convert_text
+from pipeline.convert import _REPORT_LOG_LINES, ConvertParams, convert_text
 from pipeline.prompt import load_system_prompt
 from pipeline.quality import apply_meta_overrides, narration_density_gate
 from pipeline.splitter import split_batches
@@ -223,6 +223,114 @@ def main() -> int:
     finally:
         llm_mod.time.sleep = orig_sleep
     print("传输重试: 断连 2 次后第 3 次成功 / 确定性错误直抛 ✓")
+
+    # 11. 跨转换沿用资产库：首批就带【已有资产库】，且编号不走续批逻辑
+    seed = {"characters": [{"id": "C01", "name": "华老栓"}],
+            "locations": [{"id": "S01", "name": "古□亭口"}]}
+    convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
+    convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
+    try:
+        mock6 = MockLLM([json.dumps(deg_doc(1))])
+        convert_text("他推门。", settings=Settings(max_retries=0),
+                     llm=mock6, log=lambda m: None, seed_assets=seed)
+        sent = mock6.calls[0][0]["content"]
+        assert "华老栓" in sent and '"C01"' in sent, "首批未注入历史资产库"
+        assert "【续批参数】\n无" in sent, "沿用资产库不应触发续批编号（应从 u0001 起）"
+
+        mock7 = MockLLM([json.dumps(deg_doc(1))])   # 不传则维持原样
+        convert_text("他推门。", settings=Settings(max_retries=0),
+                     llm=mock7, log=lambda m: None)
+        assert "【已有资产库】\n无" in mock7.calls[0][0]["content"]
+    finally:
+        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_fidelity = orig_fid
+    print("资产库沿用: 首批注入历史资产 / 编号仍从头 / 不传则不变 ✓")
+
+    # 12. 历史记录落盘：存取改删 + 跨作品资产聚合
+    import shutil
+    import tempfile as _tempfile
+    from pathlib import Path as _Path
+    tmp_runs = _Path(_tempfile.mkdtemp(prefix="runs_"))
+    from server import store
+    orig_runs = store.RUNS_DIR
+    store.RUNS_DIR = tmp_runs
+    try:
+        yao = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
+        store.save("run1", "succeeded", {"work_title": "药"}, yao)
+        store.save("run2", "completed_with_warnings", {"work_title": "药"},
+                   yao, "旁白占比 62%")
+        runs = store.list_runs()
+        assert len(runs) == 2 and runs[0]["units"] == 132 and runs[0]["shots"] == 133
+        assert any(r["has_quality_report"] for r in runs)
+
+        created_before = store.get("run1")["created_at"]
+        edited = json.loads(json.dumps(yao))
+        edited["episodes"][0]["shots"][0]["action"] = "改过的画面描述"
+        rec = store.update_result("run1", edited)
+        after = store.get("run1")
+        assert rec["edited_at"] and \
+            after["result"]["episodes"][0]["shots"][0]["action"] == "改过的画面描述"
+        assert after["created_at"] == created_before, "编辑不应改动创建时间"
+        assert after["params"] == {"work_title": "药"}, "编辑不应丢失制作参数"
+        assert store.update_result("missing", edited) is None
+
+        works = store.asset_library()
+        assert len(works) == 1 and works[0]["work_title"] == "药"
+        assert works[0]["counts"]["characters"] >= 1
+        ids = [c["id"] for c in works[0]["assets"]["characters"]]
+        assert ids == sorted(ids) and len(ids) == len(set(ids)), "资产卡应按 ID 去重且有序"
+
+        assert store.delete("run2") and not store.delete("run2")
+        assert len(store.list_runs()) == 1
+        for bad in ("../etc/passwd", "a/b"):
+            try:
+                store.get(bad)
+                raise AssertionError(f"非法 ID 未被拦截：{bad}")
+            except ValueError:
+                pass
+    finally:
+        store.RUNS_DIR = orig_runs
+        shutil.rmtree(tmp_runs, ignore_errors=True)
+    print("历史落盘: 存取改删 / 资产按作品聚合去重 / 路径穿越拦截 ✓")
+
+    # 13. 失败原因必须进日志：光说"未通过"等于没说，用户看不到工作目录
+    convert_mod.validate.run_lint = lambda p: (
+        False, "FAIL: E01-SH003 引用了不存在的资产 C09\nFAIL: u0007 未被任何镜头覆盖")
+    convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
+    try:
+        logs13 = []
+        mock8 = MockLLM([json.dumps(deg_doc(1))])
+        try:
+            convert_text("他推门。", settings=Settings(max_retries=0),
+                         llm=mock8, log=logs13.append)
+            raise AssertionError("硬校验失败应抛 ConversionError")
+        except ConversionError as e:
+            assert "C09" in e.report
+        blob = "\n".join(logs13)
+        assert "原因如下" in blob, "日志未给出失败原因的引导句"
+        assert "不存在的资产 C09" in blob and "u0007 未被任何镜头覆盖" in blob, \
+            "校验报告的每一行都应进日志"
+
+        # 超长报告：截断但保留完整报告的落盘路径，不让单批淹掉整个日志
+        long_report = "\n".join(f"FAIL: 第 {i} 个问题" for i in range(200))
+        convert_mod.validate.run_lint = lambda p: (False, long_report)
+        logs14 = []
+        mock9 = MockLLM([json.dumps(deg_doc(1))])
+        try:
+            convert_text("他推门。", settings=Settings(max_retries=0),
+                         llm=mock9, log=logs14.append)
+        except ConversionError:
+            pass
+        blob = "\n".join(logs14)
+        assert "FAIL: 第 0 个问题" in blob and "FAIL: 第 199 个问题" not in blob
+        m = re.search(r"…还有 (\d+) 行，完整报告见 (\S+)", blob)
+        assert m, "超长报告应给出截断提示与完整报告路径"
+        assert int(m.group(1)) > 0 and Path(m.group(2)).read_text(
+            encoding="utf-8").count("\n") > _REPORT_LOG_LINES, "落盘的应是完整报告"
+    finally:
+        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_fidelity = orig_fid
+    print("失败可诊断: 校验报告逐行进日志 / 超长截断并指向完整报告 ✓")
 
     print("\nALL PASS")
     return 0

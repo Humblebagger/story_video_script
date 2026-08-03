@@ -81,6 +81,30 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
     return True, False, "", None
 
 
+_REPORT_LOG_LINES = 60
+
+
+def _log_report(log, report: str, workdir: Path, idx: int, attempt: int) -> None:
+    """把校验/质量门的失败原因逐行打进日志。
+
+    用户看不到工作目录，光说"未通过"等于没说；报告可能很长，
+    截断后指向落盘的完整报告，不让日志被单个批次淹掉。
+    """
+    lines = report.strip().splitlines()
+    if not lines:
+        log("  （校验器未给出细节）")
+        return
+    for line in lines[:_REPORT_LOG_LINES]:
+        log(f"  {line}")
+    if len(lines) > _REPORT_LOG_LINES:
+        path = workdir / f"batch{idx}_attempt{attempt}_report.txt"
+        try:
+            path.write_text(report + "\n", encoding="utf-8")
+            log(f"  …还有 {len(lines) - _REPORT_LOG_LINES} 行，完整报告见 {path}")
+        except OSError:
+            log(f"  …还有 {len(lines) - _REPORT_LOG_LINES} 行未显示")
+
+
 def _convert_batch(llm, system: str, user: str, batch_text: str, params,
                    settings: Settings, workdir: Path, idx: int,
                    review_llm, log) -> Tuple[dict, List[str]]:
@@ -106,7 +130,8 @@ def _convert_batch(llm, system: str, user: str, batch_text: str, params,
             if not hard:
                 candidates.append((key, attempt + 1, doc, last_report))
             log(f"批 {idx} 第 {attempt + 1} 次生成未通过"
-                f"{'校验' if hard else '质量门'}")
+                f"{'校验' if hard else '质量门'}，原因如下：")
+            _log_report(log, last_report, workdir, idx, attempt + 1)
         if attempt < settings.max_retries:
             log(f"批 {idx} 回喂校验报告重试（{attempt + 2}/{settings.max_retries + 1}）…")
             messages.append({"role": "assistant", "content": raw})
@@ -138,7 +163,8 @@ def convert_text(text: str,
                  batches: Optional[List[str]] = None,
                  workdir: Optional[Path] = None,
                  log=print,
-                 warnings_out: Optional[List[str]] = None) -> dict:
+                 warnings_out: Optional[List[str]] = None,
+                 seed_assets: Optional[dict] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何带 complete(system, messages) -> str 的对象（测试用 mock）。
@@ -146,6 +172,8 @@ def convert_text(text: str,
     硬校验（schema/lint/保真）不通过且重试耗尽时抛 ConversionError
     （.report 含完整校验报告）；软质量门（旁白密度/评审分）重试耗尽时
     择优降级交付，质量报告追加进 warnings_out（settings.strict 时同样抛错）。
+    seed_assets 为历史资产库（assets 对象），传入后首批即带【已有资产库】，
+    模型须沿用其 ID 与描述——用于续写同一部小说的下一章时保持角色/场景一致。
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
@@ -181,6 +209,11 @@ def convert_text(text: str,
     for i, batch in enumerate(batches, 1):
         if outputs:
             assets_block, cont_block = _continuation_blocks(outputs)
+        elif seed_assets:
+            # 跨转换沿用资产库（如续写同一部小说的下一章）：句子/分集编号仍从头起，
+            # 只让模型沿用已有 C/S/P/A 卡的 ID 与描述，从根上防跨章角色漂移
+            assets_block = json.dumps(seed_assets, ensure_ascii=False, indent=2)
+            cont_block = "无"
         else:
             assets_block = cont_block = "无"
         user = build_user_message(params, batch, assets_block, cont_block)
