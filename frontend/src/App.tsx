@@ -1,27 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  deleteHistory, getHistory, health, listAssets, listHistory, listJobs, saveHistory,
+  deleteHistory, getHistory, health, listHistory, listJobs, listLibrary, me, saveHistory,
 } from './api'
+import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
+import type { User } from './auth'
 import { ConvertForm } from './components/ConvertForm'
 import { HistoryPanel } from './components/HistoryPanel'
 import { JobPanel } from './components/JobPanel'
+import { LibraryView } from './components/LibraryView'
+import { LoginView } from './components/LoginView'
 import { StoryboardView } from './components/StoryboardView'
 import { notify, primeNotifications } from './notify'
 import type {
-  AssetWork, ConvertRequest, Health, HistorySummary, Job, JobSummary, Storyboard,
+  ConvertRequest, Health, HistorySummary, Job, JobSummary, LibraryWork, Storyboard,
 } from './types'
 import { useJob } from './useJob'
 
 const RUNNING = ['queued', 'running']
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
+  const [page, setPage] = useState<'convert' | 'library'>('convert')
   const [svc, setSvc] = useState<Health | null>(null)
   const [svcDown, setSvcDown] = useState(false)
 
   const [runs, setRuns] = useState<HistorySummary[]>([])
   const [running, setRunning] = useState<JobSummary[]>([])
   const [runsLoading, setRunsLoading] = useState(true)
-  const [works, setWorks] = useState<AssetWork[]>([])
+  const [works, setWorks] = useState<LibraryWork[]>([])
 
   const [doc, setDoc] = useState<Storyboard | null>(null)
   const [docId, setDocId] = useState<string | null>(null)
@@ -32,7 +38,7 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [h, a] = await Promise.all([listHistory(), listAssets()])
+      const [h, a] = await Promise.all([listHistory(), listLibrary()])
       setRuns(h.runs)
       setWorks(a.works)
     } catch {
@@ -91,17 +97,28 @@ export default function App() {
     }
   }, [announce, refresh])
 
+  // 登录态失效（token 过期或被撤销）→ 退回登录页
+  useEffect(() => onUnauthorized(() => setUser(null)), [])
+
+  // 随登录态重取：否则注册后再退出，登录页仍显示「服务端还没有任何账号」
   useEffect(() => {
-    health().then(setSvc).catch(() => setSvcDown(true))
+    health().then((h) => { setSvc(h); setSvcDown(false) }).catch(() => setSvcDown(true))
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user) return
+    // 缓存的用户信息可能已过期，向服务端确认一次
+    me().then(setUser).catch(() => { /* 401 已由 onUnauthorized 处理 */ })
     void refresh()
     void watchJobs()
-  }, [refresh, watchJobs])
+  }, [user?.id, refresh, watchJobs])
 
   // 常驻巡检：有任务在跑时勤一点，闲时慢一点
   useEffect(() => {
+    if (!user) return
     const t = window.setInterval(() => void watchJobs(), running.length ? 3000 : 10000)
     return () => clearInterval(t)
-  }, [running.length, watchJobs])
+  }, [user, running.length, watchJobs])
 
   // 只在首次进入页面时自动接上后台任务；之后由用户点选，
   // 否则「放到后台」会被立刻重新附着，等于按钮失灵
@@ -111,6 +128,18 @@ export default function App() {
     bootstrapped.current = true
     if (!job && !doc) attach(running[0].id)
   }, [running, job, doc, attach])
+
+  const logout = () => {
+    clearSession()
+    reset()
+    setUser(null)
+    setDoc(null)
+    setDocId(null)
+    setRuns([])
+    setWorks([])
+    setRunning([])
+    setPage('convert')
+  }
 
   const submit = (payload: ConvertRequest) => {
     primeNotifications()
@@ -192,12 +221,26 @@ export default function App() {
     }
   }
 
+  if (!user) {
+    return <LoginView firstRun={(svc?.users ?? 0) === 0} onDone={setUser} />
+  }
+
   return (
     <div className="app">
       <header className="top">
         <div className="top__brand">
           <h1>小说 → 分镜 IR</h1>
-          <span className="top__sub">忠实转换：剧情属于小说，呈现属于系统</span>
+          <nav className="top__nav">
+            {([['convert', '转换'], ['library', '资产库']] as const).map(([p, name]) => (
+              <button
+                key={p}
+                className={`top__navbtn${page === p ? ' is-on' : ''}`}
+                onClick={() => setPage(p)}
+              >
+                {name}
+              </button>
+            ))}
+          </nav>
         </div>
         <div className="top__right">
           <button className="btn btn--sm btn--ghost" onClick={() => fileRef.current?.click()}>
@@ -222,9 +265,16 @@ export default function App() {
                   {!svc.api_key_configured && <em> · 未配置密钥</em>}
                 </span>
               )}
+          <span className="who" title={`已登录：${user.username}`}>
+            {user.username}
+            <button className="who__out" onClick={logout}>退出</button>
+          </span>
         </div>
       </header>
 
+      {page === 'library' ? (
+        <main className="main main--wide"><LibraryView /></main>
+      ) : (
       <div className="shell">
         <HistoryPanel
           runs={runs}
@@ -258,6 +308,7 @@ export default function App() {
           )}
         </main>
       </div>
+      )}
     </div>
   )
 }

@@ -25,6 +25,10 @@ interface Props {
   assets: Assets
   editing: boolean
   onChange: (kind: AssetKind, id: string, patch: Record<string, unknown>) => void
+  /** 资产库页才给：分镜里的资产卡不能删（删了镜头就引用不到了） */
+  onDelete?: (kind: AssetKind, id: string) => void
+  /** 资产库页自带说明，不必重复分镜页那段 */
+  hideEditNote?: boolean
 }
 
 /* ---------- 小控件 ---------- */
@@ -260,7 +264,7 @@ function CreatureCard({ c, editing, patch }: {
 
 /* ---------- 主视图 ---------- */
 
-export function AssetsView({ assets, editing, onChange }: Props) {
+export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }: Props) {
   const kinds = (['characters', 'locations', 'props', 'creatures'] as AssetKind[])
     .filter((k) => (assets[k] ?? []).length > 0)
 
@@ -268,7 +272,7 @@ export function AssetsView({ assets, editing, onChange }: Props) {
 
   return (
     <div className="assets">
-      {editing && (
+      {editing && !hideEditNote && (
         <p className="assets__editnote">
           资产卡整个属于「呈现」侧，名称 / 别名 / 外貌 / 描述都可以改。
           只有 🔒 标出的 ID 锁死——它们被镜头层跨引用（场景、道具及其状态、角色及其服装），
@@ -296,6 +300,10 @@ export function AssetsView({ assets, editing, onChange }: Props) {
                       : <b>{card.name}</b>}
                     {!editing && 'aliases' in card && !!card.aliases?.length && (
                       <span className="acard__alias">别称：{card.aliases.join('、')}</span>
+                    )}
+                    {editing && onDelete && (
+                      <button type="button" className="acard__del" title="删除这张卡"
+                              onClick={() => onDelete(kind, card.id)}>×</button>
                     )}
                   </header>
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { JOB_STATUS, label } from '../labels'
 import type { HistorySummary, JobSummary } from '../types'
 
@@ -27,6 +28,12 @@ function fmtTime(iso: string | null): string {
 export function HistoryPanel({
   runs, running, activeId, loading, onOpen, onOpenJob, onDelete, onNew,
 }: Props) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const shown = q
+    ? runs.filter((r) => `${r.work_title ?? ''} ${r.chapter ?? ''}`.toLowerCase().includes(q))
+    : runs
+
   return (
     <aside className="hist">
       <div className="hist__head">
@@ -53,7 +60,19 @@ export function HistoryPanel({
         </ul>
       )}
 
+      {runs.length > 3 && (
+        <input
+          className="hist__search"
+          value={query}
+          placeholder="搜索作品 / 章节"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+
       {loading && <p className="hist__empty">读取中…</p>}
+      {!loading && !!runs.length && !shown.length && (
+        <p className="hist__empty">没有匹配「{query}」的记录。</p>
+      )}
       {!loading && !runs.length && (
         <p className="hist__empty">
           还没有记录。<br />
@@ -62,7 +81,7 @@ export function HistoryPanel({
       )}
 
       <ul className="hist__list">
-        {runs.map((r) => (
+        {shown.map((r) => (
           <li
             key={r.id}
             className={`hrun${r.id === activeId ? ' is-on' : ''}`}

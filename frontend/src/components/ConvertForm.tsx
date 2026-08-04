@@ -4,12 +4,12 @@ import { ChapterPicker } from './ChapterPicker'
 import {
   ART_STYLES, COLOR_TONES, STYLE_PREFIXES, TARGET_PLATFORMS, TTS_VOICES,
 } from '../presets'
-import type { AspectRatio, AssetWork, ConvertRequest, NarrationMode } from '../types'
+import type { AspectRatio, ConvertRequest, LibraryWork, NarrationMode } from '../types'
 import { AssetLibraryPicker } from './AssetLibraryPicker'
 import { SelectOrCustom } from './SelectOrCustom'
 
 /** 默认值与 backend/pipeline/convert.py 的 ConvertParams 逐字对齐 */
-const DEFAULTS: Omit<ConvertRequest, 'text' | 'seed_assets'> = {
+const DEFAULTS: Omit<ConvertRequest, 'text' | 'seed_assets' | 'use_library' | 'import_assets'> = {
   work_title: '未命名作品',
   chapter: '全文',
   style_prefix: '电影感写实风格，自然光影',
@@ -26,7 +26,7 @@ const RATIOS: AspectRatio[] = ['9:16', '16:9', '1:1', '4:3']
 
 interface Props {
   disabled: boolean
-  works: AssetWork[]
+  works: LibraryWork[]
   onSubmit: (payload: ConvertRequest) => void
 }
 
@@ -35,7 +35,7 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
   const [source, setSource] = useState('')
   const [selection, setSelection] = useState('')
   const [p, setP] = useState(DEFAULTS)
-  const [seedWork, setSeedWork] = useState<string | null>(null)
+  const [useLibrary, setUseLibrary] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const set = <K extends keyof typeof p>(k: K, v: (typeof p)[K]) =>
@@ -51,16 +51,9 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
   // ChapterPicker 的 effect 依赖它，必须稳定，否则会反复触发
   const pick = useCallback((t: string) => setSelection(t), [])
 
-  /** 选定沿用某部作品的资产库时，作品名跟着对齐——续写的是同一部书 */
-  const pickSeed = (title: string | null) => {
-    setSeedWork(title)
-    if (title) set('work_title', title)
-  }
-
   const chars = selection.trim().length
   // 后端默认 2500 字一批，据此估算批数，让用户对耗时有预期
   const batches = Math.max(1, Math.ceil(chars / 2500))
-  const seedAssets = works.find((w) => w.work_title === seedWork)?.assets ?? null
   const partial = chars > 0 && chars < source.trim().length
 
   return (
@@ -68,7 +61,9 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
       className="form"
       onSubmit={(e) => {
         e.preventDefault()
-        if (selection.trim()) onSubmit({ ...p, text: selection, seed_assets: seedAssets })
+        if (selection.trim()) {
+          onSubmit({ ...p, text: selection, use_library: useLibrary, import_assets: true })
+        }
       }}
     >
       <div className="form__text">
@@ -116,7 +111,13 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
         </div>
       )}
 
-      <AssetLibraryPicker works={works} selected={seedWork} onSelect={pickSeed} />
+      <AssetLibraryPicker
+        works={works}
+        workTitle={p.work_title}
+        useLibrary={useLibrary}
+        onToggle={setUseLibrary}
+        onPickWork={(t) => set('work_title', t)}
+      />
 
       <div className="form__grid">
         <Field label="作品名">

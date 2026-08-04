@@ -200,8 +200,12 @@ export interface ConvertRequest {
   narration_mode: NarrationMode
   tts_voice: string
   strict: boolean
-  /** 沿用历史资产库：模型须复用其中的 ID 与描述，防跨章角色漂移 */
+  /** 自动沿用本人该作品的资产库（模型须复用其中的 ID 与描述，防跨章角色漂移） */
+  use_library?: boolean
+  /** 显式指定一份资产库，优先于 use_library */
   seed_assets?: Assets | null
+  /** 转换成功后把产物里的资产卡并回库 */
+  import_assets?: boolean
 }
 
 export interface Job {
@@ -233,8 +237,7 @@ export interface Health {
   status: string
   model: string
   api_key_configured: boolean
-  runs_dir?: string
-  history_count?: number
+  users?: number
 }
 
 /* ---------- 历史记录（后端 runs/ 落盘） ---------- */
@@ -262,11 +265,14 @@ export interface HistoryRecord {
   result: Storyboard
 }
 
-/** 按作品聚合的历史资产库 */
-export interface AssetWork {
+/* ---------- 资产库（独立于任何一次转换的一等实体） ---------- */
+
+export type AssetKindName = 'characters' | 'locations' | 'props' | 'creatures'
+
+export interface LibraryWork {
   work_title: string
   updated_at: string
-  runs: number
   counts: Record<string, number>
-  assets: Assets
+  /** 列表接口只返回统计，取单部作品时才带上卡片 */
+  assets?: Assets
 }

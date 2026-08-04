@@ -11,8 +11,23 @@ interface Props {
   focusUnit: string | null
 }
 
+/** 命中的关键词高亮，方便在长文里一眼定位 */
+function highlight(text: string, q: string) {
+  if (!q) return text
+  const i = text.toLowerCase().indexOf(q)
+  if (i < 0) return text
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="hl">{text.slice(i, i + q.length)}</mark>
+      {text.slice(i + q.length)}
+    </>
+  )
+}
+
 export function SourceView({ doc, idx, focusUnit }: Props) {
   const [onlyGaps, setOnlyGaps] = useState(false)
+  const [query, setQuery] = useState('')
   const rowRef = useRef<HTMLLIElement | null>(null)
 
   useEffect(() => {
@@ -23,7 +38,10 @@ export function SourceView({ doc, idx, focusUnit }: Props) {
 
   const units = doc.source?.units ?? []
   const unmapped = new Set(idx.stats.unmapped)
-  const shown = onlyGaps ? units.filter((u) => unmapped.has(u.id)) : units
+  const q = query.trim().toLowerCase()
+  const shown = units.filter((u) =>
+    (!onlyGaps || unmapped.has(u.id)) &&
+    (!q || u.text.toLowerCase().includes(q) || u.id.includes(q)))
 
   return (
     <div className="src">
@@ -33,6 +51,12 @@ export function SourceView({ doc, idx, focusUnit }: Props) {
           <b>{pct(idx.stats.coveredRatio)}</b> · 念作旁白{' '}
           <b>{pct(idx.stats.narratedRatio)}</b>
         </span>
+        <input
+          className="src__search"
+          value={query}
+          placeholder="搜索原文 / 句子编号"
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <label className="src__toggle">
           <input
             type="checkbox"
@@ -63,7 +87,7 @@ export function SourceView({ doc, idx, focusUnit }: Props) {
                 {u.para !== undefined && <span className="unit__para">§{u.para}</span>}
                 {idx.narratedUnits.has(u.id) && <span className="tag tag--nar">旁白</span>}
               </div>
-              <p className="unit__text">{u.text}</p>
+              <p className="unit__text">{highlight(u.text, q)}</p>
               <div className="unit__refs">
                 {refs.length === 0
                   ? <span className="unit__gap">⚠ 无镜头引用</span>

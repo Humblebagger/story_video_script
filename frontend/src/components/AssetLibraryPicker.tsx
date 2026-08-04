@@ -1,89 +1,69 @@
-import { useState } from 'react'
-import type { AssetWork } from '../types'
-
-const KIND_LABEL: Record<string, string> = {
-  characters: '人物', locations: '场景', props: '道具', creatures: '生物',
-}
+import type { LibraryWork } from '../types'
 
 interface Props {
-  works: AssetWork[]
-  selected: string | null
-  onSelect: (workTitle: string | null) => void
+  works: LibraryWork[]
+  /** 当前填写的作品名——资产库按作品名匹配 */
+  workTitle: string
+  useLibrary: boolean
+  onToggle: (v: boolean) => void
+  onPickWork: (title: string) => void
 }
 
-/** 生产页的历史资料卡：勾选某部作品后，其 C/S/P/A 卡作为【已有资产库】注入本次转换，
- *  模型须沿用已有 ID 与描述——续写下一章时角色不会换脸、场景不会改建。 */
-export function AssetLibraryPicker({ works, selected, onSelect }: Props) {
-  const [open, setOpen] = useState(false)
-  if (!works.length) return null
+const total = (w: LibraryWork) =>
+  Object.values(w.counts ?? {}).reduce((a, b) => a + b, 0)
 
-  const active = works.find((w) => w.work_title === selected) ?? null
+/** 转换前明示：这次会不会沿用资产库、沿用哪一部。
+ *
+ *  沿用即把已有 C/S/P/A 卡作为【已有资产库】发给模型，模型须复用其 ID 与描述——
+ *  续写同一部作品的下一章时角色不会换脸、场景不会改建。 */
+export function AssetLibraryPicker({
+  works, workTitle, useLibrary, onToggle, onPickWork,
+}: Props) {
+  const matched = works.find((w) => w.work_title === workTitle) ?? null
+  const others = works.filter((w) => w.work_title !== workTitle)
+
+  if (!works.length) {
+    return (
+      <section className="alib">
+        <b>资产库</b>
+        <span className="alib__hint">
+          还是空的。这次转换产出的角色/场景卡会自动入库，续写下一章时即可沿用。
+        </span>
+      </section>
+    )
+  }
 
   return (
     <section className="alib">
       <header className="alib__head">
         <div>
-          <b>历史资料卡</b>
+          <b>资产库</b>
           <span className="alib__hint">
-            续写同一部作品时沿用已有人物/场景卡，角色 ID 与外貌保持一致，防跨章漂移
+            {matched
+              ? `将沿用《${matched.work_title}》已有的 ${total(matched)} 张卡，模型须复用其 ID 与描述——续写下一章时角色不会换脸`
+              : `《${workTitle || '（未填作品名）'}》在库中还没有资产卡；本次产出会自动入库`}
           </span>
         </div>
-        {active && (
-          <button type="button" className="btn btn--sm btn--ghost"
-                  onClick={() => setOpen((v) => !v)}>
-            {open ? '收起卡片' : '查看卡片'}
-          </button>
+        {matched && (
+          <label className="check">
+            <input type="checkbox" checked={useLibrary}
+                   onChange={(e) => onToggle(e.target.checked)} />
+            沿用
+          </label>
         )}
       </header>
 
-      <div className="alib__works">
-        <button
-          type="button"
-          className={`wchip${selected === null ? ' is-on' : ''}`}
-          onClick={() => onSelect(null)}
-        >
-          不沿用
-        </button>
-        {works.map((w) => (
-          <button
-            type="button"
-            key={w.work_title}
-            className={`wchip${selected === w.work_title ? ' is-on' : ''}`}
-            onClick={() => onSelect(w.work_title)}
-          >
-            {w.work_title}
-            <em>
-              {Object.entries(w.counts)
-                .filter(([, n]) => n > 0)
-                .map(([k, n]) => `${KIND_LABEL[k] ?? k}${n}`)
-                .join(' · ')}
-            </em>
-          </button>
-        ))}
-      </div>
-
-      {active && open && (
-        <div className="alib__cards">
-          {(['characters', 'locations', 'props', 'creatures'] as const).map((kind) => {
-            const list = active.assets[kind] ?? []
-            if (!list.length) return null
-            return (
-              <div className="alib__group" key={kind}>
-                <h4>{KIND_LABEL[kind]}</h4>
-                <div className="alib__grid">
-                  {list.map((c) => (
-                    <div className="lcard" key={c.id}>
-                      <span className="lcard__id">{c.id}</span>
-                      <b>{c.name}</b>
-                      {'visual_prompt' in c && c.visual_prompt && (
-                        <p>{c.visual_prompt}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
+      {!!others.length && (
+        <div className="alib__works">
+          <span className="alib__pick">库中已有：</span>
+          {others.map((w) => (
+            <button type="button" key={w.work_title} className="wchip"
+                    title="点击把作品名改成它，即可沿用这部作品的资产库"
+                    onClick={() => onPickWork(w.work_title)}>
+              {w.work_title}
+              <em>{total(w)} 张卡</em>
+            </button>
+          ))}
         </div>
       )}
     </section>
