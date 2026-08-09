@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NovelStoryboard v0.4 校验器。
+"""NovelStoryboard v0.4 / v0.5 校验器。
 
 用法: python3 tools/lint_storyboard.py <storyboard.json>
 
@@ -7,6 +7,7 @@
   1. JSON Schema 结构校验（需要 pip install jsonschema，未安装则跳过并提示）
   2. 跨引用与忠实性检查（schema 表达不了的部分）:
      - 镜头引用的 unit / 角色 / 场景 / 道具 / outfit 必须真实存在
+     - 镜头分了 beats，各拍时长之和必须等于镜头时长
      - inferred 镜头必须有 inference_note
      - 旁白覆盖率: 每个非 skipped 的 unit 必须被至少一个镜头的 narration 引用
      - coverage 字段与实际计算结果一致
@@ -39,6 +40,31 @@ def main(path: str) -> int:
     locs = {s["id"] for s in doc.get("assets", {}).get("locations", [])}
     props = {p["id"]: p for p in doc.get("assets", {}).get("props", [])}
     creatures = {a["id"] for a in doc.get("assets", {}).get("creatures", [])}
+
+    # 设定图是「画师修正稿反过来约束后续每一帧」这条链的锚点，指错变体等于垫错衣服。
+    # 这类引用 schema 表达不了（要跨到同一张卡的 outfits/states 里查），只能在这儿查。
+    for card in chars.values():
+        outfit_ids = {o["id"] for o in card.get("outfits", [])}
+        for img in card.get("reference_images", []):
+            tag = img.get("outfit")
+            if tag and tag not in outfit_ids:
+                errors.append(
+                    f"[{card['id']}] 参考图标注的 outfit '{tag}' 不存在"
+                    f"（可选: {sorted(outfit_ids) or '本卡无 outfits'}）")
+    for card in props.values():
+        state_ids = {s["id"] for s in card.get("states", [])}
+        for img in card.get("reference_images", []):
+            tag = img.get("state")
+            if tag and tag not in state_ids:
+                errors.append(
+                    f"[{card['id']}] 参考图标注的 state '{tag}' 不存在"
+                    f"（可选: {sorted(state_ids) or '本卡无 states'}）")
+
+    for kind in ("characters", "locations", "props", "creatures"):
+        for card in doc.get("assets", {}).get(kind, []):
+            for c in card.get("constraints", []):
+                if not (c or "").strip():
+                    errors.append(f"[{card.get('id')}] constraints 里有空约束项")
 
     narrated_units = set()
     dialogue_covered = set()  # dialogue 类句子可由角色台词承载，无需旁白重读
@@ -87,6 +113,22 @@ def main(path: str) -> int:
                 errors.append(f"[{sid}] derivation=inferred 但缺少 inference_note")
             if src.get("derivation") == "inferred":
                 inferred_shots += 1
+
+            # v0.5 镜头内阶段：分了拍，时长就必须对得上，否则下游按哪个走全凭猜
+            beats = shot.get("beats")
+            if beats is not None:
+                total = sum(b.get("duration_sec") or 0 for b in beats)
+                dur = shot.get("duration_sec") or 0
+                if abs(total - dur) > 0.05:
+                    errors.append(
+                        f"[{sid}] beats 各拍时长之和 {total:g}s 与镜头 duration_sec {dur:g}s 不符")
+                for i, b in enumerate(beats, 1):
+                    if not (b.get("action") or "").strip():
+                        errors.append(f"[{sid}] beats 第 {i} 拍缺少 action")
+
+            for c in shot.get("constraints", []):
+                if not (c or "").strip():
+                    errors.append(f"[{sid}] constraints 里有空约束项")
 
             loc = shot.get("location_ref")
             if loc and loc not in locs:

@@ -1,4 +1,4 @@
-/** NovelStoryboard v0.4 分镜 IR 的 TypeScript 镜像（对齐 backend/schema/storyboard.schema.json）。
+/** NovelStoryboard v0.4 / v0.5 分镜 IR 的 TypeScript 镜像（对齐 backend/schema/storyboard.schema.json）。
  *  字段可选性以 schema 的 required 为准：非必填一律标 `?`，渲染层不得假设其存在。 */
 
 export type FidelityMode = 'faithful' | 'pacing_optimized' | 'adapted'
@@ -56,14 +56,33 @@ export interface Source {
   units: SourceUnit[]
 }
 
+/** 设定图槽位。tag（角色的 outfit / 道具的 state）说明这张图画的是哪套变体——
+ *  设定图是「画师修正稿反过来约束后续每一帧」这条链的锚点，垫错衣服等于白垫。 */
+export interface ReferenceImage {
+  view?: 'front' | 'side' | 'back' | 'three_quarter' | 'close_up'
+  uri?: string
+  outfit?: string
+  state?: string
+}
+
+/** 角色的服装 / 道具的形态。id 被镜头层跨引用，description 是这套变体的完整外观描述 */
+export interface AssetVariant {
+  id: string
+  description: string
+}
+
 export interface CharacterAsset {
   id: string
   name: string
   aliases?: string[]
   appearance?: Record<string, string>
-  outfits?: { id: string; name?: string; visual_prompt?: string }[]
+  /** 服装状态集。schema：{id, description}，且 additionalProperties: false——
+   *  多写一个字段整份产物就校验失败 */
+  outfits?: AssetVariant[]
   visual_prompt?: string
-  reference_images?: { view?: string; prompt?: string }[]
+  reference_images?: ReferenceImage[]
+  /** 画这张卡时不要做什么：不要平滑笔触 / 不要加照片级细节 / 不要改画风 */
+  constraints?: string[]
   voice?: Record<string, string>
   persona_notes?: string
 }
@@ -74,7 +93,9 @@ export interface LocationAsset {
   era?: string
   interior_exterior?: 'interior' | 'exterior' | 'both'
   visual_prompt?: string
-  angles?: { angle?: LocationAngle; visual_prompt?: string }[]
+  /** 各机位的设定图槽位（schema：{angle, uri}） */
+  angles?: { angle?: LocationAngle; uri?: string }[]
+  constraints?: string[]
   lighting_defaults?: string
 }
 
@@ -82,8 +103,10 @@ export interface PropAsset {
   id: string
   name: string
   visual_prompt?: string
-  reference_images?: { view?: string; prompt?: string }[]
-  states?: { id: string; name?: string; visual_prompt?: string }[]
+  reference_images?: ReferenceImage[]
+  constraints?: string[]
+  /** 道具形态集，形状同 outfits */
+  states?: AssetVariant[]
 }
 
 export interface CreatureAsset {
@@ -92,7 +115,8 @@ export interface CreatureAsset {
   aliases?: string[]
   species?: string
   visual_prompt?: string
-  reference_images?: { view?: string; prompt?: string }[]
+  reference_images?: ReferenceImage[]
+  constraints?: string[]
   notes?: string
 }
 
@@ -124,6 +148,15 @@ export interface DialogueLine {
   verbatim?: boolean
 }
 
+/** 镜头内的一拍。各拍时长之和必须等于镜头的 duration_sec，lint 会校验 */
+export interface ShotBeat {
+  duration_sec: number
+  action: string
+  expression?: string
+  lighting?: string
+  camera_note?: string
+}
+
 export interface ShotNarration {
   unit_refs?: string[]
   text?: string
@@ -140,15 +173,26 @@ export interface Shot {
   time_of_day?: TimeOfDay
   weather?: string
   characters?: ShotCharacter[]
-  creature_refs?: { ref: string }[]
   prop_refs?: ShotPropRef[]
   action: string
   atmosphere?: string
+  /** v0.5：镜头内的阶段。一个不切的长镜头里情绪/灯光可以逐级推进 */
+  beats?: ShotBeat[]
+  /** v0.5：本镜头明确不要出现的东西 */
+  constraints?: string[]
   dialogue?: DialogueLine[]
   narration?: ShotNarration
   sfx?: string[]
   transition_out?: Transition
   source: { unit_refs: string[]; derivation: Derivation; note?: string }
+  prompts?: ShotPrompts
+}
+
+/** 组装后的提示词。reference_assets = 出图时拿哪几张卡垫图，直接决定形象锁不锁得住 */
+export interface ShotPrompts {
+  image_prompt?: string
+  video_prompt?: string
+  reference_assets?: string[]
 }
 
 export interface MusicSegment {

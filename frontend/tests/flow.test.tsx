@@ -83,11 +83,21 @@ const DOC = {
   assets: {
     characters: [{ id: 'C01', name: '华老栓', aliases: ['老栓'],
                    appearance: { age: '五十余岁', face: '瘦削' },
-                   outfits: [{ id: 'default', name: '旧棉袄', visual_prompt: '灰布' }],
-                   visual_prompt: '驼背老者' }],
+                   outfits: [{ id: 'default', description: '灰布旧棉袄，黑布鞋' }],
+                   visual_prompt: '驼背老者' },
+                 // 有两套服装：挂卡时必须自动选中其一，否则 lint 报错
+                 { id: 'C02', name: '康大叔', aliases: ['刽子手'],
+                   // schema：outfits 只有 {id, description}，且拒绝未知字段
+                   outfits: [{ id: 'default', description: '青布短打，腰束皮带' },
+                             { id: 'loose_black', description: '玄色宽大外褂，散腰' }] }],
     locations: [{ id: 'S01', name: '茶馆', interior_exterior: 'interior' }],
     props: [{ id: 'P01', name: '灯笼',
-              states: [{ id: 'lit', name: '点亮' }, { id: 'dark', name: '熄灭' }] }],
+              states: [{ id: 'lit', description: '烛火点亮，纸面透暖黄' },
+                       { id: 'dark', description: '熄灭，纸面发灰' }] },
+            // 无状态集：挂上去不许带 state
+            { id: 'P02', name: '一包洋钱' }],
+    // 生物卡挂进 characters[]，但不得带 outfit
+    creatures: [{ id: 'A01', name: '乌鸦', aliases: ['老鸦'] }],
   },
   episodes: [{ id: 'E01', title: '开端', shots: [{
     id: 'E01-SH001', duration_sec: 5, shot_size: 'wide', action: '推门',
@@ -231,6 +241,15 @@ const click = async (el: HTMLElement) => {
   await settle()
 }
 
+/** 选卡浮层用的是 mousedown（click 之前 textarea 已 blur，浮层会先被收掉），
+ *  所以测试也必须发 mousedown，发 click 是测不到的 */
+const mouseDown = async (el: HTMLElement) => {
+  await act(async () => {
+    el.dispatchEvent(new win.MouseEvent('mousedown', { bubbles: true }) as unknown as Event)
+  })
+  await settle()
+}
+
 await act(async () => { root.render(<App />) })
 await settle()
 
@@ -350,6 +369,8 @@ must(c0.appearance!['age'] === '六十岁上下', '外貌字段应已更新')
 must(c0.id === 'C01', '资产 ID 必须保持 C01')
 must(c0.outfits![0].id === 'default', '服装 ID 必须保持 default')
 must(out.assets.props[0].states.map((s) => s.id).join() === 'lit,dark', '状态 ID 必须原样')
+must(Object.keys(c0.outfits![0]).join() === 'id,description',
+     '服装条目不得多出 schema 不认的字段')
 const sh = out.episodes[0].shots[0]
 must(sh.location_ref === 'S01' && sh.characters[0].ref === 'C01'
      && sh.characters[0].outfit === 'default' && sh.prop_refs[0].ref === 'P01'
@@ -432,6 +453,76 @@ must(has('换个关键词试试'), '无命中时应给出提示')
 await type(search, '', false)
 must(has('赵老三') && has('钱掌柜'), '清空搜索应恢复全部')
 console.log('14. 资产库搜索 → 按名称跨类别过滤 ✓')
+
+// 15. 分镜里 @ 挂卡：形象锁定落到结构化引用，正文只留自然语句
+await click(findByText('button', '退出'))
+const loginTab = [...container.querySelectorAll('.login__tab')]
+  .find((b) => (b.textContent ?? '').trim() === '登录') as unknown as HTMLElement
+await click(loginTab)
+const [u3, p3] = fields()
+await type(u3, 'alice', false)
+await type(p3, 'pw123456', false)
+// 页签和提交按钮文案都是「登录」，必须按 type=submit 取，否则点回的是页签
+await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
+await settle(200)
+must(has('小说原文'), 'alice 应已重新登录')
+await click(findByText('li', '药'))
+await click(findByText('button', '编辑分镜'))
+
+const area = container.querySelector('.ed__at textarea') as unknown as HTMLTextAreaElement
+must(!!area, '编辑态的画面描述应带 @ 挂卡的浮层容器')
+/** 打字要连光标一起模拟：@ 片段是按光标位置往前找的 */
+const typeAt = async (el: HTMLTextAreaElement, text: string) => {
+  await act(async () => {
+    setter.call(el, text)
+    el.selectionStart = el.selectionEnd = text.length
+    el.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+  })
+  await settle()
+}
+
+await typeAt(area, '推门，@康')
+must(!!container.querySelector('.cpick'), '打 @ 应唤出选卡浮层')
+must(has('康大叔') && !has('乌鸦'), '浮层应按 @ 后的关键词过滤')
+await typeAt(area, '推门，@刽子')
+must(has('康大叔'), '按别名也要能搜到——原文里同一个人有多种叫法')
+
+await mouseDown(findByText('button', '康大叔'))
+const areaNow = container.querySelector('.ed__at textarea') as unknown as HTMLTextAreaElement
+must(areaNow.value === '推门，康大叔', `正文里应落卡名而非 @token，实为「${areaNow.value}」`)
+must(!container.querySelector('.cpick'), '选完应收起浮层')
+must(has('玄色外褂') || has('青布短打'), '有多套服装的角色挂上后应出现服装下拉')
+
+// ＋挂卡：生物与无状态道具
+await click(findByText('button', '＋ 挂卡'))
+const attachInput = container.querySelector('.cpick__wrap input') as unknown as HTMLElement
+await type(attachInput, '乌鸦', false)
+await mouseDown(findByText('button', '乌鸦'))
+await click(findByText('button', '＋ 挂卡'))
+await type(container.querySelector('.cpick__wrap input') as unknown as HTMLElement, '洋钱', false)
+await mouseDown(findByText('button', '一包洋钱'))
+
+// 垫图列表
+await click(findByText('button', '垫图'))
+await mouseDown(findByText('button', '康大叔'))
+must(has('已挂'), '垫图浮层应标出已勾选的卡')
+await click(findByText('button', '保存修改'))
+
+const out2 = saved[saved.length - 1] as unknown as typeof DOC
+const shot2 = out2.episodes[0].shots[0]
+const cref = (id: string) => shot2.characters.find((c) => c.ref === id)
+must(shot2.action === '推门，康大叔', '正文应保存为自然语句')
+must(cref('C02')?.outfit === 'default', '有服装集的角色必须带上合法 outfit')
+must(cref('A01') !== undefined && !('outfit' in cref('A01')!),
+     '生物引用不得带 outfit——lint 会直接判错')
+must(shot2.prop_refs.some((p) => p.ref === 'P02' && !('state' in p)),
+     '无状态集的道具不许填 state')
+must(shot2.prompts.reference_assets.includes('C02'), '垫图列表应写进 prompts')
+must(cref('C01') !== undefined && shot2.location_ref === 'S01',
+     '挂新卡不得动原有引用')
+must(JSON.stringify(shot2.source) === JSON.stringify(DOC.episodes[0].shots[0].source),
+     '挂卡不得触碰溯源锚点')
+console.log('15. 分镜 @ 挂卡 → 引用合规（服装自动选中 / 生物不带 outfit / 无状态道具不填 state）✓')
 
 root.unmount()
 console.log('\nALL PASS')

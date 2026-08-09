@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "novel-storyboard/v0.4",
+  "$id": "novel-storyboard/v0.5",
   "title": "NovelStoryboard",
   "description": "小说忠实转换模式的结构化分镜脚本。剧情由小说原文固定（通过 source 溯源锚点保证），本 schema 只承载视觉呈现层的决策：镜头切分、景别运镜、资产引用、提示词。",
   "type": "object",
@@ -21,7 +21,11 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "0.4"
+          "enum": [
+            "0.4",
+            "0.5"
+          ],
+          "description": "0.5 起镜头可带 beats（镜头内阶段）与 constraints（负面约束）；两者皆可选，0.4 的产物原样合法"
         },
         "title": {
           "type": "string",
@@ -264,7 +268,7 @@
               },
               "reference_images": {
                 "type": "array",
-                "description": "已生成的参考图槽位，供 IP-Adapter/垫图使用",
+                "description": "已生成的参考图槽位，供 IP-Adapter/垫图使用。设定图是「画师修正稿反过来约束后续每一帧」这条链的锚点，因此必须说清每张图画的是哪套变体——垫错衣服等于白垫",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -274,11 +278,16 @@
                         "front",
                         "side",
                         "back",
-                        "three_quarter"
+                        "three_quarter",
+                        "close_up"
                       ]
                     },
                     "uri": {
                       "type": "string"
+                    },
+                    "outfit": {
+                      "type": "string",
+                      "description": "这张设定图画的是哪套 outfit（须存在于本卡的 outfits）；省略表示卡的基准形象"
                     }
                   },
                   "additionalProperties": false
@@ -300,6 +309,9 @@
               "persona_notes": {
                 "type": "string",
                 "description": "性格/口头禅/禁写点摘要（忠实模式主要用于对白情绪标注，非改编依据）"
+              },
+              "constraints": {
+                "$ref": "#/$defs/constraints"
               }
             },
             "additionalProperties": false
@@ -364,6 +376,9 @@
               "lighting_defaults": {
                 "type": "string",
                 "description": "该场景默认光线氛围"
+              },
+              "constraints": {
+                "$ref": "#/$defs/constraints"
               }
             },
             "additionalProperties": false
@@ -414,15 +429,33 @@
               },
               "reference_images": {
                 "type": "array",
+                "description": "已生成的参考图槽位，供 IP-Adapter/垫图使用。设定图是「画师修正稿反过来约束后续每一帧」这条链的锚点，因此必须说清每张图画的是哪套变体——垫错衣服等于白垫",
                 "items": {
                   "type": "object",
                   "properties": {
+                    "view": {
+                      "type": "string",
+                      "enum": [
+                        "front",
+                        "side",
+                        "back",
+                        "three_quarter",
+                        "close_up"
+                      ]
+                    },
                     "uri": {
                       "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "description": "这张设定图画的是哪种 state（须存在于本卡的 states）；省略表示基准形态"
                     }
                   },
                   "additionalProperties": false
                 }
+              },
+              "constraints": {
+                "$ref": "#/$defs/constraints"
               }
             },
             "additionalProperties": false
@@ -463,9 +496,20 @@
               },
               "reference_images": {
                 "type": "array",
+                "description": "已生成的参考图槽位，供 IP-Adapter/垫图使用。设定图是「画师修正稿反过来约束后续每一帧」这条链的锚点，因此必须说清每张图画的是哪套变体——垫错衣服等于白垫",
                 "items": {
                   "type": "object",
                   "properties": {
+                    "view": {
+                      "type": "string",
+                      "enum": [
+                        "front",
+                        "side",
+                        "back",
+                        "three_quarter",
+                        "close_up"
+                      ]
+                    },
                     "uri": {
                       "type": "string"
                     }
@@ -476,6 +520,9 @@
               "notes": {
                 "type": "string",
                 "description": "习性/剧情功能备注（如：全程静立坟顶，仅结尾振翅飞离）"
+              },
+              "constraints": {
+                "$ref": "#/$defs/constraints"
               }
             },
             "additionalProperties": false
@@ -780,6 +827,44 @@
           "type": "string",
           "description": "光影与氛围，如：残阳如血，侧逆光"
         },
+        "beats": {
+          "type": "array",
+          "minItems": 2,
+          "description": "镜头内的阶段（拍）。一个不切的长镜头里情绪/灯光/表演可以逐级推进，action 只有一份时表达不了这种推进。填了就必须至少两拍——只有一拍等于没分。各拍时长之和须等于 duration_sec",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "duration_sec",
+              "action"
+            ],
+            "properties": {
+              "duration_sec": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "action": {
+                "type": "string",
+                "description": "本拍的画面内容，接着上一拍演下去，不重述外貌"
+              },
+              "expression": {
+                "type": "string",
+                "description": "本拍的表演，如：强忍泪水，下唇发抖"
+              },
+              "lighting": {
+                "type": "string",
+                "description": "本拍的光，如：正面柔光 / 右侧光，左半张脸沉入阴影 / 背光只剩轮廓"
+              },
+              "camera_note": {
+                "type": "string",
+                "description": "本拍的机位补充，如：固定机位但保留手持的呼吸感"
+              }
+            }
+          }
+        },
+        "constraints": {
+          "$ref": "#/$defs/constraints"
+        },
         "dialogue": {
           "type": "array",
           "items": {
@@ -930,6 +1015,13 @@
         "epic"
       ],
       "description": "情绪受控词表：calm=平静 warm=温情 playful=轻快 tense=紧张 ominous=压抑不祥 eerie=诡异 sorrow=悲恸 melancholy=惆怅 triumph=激昂 epic=恢弘"
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "负面约束：明确不要出现的东西。资产卡上是「画这张卡时不要做什么」（如：不要平滑笔触、不要加照片级细节、不要改画风），镜头上是「这一镜画面里不要出现什么」。meta.style.negative_prompt 是全局的，压不住单张卡或单个镜头的具体禁令"
     }
   },
   "additionalProperties": false

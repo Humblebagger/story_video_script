@@ -4,7 +4,9 @@ import { ChapterPicker } from './ChapterPicker'
 import {
   ART_STYLES, COLOR_TONES, STYLE_PREFIXES, TARGET_PLATFORMS, TTS_VOICES,
 } from '../presets'
-import type { AspectRatio, ConvertRequest, LibraryWork, NarrationMode } from '../types'
+import type {
+  AspectRatio, Assets, ConvertRequest, LibraryWork, NarrationMode,
+} from '../types'
 import { AssetLibraryPicker } from './AssetLibraryPicker'
 import { SelectOrCustom } from './SelectOrCustom'
 
@@ -36,6 +38,8 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
   const [selection, setSelection] = useState('')
   const [p, setP] = useState(DEFAULTS)
   const [useLibrary, setUseLibrary] = useState(true)
+  /** 只钉了一部分卡时的显式资产库；整部沿用时为 null（后端据 use_library 自行取库） */
+  const [seedAssets, setSeedAssets] = useState<Assets | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const set = <K extends keyof typeof p>(k: K, v: (typeof p)[K]) =>
@@ -62,7 +66,10 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
       onSubmit={(e) => {
         e.preventDefault()
         if (selection.trim()) {
-          onSubmit({ ...p, text: selection, use_library: useLibrary, import_assets: true })
+          onSubmit({
+            ...p, text: selection, use_library: useLibrary, import_assets: true,
+            ...(seedAssets ? { seed_assets: seedAssets } : {}),
+          })
         }
       }}
     >
@@ -117,6 +124,7 @@ export function ConvertForm({ disabled, works, onSubmit }: Props) {
         useLibrary={useLibrary}
         onToggle={setUseLibrary}
         onPickWork={(t) => set('work_title', t)}
+        onPin={setSeedAssets}
       />
 
       <div className="form__grid">

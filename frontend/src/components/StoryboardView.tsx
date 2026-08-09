@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { updateAsset, updateShot } from '../edit'
+import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
 import { buildIndex, pct } from '../resolve'
@@ -48,8 +48,9 @@ export function StoryboardView({ doc, canSave, dirty, saving, onChange, onSave }
     setTab('source')
   }
 
+  // stampVersion：一旦用上 beats/constraints，产物就不该再自称 0.4
   const changeShot = (episodeId: string, shotId: string, patch: Partial<Shot>) =>
-    onChange(updateShot(doc, episodeId, shotId, patch))
+    onChange(stampVersion(updateShot(doc, episodeId, shotId, patch)))
 
   const changeAsset = (kind: AssetKind, id: string, patch: Record<string, unknown>) =>
     onChange(updateAsset(doc, kind, id, patch))

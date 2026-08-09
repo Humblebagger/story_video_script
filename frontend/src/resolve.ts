@@ -8,10 +8,26 @@ export interface ShotRef {
   episodeId: string
 }
 
+/** 一张可被镜头引用的资产卡。
+ *
+ *  variants 是「引用时必须同时选定的变体」：角色的 outfits、道具的 states。
+ *  lint 的规矩是有变体集就必须选中其一、没有就不许填，所以挂卡的界面必须知道这件事，
+ *  否则人工挂上去的引用当场过不了校验。生物卡（A）不吃 outfit，故 variants 恒为空。 */
+export interface CardOption {
+  id: string
+  name: string
+  kind: 'characters' | 'locations' | 'props' | 'creatures'
+  variants: { id: string; name: string }[]
+  aliases: string[]
+}
+
 export interface Index {
   assetName: (id: string) => string
   /** 编辑分镜时给「场景」下拉用 */
   locationOptions: { id: string; name: string }[]
+  /** 挂卡与 @ 选卡的候选：全部 C/S/P/A 卡，带变体集 */
+  cardOptions: CardOption[]
+  card: (id: string) => CardOption | undefined
   unit: (id: string) => SourceUnit | undefined
   unitText: (id: string) => string
   /** 原文句子 ID → 引用它的镜头（source.unit_refs 命中） */
@@ -36,6 +52,28 @@ export function buildIndex(doc: Storyboard): Index {
   for (const list of [a.characters, a.locations, a.props, a.creatures]) {
     for (const item of list ?? []) names.set(item.id, item.name)
   }
+
+  const cardOptions: CardOption[] = []
+  // 变体的可读名就是 description（schema 里 outfits/states 只有 id 与 description 两个字段）
+  const named = (v: { id: string; description?: string }) =>
+    ({ id: v.id, name: v.description ?? v.id })
+  for (const c of a.characters ?? []) {
+    cardOptions.push({ id: c.id, name: c.name, kind: 'characters',
+                       variants: (c.outfits ?? []).map(named), aliases: c.aliases ?? [] })
+  }
+  for (const l of a.locations ?? []) {
+    cardOptions.push({ id: l.id, name: l.name, kind: 'locations', variants: [], aliases: [] })
+  }
+  for (const p of a.props ?? []) {
+    cardOptions.push({ id: p.id, name: p.name, kind: 'props',
+                       variants: (p.states ?? []).map(named), aliases: [] })
+  }
+  for (const c of a.creatures ?? []) {
+    // 生物卡挂进 shot.characters，但 lint 明令不得带 outfit——这里不给变体
+    cardOptions.push({ id: c.id, name: c.name, kind: 'creatures',
+                       variants: [], aliases: c.aliases ?? [] })
+  }
+  const cardById = new Map(cardOptions.map((c) => [c.id, c]))
 
   const units = new Map<string, SourceUnit>()
   for (const u of doc.source?.units ?? []) units.set(u.id, u)
@@ -66,6 +104,8 @@ export function buildIndex(doc: Storyboard): Index {
   return {
     assetName: (id) => names.get(id) ?? id,
     locationOptions: (a.locations ?? []).map((l) => ({ id: l.id, name: l.name })),
+    cardOptions,
+    card: (id) => cardById.get(id),
     unit: (id) => units.get(id),
     unitText: (id) => units.get(id)?.text ?? `（未找到 ${id}）`,
     shotsByUnit,

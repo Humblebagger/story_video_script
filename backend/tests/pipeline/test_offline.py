@@ -490,6 +490,100 @@ def main() -> int:
         convert_mod.validate.run_fidelity = orig_fid
     print("失败可诊断: 校验报告逐行进日志 / 超长截断并指向完整报告 ✓")
 
+    # ---- 14. v0.5 镜头内阶段与负面约束 ----
+    # beats 承载「一个不切的长镜头里情绪/灯光逐级推进」。既然镜头时长与各拍时长
+    # 同时存在，两者就必须自洽——否则下游按哪个走全凭猜。
+    import subprocess
+    import tempfile
+
+    archived = json.loads((ROOT / "tests/real_text_yao/output_merged.json")
+                          .read_text(encoding="utf-8"))
+
+    def lint_doc(doc: dict) -> str:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                         encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False)
+            path = f.name
+        r = subprocess.run([sys.executable, str(ROOT / "tools/lint_storyboard.py"), path],
+                           capture_output=True, text=True)
+        Path(path).unlink(missing_ok=True)
+        return r.stdout + r.stderr
+
+    # 归档件仍声明 0.4，一个字不改也必须照常通过——新字段全是可选的
+    assert "PASS" in lint_doc(archived), "v0.4 归档件在新 schema 下必须原样合法"
+
+    def with_beats(beats, constraints=None, dur=6) -> dict:
+        d = json.loads(json.dumps(archived))
+        d["meta"]["schema_version"] = "0.5"
+        s = d["episodes"][0]["shots"][0]
+        s["duration_sec"] = dur
+        s["beats"] = beats
+        if constraints is not None:
+            s["constraints"] = constraints
+        return d
+
+    good = [{"duration_sec": 3.5, "action": "她垂着眼，强忍泪水",
+             "expression": "下唇发抖", "lighting": "正面柔光"},
+            {"duration_sec": 2.5, "action": "猛地抬头",
+             "lighting": "右侧光，左半张脸沉入阴影"}]
+    out = lint_doc(with_beats(good, ["画面内不出现任何灯具", "无镜头光晕"]))
+    assert "PASS" in out, f"合规的 beats 应通过：{out}"
+
+    out = lint_doc(with_beats([{**good[0], "duration_sec": 3},
+                               {**good[1], "duration_sec": 2}]))
+    assert "时长之和" in out and "FAIL" in out, "各拍时长之和对不上镜头时长必须报错"
+
+    out = lint_doc(with_beats([good[0], {"duration_sec": 2.5, "action": "  "}]))
+    assert "缺少 action" in out, "空 action 的拍必须报错"
+
+    out = lint_doc(with_beats(good, ["画面内不出现任何灯具", ""]))
+    assert "空约束项" in out, "空的负面约束必须报错"
+
+    out = lint_doc(with_beats([{"duration_sec": 6, "action": "只有一拍"}]))
+    assert "too short" in out or "FAIL" in out, "只分一拍等于没分，schema 应拦住"
+
+    print("v0.5 镜头内阶段: 归档件仍合法 / 时长自洽 / 空拍与空约束被拦 / 单拍不成立 ✓")
+
+    # ---- 15. 设定图归属变体 + 资产卡级负面约束 ----
+    # 设定图是「画师修正稿反过来约束后续每一帧」这条链的锚点。它属于某一套 outfit
+    # 而非整个角色——标错了就会拿着另一套衣服的脸去垫图，等于白垫。
+    def with_sheet(outfit_tag: str, state_tag: str, constraints=None) -> dict:
+        d = json.loads(json.dumps(archived))
+        d["meta"]["schema_version"] = "0.5"
+        c = next(x for x in d["assets"]["characters"] if x["id"] == "C04")
+        p = next(x for x in d["assets"]["props"] if x["id"] == "P01")
+        c["reference_images"] = [
+            {"view": "front", "uri": "assets/C04_front.png", "outfit": outfit_tag},
+            {"view": "three_quarter", "uri": "assets/C04_tq.png", "outfit": outfit_tag},
+            {"view": "close_up", "uri": "assets/C04_face.png", "outfit": outfit_tag},
+        ]
+        p["reference_images"] = [
+            {"view": "close_up", "uri": "assets/P01.png", "state": state_tag}]
+        if constraints is not None:
+            c["constraints"] = constraints
+        return d
+
+    out = lint_doc(with_sheet("loose_black", "charred",
+                              ["不要平滑笔触", "不要加照片级细节", "不要改画风"]))
+    assert "PASS" in out, f"合法的设定图与卡级约束应通过：{out}"
+
+    out = lint_doc(with_sheet("summer_wrap", "charred"))
+    assert "outfit 'summer_wrap' 不存在" in out, "设定图指向不存在的 outfit 必须报错"
+
+    out = lint_doc(with_sheet("loose_black", "melted"))
+    assert "state 'melted' 不存在" in out, "设定图指向不存在的 state 必须报错"
+
+    out = lint_doc(with_sheet("loose_black", "charred", ["不要平滑笔触", "  "]))
+    assert "空约束项" in out, "资产卡上的空约束必须报错"
+
+    # close_up 是本轮新加的视图（对方的设定表是 全身正面 + 四分之三侧 + 面部特写）
+    d15 = with_sheet("loose_black", "charred")
+    next(x for x in d15["assets"]["characters"]
+         if x["id"] == "C04")["reference_images"][2]["view"] = "portrait"
+    assert "FAIL" in lint_doc(d15), "view 是受控词表，写出词表外的值应被拦"
+
+    print("设定图归属: 三视图含特写 / 标错 outfit·state 被拦 / 卡级负面约束生效 ✓")
+
     print("\nALL PASS")
     return 0
 

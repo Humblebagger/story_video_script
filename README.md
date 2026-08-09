@@ -86,7 +86,7 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 |---|---|
 | `backend/pipeline/` | 一键流水线（分批/LLM 调用/校验重试/合并编排 + 质量层），CLI 入口 `python3 -m pipeline` |
 | `backend/server/app.py` | HTTP 服务（FastAPI，异步任务模型），配合 `backend/Dockerfile` 独立部署 |
-| `backend/schema/storyboard.schema.json` | NovelStoryboard v0.4 分镜 JSON Schema（严格模式：拒绝未知字段） |
+| `backend/schema/storyboard.schema.json` | NovelStoryboard v0.5 分镜 JSON Schema（严格模式：拒绝未知字段；v0.4 产物仍合法） |
 | `backend/docs/schema-design.md` | schema 设计决策说明 |
 | `backend/prompts/novel_to_storyboard.md` | 小说→分镜 转换 prompt（系统提示词+用户模板） |
 | `backend/tools/lint_storyboard.py` | 校验器（schema 校验 + 跨引用 + 忠实性检查） |
@@ -121,6 +121,9 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 - [x] 一键流水线与独立部署：`pipeline/`（自动分批 → 内置 LLM 调用 → 校验失败回喂重试 → 合并终检）+ CLI + HTTP 服务 + Docker；离线回归用《药》归档回放，结果与人肉实测逐字一致
 - [x] 弱模型质量层：meta 确定性覆写（参数即标准答案）、selective 旁白密度质量门（占比超阈值回喂可拍句清单）、可选 LLM 评审阶段（评分卡+issues 回喂，`STORYBOARD_REVIEW=1` 开启）。实测 DeepSeek 旁白占比 100% → 三轮收敛到 27%（人工基准 18%–36%），保留句恰为心理+点题句
 - [x] 失败分档处理：硬校验（schema/lint/保真）失败即产物合同破坏，重试耗尽直接报错（工作目录保留已通过批次与失败报告）；软质量门（旁白密度/评审分）失败产物仍合法可用，重试耗尽默认**择优降级交付**历次尝试中最接近达标的一版并附质量报告（CLI 落 `*.quality-report.txt`，HTTP 返回 `completed_with_warnings` + `quality_report`），`--strict`/`STORYBOARD_STRICT=1` 改为直接失败
+- [x] schema v0.5：镜头内阶段 `shot.beats[]`（一镜到底里情绪/灯光逐级推进，各拍时长之和须等于镜头时长）+ 镜头级负面约束 `shot.constraints[]`。两字段皆可选，v0.4 产物原样合法；生成器暂不产出，定位为人工在编辑器里给高潮戏加拍子（变更记录见 `docs/schema-design.md`）
+- [x] 设定图归属变体：`reference_images[]` 标注 `outfit`/`state`（垫图必须垫对那套衣服，lint 交叉校验）、`view` 补 `close_up`、资产卡级负面约束 `constraints`。同时修正前端 TS 镜像与 schema 的三处字段错配（此前编辑服装描述会产出 schema 非法的产物）
+- [x] 分镜编辑器「@ 挂卡」：画面描述里打 @ 或点＋挂卡即可给镜头挂上角色/生物/道具/场景引用，按 lint 规则自动补齐服装与形态（生物不带 outfit、无状态道具不填 state），并可维护垫图列表 `prompts.reference_assets`。形象锁定走结构化引用，正文只留自然语句
 - [x] 入口归一化：剔除原文中的零宽空格/BOM/词连接符等排版噪声后再进流水线（实测弱模型无法在 JSON 输出里逐字复制不可见字符，反复保真失败），`STORYBOARD_NORMALIZE_INPUT=0` 关闭
 - [x] LLM 传输层重试：断连/超时/5xx/限流指数退避重试（实测 DeepSeek 流式响应中途被服务端掐断），`max_tokens` 截断等确定性错误不重试直接抛（`STORYBOARD_TRANSPORT_RETRIES`，默认 3）
 - [x] **弱模型全链路实跑验证**：DeepSeek 跑通《药》全文（4642 字，`STORYBOARD_BATCH_CHARS=1400` 切 4 批），4 批全部真正通过校验，整章 lint + 保真终检 PASS——136 句 / 4 集 / 98 镜，**旁白占比 16%**（人工基准 18%），inferred 4%（人工 6%）。旁白密度门在批 2/批 3 触发，回喂可拍句清单后模型均自行收敛：**弱模型不会主动做「能拍出来的不念」的取舍，但给它清单让它逐句重新裁决，它改得对**。代价是重试成本（4 批共 9 次生成，约 35 分钟），要更快更稳把 `STORYBOARD_MODEL` 换强档即可

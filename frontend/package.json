@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vite build --ssr tests/flow.test.tsx --outDir .ssrout --logLevel error && node .ssrout/flow.test.js && vite build --ssr tests/edit-validity.test.tsx --outDir .ssrout --logLevel error && node .ssrout/edit-validity.test.js"
+    "test": "npm run typecheck && vite build --ssr tests/flow.test.tsx --outDir .ssrout --logLevel error && node .ssrout/flow.test.js && vite build --ssr tests/edit-validity.test.tsx --outDir .ssrout --logLevel error && node .ssrout/edit-validity.test.js && vite build --ssr tests/real-doc.test.tsx --outDir .ssrout --logLevel error && node .ssrout/real-doc.test.js",
+    "typecheck": "tsc -b --force"
   },
   "dependencies": {
     "react": "^19.2.8",

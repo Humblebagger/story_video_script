@@ -2,7 +2,8 @@ import { splitAliases } from '../edit'
 import { APPEARANCE_FIELDS, VOICE_FIELDS } from '../labels'
 import type { AssetKind } from '../edit'
 import type {
-  Assets, CharacterAsset, CreatureAsset, LocationAsset, LocationAngle, PropAsset,
+  AssetVariant, Assets, CharacterAsset, CreatureAsset, LocationAsset, LocationAngle,
+  PropAsset, ReferenceImage,
 } from '../types'
 
 const KIND_TITLE: Record<AssetKind, string> = {
@@ -90,6 +91,70 @@ function FixedMap({ map, fields, onChange }: {
   )
 }
 
+const VIEW_LABEL: Record<string, string> = {
+  front: '全身正面', side: '侧面', back: '背面',
+  three_quarter: '四分之三侧', close_up: '面部特写',
+}
+
+/** 设定图槽位。
+ *
+ *  这是「画师修正稿反过来约束后续每一帧」那条链的锚点：一张图必须说清画的是
+ *  哪套变体，否则拿着另一套衣服的脸去垫图，等于白垫。所以归属下拉只列本卡真实
+ *  存在的 outfit / state——lint 会逐条核对，界面提供不了非法选项才是对的。 */
+function RefImages({ list, variants, tagKey, onChange }: {
+  list: ReferenceImage[] | undefined
+  variants: AssetVariant[]
+  tagKey: 'outfit' | 'state'
+  onChange: (next: ReferenceImage[] | undefined) => void
+}) {
+  const items = list ?? []
+  const set = (i: number, patch: Partial<ReferenceImage>) =>
+    onChange(items.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  return (
+    <div className="aimgs">
+      {items.map((img, i) => (
+        <div className="asub" key={i}>
+          <select className="ed ed--sel" value={img.view ?? ''}
+                  onChange={(e) => set(i, { view: (e.target.value || undefined) as ReferenceImage['view'] })}>
+            <option value="">— 视图 —</option>
+            {Object.entries(VIEW_LABEL).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+          </select>
+          {!!variants.length && (
+            <select className="ed ed--sel" value={img[tagKey] ?? ''}
+                    title={tagKey === 'outfit' ? '这张图画的是哪套服装' : '这张图画的是哪种形态'}
+                    onChange={(e) => set(i, { [tagKey]: e.target.value || undefined })}>
+              <option value="">基准形象</option>
+              {variants.map((v) => <option key={v.id} value={v.id}>{v.id}</option>)}
+            </select>
+          )}
+          <Text value={img.uri} placeholder="设定图路径 / URL"
+                onChange={(v) => set(i, { uri: v })} />
+          <button type="button" className="ed__x" title="删掉这张设定图"
+                  onClick={() => onChange(items.filter((_, j) => j !== i).length
+                    ? items.filter((_, j) => j !== i) : undefined)}>×</button>
+        </div>
+      ))}
+      <button type="button" className="btn btn--sm btn--ghost"
+              onClick={() => onChange([...items, {}])}>＋ 设定图</button>
+    </div>
+  )
+}
+
+/** 卡级负面约束：画这张卡时不要做什么 */
+function Constraints({ list, onChange, hint }: {
+  list: string[] | undefined
+  onChange: (next: string[] | undefined) => void
+  hint: string
+}) {
+  return (
+    <Text value={(list ?? []).join(' / ')} placeholder={hint}
+          onChange={(v) => {
+            const clean = (v ?? '').split('/').map((x) => x.trim()).filter(Boolean)
+            onChange(clean.length ? clean : undefined)
+          }} />
+  )
+}
+
 /* ---------- 各类资产卡 ---------- */
 
 function CharacterCard({ c, editing, patch }: {
@@ -103,7 +168,7 @@ function CharacterCard({ c, editing, patch }: {
         ))}
         {!!c.outfits?.length && (
           <p className="acard__row"><span>服装</span>
-            {c.outfits.map((o) => o.name ?? o.id).join('、')}</p>
+            {c.outfits.map((o) => `${o.id}：${o.description}`).join('；')}</p>
         )}
         {VOICE_FIELDS.filter(([k]) => c.voice?.[k]).map(([k, label]) => (
           <p className="acard__row" key={k}><span>{label}</span>{c.voice![k]}</p>
@@ -129,16 +194,22 @@ function CharacterCard({ c, editing, patch }: {
               <span className="asub__id" title="服装 ID 被镜头的 characters[].outfit 引用，不可改">
                 🔒 {o.id}
               </span>
-              <Text value={o.name} placeholder="名称"
+              <Text value={o.description} area
+                    placeholder="这套装束的完整外观描述（服装+鞋+配饰）"
                     onChange={(v) => patch({ outfits: c.outfits!.map(
-                      (x, j) => (j === i ? { ...x, name: v } : x)) })} />
-              <Text value={o.visual_prompt} placeholder="外观描述"
-                    onChange={(v) => patch({ outfits: c.outfits!.map(
-                      (x, j) => (j === i ? { ...x, visual_prompt: v } : x)) })} />
+                      (x, j) => (j === i ? { ...x, description: v } : x)) })} />
             </div>
           ))}
         </Row>
       )}
+      <Row label="设定图">
+        <RefImages list={c.reference_images} variants={c.outfits ?? []} tagKey="outfit"
+                   onChange={(v) => patch({ reference_images: v })} />
+      </Row>
+      <Row label="不要">
+        <Constraints list={c.constraints} onChange={(v) => patch({ constraints: v })}
+                     hint="画这张卡时不要做什么，用 / 分隔：不要平滑笔触 / 不要加照片级细节 / 不要改画风" />
+      </Row>
       <Row label="声音">
         <FixedMap map={c.voice} fields={VOICE_FIELDS}
                   onChange={(v) => patch({ voice: v })} />
@@ -187,6 +258,10 @@ function LocationCard({ l, editing, patch }: {
       <Row label="默认光">
         <Text value={l.lighting_defaults} onChange={(v) => patch({ lighting_defaults: v })} />
       </Row>
+      <Row label="不要">
+        <Constraints list={l.constraints} onChange={(v) => patch({ constraints: v })}
+                     hint="画这张卡时不要做什么，用 / 分隔" />
+      </Row>
       {!!l.angles?.length && (
         <Row label="机位">
           {l.angles.map((a, i) => (
@@ -200,9 +275,9 @@ function LocationCard({ l, editing, patch }: {
                 <option value="">—</option>
                 {Object.entries(ANGLE_LABEL).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
               </select>
-              <Text value={a.visual_prompt} placeholder="该机位的画面描述"
+              <Text value={a.uri} placeholder="该机位的设定图路径 / URL"
                     onChange={(v) => patch({ angles: l.angles!.map(
-                      (x, j) => (j === i ? { ...x, visual_prompt: v } : x)) })} />
+                      (x, j) => (j === i ? { ...x, uri: v } : x)) })} />
             </div>
           ))}
         </Row>
@@ -217,26 +292,36 @@ function PropCard({ p, editing, patch }: {
   if (!editing) {
     return p.states?.length ? (
       <p className="acard__row"><span>状态机</span>
-        {p.states.map((s) => s.name ?? s.id).join(' → ')}</p>
+        {p.states.map((s) => `${s.id}：${s.description}`).join(' → ')}</p>
     ) : null
   }
-  return p.states?.length ? (
-    <Row label="状态机">
-      {p.states.map((s, i) => (
-        <div className="asub" key={s.id}>
-          <span className="asub__id" title="状态 ID 被镜头的 prop_refs[].state 引用，不可改">
-            🔒 {s.id}
-          </span>
-          <Text value={s.name} placeholder="名称"
-                onChange={(v) => patch({ states: p.states!.map(
-                  (x, j) => (j === i ? { ...x, name: v } : x)) })} />
-          <Text value={s.visual_prompt} placeholder="该状态的外观"
-                onChange={(v) => patch({ states: p.states!.map(
-                  (x, j) => (j === i ? { ...x, visual_prompt: v } : x)) })} />
-        </div>
-      ))}
-    </Row>
-  ) : null
+  return (
+    <>
+      {!!p.states?.length && (
+        <Row label="状态机">
+          {p.states.map((s, i) => (
+            <div className="asub" key={s.id}>
+              <span className="asub__id" title="状态 ID 被镜头的 prop_refs[].state 引用，不可改">
+                🔒 {s.id}
+              </span>
+              <Text value={s.description} area
+                    placeholder="该形态的完整外观描述"
+                    onChange={(v) => patch({ states: p.states!.map(
+                      (x, j) => (j === i ? { ...x, description: v } : x)) })} />
+            </div>
+          ))}
+        </Row>
+      )}
+      <Row label="设定图">
+        <RefImages list={p.reference_images} variants={p.states ?? []} tagKey="state"
+                   onChange={(v) => patch({ reference_images: v })} />
+      </Row>
+      <Row label="不要">
+        <Constraints list={p.constraints} onChange={(v) => patch({ constraints: v })}
+                     hint="画这张卡时不要做什么，用 / 分隔" />
+      </Row>
+    </>
+  )
 }
 
 function CreatureCard({ c, editing, patch }: {
@@ -257,6 +342,15 @@ function CreatureCard({ c, editing, patch }: {
               onChange={(v) => patch({ aliases: v ? splitAliases(v) : undefined })} />
       </Row>
       <Row label="物种"><Text value={c.species} onChange={(v) => patch({ species: v })} /></Row>
+      <Row label="设定图">
+        {/* 生物卡没有变体集（lint 明令引用不得带 outfit），故不给归属下拉 */}
+        <RefImages list={c.reference_images} variants={[]} tagKey="outfit"
+                   onChange={(v) => patch({ reference_images: v })} />
+      </Row>
+      <Row label="不要">
+        <Constraints list={c.constraints} onChange={(v) => patch({ constraints: v })}
+                     hint="画这张卡时不要做什么，用 / 分隔" />
+      </Row>
       <Row label="备注"><Text value={c.notes} area onChange={(v) => patch({ notes: v })} /></Row>
     </>
   )
