@@ -122,6 +122,8 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 - [x] 弱模型质量层：meta 确定性覆写（参数即标准答案）、selective 旁白密度质量门（占比超阈值回喂可拍句清单）、可选 LLM 评审阶段（评分卡+issues 回喂，`STORYBOARD_REVIEW=1` 开启）。实测 DeepSeek 旁白占比 100% → 三轮收敛到 27%（人工基准 18%–36%），保留句恰为心理+点题句
 - [x] 失败分档处理：硬校验（schema/lint/保真）失败即产物合同破坏，重试耗尽直接报错（工作目录保留已通过批次与失败报告）；软质量门（旁白密度/评审分）失败产物仍合法可用，重试耗尽默认**择优降级交付**历次尝试中最接近达标的一版并附质量报告（CLI 落 `*.quality-report.txt`，HTTP 返回 `completed_with_warnings` + `quality_report`），`--strict`/`STORYBOARD_STRICT=1` 改为直接失败
 - [x] schema v0.5：镜头内阶段 `shot.beats[]`（一镜到底里情绪/灯光逐级推进，各拍时长之和须等于镜头时长）+ 镜头级负面约束 `shot.constraints[]`。两字段皆可选，v0.4 产物原样合法；生成器暂不产出，定位为人工在编辑器里给高潮戏加拍子（变更记录见 `docs/schema-design.md`）
+- [x] 时长自洽与预算控制：新增语音时长质量门（镜头时长必须够念完自己的旁白+台词，`STORYBOARD_SPEECH_OVERFLOW_MAX` 默认 0.25、`STORYBOARD_SPEECH_CPS` 默认 4.5 字/秒）。归档实测暴露系统性问题：selective 模式 13%–26% 的镜头念不完、original_text 高达 55%–64%，《药》标称 678s 实为 762s（差 12%）。渲染估算据此改为**按可播时长计价**，并支持按 clip/按集勾选只渲染选中范围——预算失真靠可见性与选范围解决，不靠回喂重试硬顶
+- [x] 渲染任务包（下游接入一期）：产物页新增「渲染」页签，把分镜切成视频模型可直接消费的 clip，附出图清单与费用估算（可切 Seedance 标准/mini 档，或用真实账单标定 `STORYBOARD_RENDER_CNY_PER_SECOND`）。机器可读清单与人读版 Markdown 生产包共用 `render/plan.py` 的提示词组装——两套分叉的话，人眼核对过的提示词就不是真正发出去的那句
 - [x] 设定图归属变体：`reference_images[]` 标注 `outfit`/`state`（垫图必须垫对那套衣服，lint 交叉校验）、`view` 补 `close_up`、资产卡级负面约束 `constraints`。同时修正前端 TS 镜像与 schema 的三处字段错配（此前编辑服装描述会产出 schema 非法的产物）
 - [x] 分镜编辑器「@ 挂卡」：画面描述里打 @ 或点＋挂卡即可给镜头挂上角色/生物/道具/场景引用，按 lint 规则自动补齐服装与形态（生物不带 outfit、无状态道具不填 state），并可维护垫图列表 `prompts.reference_assets`。形象锁定走结构化引用，正文只留自然语句
 - [x] 入口归一化：剔除原文中的零宽空格/BOM/词连接符等排版噪声后再进流水线（实测弱模型无法在 JSON 输出里逐字复制不可见字符，反复保真失败），`STORYBOARD_NORMALIZE_INPUT=0` 关闭

@@ -68,6 +68,13 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
     if not gate_ok:
         return False, False, gate_report, (1, -ratio)
 
+    # 时长必须够念完旁白与台词，否则成片时要么截断语音、要么被迫拉长镜头，
+    # 按名义时长做的预算当场失准。排在密度门之后择优（它已多过一道门）。
+    fit_ok, fit_report, over = quality.speech_fit_gate(
+        doc, settings.speech_overflow_max, settings.speech_cps)
+    if not fit_ok:
+        return False, False, fit_report, (2, -over)
+
     if settings.review_enabled and review_llm is not None:
         rev_ok, rev_report, overall = review.run_review(
             review_llm, batch_text, doc, settings.review_min_score)
@@ -76,8 +83,8 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
         else:
             log(rev_report.splitlines()[0])
             if not rev_ok:
-                # 评审失败排在密度失败之后择优（它已多过一道门）
-                return False, False, rev_report, (2, overall)
+                # 评审失败排在前两道门之后择优（它已多过两道门）
+                return False, False, rev_report, (3, overall)
     return True, False, "", None
 
 

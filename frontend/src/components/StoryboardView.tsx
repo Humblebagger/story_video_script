@@ -6,12 +6,14 @@ import { buildIndex, pct } from '../resolve'
 import type { Shot, Storyboard } from '../types'
 import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
+import { RenderView } from './RenderView'
 import { SourceView } from './SourceView'
 
-type Tab = 'shots' | 'assets' | 'source' | 'json'
+type Tab = 'shots' | 'assets' | 'source' | 'render' | 'json'
 
 const TABS: [Tab, string][] = [
-  ['shots', '分镜'], ['assets', '资产卡'], ['source', '原文溯源'], ['json', 'JSON'],
+  ['shots', '分镜'], ['assets', '资产卡'], ['source', '原文溯源'],
+  ['render', '渲染'], ['json', 'JSON'],
 ]
 
 function download(doc: Storyboard) {
@@ -30,13 +32,17 @@ interface Props {
   doc: Storyboard
   /** 有 id 才能存回后端；本地打开的 JSON 只能下载 */
   canSave: boolean
+  /** 历史记录 id，随任务清单一起带出去，便于把渲染产物挂回这次转换 */
+  runId?: string | null
   dirty: boolean
   saving: boolean
   onChange: (doc: Storyboard) => void
   onSave: () => void
 }
 
-export function StoryboardView({ doc, canSave, dirty, saving, onChange, onSave }: Props) {
+export function StoryboardView({
+  doc, canSave, runId = null, dirty, saving, onChange, onSave,
+}: Props) {
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -143,6 +149,7 @@ export function StoryboardView({ doc, canSave, dirty, saving, onChange, onSave }
         <AssetsView assets={doc.assets ?? {}} editing={editing} onChange={changeAsset} />
       )}
       {tab === 'source' && <SourceView doc={doc} idx={idx} focusUnit={focusUnit} />}
+      {tab === 'render' && <RenderView doc={doc} runId={runId} />}
       {tab === 'json' && <pre className="json">{JSON.stringify(doc, null, 2)}</pre>}
     </div>
   )

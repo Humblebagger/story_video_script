@@ -1008,3 +1008,70 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .lib__emptyacts { display: flex; gap: 8px; justify-content: center; }
 .hl { background: color-mix(in srgb, var(--accent) 35%, transparent); color: inherit; border-radius: 2px; }
+
+/* ---------- 渲染任务包 ---------- */
+
+.rend { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.rend__head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+.rend__head h3 { font-size: 14px; }
+.rend__hint { font-size: 12.5px; color: var(--faint); line-height: 1.75; margin-top: 4px; max-width: 640px; }
+.rend__acts { display: flex; gap: 8px; align-items: center; }
+.rend__len { font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.rend__len select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+
+.rend__cost {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;
+  padding: 14px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2);
+}
+.rend__num { display: flex; flex-direction: column; gap: 2px; }
+.rend__num b { font-size: 22px; font-weight: 650; }
+.rend__num span { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+.rend__num--warn b { color: var(--inferred); }
+.rend__num--cost b { color: var(--danger); }
+.rend__note { font-size: 11.5px; color: var(--faint); line-height: 1.7; }
+.rend__warn {
+  font-size: 12.5px; line-height: 1.8; padding: 10px 13px; border-radius: 8px;
+  background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--inferred) 35%, transparent);
+}
+.rend__dl { display: flex; gap: 8px; flex-wrap: wrap; }
+.rend__sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+.rend__assets, .rend__clips { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+.rasset { padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); }
+.rasset__top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.rasset__id { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.rasset__imgs { margin-left: auto; font-size: 11.5px; color: var(--danger); }
+.rasset__imgs.is-ok { color: var(--explicit); }
+.rasset__prompt { font-size: 12.5px; color: var(--muted); line-height: 1.7; margin-top: 5px; }
+.rasset__var { font-size: 11.5px; color: var(--faint); line-height: 1.7; }
+.rasset__var span { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+.rasset__cons { font-size: 11.5px; color: var(--danger); margin-top: 3px; }
+
+.rclip { border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.rclip__head {
+  width: 100%; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  padding: 9px 12px; border: none; background: none; cursor: pointer; text-align: left;
+}
+.rclip__head:hover { background: var(--panel-2); }
+.rclip__id { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+.rclip__dur { font-size: 11.5px; color: var(--muted); }
+.rclip__shots { font-size: 11.5px; color: var(--faint); }
+.rclip__refs { font-size: 11.5px; color: var(--muted); }
+.rclip__caret { margin-left: auto; font-size: 11.5px; color: var(--accent); }
+.rclip__prompt {
+  margin: 0; padding: 11px 13px; border-top: 1px solid var(--line-2);
+  background: var(--panel-2); font-family: var(--mono); font-size: 12px;
+  line-height: 1.85; white-space: pre-wrap; word-break: break-word;
+}
+.rend__rate { width: 78px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font-size: 12.5px; }
+.rend__basis { font-size: 12px; color: var(--muted); }
+.rend__basis summary { cursor: pointer; color: var(--accent); }
+.rend__caveats { margin: 6px 0 0 18px; font-size: 11.5px; color: var(--faint); line-height: 1.8; }
+.rend__pick { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; justify-content: space-between; }
+.rend__eps { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
+.rclip { display: flex; align-items: flex-start; flex-wrap: wrap; }
+.rclip__pick { padding: 11px 0 0 11px; }
+.rclip .rclip__head { flex: 1 1 auto; width: auto; }
+.rclip__prompt { flex: 1 1 100%; }
+.rclip.is-off { opacity: .42; }
+.rclip__over { font-style: normal; color: var(--inferred); font-size: 10.5px; margin-left: 3px; }

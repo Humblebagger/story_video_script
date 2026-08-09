@@ -131,7 +131,10 @@ def main() -> int:
         romance_text,
         params=ConvertParams(work_title="橘子汽水", chapter="第七章 天台",
                              narration_mode="original_text"),
-        settings=Settings(max_retries=0, review_enabled=True),
+        # 这份归档是 original_text，语音超时率 64%（系统性问题），
+        # 本组测的是评审流程，故关掉时长门放行
+        settings=Settings(max_retries=0, review_enabled=True,
+                          speech_overflow_max=1.0),
         llm=mock2, log=lambda m: None)
     assert len(mock2.calls) == 2, "应有 1 次生成 + 1 次评审调用"
     assert "评审总分" not in json.dumps(doc2), "评审结果不应混入产物"
@@ -583,6 +586,121 @@ def main() -> int:
     assert "FAIL" in lint_doc(d15), "view 是受控词表，写出词表外的值应被拦"
 
     print("设定图归属: 三视图含特写 / 标错 outfit·state 被拦 / 卡级负面约束生效 ✓")
+
+    # ---- 16. 渲染任务清单 ----
+    # 最要命的一条：机器可读清单与人读版 Markdown 生产包必须是同一句提示词。
+    # 分叉了的话，人眼在 Markdown 里逐条核对过的东西，跟真正发给视频 API 的
+    # 就不是一回事——而那一步是要花钱的。
+    from adapters import seedance as sd
+    from render import plan as rp
+
+    plan = rp.build_plan(archived, max_clip_seconds=15)
+    assert plan["clips"], "应切出 clip"
+    assert plan["work_title"] == "药"
+
+    total = sum(c["duration_sec"] for c in plan["clips"])
+    doc_total = sum(s.get("duration_sec", 0)
+                    for ep in archived["episodes"] for s in ep["shots"])
+    assert abs(total - doc_total) < 0.05, "clip 总时长必须等于分镜总时长，不能漏镜头"
+    covered = [sid for c in plan["clips"] for sid in c["shots"]]
+    all_shots = [s["id"] for ep in archived["episodes"] for s in ep["shots"]]
+    assert covered == all_shots, "clip 必须按原顺序覆盖全部镜头，不重不漏"
+    for c in plan["clips"]:
+        assert c["duration_sec"] <= 15 or len(c["shots"]) == 1, \
+            f"{c['id']} 超出单 clip 上限却不是单镜头独占"
+        assert c["episode"] == c["id"].split("-C")[0], "clip 不得跨集"
+
+    # 同一句提示词：清单里的每段 prompt 都应原样出现在对应集的 Markdown 里
+    for ep in archived["episodes"]:
+        md = sd.render_episode(archived, ep, 15)
+        for c in plan["clips"]:
+            if c["episode"] != ep["id"]:
+                continue
+            assert c["prompt"] in md, \
+                f"{c['id']} 的提示词未逐字出现在 Markdown 生产包里——两套提示词已分叉"
+
+    # 垫图引用必须是真实存在的资产
+    ids = {x["id"] for k in ("characters", "locations", "props", "creatures")
+           for x in archived["assets"].get(k, [])}
+    for c in plan["clips"]:
+        for ref in c["reference_assets"]:
+            assert ref in ids, f"{c['id']} 垫图引用了不存在的资产 {ref}"
+
+    # 出图清单只列被引用到的卡，且如实反映「还差几张图」
+    assert all(a["id"] in ids for a in plan["assets"])
+    assert plan["estimate"]["asset_images_missing"] == \
+        plan["estimate"]["asset_images_total"], "归档件没有任何设定图，应全部计为待出"
+    est = plan["estimate"]
+    assert est["cny_with_retries"] > est["cny_once"] > 0, "费用必须给区间"
+    assert abs(est["seconds"] - doc_total) < 0.05, "标称秒数应等于分镜总时长"
+
+    # 费率是估算，必须可切档、可用真实账单覆盖，且如实交代依据
+    assert est["calibrated"] is False, "默认应标为未标定"
+    assert est["rate"]["source"] and est["caveats"], "必须交代依据与不确定性"
+    assert any("分辨率" in c for c in est["caveats"]), "分辨率未建模这条必须说出来"
+    mini = rp.build_plan(archived, model="seedance-2.0-mini")["estimate"]
+    assert mini["cny_once"] < est["cny_once"], "mini 档应更便宜"
+    pinned = rp.build_plan(archived, cny_per_second=1.0)["estimate"]
+    assert pinned["calibrated"] is True
+    assert abs(pinned["cny_once"] - pinned["playable_seconds"]) < 0.05, \
+        "显式费率应直接生效（1 元/秒 → 费用等于可播秒数）"
+    assert {t["id"] for t in plan["tiers"]} >= {"seedance-2.0", "seedance-2.0-mini"}
+
+    # 切法变了，clip 数与切分都得跟着变
+    short = rp.build_plan(archived, max_clip_seconds=5)
+    assert len(short["clips"]) > len(plan["clips"]), "上限调小应切出更多 clip"
+
+    # v0.5 的 beats 要逐拍展开，压成一行就把「一镜到底逐级推进」的信息丢了
+    beat_doc = with_beats([{"duration_sec": 3.5, "action": "她垂着眼",
+                            "lighting": "正面柔光"},
+                           {"duration_sec": 2.5, "action": "猛地抬头",
+                            "lighting": "右侧光"}],
+                          ["画面内不出现任何灯具"])
+    bp = rp.build_plan(beat_doc, max_clip_seconds=15)
+    first = next(c for c in bp["clips"] if "E01-SH001" in c["shots"])
+    assert "她垂着眼" in first["prompt"] and "猛地抬头" in first["prompt"], \
+        "beats 应逐拍进提示词"
+    assert "正面柔光" in first["prompt"] and "右侧光" in first["prompt"], \
+        "每拍的灯光都要带上——灯光编排正是分拍的意义所在"
+    assert "【不要】画面内不出现任何灯具" in first["prompt"], "负面约束应进提示词"
+
+    print("渲染任务清单: 镜头不重不漏 / 与生产包逐字同一提示词 / 费用给区间 / beats 逐拍展开 ✓")
+
+    # ---- 17. 时长自洽：镜头必须够念完自己的旁白与台词 ----
+    # 不修这条，任何时长预算都是纸面数字：按标称时长算的钱，渲染时会被迫拉长。
+    from pipeline.quality import playable_seconds, speech_fit_gate, speech_seconds
+
+    nominal, actual = playable_seconds(archived)
+    assert actual > nominal, "《药》归档存在念不完的镜头，实际时长应大于标称"
+    ok, report, ratio = speech_fit_gate(archived, 0.1)
+    assert not ok and 0.15 < ratio < 0.25, f"《药》超时比例应约 19%，实为 {ratio}"
+    assert "E02-SH020" in report or "缺" in report, "报告要指名道姓列出念不完的镜头"
+    assert "不得改动旁白与台词文本" in report, "报告必须划清可改与不可改的边界"
+    ok, _, _ = speech_fit_gate(archived, 0.25)
+    assert ok, "默认阈值 25% 下《药》应放行（只拦离谱的）"
+    ok, _, _ = speech_fit_gate(archived, 1.0)
+    assert ok, ">=1 应视为关闭该门"
+
+    # 语速越快越念得完，判定必须跟着变
+    _, _, slow = speech_fit_gate(archived, 0.0, cps=4.5)
+    _, _, fast = speech_fit_gate(archived, 0.0, cps=6.0)
+    assert fast < slow, "语速调快后念不完的镜头应变少"
+
+    one = {"narration": {"text": "十个字的旁白吧"}, "duration_sec": 5,
+           "dialogue": [{"text": "八个字的台词"}]}
+    assert abs(speech_seconds(one, 5.0) - 2.6) < 0.01, "旁白与台词字数应合并计时"
+
+    # 渲染估算必须按可播时长计价，否则预算失真
+    est = rp.build_plan(archived)["estimate"]
+    assert est["playable_seconds"] > est["seconds"], "估算应给出可播时长"
+    assert abs(est["cny_once"]
+               - est["playable_seconds"] * est["cny_per_second"]) < 0.2, \
+        "计价必须用可播时长，不是标称时长"
+    assert any("念完旁白" in c for c in est["caveats"]), "差额要说清楚"
+    assert all(c["playable_sec"] >= c["duration_sec"] for c in
+               rp.build_plan(archived)["clips"]), "每条 clip 的可播时长不得小于标称"
+
+    print("时长自洽: 念不完的镜头被逐条点名 / 阈值与语速可调 / 估算按可播时长计价 ✓")
 
     print("\nALL PASS")
     return 0

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""NovelStoryboard v0.1 → Seedance 2.0 生产包 适配器。
+"""NovelStoryboard → Seedance 2.0 生产包 适配器（人读版）。
+
+clip 打包与提示词组装共用 render/plan.py——机器可读的渲染任务清单与这份
+Markdown 必须是同一句提示词，否则人眼在这里核对过的东西跟真发出去的不是一回事。
 
 用法: python3 adapters/seedance.py <storyboard.json> [--out <dir>] [--max-clip-seconds 15]
 
@@ -14,130 +17,16 @@
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
-SHOT_SIZE_ZH = {
-    "extreme_wide": "大远景", "wide": "远景", "full": "全景",
-    "medium": "中景", "medium_close": "中近景", "close_up": "近景特写",
-    "extreme_close_up": "大特写", "insert": "插入特写",
-}
-MOVEMENT_ZH = {
-    "static": "固定镜头", "push_in": "缓慢推近", "pull_out": "缓慢拉远",
-    "pan": "横摇", "tilt": "俯仰摇", "track": "平移跟拍", "follow": "跟随",
-    "orbit": "环绕", "crane": "升降", "handheld": "手持晃动", "zoom": "变焦",
-}
-ANGLE_ZH = {
-    "eye_level": "平视", "high": "俯拍", "low": "仰拍", "overhead": "顶拍",
-    "dutch": "倾斜构图", "pov": "主观视角", "over_shoulder": "过肩",
-}
-TIME_ZH = {"dawn": "黎明", "day": "白天", "dusk": "黄昏", "night": "夜晚"}
-DIALOGUE_TYPE_ZH = {"dialogue": "台词", "inner_monologue": "内心独白", "voiceover": "画外音"}
+# 以脚本方式运行时 sys.path[0] 是 adapters/，要把仓库根加进来才 import 得到 render
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
-def pack_clips(shots, max_seconds):
-    """把镜头顺序打包成总时长 ≤ max_seconds 的 clip（单镜头超限时独立成 clip）。"""
-    clips, cur, cur_len = [], [], 0.0
-    for shot in shots:
-        d = shot.get("duration_sec", 3)
-        if cur and cur_len + d > max_seconds:
-            clips.append(cur)
-            cur, cur_len = [], 0.0
-        cur.append(shot)
-        cur_len += d
-    if cur:
-        clips.append(cur)
-    return clips
-
-
-def collect_refs(shots):
-    """收集一组镜头引用的资产 ID：(角色/生物, 场景+机位, 道具+状态)。"""
-    chars, locs, props = [], [], []
-    for s in shots:
-        for c in s.get("characters", []):
-            if c["ref"] not in [x[0] for x in chars]:
-                chars.append((c["ref"], c.get("outfit")))
-        loc = s.get("location_ref")
-        key = (loc, s.get("location_angle", "front"))
-        if loc and key not in locs:
-            locs.append(key)
-        for p in s.get("prop_refs", []):
-            key = (p["ref"], p.get("state")) if isinstance(p, dict) else (p, None)
-            if key not in props:
-                props.append(key)
-    return chars, locs, props
-
-
-def shot_line(shot, t0):
-    """单镜头 → 时间轴一行。"""
-    t1 = t0 + shot.get("duration_sec", 3)
-    cam = shot.get("camera", {})
-    parts = [
-        f"{SHOT_SIZE_ZH.get(shot.get('shot_size'), '')}"
-        f"{('，' + ANGLE_ZH[cam['angle']]) if cam.get('angle') in ANGLE_ZH else ''}"
-        f"{('，' + MOVEMENT_ZH[cam['movement']]) if cam.get('movement') in MOVEMENT_ZH else ''}",
-        shot.get("action", ""),
-    ]
-    if shot.get("atmosphere"):
-        parts.append(shot["atmosphere"])
-    for d in shot.get("dialogue", []):
-        who = d.get("character_ref", "")
-        parts.append(f"{DIALOGUE_TYPE_ZH.get(d.get('type'), '台词')}（{who}，{d.get('emotion', '')}）：“{d['text']}”")
-    body = "，".join(p.rstrip("。，； ") for p in parts if p)
-    return f"{round(t0, 1)}-{round(t1, 1)}秒：{body}。", t1
-
-
-def clip_prompt(clip, doc, clip_idx, assets_idx):
-    """一个 clip → Seedance 时间轴提示词块。"""
-    style = doc["meta"]["style"]["style_prefix"]
-    ar = doc["meta"].get("video", {}).get("aspect_ratio", "9:16")
-    total = round(sum(s.get("duration_sec", 3) for s in clip), 1)
-    first = clip[0]
-    tod = TIME_ZH.get(first.get("time_of_day", ""), "")
-    weather = first.get("weather", "")
-
-    chars, locs, props = collect_refs(clip)
-    refs, ref_lines = [], []
-    n = 1
-    for cid, outfit in chars:
-        if cid in assets_idx["creatures"]:
-            name = assets_idx["creatures"][cid].get("name", cid)
-            ref_lines.append(f"@图片{n} 生物参考：{name}（{cid}），锁定生物外观")
-        else:
-            name = assets_idx["characters"].get(cid, {}).get("name", cid)
-            outfit_note = f"，着装 {outfit}" if outfit else ""
-            ref_lines.append(f"@图片{n} 角色参考：{name}（{cid}{outfit_note}），锁定人物外观")
-        refs.append(cid)
-        n += 1
-    for lid, angle in locs:
-        name = assets_idx["locations"].get(lid, {}).get("name", lid)
-        ref_lines.append(f"@图片{n} 场景参考：{name}（{lid}，{angle} 机位），锁定环境")
-        refs.append(lid)
-        n += 1
-    for pid, state in props:
-        name = assets_idx["props"].get(pid, {}).get("name", pid)
-        state_note = f"，状态 {state}" if state else ""
-        ref_lines.append(f"@图片{n} 道具参考：{name}（{pid}{state_note}）")
-        refs.append(pid)
-        n += 1
-
-    sfx = []
-    for s in clip:
-        for x in s.get("sfx", []):
-            if x not in sfx:
-                sfx.append(x)
-
-    lines = [f"{style}，{total}秒，{ar}竖屏" + (f"，{tod}" if tod else "") + (f"，{weather}" if weather else ""), ""]
-    t = 0.0
-    for s in clip:
-        line, t = shot_line(s, t)
-        lines.append(line)
-    lines.append("")
-    if sfx:
-        lines.append(f"【声音】{ '，'.join(sfx) }（仅音效，不要音乐，不要字幕）")
-    for rl in ref_lines:
-        lines.append(f"【参考】{rl}")
-    return "\n".join(lines), refs
-
+from render.plan import (  # noqa: E402
+    ANGLE_ZH, DIALOGUE_TYPE_ZH, MOVEMENT_ZH, SHOT_SIZE_ZH, TIME_ZH,
+    assets_index, clip_prompt, collect_refs, pack_clips, shot_line,
+)
 
 def overview_section(doc, ep, clips, assets_idx, used_ids):
     """本集速览：一屏看清本集是什么、有多少东西、怎么用这份文档。"""
@@ -269,12 +158,7 @@ def narration_script(ep, units_idx, chars_idx):
 
 
 def render_episode(doc, ep, max_clip_seconds):
-    assets_idx = {
-        "characters": {c["id"]: c for c in doc["assets"].get("characters", [])},
-        "locations": {s["id"]: s for s in doc["assets"].get("locations", [])},
-        "props": {p["id"]: p for p in doc["assets"].get("props", [])},
-        "creatures": {a["id"]: a for a in doc["assets"].get("creatures", [])},
-    }
+    assets_idx = assets_index(doc)
     units_idx = {u["id"]: u for u in doc.get("source", {}).get("units", [])}
     clips = pack_clips(ep.get("shots", []), max_clip_seconds)
 
@@ -308,7 +192,7 @@ def render_episode(doc, ep, max_clip_seconds):
         if i > 1:
             md.append("> 衔接：上传上一 clip 成片，使用「将@视频1延长」；或截取上一 clip 尾帧作为本 clip 首帧参考图上传。")
             md.append("")
-        prompt, _ = clip_prompt(clip, doc, i, assets_idx)
+        prompt, _ = clip_prompt(clip, doc, assets_idx)
         md.append("```")
         md.append(prompt)
         md.append("```")

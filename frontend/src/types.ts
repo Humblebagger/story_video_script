@@ -311,7 +311,6 @@ export interface HistoryRecord {
 
 /* ---------- 资产库（独立于任何一次转换的一等实体） ---------- */
 
-export type AssetKindName = 'characters' | 'locations' | 'props' | 'creatures'
 
 export interface LibraryWork {
   work_title: string
@@ -319,4 +318,88 @@ export interface LibraryWork {
   counts: Record<string, number>
   /** 列表接口只返回统计，取单部作品时才带上卡片 */
   assets?: Assets
+}
+
+/* ---------- 渲染任务包 ---------- */
+
+/** 与 edit.ts 的 AssetKind 同值；types.ts 不反向依赖 edit.ts，故在此独立声明 */
+export type AssetKindName = 'characters' | 'locations' | 'props' | 'creatures'
+
+export interface RenderClip {
+  id: string
+  episode: string
+  shots: string[]
+  start_sec: number
+  duration_sec: number
+  /** 能念完旁白台词的实际时长；短于自身旁白的镜头成片时必须拉长，按这个计价 */
+  playable_sec: number
+  speech_overflow: number
+  /** 发给视频模型的整段提示词，与人读版生产包里那一段逐字相同 */
+  prompt: string
+  reference_assets: string[]
+  narration: { shot: string; text: string; order?: string }[]
+}
+
+export interface RenderAsset {
+  id: string
+  kind: AssetKindName
+  kind_zh: string
+  name: string
+  image_prompt: string
+  variants: AssetVariant[]
+  constraints: string[]
+  images: { view?: string; uri?: string; variant?: string }[]
+  have_images: number
+  /** 至少需要几张图：没声明槽位的卡也需要一张，否则没得垫 */
+  need_images: number
+  angles?: string[]
+}
+
+export interface RenderTier {
+  id: string
+  label: string
+  resolutions: string
+  cny_per_second: number
+}
+
+export interface RenderEstimate {
+  clips: number
+  seconds: number
+  playable_seconds: number
+  speech_overflow_sec: number
+  speech_cps: number
+  asset_images_total: number
+  asset_images_missing: number
+  model: string
+  model_label: string
+  resolutions: string
+  cny_per_second: number
+  cny_once: number
+  cny_with_retries: number
+  retry_factor: number
+  /** true 表示用的是人工指定/标定过的费率，不是推算值 */
+  calibrated: boolean
+  rate: { tokens_per_second: number; cny_per_million_tokens: number; source: string }
+  caveats: string[]
+  note: string
+}
+
+export interface RenderPlan {
+  plan_version: string
+  run_id: string | null
+  work_title: string
+  chapter: string
+  schema_version: string
+  style_prefix: string
+  video: { aspect_ratio?: string }
+  max_clip_seconds: number
+  assets: RenderAsset[]
+  clips: RenderClip[]
+  estimate: RenderEstimate
+  tiers: RenderTier[]
+}
+
+export interface RenderPack {
+  plan: RenderPlan
+  packs: { episode: string; title: string; markdown: string }[]
 }

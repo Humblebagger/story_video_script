@@ -6,6 +6,7 @@
 import { getToken, notifyUnauthorized } from './auth'
 import type { User } from './auth'
 import type {
+  RenderPack,
   ConvertRequest, Health, HistoryRecord, HistorySummary, Job, JobSummary,
   LibraryWork, Storyboard,
 } from './types'
@@ -146,3 +147,24 @@ export function deleteHistory(id: string): Promise<{ deleted: string }> {
   return req<{ deleted: string }>(`/history/${id}`, { method: 'DELETE' })
 }
 
+
+/** 分镜 IR → 渲染任务清单 + 人读版生产包 + 费用估算。
+ *  传当前屏幕上的产物（可能还没保存），所以人工改完能立刻看到提示词与费用变化。 */
+export function renderPlan(
+  doc: Storyboard, opts: {
+    maxClipSeconds?: number; runId?: string | null
+    model?: string; cnyPerSecond?: number | null
+  } = {},
+): Promise<RenderPack> {
+  return req<RenderPack>('/render/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      result: doc,
+      max_clip_seconds: opts.maxClipSeconds ?? 15,
+      run_id: opts.runId ?? null,
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.cnyPerSecond ? { cny_per_second: opts.cnyPerSecond } : {}),
+    }),
+  })
+}

@@ -32,6 +32,11 @@ class Settings:
     transport_retries: int = 3              # LLM 瞬时传输故障（断连/超时/5xx/限流）重试次数
     normalize_input: bool = True            # 入口剔除零宽/BOM 噪声字符（此后以清洗后文本为原文）
     narration_density_max: float = 0.6      # selective 模式旁白占比质量门（>=1 关闭）
+    # 允许多大比例的镜头念不完旁白（>=1 关闭）。归档基准实测：selective 13%–26%、
+    # original_text 55%–64%——这是系统性问题，故默认只拦离谱的；预算失真靠
+    # 渲染估算按实际时长计价来解决，不靠回喂重试硬顶
+    speech_overflow_max: float = 0.25
+    speech_cps: float = 4.5                 # TTS 语速（字/秒），用于判定念不念得完
     strict: bool = False                    # True：软质量门重试耗尽直接失败（默认择优降级交付）
     review_enabled: bool = False            # LLM 评审阶段（弱模型部署时建议开启）
     review_model: Optional[str] = None      # 评审用模型（缺省与转换同模型）
@@ -54,6 +59,8 @@ def load_settings() -> Settings:
         transport_retries=int(env("STORYBOARD_TRANSPORT_RETRIES", "3")),
         normalize_input=env("STORYBOARD_NORMALIZE_INPUT", "1") not in ("0", "false", "no"),
         narration_density_max=float(env("STORYBOARD_NARRATION_DENSITY_MAX", "0.6")),
+        speech_overflow_max=float(env("STORYBOARD_SPEECH_OVERFLOW_MAX", "0.25")),
+        speech_cps=float(env("STORYBOARD_SPEECH_CPS", "4.5")),
         strict=env("STORYBOARD_STRICT", "") in ("1", "true", "yes"),
         review_enabled=env("STORYBOARD_REVIEW", "") in ("1", "true", "yes"),
         review_model=env("STORYBOARD_REVIEW_MODEL") or None,

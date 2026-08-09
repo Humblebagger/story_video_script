@@ -24,6 +24,9 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   POST   /library/{work}/import        → 把一次转换的 assets 并入库
   DELETE /library/{work}               → 删除整部作品的资产库
 
+渲染任务包（下游消费入口，只读、不落盘、不改 IR）：
+  POST /render/plan        → 分镜 IR → 机器可读渲染任务清单 + 人读版生产包 + 费用估算
+
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
 """
@@ -44,7 +47,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline import __version__
 from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
+from render import plan as render_plan_mod
 from server import auth, library, store
+# 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
+from adapters import seedance
 
 app = FastAPI(title="小说 → 分镜 IR 转换服务", version=__version__)
 
@@ -275,6 +281,46 @@ def history_delete(run_id: str, user: dict = Depends(current_user)):
     if not ok:
         raise HTTPException(404, "历史记录不存在")
     return {"deleted": run_id}
+
+
+# ---------- 渲染任务包 ----------
+
+class RenderPlanRequest(BaseModel):
+    """要渲染的分镜。传当前屏幕上的产物而不是只按 run_id 取，
+    这样人工编辑还没保存也能先导出来看提示词与费用。"""
+    result: dict
+    max_clip_seconds: float = Field(15.0, gt=0, le=60)
+    run_id: Optional[str] = None
+    include_markdown: bool = True
+    # 费率档位；cny_per_second 显式覆盖（拿真实账单标定后填这里最准）
+    model: str = render_plan_mod.DEFAULT_TIER
+    cny_per_second: Optional[float] = Field(None, gt=0, le=1000)
+
+
+@app.post("/render/plan")
+def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
+    """分镜 IR → 渲染任务清单（+ 人读版生产包）。
+
+    只读操作，不碰 IR 也不落盘：这一步的价值是让人在花钱之前，先逐条核对
+    提示词、看清楚要出几张图、以及这一章大概要烧多少钱。
+    """
+    doc = req.result
+    if not doc.get("meta") or not doc.get("episodes"):
+        raise HTTPException(422, "不是分镜 IR：缺少 meta / episodes")
+    try:
+        plan = render_plan_mod.build_plan(doc, req.max_clip_seconds, req.run_id,
+                                          req.model, req.cny_per_second)
+    except (KeyError, TypeError) as e:
+        raise HTTPException(422, f"分镜结构不完整，无法组装渲染任务：{e}")
+
+    packs = []
+    if req.include_markdown:
+        for ep in doc.get("episodes") or []:
+            packs.append({"episode": ep.get("id"),
+                          "title": ep.get("title", ""),
+                          "markdown": seedance.render_episode(
+                              doc, ep, req.max_clip_seconds)})
+    return {"plan": plan, "packs": packs}
 
 
 # ---------- 资产库 ----------

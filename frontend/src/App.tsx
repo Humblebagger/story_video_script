@@ -300,6 +300,7 @@ export default function App() {
             <StoryboardView
               doc={doc}
               canSave={docId !== null}
+              runId={docId}
               dirty={dirty}
               saving={saving}
               onChange={(next) => { setDoc(next); setDirty(true) }}

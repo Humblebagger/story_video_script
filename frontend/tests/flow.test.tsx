@@ -72,6 +72,7 @@ const libWorks = (u: string) => [...(libs.get(u) ?? new Map()).entries()]
   .map(([t, w]) => ({ work_title: t, updated_at: '', counts: counts(w) }))
 /** 前端 PUT 回来的编辑结果，用于校验编辑没有破坏跨引用 */
 const saved: Record<string, never>[] = []
+const renderCalls: { seconds: number; shots: number; model: string }[] = []
 let seq = 0
 
 const DOC = {
@@ -154,6 +155,54 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                      json: async () => ({ detail: '未登录' }) }
   if (path === '/auth/me') return json(user(who))
 
+  if (path === '/render/plan' && method === 'POST') {
+    const b = JSON.parse(init!.body!)
+    const shots = b.result.episodes.flatMap((e: { shots: unknown[] }) => e.shots)
+    const seconds = shots.reduce((a: number, s: { duration_sec: number }) =>
+      a + s.duration_sec, 0)
+    renderCalls.push({ seconds: b.max_clip_seconds, shots: shots.length,
+                       model: b.model ?? 'seedance-2.0' })
+    return json({
+      plan: {
+        plan_version: '1', run_id: b.run_id, work_title: '药', chapter: '第一章',
+        schema_version: '0.4', style_prefix: '写实', video: { aspect_ratio: '9:16' },
+        max_clip_seconds: b.max_clip_seconds,
+        assets: [{ id: 'C01', kind: 'characters', kind_zh: '角色', name: '华老栓',
+                   image_prompt: '驼背老者', variants: [], constraints: [],
+                   images: [{ view: 'front', uri: null, variant: null }],
+                   have_images: 0, need_images: 1 }],
+        clips: [{ id: 'E01-C01', episode: 'E01', shots: shots.map(
+                    (s: { id: string }) => s.id),
+                  start_sec: 0, duration_sec: seconds, playable_sec: seconds + 3,
+                  speech_overflow: 3,
+                  prompt: '写实，5秒，9:16竖屏\n\n0.0-5.0秒：远景，推门。',
+                  reference_assets: ['C01', 'S01'], narration: [] },
+                { id: 'E02-C01', episode: 'E02', shots: ['E02-SH001'],
+                  start_sec: seconds, duration_sec: 10, playable_sec: 10,
+                  speech_overflow: 0, prompt: '写实，10秒，9:16竖屏',
+                  reference_assets: [], narration: [] }],
+        estimate: { clips: 1, seconds, asset_images_total: 1, asset_images_missing: 1,
+                    model: b.model ?? 'seedance-2.0',
+                    model_label: b.model === 'seedance-2.0-mini'
+                      ? 'Seedance 2.0 mini' : 'Seedance 2.0（标准）',
+                    resolutions: '1080p 及以上',
+                    cny_per_second: b.cny_per_second ?? (b.model === 'seedance-2.0-mini' ? 0.47 : 0.95),
+                    playable_seconds: seconds + 13, speech_overflow_sec: 3, speech_cps: 4.5,
+                    cny_once: b.model === 'seedance-2.0-mini' ? 2.4 : 4.7,
+                    cny_with_retries: b.model === 'seedance-2.0-mini' ? 7.1 : 14.2,
+                    retry_factor: 3, calibrated: b.cny_per_second != null,
+                    rate: { tokens_per_second: 20600, cny_per_million_tokens: 46,
+                            source: '2026-03 公开报道的方舟资费，非官方定价页' },
+                    caveats: ['分辨率未建模：token 消耗与分辨率强相关。'],
+                    note: '实际以控制台账单为准' },
+        tiers: [{ id: 'seedance-2.0', label: 'Seedance 2.0（标准）',
+                  resolutions: '1080p 及以上', cny_per_second: 0.95 },
+                { id: 'seedance-2.0-mini', label: 'Seedance 2.0 mini',
+                  resolutions: '480P / 720P', cny_per_second: 0.47 }],
+      },
+      packs: [{ episode: 'E01', title: '开端', markdown: '# 药 · E01 —— Seedance 2.0 生产包' }],
+    })
+  }
   if (path === '/library') return json({ works: libWorks(who) })
   if (path.startsWith('/library/')) {
     const seg = path.slice('/library/'.length).split('/').map(decodeURIComponent)
@@ -523,6 +572,62 @@ must(cref('C01') !== undefined && shot2.location_ref === 'S01',
 must(JSON.stringify(shot2.source) === JSON.stringify(DOC.episodes[0].shots[0].source),
      '挂卡不得触碰溯源锚点')
 console.log('15. 分镜 @ 挂卡 → 引用合规（服装自动选中 / 生物不带 outfit / 无状态道具不填 state）✓')
+
+// 16. 渲染任务包：花钱之前先看清楚提示词、缺几张图、多少钱
+await click(findByText('button', '渲染'))
+must(has('还没组装'), '未生成时应给出引导而不是空白')
+await click(findByText('button', '生成任务包'))
+await settle(150)
+must(renderCalls.length === 1 && renderCalls[0].seconds === 15,
+     '应按默认 15 秒上限请求任务包')
+must(has('个 clip') && has('秒成片'), '应摊开 clip 数与成片时长')
+must(has('¥4.7–14.2'), '费用必须给区间（一次过 → 抽卡），不能只给最乐观的数')
+must(has('张资产图待出'), '缺图数量要显式提示')
+must(has('会换脸'), '缺图时必须警告角色一致性会崩——这正是资产引用制要防的')
+must(!has('0.0-5.0秒'), '提示词默认收起，先看总账')
+await click(findByText('button', '看提示词'))
+must(has('0.0-5.0秒：远景，推门。'), '展开后应能逐条核对提示词')
+
+// 改 clip 上限要重新组装（切法变了，费用与 clip 数都会变）
+const lenSel = container.querySelector('.rend__len select') as unknown as HTMLSelectElement
+await act(async () => {
+  const setV = Object.getOwnPropertyDescriptor(
+    win.HTMLSelectElement.prototype, 'value')!.set!
+  setV.call(lenSel, '5')
+  lenSel.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
+})
+await settle(150)
+must(renderCalls.length === 2 && renderCalls[1].seconds === 5,
+     '改单 clip 上限应重新组装任务包')
+// 费用是估算，依据与保留意见必须能摊开——四位数的数字配一行小字不够
+must(has('这是估算，点开看依据与不确定性'), '必须明示费用是估算')
+must(has('分辨率未建模'), '不确定性要如实列出，不能只给一个数')
+
+const tierSel = [...container.querySelectorAll('.rend__len select')][1] as unknown as HTMLSelectElement
+await act(async () => {
+  const setV = Object.getOwnPropertyDescriptor(
+    win.HTMLSelectElement.prototype, 'value')!.set!
+  setV.call(tierSel, 'seedance-2.0-mini')
+  tierSel.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
+})
+await settle(150)
+must(renderCalls[renderCalls.length - 1].model === 'seedance-2.0-mini',
+     '切换费率档位应重新估算')
+must(has('¥2.4–7.1'), 'mini 档的费用应随之减半')
+// 账必须按「能念完旁白」的实际时长算，否则预算是纸面数字
+must(has('含念完旁白必须补的'), '标称时长与可播时长不一致时必须点明')
+
+// 只渲染选中的：唯一真能把钱包住的手段
+const boxes = [...container.querySelectorAll('.rclip__pick input')] as unknown as HTMLElement[]
+must(boxes.length === 2, '每条 clip 都应可勾选')
+await act(async () => boxes[1].click())
+await settle(60)
+must(has('选中 1/2'), '取消勾选后应显示选中子集')
+must(container.querySelectorAll('.rclip.is-off').length === 1, '未选中的 clip 应弱化')
+must(has('仅选中的 1/2 条'), '费用应只算选中的部分')
+await click(findByText('button', '全选'))
+must(!has('选中 1/2'), '全选应恢复')
+console.log('16. 渲染任务包 → 按可播时长计价 / 可选范围渲染 / 费用可切档 ✓')
 
 root.unmount()
 console.log('\nALL PASS')
