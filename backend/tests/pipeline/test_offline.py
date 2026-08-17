@@ -72,7 +72,8 @@ def main() -> int:
     # 归档由未清洗原文转换（units 保留 U+200B），关闭入口归一化以逐字回放
     doc = convert_text(full,
                        params=YAO_PARAMS,
-                       settings=Settings(max_retries=0, normalize_input=False),
+                       settings=Settings(max_retries=0, normalize_input=False,
+                                         freeze_source_units=False),
                        llm=mock, batches=[b1, b2],
                        log=logs.append)
     archived = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
@@ -127,6 +128,7 @@ def main() -> int:
                '"asset_quality": 4, "semantic_fidelity": 5}, '
                '"overall": 4.3, "issues": []}')
     mock2 = MockLLM([romance_json, verdict])
+    manifest2 = {}
     doc2 = convert_text(
         romance_text,
         params=ConvertParams(work_title="橘子汽水", chapter="第七章 天台",
@@ -135,9 +137,13 @@ def main() -> int:
         # 本组测的是评审流程，故关掉时长门放行
         settings=Settings(max_retries=0, review_enabled=True,
                           speech_overflow_max=1.0),
-        llm=mock2, log=lambda m: None)
+        llm=mock2, log=lambda m: None, manifest_out=manifest2)
     assert len(mock2.calls) == 2, "应有 1 次生成 + 1 次评审调用"
     assert "评审总分" not in json.dumps(doc2), "评审结果不应混入产物"
+    assert manifest2["state"] == "verified" and \
+        manifest2["verification"]["status"] == "verified"
+    assert manifest2["scope"]["frozen"] and len(manifest2["scope"]["units"]) == 11
+    assert manifest2["artifact_sha256"] and manifest2["attempts"][0]["status"] == "passed"
     print("评审阶段: 生成 → 评审通过 → 产物返回，调用序列正确 ✓")
 
     # 8. 软质量门重试耗尽：择优降级交付（strict 时改为直接失败）
@@ -154,11 +160,21 @@ def main() -> int:
 
     orig_lint = convert_mod.validate.run_lint
     orig_fid = convert_mod.validate.run_fidelity
+    orig_verify = convert_mod.verification.verify_document
+    convert_mod.verification.verify_document = lambda *a, **kw: \
+        convert_mod.verification.VerificationReport(coverage={
+            "selected": [], "covered": [], "waived": [], "failed": [],
+            "inferred_shot_ratio": 0,
+        })
     convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
         warnings = []
-        mock3 = MockLLM([json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
+        patch8 = {"tool": "json_patch", "patch": [{
+            "op": "replace", "path": "/episodes/0/shots",
+            "value": deg_doc(8)["episodes"][0]["shots"],
+        }]}
+        mock3 = MockLLM([json.dumps(deg_doc(10)), json.dumps(patch8)])
         doc3 = convert_text("他推门。", settings=Settings(max_retries=1),
                             llm=mock3, batches=["他推门。"],
                             log=lambda m: None, warnings_out=warnings)
@@ -168,7 +184,19 @@ def main() -> int:
         assert len(warnings) == 1 and "择优交付第 2 次生成" in warnings[0]
         assert "旁白占比 80%" in warnings[0]
 
-        mock4 = MockLLM([json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
+        # 修复轮次可以先读取结构化工具结果，再提交受限补丁；仍只占一次修复 attempt。
+        tool_manifest = {}
+        mock_tools = MockLLM([
+            json.dumps(deg_doc(10)), json.dumps({"tool": "coverage_query"}),
+            json.dumps(patch8),
+        ])
+        convert_text("他推门。", settings=Settings(max_retries=1), llm=mock_tools,
+                     batches=["他推门。"], log=lambda m: None,
+                     manifest_out=tool_manifest)
+        assert len(mock_tools.calls) == 3
+        assert tool_manifest["attempts"][1]["tools"] == ["coverage_query", "json_patch"]
+
+        mock4 = MockLLM([json.dumps(deg_doc(10)), json.dumps(patch8)])
         try:
             convert_text("他推门。", settings=Settings(max_retries=1, strict=True),
                          llm=mock4, batches=["他推门。"], log=lambda m: None)
@@ -491,6 +519,7 @@ def main() -> int:
     finally:
         convert_mod.validate.run_lint = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
+        convert_mod.verification.verify_document = orig_verify
     print("失败可诊断: 校验报告逐行进日志 / 超长截断并指向完整报告 ✓")
 
     # ---- 14. v0.5 镜头内阶段与负面约束 ----
@@ -701,6 +730,109 @@ def main() -> int:
                rp.build_plan(archived)["clips"]), "每条 clip 的可播时长不得小于标称"
 
     print("时长自洽: 念不完的镜头被逐条点名 / 阈值与语速可调 / 估算按可播时长计价 ✓")
+
+    # ---- 18. 确定性范围 + 结构化证据 + 受限修复 + 独立后处理 ----
+    from pipeline.source_units import build_frozen_units, prompt_units
+    from pipeline.verification import verify_document, recompute_coverage_field
+    from pipeline.repair import RepairError, apply_json_patch
+    from pipeline.review import run_review
+
+    scope_text = "第一句。\n他说：“第二句！”"
+    frozen = build_frozen_units(scope_text, [scope_text])
+    assert [u.id for u in frozen] == ["u0001", "u0002"]
+    assert "".join(u.text for u in frozen).replace("\n", "") == scope_text.replace("\n", "")
+    assert build_frozen_units(scope_text, [scope_text]) == frozen, "同一输入必须产生相同范围"
+    assert prompt_units(frozen, 1)[0] == {"id": "u0001", "text": "第一句。", "para": 1}
+
+    evidence_doc = json.loads((ROOT / "tests" / "genre_stability" /
+                               "output_romance.json").read_text(encoding="utf-8"))
+    expected = [{k: u.get(k) for k in ("id", "text", "para")}
+                for u in evidence_doc["source"]["units"]]
+    tampered = json.loads(json.dumps(evidence_doc))
+    tampered["source"]["units"][0]["text"] += "篡改"
+    report = verify_document(tampered, frozen_units=expected)
+    assert any(f.rule_id == "SOURCE-FROZEN-002" and f.severity == "critical"
+               for f in report.findings), "源证据改写必须是 critical"
+
+    waived = json.loads(json.dumps(evidence_doc))
+    waived["source"]["units"][0]["skipped"] = True
+    report = verify_document(waived, frozen_units=expected)
+    assert any(f.rule_id == "SOURCE-WAIVER-001" for f in report.findings), \
+        "无理由跳过不得进入覆盖率豁免"
+
+    wrong_coverage = json.loads(json.dumps(evidence_doc))
+    wrong_coverage["coverage"] = {"unmapped_units": ["u9999"],
+                                  "inferred_shot_ratio": 1}
+    probe = verify_document(wrong_coverage)
+    recompute_coverage_field(wrong_coverage, probe.coverage)
+    report = verify_document(wrong_coverage)
+    assert not any(f.rule_id.startswith("COVERAGE-DECLARED") for f in report.findings)
+    assert wrong_coverage["coverage"]["unmapped_units"] == report.coverage["failed"]
+
+    hallucinated = json.loads(json.dumps(evidence_doc))
+    dialogue_item = next(d for ep in hallucinated["episodes"]
+                         for shot in ep["shots"] for d in shot.get("dialogue") or [])
+    dialogue_item["text"] = "原文里不存在的台词"
+    report = verify_document(hallucinated)
+    assert any(f.rule_id == "FID-DIALOGUE-001" for f in report.findings)
+
+    try:
+        apply_json_patch(evidence_doc, [{"op": "replace",
+                                        "path": "/source/units/0/text",
+                                        "value": "不可修改"}])
+        raise AssertionError("修复 Agent 不得修改冻结证据")
+    except RepairError:
+        pass
+    patched = apply_json_patch(evidence_doc, [{"op": "replace",
+                                               "path": "/episodes/0/shots/0/action",
+                                               "value": "受限修改"}])
+    assert patched["episodes"][0]["shots"][0]["action"] == "受限修改"
+    assert evidence_doc["episodes"][0]["shots"][0]["action"] != "受限修改", \
+        "补丁应用不得原地污染候选"
+
+    low_semantic = ('{"scores":{"narration_selection":5,"shot_language":5,'
+                    '"asset_quality":5,"semantic_fidelity":3},"overall":5,"issues":[]}')
+    ok, _, overall = run_review(MockLLM([low_semantic]), "原文", evidence_doc, 3.0, 3, 4)
+    assert not ok and overall == 4.5, "服务端重算平均分，且语义忠实度独立设底线"
+    ok, report_text, overall = run_review(MockLLM(['{"scores":{"x":5}}']),
+                                          "原文", evidence_doc, 3.0)
+    assert ok is None and overall is None and "不可验证" in report_text
+    failing_review = MockLLM([])
+    failing_review.complete = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("offline"))
+    ok, report_text, overall = run_review(failing_review, "原文", evidence_doc, 3.0)
+    assert ok is None and overall is None and "服务不可用" in report_text
+    print("可验证审查: 冻结范围 / 证据定位 / 覆盖率重算 / 受限补丁 / 语义独立门槛 ✓")
+
+    # 无效人工编辑允许保存为草稿，但不能借此绕过渲染前验证；旧记录也要在
+    # 第一次编辑时固化原始 source.units，不能拿篡改后的结果当新基线。
+    from fastapi import HTTPException
+    from server.app import history_update, render_plan as api_render_plan, RenderPlanRequest
+    api_data = _Path(_tempfile.mkdtemp(prefix="storyboard_api_gate_"))
+    old_auth_paths = auth.DATA_DIR, auth.USERS_FILE, auth.SECRET_FILE, auth.LEGACY_RUNS
+    auth.DATA_DIR = api_data
+    auth.USERS_FILE = api_data / "users.json"
+    auth.SECRET_FILE = api_data / "secret.key"
+    auth.LEGACY_RUNS = None
+    try:
+        gate_user = auth.register("gatecheck", "pw123456")
+        store.save(gate_user["id"], "gate1", "succeeded", {}, evidence_doc)
+        invalid_edit = json.loads(json.dumps(evidence_doc))
+        invalid_edit["source"]["units"][0]["text"] += "篡改"
+        saved = history_update("gate1", invalid_edit, gate_user)
+        assert saved["status"] == "draft_invalid"
+        persisted = store.get(gate_user["id"], "gate1")
+        assert persisted["manifest"]["scope"]["units"][0]["text"] != \
+            invalid_edit["source"]["units"][0]["text"], "旧记录原始证据必须固化"
+        try:
+            api_render_plan(RenderPlanRequest(result=invalid_edit, run_id="gate1",
+                                              include_markdown=False), gate_user)
+            raise AssertionError("无效草稿不得进入付费渲染")
+        except HTTPException as exc:
+            assert exc.status_code == 422
+    finally:
+        auth.DATA_DIR, auth.USERS_FILE, auth.SECRET_FILE, auth.LEGACY_RUNS = old_auth_paths
+        shutil.rmtree(api_data, ignore_errors=True)
+    print("API 验证门: 无效编辑标记 draft_invalid / 旧证据固化 / 渲染前阻断 ✓")
 
     print("\nALL PASS")
     return 0

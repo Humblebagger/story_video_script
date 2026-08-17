@@ -31,6 +31,7 @@ class Settings:
     max_retries: int = 2                    # 校验失败后的回喂重试次数
     transport_retries: int = 3              # LLM 瞬时传输故障（断连/超时/5xx/限流）重试次数
     normalize_input: bool = True            # 入口剔除零宽/BOM 噪声字符（此后以清洗后文本为原文）
+    freeze_source_units: bool = True         # 程序确定性切句/编号，模型不得改写证据范围
     narration_density_max: float = 0.6      # selective 模式旁白占比质量门（>=1 关闭）
     # 允许多大比例的镜头念不完旁白（>=1 关闭）。归档基准实测：selective 13%–26%、
     # original_text 55%–64%——这是系统性问题，故默认只拦离谱的；预算失真靠
@@ -41,6 +42,8 @@ class Settings:
     review_enabled: bool = False            # LLM 评审阶段（弱模型部署时建议开启）
     review_model: Optional[str] = None      # 评审用模型（缺省与转换同模型）
     review_min_score: float = 3.0           # 评审总分低于此值回喂重试
+    review_dimension_min: int = 3           # 任一评分维度不得低于此值
+    semantic_fidelity_min: int = 4          # 语义忠实度单独设更高底线
 
 
 def load_settings() -> Settings:
@@ -58,6 +61,8 @@ def load_settings() -> Settings:
         max_retries=int(env("STORYBOARD_MAX_RETRIES", "2")),
         transport_retries=int(env("STORYBOARD_TRANSPORT_RETRIES", "3")),
         normalize_input=env("STORYBOARD_NORMALIZE_INPUT", "1") not in ("0", "false", "no"),
+        freeze_source_units=env("STORYBOARD_FREEZE_SOURCE_UNITS", "1") not in
+                            ("0", "false", "no"),
         narration_density_max=float(env("STORYBOARD_NARRATION_DENSITY_MAX", "0.6")),
         speech_overflow_max=float(env("STORYBOARD_SPEECH_OVERFLOW_MAX", "0.25")),
         speech_cps=float(env("STORYBOARD_SPEECH_CPS", "4.5")),
@@ -65,4 +70,6 @@ def load_settings() -> Settings:
         review_enabled=env("STORYBOARD_REVIEW", "") in ("1", "true", "yes"),
         review_model=env("STORYBOARD_REVIEW_MODEL") or None,
         review_min_score=float(env("STORYBOARD_REVIEW_MIN_SCORE", "3.0")),
+        review_dimension_min=int(env("STORYBOARD_REVIEW_DIMENSION_MIN", "3")),
+        semantic_fidelity_min=int(env("STORYBOARD_SEMANTIC_FIDELITY_MIN", "4")),
     )

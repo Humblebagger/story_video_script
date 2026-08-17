@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from . import quality, review, validate
+from . import quality, repair, review, validate, verification
 from .config import Settings, load_settings
 from .llm import extract_json
+from .manifest import build_manifest, finish_manifest
 from .prompt import build_user_message, load_system_prompt
+from .source_units import build_frozen_units, manifest_units, prompt_units
 from .splitter import normalize_source_text, split_batches
 
 
@@ -48,44 +50,56 @@ def _continuation_blocks(outputs: List[dict]) -> (str, str):
 
 def _check_batch(doc: dict, batch_text: str, settings: Settings,
                  workdir: Path, idx: int, attempt: int,
-                 review_llm, log):
+                 review_llm, log, frozen_units=None):
     """结构校验 → 质量门 → 可选评审。返回 (是否通过, 硬失败?, 报告, 择优键)。
 
     硬失败（schema/lint/保真不过）的产物合同已破坏，不可交付；
     软失败（密度门/评审分不过）的产物合法可用，仅质量不达标，
     择优键（越大越接近达标）供重试耗尽后降级交付时挑最优一版。
     """
+    # coverage 是后处理结果，不信任模型声明。先计算再覆写，然后从干净状态复验。
+    probe = verification.verify_document(
+        doc, frozen_units=frozen_units, original_text=batch_text)
+    verification.recompute_coverage_field(doc, probe.coverage)
+    structured = verification.verify_document(
+        doc, frozen_units=frozen_units, original_text=batch_text)
+
     tmp = workdir / f"batch{idx}_attempt{attempt}.json"
     tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8")
+    if not structured.ok:
+        return False, True, structured.render(), None, structured
     lint_ok, lint_out = validate.run_lint(tmp)
     fid_ok, fid_out = validate.run_fidelity(tmp, batch_text, workdir)
     if not (lint_ok and fid_ok):
-        return False, True, lint_out.strip() + "\n" + fid_out.strip(), None
+        return (False, True, lint_out.strip() + "\n" + fid_out.strip(), None,
+                structured)
 
     gate_ok, gate_report, ratio = quality.narration_density_gate(
         doc, settings.narration_density_max)
     if not gate_ok:
-        return False, False, gate_report, (1, -ratio)
+        return False, False, gate_report, (1, -ratio), structured
 
     # 时长必须够念完旁白与台词，否则成片时要么截断语音、要么被迫拉长镜头，
     # 按名义时长做的预算当场失准。排在密度门之后择优（它已多过一道门）。
     fit_ok, fit_report, over = quality.speech_fit_gate(
         doc, settings.speech_overflow_max, settings.speech_cps)
     if not fit_ok:
-        return False, False, fit_report, (2, -over)
+        return False, False, fit_report, (2, -over), structured
 
     if settings.review_enabled and review_llm is not None:
         rev_ok, rev_report, overall = review.run_review(
-            review_llm, batch_text, doc, settings.review_min_score)
+            review_llm, batch_text, doc, settings.review_min_score,
+            settings.review_dimension_min, settings.semantic_fidelity_min)
         if rev_ok is None:
             log(f"批 {idx} {rev_report}")
+            return False, False, rev_report, (3, -1.0), structured
         else:
             log(rev_report.splitlines()[0])
             if not rev_ok:
                 # 评审失败排在前两道门之后择优（它已多过两道门）
-                return False, False, rev_report, (3, overall)
-    return True, False, "", None
+                return False, False, rev_report, (3, overall), structured
+    return True, False, structured.render(), None, structured
 
 
 _REPORT_LOG_LINES = 60
@@ -114,38 +128,93 @@ def _log_report(log, report: str, workdir: Path, idx: int, attempt: int) -> None
 
 def _convert_batch(llm, system: str, user: str, batch_text: str, params,
                    settings: Settings, workdir: Path, idx: int,
-                   review_llm, log) -> Tuple[dict, List[str]]:
+                   review_llm, log, frozen_units=None,
+                   attempt_records=None) -> Tuple[dict, List[str]]:
     """返回 (产物, 质量警告列表)。警告非空即降级交付。"""
     messages = [{"role": "user", "content": user}]
     last_report = ""
+    last_structured = verification.VerificationReport()
+    current_doc = None
+    repair_mode = False
     candidates = []  # 软失败但结构合法的历次尝试：(择优键, 第几次, 产物, 报告)
     for attempt in range(settings.max_retries + 1):
         raw = llm.complete(system, messages)
+        used_tools = []
         try:
-            doc = extract_json(raw)
-        except ValueError as e:
-            last_report = f"输出无法解析为 JSON：{e}"
+            payload = extract_json(raw)
+            if repair_mode:
+                for _ in range(8):
+                    tool = payload.get("tool") if isinstance(payload, dict) else None
+                    used_tools.append(tool or "invalid")
+                    if tool == "json_patch":
+                        doc = repair.apply_tool_call(current_doc, payload)
+                        break
+                    if repair.is_task_done(payload):
+                        doc = current_doc
+                        break
+                    tool_result = repair.run_inspection_tool(
+                        current_doc, last_structured, payload)
+                    messages.append({"role": "assistant", "content": raw})
+                    messages.append({"role": "user", "content":
+                                     "【工具结果】\n" + json.dumps(
+                                         tool_result, ensure_ascii=False)})
+                    raw = llm.complete(system, messages)
+                    payload = extract_json(raw)
+                else:
+                    raise repair.RepairError("单轮修复超过 8 个工具步骤")
+            else:
+                doc = payload
+        except (ValueError, repair.RepairError) as e:
+            last_report = (f"修复工具调用无效：{e}" if repair_mode
+                           else f"输出无法解析为 JSON：{e}")
             log(f"批 {idx} 第 {attempt + 1} 次生成：{last_report}")
+            if attempt_records is not None:
+                attempt_records.append({"batch": idx, "attempt": attempt + 1,
+                                        "mode": "patch" if repair_mode else "generate",
+                                        "status": "unparseable", "report": last_report,
+                                        "tools": used_tools})
         else:
             quality.apply_meta_overrides(doc, params)
-            ok, hard, last_report, key = _check_batch(
+            ok, hard, last_report, key, last_structured = _check_batch(
                 doc, batch_text, settings, workdir, idx, attempt + 1,
-                review_llm, log)
+                review_llm, log, frozen_units)
+            if attempt_records is not None:
+                attempt_records.append({
+                    "batch": idx, "attempt": attempt + 1,
+                    "mode": "patch" if repair_mode else "generate",
+                    "status": "passed" if ok else ("hard_failed" if hard else "soft_failed"),
+                    "verification": last_structured.to_dict(),
+                    "report": last_report,
+                    "tools": used_tools,
+                })
             if ok:
                 log(f"批 {idx} 校验通过（第 {attempt + 1} 次生成）")
                 return doc, []
             if not hard:
                 candidates.append((key, attempt + 1, doc, last_report))
+            current_doc = doc
             log(f"批 {idx} 第 {attempt + 1} 次生成未通过"
                 f"{'校验' if hard else '质量门'}，原因如下：")
             _log_report(log, last_report, workdir, idx, attempt + 1)
         if attempt < settings.max_retries:
-            log(f"批 {idx} 回喂校验报告重试（{attempt + 2}/{settings.max_retries + 1}）…")
-            messages.append({"role": "assistant", "content": raw})
-            messages.append({"role": "user", "content":
-                             "你的输出未通过自动校验，报告如下：\n\n" + last_report +
-                             "\n\n请修正全部问题后重新输出完整 JSON"
-                             "（只输出一个 JSON 对象，不要解释文字，不要代码块标记）。"})
+            if current_doc is not None:
+                repair_mode = True
+                log(f"批 {idx} 进入受限 JSON Patch 修复"
+                    f"（{attempt + 2}/{settings.max_retries + 1}）…")
+                messages = [
+                    {"role": "user", "content": user},
+                    {"role": "assistant", "content": json.dumps(
+                        current_doc, ensure_ascii=False)},
+                    {"role": "user", "content": repair.repair_request(
+                        last_structured, last_report)},
+                ]
+            else:
+                repair_mode = False
+                log(f"批 {idx} 回喂解析错误重试"
+                    f"（{attempt + 2}/{settings.max_retries + 1}）…")
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "user", "content": last_report +
+                                 "\n请重新输出一个完整 JSON 对象。"})
 
     if candidates and not settings.strict:
         key, best_attempt, doc, report = max(candidates, key=lambda c: c[0])
@@ -171,7 +240,8 @@ def convert_text(text: str,
                  workdir: Optional[Path] = None,
                  log=print,
                  warnings_out: Optional[List[str]] = None,
-                 seed_assets: Optional[dict] = None) -> dict:
+                 seed_assets: Optional[dict] = None,
+                 manifest_out: Optional[dict] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何带 complete(system, messages) -> str 的对象（测试用 mock）。
@@ -184,6 +254,7 @@ def convert_text(text: str,
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
+    raw_text = text
     if settings.normalize_input:
         # 剔除后全链路（分批/LLM/保真检查）一律以清洗后文本为"原文"；
         # 显式传入的 batches 同步清洗，保证批拼接仍等于 text
@@ -206,6 +277,18 @@ def convert_text(text: str,
     if batches is None:
         batches = split_batches(text, settings.batch_target_chars,
                                 settings.single_batch_max_chars)
+    if settings.freeze_source_units and "".join(batches) != text:
+        raise ConversionError("分批范围不确定：所有批次必须按顺序精确拼回归一化原文")
+
+    frozen = build_frozen_units(text, batches) if settings.freeze_source_units else []
+    frozen_manifest = manifest_units(frozen)
+    run_manifest = build_manifest(raw_text, text, batches, frozen_manifest,
+                                  params, settings)
+    if manifest_out is not None:
+        manifest_out.clear()
+        manifest_out.update(run_manifest)
+        # 后续 attempt/终检/哈希都原地写入调用方持有的同一个对象。
+        run_manifest = manifest_out
     workdir = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="storyboard_"))
     workdir.mkdir(parents=True, exist_ok=True)
     system = load_system_prompt()
@@ -213,6 +296,7 @@ def convert_text(text: str,
 
     outputs: List[dict] = []
     batch_paths: List[Path] = []
+    attempt_records = run_manifest["attempts"]
     for i, batch in enumerate(batches, 1):
         if outputs:
             assets_block, cont_block = _continuation_blocks(outputs)
@@ -223,10 +307,13 @@ def convert_text(text: str,
             cont_block = "无"
         else:
             assets_block = cont_block = "无"
-        user = build_user_message(params, batch, assets_block, cont_block)
+        expected_units = prompt_units(frozen, i) if settings.freeze_source_units else None
+        user = build_user_message(params, batch, assets_block, cont_block,
+                                  expected_units)
         log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
         doc, batch_warnings = _convert_batch(llm, system, user, batch, params,
-                                             settings, workdir, i, review_llm, log)
+                                             settings, workdir, i, review_llm, log,
+                                             expected_units, attempt_records)
         if batch_warnings and warnings_out is not None:
             warnings_out.extend(batch_warnings)
         path = workdir / f"batch{i}.json"
@@ -244,10 +331,29 @@ def convert_text(text: str,
         if not ok:
             raise ConversionError("分批结果合并失败（资产跨批不一致）", out)
 
+    merged_doc = json.loads(merged_path.read_text(encoding="utf-8"))
+    expected_all = ([u.prompt_dict() for u in frozen]
+                    if settings.freeze_source_units else None)
+    probe = verification.verify_document(
+        merged_doc, frozen_units=expected_all, original_text=text)
+    verification.recompute_coverage_field(merged_doc, probe.coverage)
+    merged_path.write_text(json.dumps(merged_doc, ensure_ascii=False, indent=2) + "\n",
+                           encoding="utf-8")
+    final_report = verification.verify_document(
+        merged_doc, frozen_units=expected_all, original_text=text)
+
     lint_ok, lint_out = validate.run_lint(merged_path)
     fid_ok, fid_out = validate.run_fidelity(merged_path, text, workdir)
     log(lint_out.strip())
     log(fid_out.strip())
+    log(final_report.render())
+    if not final_report.ok:
+        run_manifest["state"] = "failed"
+        run_manifest["verification"] = final_report.to_dict()
+        raise ConversionError("合并后结构化终检未通过", final_report.render())
     if not (lint_ok and fid_ok):
+        run_manifest["state"] = "failed"
+        run_manifest["verification"] = final_report.to_dict()
         raise ConversionError("合并后整章终检未通过", lint_out + "\n" + fid_out)
-    return json.loads(merged_path.read_text(encoding="utf-8"))
+    finish_manifest(run_manifest, merged_doc, final_report, "verified")
+    return merged_doc

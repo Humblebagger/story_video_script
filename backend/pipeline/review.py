@@ -5,6 +5,7 @@ inference_note 敷衍）。默认关闭（STORYBOARD_REVIEW=1 开启），
 建议生成用便宜档模型时，评审用更强档（STORYBOARD_REVIEW_MODEL）。
 """
 import json
+import math
 from typing import Optional, Tuple
 
 from .llm import extract_json
@@ -23,21 +24,37 @@ REVIEW_SYSTEM = """你是资深分镜审片人。用户给你一段小说原文�
  "issues": [{"where": "<镜头ID或资产ID>", "problem": "<具体问题>", "fix": "<可执行的修改建议>"}]}
 issues 只列 3 分以下维度里的具体问题，每条给出可直接执行的修改建议；全部 4 分以上时 issues 为空数组。"""
 
+SCORE_KEYS = (
+    "narration_selection", "shot_language", "asset_quality", "semantic_fidelity",
+)
+
 
 def run_review(llm, batch_text: str, doc: dict,
-               min_score: float) -> Tuple[Optional[bool], str, Optional[float]]:
-    """返回 (是否通过, 报告, 总分)。评审输出不可解析时返回 (None, 原因, None)——
-    调用方跳过评审，不让评审自身的故障阻塞转换。总分供择优降级交付时比较。"""
+               min_score: float, dimension_min: int = 3,
+               semantic_min: int = 4) -> Tuple[Optional[bool], str, Optional[float]]:
+    """返回 (是否通过, 报告, 服务端重算总分)。
+
+    None 表示评审器自身不可用；调用方必须把它记为未验证，不能当作通过。
+    """
     user = (f"【小说原文】\n{batch_text}\n\n【分镜 JSON】\n"
             f"{json.dumps(doc, ensure_ascii=False)}")
-    raw = llm.complete(REVIEW_SYSTEM, [{"role": "user", "content": user}])
+    try:
+        raw = llm.complete(REVIEW_SYSTEM, [{"role": "user", "content": user}])
+    except Exception as e:
+        return None, f"[review] 评审服务不可用（{type(e).__name__}: {e}）", None
     try:
         verdict = extract_json(raw)
         scores = verdict["scores"]
-        overall = float(verdict.get("overall") or
-                        sum(scores.values()) / len(scores))
+        if not isinstance(scores, dict) or set(scores) != set(SCORE_KEYS):
+            raise ValueError(f"scores 必须且只能包含 {', '.join(SCORE_KEYS)}")
+        if any(isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 5
+               for v in scores.values()):
+            raise ValueError("所有评分必须是 1-5 的整数")
+        overall = round(sum(scores[k] for k in SCORE_KEYS) / len(SCORE_KEYS), 1)
+        if not math.isfinite(overall):
+            raise ValueError("总分不是有限数值")
     except (ValueError, KeyError, TypeError, ZeroDivisionError) as e:
-        return None, f"评审输出不可解析（{e}），跳过本轮评审", None
+        return None, f"[review] 评审输出不可验证（{e}）", None
 
     score_line = "；".join(f"{k} {v}" for k, v in scores.items())
     issues = verdict.get("issues") or []
@@ -45,7 +62,17 @@ def run_review(llm, batch_text: str, doc: dict,
                    for i in issues]
     report = (f"[review] 评审总分 {overall}（阈值 {min_score}）：{score_line}\n"
               + ("\n".join(issue_lines) if issue_lines else "  无具体问题"))
-    if overall >= min_score:
+    weak = [k for k in SCORE_KEYS if scores[k] < dimension_min]
+    semantic_ok = scores["semantic_fidelity"] >= semantic_min
+    if overall >= min_score and not weak and semantic_ok:
         return True, report, overall
-    return False, (report + "\n\n请针对上述 issues 逐条修改后重新输出完整 JSON"
+    gates = []
+    if overall < min_score:
+        gates.append(f"总分 {overall} < {min_score}")
+    if weak:
+        gates.append("低分维度：" + ", ".join(weak))
+    if not semantic_ok:
+        gates.append(f"semantic_fidelity {scores['semantic_fidelity']} < {semantic_min}")
+    return False, (report + "\n  未通过独立门槛：" + "；".join(gates)
+                   + "\n\n请针对上述 issues 逐条修改后重新输出完整 JSON"
                             "（只输出一个 JSON 对象）。"), overall

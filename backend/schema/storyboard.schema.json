@@ -168,8 +168,22 @@
                 "type": "boolean",
                 "default": false,
                 "description": "true 表示该句被有意略过不成像（需人工确认），覆盖率检查时不计为遗漏"
+              },
+              "skip_reason": {
+                "type": "string",
+                "minLength": 1,
+                "description": "skipped=true 时必填的可审计豁免理由"
               }
             },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {"skipped": {"const": true}},
+                  "required": ["skipped"]
+                },
+                "then": {"required": ["skip_reason"]}
+              }
+            ],
             "additionalProperties": false
           }
         }

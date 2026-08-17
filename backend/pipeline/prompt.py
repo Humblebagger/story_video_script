@@ -4,6 +4,7 @@
 tests/real_text_yao/input_batch*.txt 归档件逐字段一致。
 """
 from functools import lru_cache
+import json
 
 from .config import ROOT
 
@@ -22,7 +23,10 @@ def load_system_prompt() -> str:
 
 def build_user_message(params, novel_text: str,
                        existing_assets: str = "无",
-                       continuation: str = "无") -> str:
+                       continuation: str = "无",
+                       frozen_units=None) -> str:
+    units_block = (json.dumps(frozen_units, ensure_ascii=False, indent=2)
+                   if frozen_units is not None else "无（兼容模式：由模型切分）")
     return f"""【制作参数】
 风格前缀：{params.style_prefix}
 风格分类：{params.art_style}
@@ -37,6 +41,9 @@ def build_user_message(params, novel_text: str,
 
 【续批参数】
 {continuation}
+
+【冻结源单元】
+{units_block}
 
 【小说原文】
 作品：{params.work_title}

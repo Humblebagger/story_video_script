@@ -9,7 +9,7 @@
 completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽，产物结构合法、
 逐字保真但质量未达阈值，已择优交付历次尝试中最优一版（请求置 strict=true 改为直接失败）。
 
-任务表在内存中（进程重启即清空），但**完成的转换会落盘**，经历史接口取用：
+任务表在内存中（进程重启后实时日志会清空），但 queued/running/成功/失败状态与产物均会落盘：
   GET    /history         → 历史记录摘要列表
   GET    /history/{id}    → 单条完整记录（含分镜 JSON）
   PUT    /history/{id}    → 保存人工编辑后的分镜
@@ -31,6 +31,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
 """
 import os
+import copy
 import sys
 import threading
 import uuid
@@ -47,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline import __version__
 from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
+from pipeline import verification
 from render import plan as render_plan_mod
 from server import auth, library, store
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
@@ -142,6 +144,10 @@ class ConvertRequest(BaseModel):
 
 def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
     job["status"] = "running"
+    try:
+        store.update_state(user_id, job["id"], "running")
+    except OSError:
+        pass
 
     def log(msg):
         job["log"].append(str(msg))
@@ -163,10 +169,13 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
             log(f"沿用资产库《{req.work_title}》共 {n} 张卡（模型须复用其 ID 与描述）")
 
     warnings: list = []
+    manifest: dict = {}
     try:
         job["result"] = convert_text(req.text, params, settings=settings,
                                      log=log, warnings_out=warnings,
-                                     seed_assets=seed)
+                                     seed_assets=seed, manifest_out=manifest)
+        job["manifest"] = manifest
+        job["verification"] = manifest.get("verification")
         if warnings:
             job["quality_report"] = "\n\n".join(warnings)
             job["status"] = "completed_with_warnings"
@@ -174,8 +183,10 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
             job["status"] = "succeeded"
         # 转换慢且花钱，产物必须落盘——内存任务表重启即清空
         try:
-            store.save(user_id, job["id"], job["status"], params.__dict__,
-                       job["result"], job["quality_report"])
+            store.update_state(
+                user_id, job["id"], job["status"], result=job["result"],
+                quality_report=job["quality_report"], manifest=manifest,
+                verification=job["verification"], error=None)
             job["persisted"] = True
         except OSError as e:
             log(f"警告：历史记录落盘失败（产物仍可从本次响应取走）：{e!r}")
@@ -190,9 +201,26 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
     except ConversionError as e:
         job["status"] = "failed"
         job["error"] = f"{e}\n{e.report}"
+        job["manifest"] = manifest
+        if manifest:
+            manifest["state"] = "failed"
+        job["verification"] = manifest.get("verification")
+        try:
+            store.update_state(user_id, job["id"], "failed", error=job["error"],
+                               manifest=manifest, verification=job["verification"])
+        except OSError:
+            pass
     except Exception as e:  # LLM/网络等运行期错误
         job["status"] = "failed"
         job["error"] = repr(e)
+        job["manifest"] = manifest
+        if manifest:
+            manifest["state"] = "failed"
+        try:
+            store.update_state(user_id, job["id"], "failed", error=job["error"],
+                               manifest=manifest)
+        except OSError:
+            pass
 
 
 @app.post("/convert")
@@ -203,6 +231,12 @@ def submit(req: ConvertRequest, user: dict = Depends(current_user)):
            "created_at": store.now_iso(),
            "work_title": req.work_title, "chapter": req.chapter,
            "chars": len(req.text)}
+    params = {name: getattr(req, name) for name in ConvertParams.__dataclass_fields__}
+    try:
+        store.save(user["id"], job_id, "queued", params, None)
+        job["persisted"] = True
+    except OSError as e:
+        raise HTTPException(500, f"无法建立持久化任务记录：{e}")
     with _lock:
         _jobs[job_id] = job
     _executor.submit(_run_job, job, req, user["id"])
@@ -261,15 +295,31 @@ def history_update(run_id: str, result: dict = Body(..., embed=False),
 
     只覆盖 result；创建时间与制作参数保持原样，另记 edited_at。
     """
-    if not result.get("meta") or not result.get("episodes"):
-        raise HTTPException(422, "不是分镜 IR：缺少 meta / episodes")
     try:
-        record = store.update_result(user["id"], run_id, result)
+        existing = store.get(user["id"], run_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    if record is None:
+    if existing is None:
         raise HTTPException(404, "历史记录不存在")
-    return {"id": run_id, "edited_at": record["edited_at"]}
+
+    doc = copy.deepcopy(result)
+    frozen = ((existing.get("manifest") or {}).get("scope") or {}).get("units")
+    if not frozen:
+        frozen = [{k: unit.get(k) for k in ("id", "text", "para")}
+                  for unit in ((existing.get("result") or {}).get("source") or {})
+                  .get("units") or []]
+    probe = verification.verify_document(doc, frozen_units=frozen or None)
+    verification.recompute_coverage_field(doc, probe.coverage)
+    report = verification.verify_document(doc, frozen_units=frozen or None)
+    previous_status = existing.get("status")
+    status = ((previous_status if previous_status in
+               ("succeeded", "completed_with_warnings") else "succeeded")
+              if report.ok else "draft_invalid")
+    record = store.update_result(user["id"], run_id, doc,
+                                 verification=report.to_dict(), status=status,
+                                 frozen_units=frozen or None)
+    return {"id": run_id, "edited_at": record["edited_at"], "status": status,
+            "verification": report.to_dict()}
 
 
 @app.delete("/history/{run_id}")
@@ -304,9 +354,28 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
     只读操作，不碰 IR 也不落盘：这一步的价值是让人在花钱之前，先逐条核对
     提示词、看清楚要出几张图、以及这一章大概要烧多少钱。
     """
-    doc = req.result
-    if not doc.get("meta") or not doc.get("episodes"):
-        raise HTTPException(422, "不是分镜 IR：缺少 meta / episodes")
+    doc = copy.deepcopy(req.result)
+    frozen = None
+    if req.run_id:
+        try:
+            record = store.get(user["id"], req.run_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if record is None:
+            raise HTTPException(404, "历史记录不存在")
+        frozen = ((record.get("manifest") or {}).get("scope") or {}).get("units")
+        if not frozen:
+            frozen = [{k: unit.get(k) for k in ("id", "text", "para")}
+                      for unit in ((record.get("result") or {}).get("source") or {})
+                      .get("units") or []]
+    probe = verification.verify_document(doc, frozen_units=frozen or None)
+    verification.recompute_coverage_field(doc, probe.coverage)
+    report = verification.verify_document(doc, frozen_units=frozen or None)
+    if not report.ok:
+        raise HTTPException(422, detail={
+            "message": "分镜未通过独立验证，禁止进入付费渲染",
+            "verification": report.to_dict(),
+        })
     try:
         plan = render_plan_mod.build_plan(doc, req.max_clip_seconds, req.run_id,
                                           req.model, req.cny_per_second)
@@ -320,7 +389,7 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
                           "title": ep.get("title", ""),
                           "markdown": seedance.render_episode(
                               doc, ep, req.max_clip_seconds)})
-    return {"plan": plan, "packs": packs}
+    return {"plan": plan, "packs": packs, "verification": report.to_dict()}
 
 
 # ---------- 资产库 ----------

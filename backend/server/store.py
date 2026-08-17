@@ -32,8 +32,18 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def save(user_id: str, run_id: str, status: str, params: dict, result: dict,
-         quality_report: Optional[str] = None) -> dict:
+def _write(user_id: str, run_id: str, record: dict) -> None:
+    runs_dir(user_id).mkdir(parents=True, exist_ok=True)
+    tmp = _path(user_id, run_id).with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n",
+                   encoding="utf-8")
+    tmp.replace(_path(user_id, run_id))
+
+
+def save(user_id: str, run_id: str, status: str, params: dict,
+         result: Optional[dict], quality_report: Optional[str] = None,
+         manifest: Optional[dict] = None, verification: Optional[dict] = None,
+         error: Optional[str] = None) -> dict:
     runs_dir(user_id).mkdir(parents=True, exist_ok=True)
     record = {
         "id": run_id,
@@ -42,13 +52,12 @@ def save(user_id: str, run_id: str, status: str, params: dict, result: dict,
         "status": status,
         "params": params,
         "quality_report": quality_report,
+        "verification": verification,
+        "manifest": manifest,
+        "error": error,
         "result": result,
     }
-    # 先写临时文件再原子替换：避免读到写了一半的 JSON
-    tmp = _path(user_id, run_id).with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n",
-                   encoding="utf-8")
-    tmp.replace(_path(user_id, run_id))
+    _write(user_id, run_id, record)
     return record
 
 
@@ -59,17 +68,40 @@ def get(user_id: str, run_id: str) -> Optional[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def update_result(user_id: str, run_id: str, result: dict) -> Optional[dict]:
-    """保存人工编辑后的分镜（呈现层可改，溯源锁死由前端保证）。"""
+def update_result(user_id: str, run_id: str, result: dict, *,
+                  verification: Optional[dict] = None,
+                  status: Optional[str] = None,
+                  frozen_units: Optional[list] = None) -> Optional[dict]:
+    """保存人工编辑后的分镜及服务端复验结果。"""
     record = get(user_id, run_id)
     if record is None:
         return None
     record["result"] = result
     record["edited_at"] = now_iso()
-    tmp = _path(user_id, run_id).with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n",
-                   encoding="utf-8")
-    tmp.replace(_path(user_id, run_id))
+    if verification is not None:
+        record["verification"] = verification
+    if status is not None:
+        record["status"] = status
+    if frozen_units and not ((record.get("manifest") or {}).get("scope") or {}).get("units"):
+        record["manifest"] = {
+            "version": 1,
+            "state": "legacy_scope_frozen_on_edit",
+            "scope": {"frozen": True, "units": frozen_units},
+        }
+    _write(user_id, run_id, record)
+    return record
+
+
+def update_state(user_id: str, run_id: str, status: str, **fields) -> Optional[dict]:
+    """Atomically update a persisted run without changing its creation identity."""
+    record = get(user_id, run_id)
+    if record is None:
+        return None
+    record["status"] = status
+    for key in ("result", "quality_report", "manifest", "verification", "error"):
+        if key in fields:
+            record[key] = fields[key]
+    _write(user_id, run_id, record)
     return record
 
 
@@ -97,6 +129,7 @@ def _summarize(record: dict) -> dict:
         "episodes": len(episodes),
         "shots": sum(len(e.get("shots") or []) for e in episodes),
         "has_quality_report": bool(record.get("quality_report")),
+        "verification_status": (record.get("verification") or {}).get("status"),
     }
 
 
