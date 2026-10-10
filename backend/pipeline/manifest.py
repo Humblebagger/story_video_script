@@ -56,12 +56,24 @@ def build_manifest(raw_text: str, normalized_text: str, batches: list[str],
             "schema_sha256": file_sha256(ROOT / "schema" / "storyboard.schema.json"),
             "model": settings.model,
             "temperature": settings.temperature,
+            "repair_mode": settings.repair_mode,
         },
         "params_sha256": sha256_json(params.__dict__),
         "attempts": [],
+        "usage": None,
         "verification": None,
         "artifact_sha256": None,
     }
+
+
+def sum_usage(attempts: list[dict]) -> dict:
+    """把各次尝试的 token 增量汇总成整轮账；mock 客户端没有用量则全为 0。"""
+    total = {"calls": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
+    for record in attempts:
+        for key, value in (record.get("usage") or {}).items():
+            if key in total:
+                total[key] += value
+    return total
 
 
 def finish_manifest(manifest: dict, doc: dict, report, state: str) -> None:

@@ -173,6 +173,9 @@ def _validate_evidence(doc: dict, report: VerificationReport) -> dict:
     units = {u.get("id"): u for u in unit_list if u.get("id")}
     visual, narrated, dialogue = set(), set(), set()
     inferred = total_shots = 0
+    # 讲述顺序游标：忠实转换里镜头应顺着原文往下走。转场镜头没有证据，不参与判定。
+    prev_number = None
+    prev_label = ""
 
     for epi, episode in enumerate(doc.get("episodes") or []):
         for si, shot in enumerate(episode.get("shots") or []):
@@ -203,6 +206,20 @@ def _validate_evidence(doc: dict, report: VerificationReport) -> dict:
                 report.add("EVIDENCE-RANGE-001", "medium", base + "/source/unit_refs",
                            "shot evidence should normally be 1-3 adjacent units",
                            unit_refs=valid_refs)
+
+            # 讲述顺序：原有的 RANGE 规则只看单个镜头内部相不相邻，管不到镜头之间。
+            # 第 3 镜引 u0050、第 4 镜引 u0010 以前完全合法——那是把原文倒着讲。
+            # 判 medium：闪回/插叙是正当手法，但忠实转换里出现就该被人看一眼。
+            first = next((n for n in numbers if n is not None), None)
+            if first is not None:
+                if prev_number is not None and first < prev_number:
+                    report.add(
+                        "ORDER-001", "medium", base + "/source/unit_refs",
+                        f"镜头回跳到更早的原文（上一处 {prev_label} 引至 u{prev_number:04d}）",
+                        unit_refs=valid_refs, expected=f">= u{prev_number:04d}",
+                        actual=f"u{first:04d}")
+                prev_number = max(n for n in numbers if n is not None)
+                prev_label = shot.get("id") or base
 
             source_text = "".join(units[ref].get("text", "") for ref in valid_refs)
             for di, item in enumerate(shot.get("dialogue") or []):

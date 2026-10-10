@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 from . import quality, repair, review, validate, verification
 from .config import Settings, load_settings
 from .llm import extract_json
-from .manifest import build_manifest, finish_manifest
+from .manifest import build_manifest, finish_manifest, sum_usage
 from .prompt import build_user_message, load_system_prompt
 from .source_units import build_frozen_units, manifest_units, prompt_units
 from .splitter import normalize_source_text, split_batches
@@ -102,6 +102,19 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
     return True, False, structured.render(), None, structured
 
 
+def _usage_snapshot(llm) -> Optional[dict]:
+    """取 LLM 客户端的累计用量；测试用的 mock 没有这个方法，返回 None。"""
+    fn = getattr(llm, "usage_totals", None)
+    return fn() if callable(fn) else None
+
+
+def _usage_delta(before: Optional[dict], after: Optional[dict]) -> Optional[dict]:
+    """归到单次尝试头上的 token 增量（受限修复一轮可能调用多次，正好一并计入）。"""
+    if not before or not after:
+        return None
+    return {k: after[k] - before.get(k, 0) for k in after}
+
+
 _REPORT_LOG_LINES = 60
 
 
@@ -138,6 +151,7 @@ def _convert_batch(llm, system: str, user: str, batch_text: str, params,
     repair_mode = False
     candidates = []  # 软失败但结构合法的历次尝试：(择优键, 第几次, 产物, 报告)
     for attempt in range(settings.max_retries + 1):
+        usage_before = _usage_snapshot(llm)
         raw = llm.complete(system, messages)
         used_tools = []
         try:
@@ -172,7 +186,9 @@ def _convert_batch(llm, system: str, user: str, batch_text: str, params,
                 attempt_records.append({"batch": idx, "attempt": attempt + 1,
                                         "mode": "patch" if repair_mode else "generate",
                                         "status": "unparseable", "report": last_report,
-                                        "tools": used_tools})
+                                        "tools": used_tools,
+                                        "usage": _usage_delta(
+                                            usage_before, _usage_snapshot(llm))})
         else:
             quality.apply_meta_overrides(doc, params)
             ok, hard, last_report, key, last_structured = _check_batch(
@@ -186,6 +202,7 @@ def _convert_batch(llm, system: str, user: str, batch_text: str, params,
                     "verification": last_structured.to_dict(),
                     "report": last_report,
                     "tools": used_tools,
+                    "usage": _usage_delta(usage_before, _usage_snapshot(llm)),
                 })
             if ok:
                 log(f"批 {idx} 校验通过（第 {attempt + 1} 次生成）")
@@ -197,7 +214,7 @@ def _convert_batch(llm, system: str, user: str, batch_text: str, params,
                 f"{'校验' if hard else '质量门'}，原因如下：")
             _log_report(log, last_report, workdir, idx, attempt + 1)
         if attempt < settings.max_retries:
-            if current_doc is not None:
+            if current_doc is not None and settings.repair_mode == "patch":
                 repair_mode = True
                 log(f"批 {idx} 进入受限 JSON Patch 修复"
                     f"（{attempt + 2}/{settings.max_retries + 1}）…")
@@ -209,12 +226,15 @@ def _convert_batch(llm, system: str, user: str, batch_text: str, params,
                         last_structured, last_report)},
                 ]
             else:
+                # rewrite 模式，或首次输出就没解析出 JSON（没有可打补丁的底稿）
                 repair_mode = False
-                log(f"批 {idx} 回喂解析错误重试"
+                log(f"批 {idx} 回喂校验报告重新输出整份"
                     f"（{attempt + 2}/{settings.max_retries + 1}）…")
                 messages.append({"role": "assistant", "content": raw})
-                messages.append({"role": "user", "content": last_report +
-                                 "\n请重新输出一个完整 JSON 对象。"})
+                messages.append({"role": "user", "content":
+                                 "你的输出未通过自动校验，报告如下：\n\n" + last_report +
+                                 "\n\n请修正全部问题后重新输出完整 JSON"
+                                 "（只输出一个 JSON 对象，不要解释文字，不要代码块标记）。"})
 
     if candidates and not settings.strict:
         key, best_attempt, doc, report = max(candidates, key=lambda c: c[0])
@@ -314,6 +334,7 @@ def convert_text(text: str,
         doc, batch_warnings = _convert_batch(llm, system, user, batch, params,
                                              settings, workdir, i, review_llm, log,
                                              expected_units, attempt_records)
+        run_manifest["usage"] = sum_usage(attempt_records)
         if batch_warnings and warnings_out is not None:
             warnings_out.extend(batch_warnings)
         path = workdir / f"batch{i}.json"

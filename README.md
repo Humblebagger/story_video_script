@@ -41,6 +41,10 @@ cp .env.example .env        # 填入 ANTHROPIC_API_KEY
 # CLI：自动分批 → LLM 转换 → 校验失败回喂重试 → 合并 → 整章终检
 .venv/bin/python -m pipeline convert novel.txt -o storyboard.json --title 药 --chapter 第一章
 
+# 对已落盘的产物重新独立验证：结构 + 冻结证据 + 覆盖率重算 + 契约漂移核对
+# （提示词或 schema 改版后，回头编辑/渲染旧产物就是在混用两套契约——这条命令能看出来）
+.venv/bin/python -m pipeline verify storyboard.json --source novel.txt
+
 # 或部署为 HTTP 服务（转换为分钟级任务，异步取结果）
 .venv/bin/uvicorn server.app:app --host 0.0.0.0 --port 8000
 curl -X POST localhost:8000/convert -H 'Content-Type: application/json' \
@@ -139,6 +143,11 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 - [x] 任务可离开与桌面通知：`GET /jobs` 列出在跑任务，前端重开页面自动接上（转换本就在后台线程池里跑，关页面不中断），完成/失败弹桌面通知；侧栏常驻显示在跑任务与最新一行日志
 - [x] 章节自动识别与分段选取：支持 `第N章/回/节/卷`、`Chapter N`、`1. 标题`、独占一行的汉字序号（《药》即此形态）四类标题模式，取命中数 ≥2 且优先级最高的一套——宁可识别不出（回退全文/自定义），也不把正文句子误判成标题。可按章节多选、切前/后半章（切点落在段落边界）、或按自然段自定义范围
 
+- [x] **可验证的确定性审查链路**：把「范围」和「评分」这两件事从模型手里收回程序。切句与编号在调 LLM 之前由 `pipeline/source_units.py` 确定性完成，模型只能引用不能改写（改一个字就是 `SOURCE-FROZEN-002` critical）；校验结果从人读字符串升级为带 `rule_id / severity / object_path(JSON Pointer) / unit_refs / evidence_quote / expected / actual` 的结构化 Finding；校验失败后的重试改走**受限工具集**——四个只读工具（`source_read` / `asset_get` / `validation_list` / `coverage_query`）加一个 `json_patch`，补丁路径白名单锁死 `/meta`、`/coverage`、`/source/units/*/(id|text|para)`，模型改不动它自己的证据；`coverage` 与评审 `overall` 一律**服务端重算后覆写**，声明值与实算不符本身记一条 Finding。每次转换落一份清单（输入哈希、每批 offset+sha、提示词/schema/model/temperature 的契约哈希、逐次尝试的 mode/status/tools/usage、产物 `artifact_sha256`）
+- [x] 验证结果贯通到界面与命令行：`PUT /history/{id}` 整份复验，不合格标 `draft_invalid` 但**照样保存**（不丢用户的工作），前端当场摊开 Finding 并把 JSON Pointer 翻成集号镜号；`/render/plan` 验证不过直接 422，拦在付费渲染之前，拦截原因逐条可读（此前结构化 detail 会退化成 `[object Object]`）。`python3 -m pipeline verify` 对已落盘产物重新独立验证并核对契约漂移——清单此前只写不读，提示词改版后回头编辑旧产物是在静默混用两套契约
+- [x] 讲述顺序与口径一致性：`ORDER-001` 拦镜头回跳（原有规则只看单镜头内部相不相邻，管不到镜头之间，第 3 镜引 u0050、第 4 镜引 u0010 以前完全合法）；覆盖率的三处实现（`verification.py` / `lint_storyboard.py` / `merge_storyboard.py`）由测试钉在一起——3 份归档 × 2 种旁白模式必须同结果，否则某天两个数对不上而没人知道该信谁
+- [x] token 用量按尝试归账（`STORYBOARD_REPAIR_MODE=patch|rewrite` 可切回改造前的整份重写路径做 A/B）——「受限补丁比整份重写省」在此之前只是结构推断，没有实测支撑
+
 ### 弱模型实跑的三类故障与防线
 
 真实长文四次实跑，每次失败换来一条防线，现无已知缺口：
@@ -146,6 +155,7 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 | 死因 | 防线 |
 |---|---|
 | 输出膨胀撞 32k token 上限被截断 | 调小 `STORYBOARD_BATCH_CHARS`（弱模型话多，宁可多切几批） |
+| 推理模型把输出预算全烧在 thinking 块上（一字正文不产出） | `STORYBOARD_THINKING=disabled`（默认）。实测 `deepseek-v4-flash` 在 1258 字的批上烧掉 64000 个输出 token 仍未开始写正文；此时报错若只说「撞 max_tokens」会把人引去调小批长——**没用，膨胀的是推理块不是产物**，故这条路径单独诊断并明确否掉那条建议。关掉推理后同一批 17766 输出 token 产出 50447 字符正文，出厂默认的 32000 绰绰有余 |
 | 模型丢失原文中的 U+200B，保真反复失败 | 入口归一化（剔除零宽噪声后再进流水线） |
 | 服务端流式响应中途断连，任务崩溃 | LLM 传输层指数退避重试 |
 

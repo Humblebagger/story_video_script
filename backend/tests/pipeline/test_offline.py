@@ -47,6 +47,26 @@ class MockLLM:
         return self.responses.pop(0)
 
 
+class UsageMockLLM(MockLLM):
+    """带用量的 mock。真实客户端从 API 响应取 usage，这里用字符数替身，
+    只为验证「token 按尝试归属、汇总进清单」这条链路本身是对的。"""
+
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.usage = {"calls": 0, "input": 0, "output": 0,
+                      "cache_read": 0, "cache_write": 0}
+
+    def complete(self, system, messages):
+        out = super().complete(system, messages)
+        self.usage["calls"] += 1
+        self.usage["input"] += sum(len(m["content"]) for m in messages)
+        self.usage["output"] += len(out)
+        return out
+
+    def usage_totals(self):
+        return dict(self.usage)
+
+
 def main() -> int:
     full = (YAO / "input_full.txt").read_text(encoding="utf-8")
 
@@ -196,6 +216,22 @@ def main() -> int:
         assert len(mock_tools.calls) == 3
         assert tool_manifest["attempts"][1]["tools"] == ["coverage_query", "json_patch"]
 
+        # rewrite 模式：改造前的整份重写路径，保留下来做 A/B 标定；
+        # 同时验证 token 账按尝试归属并汇总进清单——不然「补丁省不省」无从实测。
+        rw_manifest = {}
+        mock_rw = UsageMockLLM([json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
+        convert_text("他推门。", llm=mock_rw, batches=["他推门。"],
+                     settings=Settings(max_retries=1, repair_mode="rewrite"),
+                     log=lambda m: None, manifest_out=rw_manifest,
+                     warnings_out=[])
+        assert rw_manifest["contracts"]["repair_mode"] == "rewrite"
+        assert rw_manifest["attempts"][1]["mode"] == "generate", "rewrite 不应发补丁"
+        assert "重新输出完整 JSON" in mock_rw.calls[1][-1]["content"]
+        assert rw_manifest["attempts"][0]["usage"]["calls"] == 1
+        assert rw_manifest["usage"]["calls"] == 2 and rw_manifest["usage"]["output"] > 0
+        assert rw_manifest["usage"]["output"] == sum(
+            a["usage"]["output"] for a in rw_manifest["attempts"])
+
         mock4 = MockLLM([json.dumps(deg_doc(10)), json.dumps(patch8)])
         try:
             convert_text("他推门。", settings=Settings(max_retries=1, strict=True),
@@ -207,6 +243,7 @@ def main() -> int:
         convert_mod.validate.run_lint = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
     print("降级交付: 软门耗尽择优交付+警告 / strict 直接失败 ✓")
+    print("标定装置: rewrite 模式走整份重写 / token 按尝试归属并汇总 ✓")
 
     # 9. 入口归一化：零宽噪声在进 LLM 前被剔除（默认开启）
     from pipeline.splitter import normalize_source_text
@@ -833,6 +870,198 @@ def main() -> int:
         auth.DATA_DIR, auth.USERS_FILE, auth.SECRET_FILE, auth.LEGACY_RUNS = old_auth_paths
         shutil.rmtree(api_data, ignore_errors=True)
     print("API 验证门: 无效编辑标记 draft_invalid / 旧证据固化 / 渲染前阻断 ✓")
+
+    # ---- 20. 覆盖率口径三方一致 + 讲述顺序 ----
+    # 覆盖率现在有三处实现：pipeline/verification.py、tools/lint_storyboard.py、
+    # tools/merge_storyboard.py。台词归属的口径本来就不同（按 unit.kind 还是按
+    # 台词文本匹配），眼下三方结果一致，但没有任何测试钉住它们——改任意一处都
+    # 不会有人发现，直到某天两个数对不上而没人知道该信谁。这一组就是那颗钉子。
+    import importlib.util
+    import tempfile
+    from pipeline import validate as validate_mod
+    from pipeline import verification
+
+    spec = importlib.util.spec_from_file_location(
+        "merge_tool", ROOT / "tools" / "merge_storyboard.py")
+    merge_tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(merge_tool)
+
+    checked = 0
+    with tempfile.TemporaryDirectory() as td:
+        for rel in ("real_text_yao/output_merged", "long_chapter/output_merged",
+                    "genre_stability/output_romance"):
+            raw = (ROOT / "tests" / f"{rel}.json").read_text(encoding="utf-8")
+            for mode in ("selective", "original_text"):
+                doc = json.loads(raw)
+                doc["meta"]["narration"]["mode"] = mode
+                cov = verification.verify_document(doc).coverage
+                merged = merge_tool.recompute_coverage(json.loads(json.dumps(doc)))
+                assert sorted(cov["failed"]) == sorted(merged["unmapped_units"]), (
+                    f"{rel}/{mode}: verification 与 merge_storyboard 的未覆盖句不一致")
+                assert cov["inferred_shot_ratio"] == merged["inferred_shot_ratio"], (
+                    f"{rel}/{mode}: 两处算出的 inferred 比例不一致")
+
+                # 把 verification 的结论写进文档再跑 lint：lint 若用的是另一套口径，
+                # 就会报「声明的 unmapped_units 与实际不符」。这是最直接的等价性证据。
+                verification.recompute_coverage_field(doc, cov)
+                path = Path(td) / "cov.json"
+                path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+                _, lint_out = validate_mod.run_lint(path)
+                assert "与实际不符" not in lint_out, (
+                    f"{rel}/{mode}: lint 的覆盖率口径与 verification 分叉了\n{lint_out}")
+                assert ("以下句子未被任何镜头旁白覆盖" in lint_out) == bool(cov["failed"]), (
+                    f"{rel}/{mode}: lint 与 verification 对「有没有漏句」判断相反")
+                checked += 1
+    assert checked == 6
+
+    # 讲述顺序：原有的 EVIDENCE-RANGE-001 只看单镜头内部相不相邻，管不到镜头之间。
+    order_doc = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
+    assert not [f for f in verification.verify_document(order_doc).findings
+                if f.rule_id == "ORDER-001"], "归档件本身不应触发顺序告警"
+    shots = order_doc["episodes"][0]["shots"]
+    shots[1], shots[3] = shots[3], shots[1]      # 把原文倒着讲
+    order_findings = [f for f in verification.verify_document(order_doc).findings
+                      if f.rule_id == "ORDER-001"]
+    assert order_findings, "镜头回跳到更早的原文必须被点出来"
+    assert all(f.severity == "medium" for f in order_findings), \
+        "闪回是正当手法，只提醒不拦截"
+    assert "回跳" in order_findings[0].message and order_findings[0].actual
+    print("口径一致: 覆盖率三方同结果（3 份归档 × 2 种旁白模式）/ 倒叙镜头被点名 ✓")
+
+    # ---- 21. verify 子命令：对已落盘的产物重新独立验证 + 契约漂移 ----
+    # 清单一直在记输入哈希、提示词/schema 哈希、产物哈希，但在此之前没有任何东西
+    # 读它。提示词改过一版之后回头编辑或渲染旧产物，是在静默混用两套契约。
+    import contextlib
+    import io
+    from pipeline.__main__ import main as cli_main
+    from pipeline.manifest import file_sha256, sha256_json
+
+    def run_cli(*argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cli_main(list(argv))
+        return code, buf.getvalue()
+
+    yao_doc = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory() as td:
+        # 裸 IR：能验，但要如实说明没有清单可比对
+        bare = Path(td) / "bare.json"
+        bare.write_text(json.dumps(yao_doc, ensure_ascii=False), encoding="utf-8")
+        code, out = run_cli("verify", str(bare))
+        assert code == 0 and "PASS" in out
+        assert "DRIFT 未知" in out, "没有清单时不能假装校对过契约"
+
+        # 带清单的 run 记录：提示词换过、产物被人改过，两条都要点出来
+        record = {
+            "id": "r1", "status": "succeeded", "result": yao_doc,
+            "manifest": {
+                "scope": {"frozen": True, "units": [
+                    {k: u.get(k) for k in ("id", "text", "para")}
+                    for u in yao_doc["source"]["units"]]},
+                "contracts": {
+                    "prompt_sha256": "0" * 64,      # 冒充「当时用的是另一版提示词」
+                    "schema_sha256": file_sha256(
+                        ROOT / "schema" / "storyboard.schema.json"),
+                },
+                "artifact_sha256": "1" * 64,        # 冒充「转换之后被人工编辑过」
+            },
+        }
+        rec_path = Path(td) / "run.json"
+        rec_path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+        code, out = run_cli("verify", str(rec_path))
+        assert code == 0, "契约漂移只是警告，不改变验证结论"
+        assert "novel_to_storyboard.md 已与生成这份产物时不同" in out
+        assert "产物指纹与清单不符" in out
+        assert "storyboard.schema.json" not in out, "没漂移的契约不该报"
+
+        # 冻结证据被改：exit 非 0，并逐字段点名
+        record["manifest"]["artifact_sha256"] = sha256_json(yao_doc)
+        record["result"] = json.loads(json.dumps(yao_doc))
+        record["result"]["source"]["units"][0]["text"] += "（篡改）"
+        rec_path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+        code, out = run_cli("verify", str(rec_path))
+        assert code == 1, "冻结证据被改必须以非零退出，好让 CI 拦得住"
+        assert "SOURCE-FROZEN-002" in out and "u0001" in out
+
+        # 不是 IR 也不是 run 记录：单独的退出码，别和验证不通过混为一谈
+        junk = Path(td) / "junk.json"
+        junk.write_text('{"hello": 1}', encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert cli_main(["verify", str(junk)]) == 2
+    print("verify 子命令: 裸 IR 如实说明 / 提示词与产物指纹漂移点名 / 篡改非零退出 ✓")
+
+    # ---- 22. 推理模型：预算被 thinking 块吃光时要说人话 ----
+    # 实测 deepseek-v4-flash 是推理模型：批 1（1258 字）把 64000 个输出 token 全烧在
+    # thinking 块上，一个字正文都没产出，而报错只会说「撞 max_tokens，调小批长」——
+    # 照那条建议走两轮都是白跑。诊断说错方向比不诊断更贵。
+    from pipeline import llm as llm_mod
+
+    assert llm_mod._thinking_param("disabled") == {"type": "disabled"}
+    assert llm_mod._thinking_param("auto") is None, "auto 表示不发这个参数（老网关兼容）"
+    assert llm_mod._thinking_param("1024") == {"type": "enabled", "budget_tokens": 1024}
+
+    class _Usage:
+        input_tokens, output_tokens = 8, 60664
+        cache_read_input_tokens = cache_creation_input_tokens = 0
+
+    class _Block:
+        type = "thinking"
+        thinking = "我们需要理解用户的请求。" * 40
+
+    class _Final:
+        stop_reason = "max_tokens"
+        content = [_Block()]
+        usage = _Usage()
+
+    def fake_client(collect):
+        c = llm_mod.LLMClient.__new__(llm_mod.LLMClient)
+        c._settings = Settings(model="deepseek-v4-flash", max_tokens=64000)
+        c.calls = []
+        c._thinking = llm_mod._thinking_param("disabled")
+        c._thinking_rejected = False
+        c._bad_request = ValueError
+        c._collect = collect
+        return c
+
+    seen = []
+    client = fake_client(lambda kw: (seen.append(dict(kw)), ([], _Final()))[1])
+    try:
+        client._stream_once("sys", [{"role": "user", "content": "x"}])
+        raise AssertionError("推理块吃光预算必须报错")
+    except llm_mod.LLMError as e:
+        msg = str(e)
+    assert seen[0]["thinking"] == {"type": "disabled"}, "thinking 参数必须真的发出去"
+    assert "推理模型" in msg and "60664" in msg, "要点名是推理模型、烧了多少 token"
+    assert "STORYBOARD_THINKING" in msg, "要给出可执行的解法"
+    assert "调小 STORYBOARD_BATCH_CHARS 对这种情况无效" in msg, \
+        "必须明确否掉那条错误建议——照它走是白跑"
+    assert client.calls[-1]["output"] == 60664, "烧掉的 token 也要计入用量账"
+
+    # 正文出来了才是普通截断，报的是另一套话
+    class _TextFinal(_Final):
+        content = [type("B", (), {"type": "text", "text": "{"})()]
+    client2 = fake_client(lambda kw: (["{"], _TextFinal()))
+    try:
+        client2._stream_once("sys", [{"role": "user", "content": "x"}])
+        raise AssertionError("普通截断也要报错")
+    except llm_mod.LLMError as e:
+        assert "推理" not in str(e) and "STORYBOARD_MAX_TOKENS" in str(e)
+
+    # 网关不认 thinking 参数：摘掉重试一次，别让兼容性问题变成硬失败
+    calls = []
+
+    def picky(kw):
+        calls.append(dict(kw))
+        if "thinking" in kw:
+            raise ValueError("thinking: unsupported parameter")
+        return (["好"], type("F", (), {"stop_reason": "end_turn", "content": [],
+                                       "usage": _Usage()})())
+    client3 = fake_client(picky)
+    out = client3._stream_once("sys", [{"role": "user", "content": "x"}])
+    assert out == "好" and len(calls) == 2 and "thinking" not in calls[1]
+    assert client3._thinking_rejected, "被拒过一次就别再发了"
+    print("推理模型诊断: 预算烧在 thinking 块要点名 / 否掉错误建议 / 网关不认则摘掉重试 ✓")
 
     print("\nALL PASS")
     return 0

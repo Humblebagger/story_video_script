@@ -29,8 +29,16 @@ class Settings:
     batch_target_chars: int = 2500          # 分批目标字符数（在段落边界切）
     single_batch_max_chars: int = 3200      # 不超过此长度不分批
     max_retries: int = 2                    # 校验失败后的回喂重试次数
+    # 校验失败后怎么修：patch=受限 JSON Patch（默认）；rewrite=回喂报告重新输出整份。
+    # rewrite 是改造前的行为，保留下来是为了能用同一份输入做 A/B 标定。
+    repair_mode: str = "patch"
     transport_retries: int = 3              # LLM 瞬时传输故障（断连/超时/5xx/限流）重试次数
     normalize_input: bool = True            # 入口剔除零宽/BOM 噪声字符（此后以清洗后文本为原文）
+    # 推理块开关。deepseek-v4-flash 这类推理模型默认会先想很久：实测批 1（1258 字）
+    # 把 64000 个输出 token 全烧在 thinking 块上，一个字正文都没产出，而报错只会说
+    # 「撞 max_tokens」，把人往「调小批长」的死路上引。本流水线要的是结构化 JSON，
+    # 不需要推理块。disabled=关；auto=不发这个参数（老网关兼容）；数字=按该预算开启。
+    thinking: str = "disabled"
     freeze_source_units: bool = True         # 程序确定性切句/编号，模型不得改写证据范围
     narration_density_max: float = 0.6      # selective 模式旁白占比质量门（>=1 关闭）
     # 允许多大比例的镜头念不完旁白（>=1 关闭）。归档基准实测：selective 13%–26%、
@@ -59,8 +67,11 @@ def load_settings() -> Settings:
         batch_target_chars=int(env("STORYBOARD_BATCH_CHARS", "2500")),
         single_batch_max_chars=int(env("STORYBOARD_SINGLE_BATCH_MAX", "3200")),
         max_retries=int(env("STORYBOARD_MAX_RETRIES", "2")),
+        repair_mode=("rewrite" if env("STORYBOARD_REPAIR_MODE", "patch").strip().lower()
+                     == "rewrite" else "patch"),
         transport_retries=int(env("STORYBOARD_TRANSPORT_RETRIES", "3")),
         normalize_input=env("STORYBOARD_NORMALIZE_INPUT", "1") not in ("0", "false", "no"),
+        thinking=env("STORYBOARD_THINKING", "disabled").strip().lower(),
         freeze_source_units=env("STORYBOARD_FREEZE_SOURCE_UNITS", "1") not in
                             ("0", "false", "no"),
         narration_density_max=float(env("STORYBOARD_NARRATION_DENSITY_MAX", "0.6")),

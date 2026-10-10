@@ -1,4 +1,7 @@
-"""CLI：python3 -m pipeline convert <novel.txt> [-o storyboard.json] [选项]"""
+"""CLI：
+  python3 -m pipeline convert <novel.txt> [-o storyboard.json] [选项]
+  python3 -m pipeline verify  <storyboard.json | 落盘的 run 记录> [--source 原文.txt]
+"""
 import argparse
 import json
 import sys
@@ -36,7 +39,15 @@ def main(argv=None) -> int:
                    help="软质量门（旁白密度/评审分）重试耗尽时直接失败"
                         "（默认择优降级交付并附质量报告）")
 
+    v = sub.add_parser("verify", help="对已有产物重新跑一遍独立验证与指纹核对")
+    v.add_argument("input", help="分镜 IR JSON，或 data/users/*/runs/*.json 落盘记录")
+    v.add_argument("--source", help="原文纯文本；给了就一并核对源单元能否拼回原文")
+    v.add_argument("--json", action="store_true", help="输出结构化报告而非人读文本")
+
     args = ap.parse_args(argv)
+    if args.cmd == "verify":
+        return _verify(args)
+
     text = Path(args.input).read_text(encoding="utf-8")
     params = ConvertParams(
         work_title=args.title, chapter=args.chapter,
@@ -82,6 +93,66 @@ def main(argv=None) -> int:
         if not ok:
             return 1
     return 0
+
+
+def _verify(args) -> int:
+    """对已经落盘的产物重新独立验证。
+
+    清单里记了输入哈希、提示词与 schema 的哈希、产物哈希，但在此之前没有任何
+    东西读它——提示词改过一版之后回头编辑或渲染一份旧产物，是在静默混用两套契约。
+    """
+    from . import verification
+    from .manifest import file_sha256, sha256_json
+    from .config import ROOT
+
+    raw = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    record = raw if "result" in raw and "id" in raw else None
+    doc = record["result"] if record else raw
+    if not isinstance(doc, dict) or not doc.get("episodes"):
+        print(f"不是分镜 IR，也不是可识别的 run 记录：{args.input}", file=sys.stderr)
+        return 2
+    manifest = (record or {}).get("manifest") or {}
+
+    frozen = ((manifest.get("scope") or {}).get("units")
+              or [{k: u.get(k) for k in ("id", "text", "para")}
+                  for u in (doc.get("source") or {}).get("units") or []])
+    source_text = (Path(args.source).read_text(encoding="utf-8")
+                   if args.source else None)
+
+    # 先按确定性口径重算 coverage 再复验：文档里声明的那份不作数
+    probe = verification.verify_document(doc, frozen_units=frozen,
+                                         original_text=source_text)
+    checked = json.loads(json.dumps(doc))
+    verification.recompute_coverage_field(checked, probe.coverage)
+    report = verification.verify_document(checked, frozen_units=frozen,
+                                          original_text=source_text)
+
+    drift = []
+    contracts = manifest.get("contracts") or {}
+    for key, path in (("prompt_sha256", ROOT / "prompts" / "novel_to_storyboard.md"),
+                      ("schema_sha256", ROOT / "schema" / "storyboard.schema.json")):
+        if contracts.get(key) and contracts[key] != file_sha256(path):
+            drift.append(f"{path.name} 已与生成这份产物时不同"
+                         f"（当时 {contracts[key][:12]}…，现在 {file_sha256(path)[:12]}…）")
+    stored = manifest.get("artifact_sha256")
+    fingerprint = sha256_json(doc)
+    if stored and stored != fingerprint:
+        drift.append(f"产物指纹与清单不符（清单 {stored[:12]}…，实际 {fingerprint[:12]}…）"
+                     "——多半是转换之后被人工编辑过")
+
+    if args.json:
+        print(json.dumps({"verification": report.to_dict(), "drift": drift,
+                          "artifact_sha256": fingerprint},
+                         ensure_ascii=False, indent=2))
+    else:
+        print(report.render())
+        for line in drift:
+            print(f"DRIFT {line}")
+        if not drift and contracts:
+            print("DRIFT 无：提示词、schema 与产物指纹都和清单对得上")
+        elif not contracts:
+            print("DRIFT 未知：这份产物没有转换清单（旧记录或裸 IR），只做了结构验证")
+    return 0 if report.ok else 1
 
 
 if __name__ == "__main__":
