@@ -91,6 +91,48 @@ def main() -> int:
         pass
     print("chat: 无关的 400 不被降级逻辑吞掉 ✓")
 
+    # 7. 预算全烧在推理块上：要点名是推理模型，并否掉「调小批长」这条错误建议
+    burnt = AIMessage(
+        content=[{"type": "thinking", "thinking": "嗯" * 3000}],
+        response_metadata={"stop_reason": "max_tokens"},
+        usage_metadata={"input_tokens": 100, "output_tokens": 60664,
+                        "total_tokens": 60764,
+                        "input_token_details": {"cache_read": 0,
+                                                "cache_creation": 0}})
+    inv2 = ChatInvoker(Settings(api_key="k", model="deepseek-v4-flash"),
+                       chat=FakeChat(responses=[burnt]))
+    msg2 = inv2.invoke([HumanMessage("x")])
+    try:
+        inv2.text(msg2)
+        raise AssertionError("推理块烧光预算应抛 LLMError")
+    except LLMError as e:
+        assert "推理块" in str(e) and "60664" in str(e)
+        assert "STORYBOARD_THINKING" in str(e)
+        assert "调小 STORYBOARD_BATCH_CHARS 对这种情况无效" in str(e)
+    # 烧掉的 token 也要计入用量账
+    assert inv2.usage_totals()["output"] == 60664
+    print("chat: 推理块烧光预算要点名，并否掉错误建议 ✓")
+
+    # 8. 正文出来了才是普通截断，报的是另一套话
+    cut = AIMessage(content=[{"type": "text", "text": "{"}],
+                    response_metadata={"stop_reason": "max_tokens"},
+                    usage_metadata={"input_tokens": 10, "output_tokens": 1,
+                                    "total_tokens": 11,
+                                    "input_token_details": {"cache_read": 0,
+                                                            "cache_creation": 0}})
+    inv3 = ChatInvoker(Settings(api_key="k"), chat=FakeChat(responses=[cut]))
+    try:
+        inv3.text(inv3.invoke([HumanMessage("x")]))
+        raise AssertionError("普通截断也要报错")
+    except LLMError as e:
+        assert "推理" not in str(e) and "STORYBOARD_MAX_TOKENS" in str(e)
+    print("chat: 普通截断报另一套话 ✓")
+
+    # 9. 正常结束时原样返回正文
+    inv4 = ChatInvoker(Settings(api_key="k"), chat=FakeChat(responses=["正文"]))
+    assert inv4.text(inv4.invoke([HumanMessage("x")])) == "正文"
+    print("chat: 正常结束原样返回正文 ✓")
+
     # 10. 传输重试：瞬时断连自动重试，第 3 次成功（迁自 test_offline 第 10 节）
     attempts = []
 
