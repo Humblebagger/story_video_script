@@ -231,6 +231,38 @@ export interface Storyboard {
 
 export type JobStatus =
   | 'queued' | 'running' | 'succeeded' | 'completed_with_warnings' | 'failed'
+  // 人工编辑后没通过服务端复验：记录仍保存（不丢人的工作），但禁止进入付费渲染
+  | 'draft_invalid'
+
+/* ---------- 服务端验证报告（backend/pipeline/verification.py） ---------- */
+
+export type Severity = 'critical' | 'high' | 'medium' | 'low'
+
+/** 一条结构化发现。object_path 是 JSON Pointer，可直接定位到出问题的镜头/字段。 */
+export interface Finding {
+  rule_id: string
+  severity: Severity
+  object_path: string
+  message: string
+  unit_refs?: string[]
+  evidence_quote?: string
+  expected?: unknown
+  actual?: unknown
+}
+
+export interface VerificationCoverage {
+  selected?: string[]
+  covered?: string[]
+  waived?: string[]
+  failed?: string[]
+  inferred_shot_ratio?: number
+}
+
+export interface VerificationReport {
+  status: 'verified' | 'failed'
+  findings: Finding[]
+  coverage?: VerificationCoverage
+}
 
 export interface ConvertRequest {
   text: string
@@ -259,6 +291,8 @@ export interface Job {
   result: Storyboard | null
   quality_report: string | null
   error: string | null
+  /** 服务端对本次产物的验证报告（失败时带上不通过的逐条原因） */
+  verification?: VerificationReport | null
   created_at?: string
   work_title?: string
   chapter?: string
@@ -297,6 +331,7 @@ export interface HistorySummary {
   episodes: number
   shots: number
   has_quality_report: boolean
+  verification_status?: 'verified' | 'failed' | null
 }
 
 export interface HistoryRecord {
@@ -306,6 +341,7 @@ export interface HistoryRecord {
   status: JobStatus
   params: Record<string, string>
   quality_report: string | null
+  verification?: VerificationReport | null
   result: Storyboard
 }
 
@@ -402,4 +438,5 @@ export interface RenderPlan {
 export interface RenderPack {
   plan: RenderPlan
   packs: { episode: string; title: string; markdown: string }[]
+  verification?: VerificationReport
 }

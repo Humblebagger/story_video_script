@@ -109,6 +109,10 @@ export function HistoryPanel({
               {r.status === 'succeeded' && (
                 <span className="tag">{label(JOB_STATUS, r.status)}</span>
               )}
+              {/* 编辑后没过服务端复验：列表里也得看得见，否则要到点渲染才知道 */}
+              {r.status === 'draft_invalid' && (
+                <span className="tag tag--warn">{label(JOB_STATUS, r.status)}</span>
+              )}
               {r.edited_at && <span className="tag tag--edit">已编辑</span>}
             </div>
           </li>

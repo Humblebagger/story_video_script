@@ -10,9 +10,10 @@ import { JobPanel } from './components/JobPanel'
 import { LibraryView } from './components/LibraryView'
 import { LoginView } from './components/LoginView'
 import { StoryboardView } from './components/StoryboardView'
+import { VerificationPanel } from './components/VerificationPanel'
 import { notify, primeNotifications } from './notify'
 import type {
-  ConvertRequest, Health, HistorySummary, Job, JobSummary, LibraryWork, Storyboard,
+  ConvertRequest, Health, HistorySummary, Job, JobSummary, LibraryWork, Storyboard, VerificationReport,
 } from './types'
 import { useJob } from './useJob'
 
@@ -34,6 +35,8 @@ export default function App() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [alert, setAlert] = useState<string | null>(null)
+  /** 服务端对当前产物的复验结果。保存一次刷新一次，不通过时它就是拦人的那块牌子 */
+  const [verification, setVerification] = useState<VerificationReport | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(async () => {
@@ -151,6 +154,7 @@ export default function App() {
   const openRun = async (id: string) => {
     if (dirty && !confirm('当前修改尚未保存，确定切换？')) return
     setAlert(null)
+    setVerification(null)
     try {
       const record = await getHistory(id)
       reset()
@@ -180,6 +184,7 @@ export default function App() {
     setDocId(null)
     setDirty(false)
     setAlert(null)
+    setVerification(null)
     void watchJobs()
   }
 
@@ -189,6 +194,7 @@ export default function App() {
     setDoc(null)
     setDocId(null)
     setAlert(null)
+    setVerification(null)
     attach(id)
   }
 
@@ -196,8 +202,15 @@ export default function App() {
     if (!docId || !doc) return
     setSaving(true)
     setAlert(null)
+    setVerification(null)
     try {
-      await saveHistory(docId, doc)
+      const res = await saveHistory(docId, doc)
+      // 后端整份复验过了才返回。不看 status 就等于假装保存成功——
+      // 用户会一路改到点渲染时才被 422 挡住，那时早忘了改过什么。
+      setVerification(res.verification)
+      if (res.status === 'draft_invalid') {
+        setAlert('已保存，但这份分镜没通过服务端复验，暂时不能进渲染（详见下方报告）')
+      }
       setDirty(false)
       await refresh()
     } catch (e) {
@@ -209,6 +222,7 @@ export default function App() {
 
   const openLocal = async (f: File) => {
     setAlert(null)
+    setVerification(null)
     try {
       const parsed = JSON.parse(await f.text())
       if (!parsed?.meta || !parsed?.episodes) throw new Error('不是分镜 IR：缺少 meta / episodes')
@@ -296,6 +310,7 @@ export default function App() {
           {job && (
             <JobPanel job={job} onReset={newConversion} onBackground={newConversion} />
           )}
+          {verification && <VerificationPanel report={verification} doc={doc} />}
           {doc && (
             <StoryboardView
               doc={doc}

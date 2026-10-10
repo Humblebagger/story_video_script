@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { JOB_STATUS, label } from '../labels'
 import type { Job } from '../types'
+import { VerificationPanel } from './VerificationPanel'
 
 interface Props {
   job: Job
@@ -43,6 +44,12 @@ export function JobPanel({ job, onReset, onBackground }: Props) {
           <b>✕ 转换失败，未通过的原因如下</b>
           <pre className="job__err">{job.error}</pre>
         </div>
+      )}
+
+      {/* 转换本身也过验证链路。跑通了要说一声（证明这条链真跑了），
+          没跑通要给逐条原因，而不是只丢一段报错文本 */}
+      {!running && job.verification && (
+        <VerificationPanel report={job.verification} doc={job.result} />
       )}
 
       {job.quality_report && (

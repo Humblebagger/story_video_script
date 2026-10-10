@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { renderPlan } from '../api'
-import type { RenderPack, Storyboard } from '../types'
+import { ApiError, renderPlan } from '../api'
+import type { RenderPack, Storyboard, VerificationReport } from '../types'
+import { VerificationPanel } from './VerificationPanel'
 
 interface Props {
   doc: Storyboard
@@ -30,6 +31,8 @@ export function RenderView({ doc, runId }: Props) {
   const [pack, setPack] = useState<RenderPack | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /** 被验证门拦下时服务端附的报告——光说「422」用户没法据此修改 */
+  const [blocked, setBlocked] = useState<VerificationReport | null>(null)
   const [maxClip, setMaxClip] = useState(15)
   const [model, setModel] = useState('seedance-2.0')
   /** 拿真实账单标定过就填这里；空表示用推算值 */
@@ -43,6 +46,7 @@ export function RenderView({ doc, runId }: Props) {
   } = {}) => {
     setBusy(true)
     setErr(null)
+    setBlocked(null)
     try {
       setPicked(null)
       setPack(await renderPlan(doc, {
@@ -54,6 +58,7 @@ export function RenderView({ doc, runId }: Props) {
       }))
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
+      if (e instanceof ApiError) setBlocked(e.verification)
     } finally {
       setBusy(false)
     }
@@ -120,6 +125,7 @@ export function RenderView({ doc, runId }: Props) {
       </header>
 
       {err && <p className="alert">{err}</p>}
+      {blocked && <VerificationPanel report={blocked} doc={doc} origin="render" />}
 
       {!plan && !busy && !err && (
         <p className="empty">还没组装。点「生成任务包」看这一章要切成几个 clip、缺几张图、大概多少钱。</p>

@@ -41,7 +41,7 @@ win.localStorage.clear()
 
 interface StubJob {
   id: string; status: string; log: string[]; result: unknown
-  quality_report: string | null; error: string | null
+  quality_report: string | null; error: string | null; verification?: unknown
   created_at: string; work_title: string; chapter: string; chars: number
   user_id: string
 }
@@ -73,6 +73,23 @@ const libWorks = (u: string) => [...(libs.get(u) ?? new Map()).entries()]
 /** 前端 PUT 回来的编辑结果，用于校验编辑没有破坏跨引用 */
 const saved: Record<string, never>[] = []
 const renderCalls: { seconds: number; shots: number; model: string }[] = []
+
+const VERIFIED = { status: 'verified', findings: [], coverage: { selected: ['u0001'], covered: ['u0001'], waived: [], failed: [] } }
+const INVALID = {
+  status: 'failed',
+  findings: [{
+    rule_id: 'SOURCE-FROZEN-002', severity: 'critical',
+    object_path: '/episodes/0/shots/0/dialogue/0/text',
+    message: '台词不是所引原文句的逐字摘录',
+    unit_refs: ['u0001'], evidence_quote: '小栓——你坐着，不要到这儿来。',
+    expected: '小栓', actual: '小栓（改写）',
+  }],
+  coverage: { selected: ['u0001', 'u0002'], covered: ['u0001'], waived: [], failed: ['u0002'] },
+}
+/** 下一次 PUT /history 的复验判定；置一次用一次 */
+let nextSaveVerdict: { status: string; verification: unknown } | null = null
+/** 置位后下一次 /render/plan 返回 422 验证拦截 */
+let blockNextRender = false
 let seq = 0
 
 const DOC = {
@@ -117,8 +134,10 @@ function finishJob(id: string, status = 'succeeded') {
     hist(j.user_id).unshift({ id, created_at: j.created_at, edited_at: null, status,
                               work_title: j.work_title, chapter: j.chapter,
                               units: 1, episodes: 1, shots: 1, has_quality_report: false })
+    j.verification = VERIFIED
   } else {
     j.error = '批 1 重试 2 次后仍未通过校验\nFAIL: 引用了不存在的资产 C09'
+    j.verification = INVALID
   }
 }
 
@@ -130,7 +149,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   // 测出的现象既不真也不假，纯属噪声（曾据此误判过一次资产卡重复）。
   const json = (data: unknown) =>
     ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(data)) })
-  const err = (status: number, detail: string) => ({
+  // detail 可以是字符串，也可以是结构化对象（渲染门返回 {message, verification}）
+  const err = (status: number, detail: unknown) => ({
     ok: false, status, text: async () => JSON.stringify({ detail }),
     json: async () => ({ detail }) })
 
@@ -157,6 +177,12 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
 
   if (path === '/render/plan' && method === 'POST') {
     const b = JSON.parse(init!.body!)
+    if (blockNextRender) {
+      blockNextRender = false
+      // 服务端拒绝付费渲染时 detail 是对象而不是字符串
+      return err(422, { message: '分镜未通过独立验证，禁止进入付费渲染',
+                        verification: INVALID })
+    }
     const shots = b.result.episodes.flatMap((e: { shots: unknown[] }) => e.shots)
     const seconds = shots.reduce((a: number, s: { duration_sec: number }) =>
       a + s.duration_sec, 0)
@@ -233,7 +259,13 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   if (path === '/history') return json({ runs: hist(who) })
   if (path.startsWith('/history/') && method === 'PUT') {
     saved.push(JSON.parse(init!.body!))
-    return json({ id: path.slice('/history/'.length), edited_at: '2026-08-03T15:00:00+00:00' })
+    // 服务端每次保存都整份复验并把结果带回来；nextSaveVerdict 用来演一次不通过
+    const verdict = nextSaveVerdict ?? { status: 'succeeded', verification: VERIFIED }
+    nextSaveVerdict = null
+    const row = hist(who).find((r) => r.id === path.slice('/history/'.length))
+    if (row) { row.status = verdict.status; row.edited_at = '2026-08-03T15:00:00+00:00' }
+    return json({ id: path.slice('/history/'.length),
+                  edited_at: '2026-08-03T15:00:00+00:00', ...verdict })
   }
   if (path.startsWith('/history/')) {
     const id = path.slice('/history/'.length)
@@ -385,7 +417,10 @@ finishJob('job2', 'failed')
 await settle(1800)          // 附着轮询 1.5s 一轮
 must(has('转换失败，未通过的原因如下'), '失败应高亮原因区块')
 must(has('不存在的资产 C09'), '失败的具体原因必须显示给用户')
-console.log('7. 失败 → 原因摊开显示 ✓')
+// 报错文本之外还得给结构化发现——用户要据此改，不是据此叹气
+must(has('SOURCE-FROZEN-002') && has('台词不是所引原文句的逐字摘录'),
+     '失败任务应摊开逐条验证发现')
+console.log('7. 失败 → 原因摊开显示（含结构化验证发现）✓')
 
 // 8. 资产卡编辑：改得动内容，但跨引用的 ID 一个都不能变
 await click(findByText('button', '＋ 新转换'))
@@ -628,6 +663,33 @@ must(has('仅选中的 1/2 条'), '费用应只算选中的部分')
 await click(findByText('button', '全选'))
 must(!has('选中 1/2'), '全选应恢复')
 console.log('16. 渲染任务包 → 按可播时长计价 / 可选范围渲染 / 费用可切档 ✓')
+
+// 17. 服务端验证结果必须在界面上看得见
+//     后端每次保存、每次渲染前都整份复验，但界面一直没透出来——用户改出一份
+//     不合法的 IR，屏幕照样显示保存成功，要到点渲染才被 422 打回。
+await click(findByText('button', '分镜'))
+const area17 = container.querySelector('.ed__at textarea') as unknown as HTMLTextAreaElement
+must(!!area17, '切回分镜页应仍在编辑态')
+await typeAt(area17, '推门，康大叔（再改）')
+nextSaveVerdict = { status: 'draft_invalid', verification: INVALID }
+await click(findByText('button', '保存修改'))
+await settle(60)
+must(has('没通过服务端复验'), '复验不通过必须当场说，不能显示保存成功')
+must(has('改动已经存下来了'), '要讲清楚编辑没丢——否则用户不敢改')
+must(has('SOURCE-FROZEN-002'), '规则号要露出，便于定位与追问')
+must(has('E01 / E01-SH001 · dialogue.0.text'),
+     'JSON Pointer 要翻成集号镜号，否则用户找不到是哪一镜')
+must(has('1 句原文没有任何镜头承载'), '覆盖率缺口要直说')
+must(has('草稿未过验证'), '历史列表也要标出来，否则换个页面回来就看不见了')
+
+blockNextRender = true
+await click(findByText('button', '渲染'))
+await click(findByText('button', '生成任务包'))
+await settle(150)
+must(has('已拦在付费渲染之前'), '渲染门拦截要有明确说法')
+must(!has('[object Object]'), '结构化 detail 不能退化成 [object Object]')
+must(has('台词不是所引原文句的逐字摘录'), '拦截原因要逐条列出')
+console.log('17. 验证结果透出 → 保存复验不通过当场可见 / 渲染门给出可执行原因 ✓')
 
 root.unmount()
 console.log('\nALL PASS')

@@ -68,6 +68,7 @@ export const NARRATION_MODE: Record<NarrationMode, string> = {
 export const JOB_STATUS: Record<JobStatus, string> = {
   queued: '排队中', running: '转换中', succeeded: '已完成',
   completed_with_warnings: '完成（质量告警）', failed: '失败',
+  draft_invalid: '草稿未过验证',
 }
 
 export const INTENSITY: Record<string, string> = { low: '弱', mid: '中', high: '强' }
