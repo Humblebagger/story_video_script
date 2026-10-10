@@ -137,7 +137,8 @@ class ChatInvoker:
         """调模型，返回 AIMessage。瞬时传输故障由 with_retry 指数退避重试。"""
         import anthropic
         config = {"callbacks": [self.usage]}
-        model = self._no_thinking if self._thinking_rejected else self._model
+        model = self._no_thinking if (self._thinking_rejected
+                                      and self._no_thinking is not None) else self._model
         try:
             return self._runnable(model, tools).invoke(messages, config=config)
         except anthropic.BadRequestError as e:
@@ -145,11 +146,11 @@ class ChatInvoker:
                     or _thinking_param(self._settings.thinking) is None:
                 raise
             # 网关不认这个参数：退回默认行为，但要说一声——推理块会重新开始烧预算
-            self._thinking_rejected = True
             self._log(f"服务端不接受 thinking 参数（{str(e)[:120]}），"
                       "改用模型默认行为重试")
             self._no_thinking = self._model if self._injected else build_chat_model(
                 replace_thinking(self._settings))
+            self._thinking_rejected = True
             return self._runnable(self._no_thinking, tools).invoke(
                 messages, config=config)
 
