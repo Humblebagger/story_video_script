@@ -7,8 +7,7 @@
 关键设计点：doc 有 36KB，绝不能让模型当参数传。用 InjectedState 让运行时把
 状态塞进来，模型只看得见 unit_ids / asset_ids / patch 这几个小参数。
 """
-import copy
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain_core.tools import InjectedToolCallId, tool
 from langchain_core.messages import ToolMessage
@@ -50,8 +49,8 @@ def json_patch(patch: list[dict],
                state: Annotated[dict, InjectedState]) -> Command:
     """提交受限 JSON Patch 修正产物。只允许 add/remove/replace；
     /coverage 与 /meta 前缀锁定（它们是程序重算的结果，不接受模型改写）。"""
-    doc = repair.apply_tool_call(copy.deepcopy(state["doc"]),
-                                 {"tool": "json_patch", "patch": patch})
+    # apply_json_patch 内部已深拷贝，违规时抛 RepairError（ToolNode 回喂给模型）
+    doc = repair.apply_json_patch(state["doc"], patch)
     return Command(update={
         "doc": doc,
         "patch_applied": True,

@@ -22,8 +22,10 @@ DOC = {
 
 def main() -> int:
     # 1. 工具清单与改造前的自研协议一一对应
-    assert {t.name for t in tools.REPAIR_TOOLS} == set(repair.ALLOWED_TOOLS)
-    print("tools: 6 个工具与 repair.ALLOWED_TOOLS 对齐 ✓")
+    assert {t.name for t in tools.REPAIR_TOOLS} == {
+        "source_read", "asset_get", "validation_list", "coverage_query",
+        "json_patch", "task_done"}
+    print("tools: 6 个工具名单正确 ✓")
 
     # 2. 每个工具都有中文 docstring（它就是喂给模型的工具说明）
     for t in tools.REPAIR_TOOLS:

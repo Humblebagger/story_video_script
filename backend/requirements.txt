@@ -1,4 +1,4 @@
-anthropic>=0.120,<2
+anthropic>=1.13,<2
 httpx2>=2,<3
 langchain-anthropic>=1.7,<2
 langgraph>=1.2,<2
