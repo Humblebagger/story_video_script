@@ -89,6 +89,55 @@ def playable_seconds(doc: dict, cps: float = DEFAULT_SPEECH_CPS) -> Tuple[float,
     return round(nominal, 1), round(actual, 1)
 
 
+# 与 schema 的 duration_sec.maximum 一致：单镜超过它就该拆，而不是继续拉长
+MAX_SHOT_SECONDS = 15.0
+
+
+def fit_durations(doc: dict, cps: float = DEFAULT_SPEECH_CPS,
+                  max_sec: float = MAX_SHOT_SECONDS) -> int:
+    """把念不完旁白/台词的镜头时长确定性拉长到念得完（按 0.5s 向上取整，封顶 max_sec）。
+
+    镜头时长属于「呈现」一侧，程序能算对的不交给模型：实测弱模型为配平秒数会
+    整段替换 shots，一轮补丁烧掉 49k 输出 token 还改坏了台词。封顶之后仍念不完的
+    镜头留给 speech_fit_gate 拦下、回喂要求拆镜。带 beats 的镜头不动——各拍时长
+    之和必须等于镜头时长，单改总长会破坏它。返回拉长的镜头数。
+    """
+    import math
+    n = 0
+    for ep in doc.get("episodes", []):
+        for shot in ep.get("shots", []):
+            if shot.get("beats"):
+                continue
+            need = speech_seconds(shot, cps)
+            have = shot.get("duration_sec", 0) or 0
+            if need > have + 0.05 and have < max_sec:
+                shot["duration_sec"] = min(max_sec, math.ceil(need * 2) / 2)
+                n += 1
+    return n
+
+
+def normalize_curve_refs(doc: dict) -> int:
+    """music.curve 里写成序号的镜头引用（1 / "3"）换成本集第 n 镜的 ID。
+
+    实测三批首次生成全部因为这一处硬失败（schema 要求 E01-SH001 形式），每批白搭
+    一轮修复。序号越界的不动，留给 schema 校验报出来。返回修正处数。
+    """
+    n = 0
+    for ep in doc.get("episodes", []):
+        ids = [s.get("id") for s in ep.get("shots", [])]
+        for seg in (ep.get("music") or {}).get("curve") or []:
+            for key in ("from_shot", "to_shot"):
+                v = seg.get(key)
+                if isinstance(v, bool):
+                    continue
+                if isinstance(v, int) or (isinstance(v, str) and v.isdigit()):
+                    i = int(v)
+                    if 1 <= i <= len(ids) and isinstance(ids[i - 1], str):
+                        seg[key] = ids[i - 1]
+                        n += 1
+    return n
+
+
 def speech_fit_gate(doc: dict, max_overflow_ratio: float,
                     cps: float = DEFAULT_SPEECH_CPS) -> Tuple[bool, str, float]:
     """镜头时长必须够念完它承载的旁白与台词。
@@ -122,8 +171,8 @@ def speech_fit_gate(doc: dict, max_overflow_ratio: float,
         f"[quality] {len(over)}/{total} 个镜头（{ratio:.0%}）的时长不够念完自己的"
         f"旁白与台词（按 {cps:g} 字/秒），超过阈值 {max_overflow_ratio:.0%}。\n"
         f"名义总时长 {nominal:g}s，要让语音都念完实际需要 {actual:g}s。\n"
-        f"请调整这些镜头的 duration_sec 使其不短于语音时长；若因此过长，"
-        f"应把该镜头拆成多个镜头分担旁白，或把画面承载得了的句子从 "
+        f"上限 {MAX_SHOT_SECONDS:g}s 以内的缺口程序会自动拉长 duration_sec；"
+        f"超出上限的镜头必须拆成多个镜头分担旁白，或把画面承载得了的句子从 "
         f"narration.unit_refs 移除（不得改动旁白与台词文本、也不得改 source.unit_refs）：\n"
         + "\n".join(lines))
     return False, report, ratio

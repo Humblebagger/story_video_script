@@ -98,7 +98,12 @@ def main() -> int:
                        llm=mock, batches=[b1, b2],
                        log=logs.append)
     archived = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
-    assert doc == archived, "流水线合并结果与归档 output_merged.json 不一致"
+    # 校验节点会把念不完旁白的镜头时长自动拉长；archived 留原样（后面的时长门
+    # 用例要测的正是归档里念不完的镜头），比对用拉长后的副本
+    from pipeline.quality import fit_durations
+    expected = json.loads(json.dumps(archived))
+    fit_durations(expected)
+    assert doc == expected, "流水线合并结果与归档 output_merged.json（时长拉长后）不一致"
     assert len(doc["source"]["units"]) == 132
     print("回放: 2 批 → 逐批校验 → 合并 → 整章 lint+保真终检全通过，结果与归档逐字一致 ✓")
 
@@ -723,6 +728,44 @@ def main() -> int:
     _, _, slow = speech_fit_gate(archived, 0.0, cps=4.5)
     _, _, fast = speech_fit_gate(archived, 0.0, cps=6.0)
     assert fast < slow, "语速调快后念不完的镜头应变少"
+
+    # 程序自动拉长：拉到念得完（0.5s 向上取整），封顶 15s；带 beats 的不动；
+    # 封顶后仍念不完的镜头留给时长门拦下要求拆镜
+    from pipeline.quality import MAX_SHOT_SECONDS, fit_durations, normalize_curve_refs
+    fitted = json.loads(json.dumps(archived))
+    n_fit = fit_durations(fitted)
+    assert n_fit > 0
+    for ep in fitted["episodes"]:
+        for sh in ep["shots"]:
+            if not sh.get("beats"):
+                assert sh["duration_sec"] >= min(speech_seconds(sh), MAX_SHOT_SECONDS) - 0.05
+                assert sh["duration_sec"] <= MAX_SHOT_SECONDS
+    assert fit_durations(fitted) == 0, "拉长应幂等"
+    ok, report, ratio = speech_fit_gate(fitted, 0.0)
+    assert ratio < 0.05, f"拉长后只剩超过 15s 上限的镜头，实为 {ratio:.0%}"
+    long_shot = {"narration": {"text": "字" * 90}, "duration_sec": 4}   # 需 20s
+    assert fit_durations({"episodes": [{"shots": [long_shot]}]}) == 1
+    assert long_shot["duration_sec"] == MAX_SHOT_SECONDS
+    ok, report, _ = speech_fit_gate({"episodes": [{"shots": [long_shot]}]}, 0.0)
+    assert not ok and "拆成多个镜头" in report, "超上限的镜头要回喂拆镜"
+    beat_shot = {"narration": {"text": "字" * 45}, "duration_sec": 4,
+                 "beats": [{"duration_sec": 2, "action": "a"},
+                           {"duration_sec": 2, "action": "b"}]}
+    assert fit_durations({"episodes": [{"shots": [beat_shot]}]}) == 0, \
+        "带 beats 的镜头单改总长会破坏各拍之和"
+    odd = {"narration": {"text": "字" * 10}, "duration_sec": 1}      # 需 2.22s
+    fit_durations({"episodes": [{"shots": [odd]}]})
+    assert odd["duration_sec"] == 2.5, "按 0.5s 向上取整"
+
+    # music.curve 序号 → 镜头 ID；越界与已是 ID 的不动
+    curve_doc = {"episodes": [{"shots": [{"id": "E01-SH001"}, {"id": "E01-SH002"}],
+                               "music": {"curve": [
+                                   {"from_shot": 1, "to_shot": "2"},
+                                   {"from_shot": "E01-SH001", "to_shot": 9}]}}]}
+    assert normalize_curve_refs(curve_doc) == 2
+    segs = curve_doc["episodes"][0]["music"]["curve"]
+    assert segs[0] == {"from_shot": "E01-SH001", "to_shot": "E01-SH002"}
+    assert segs[1] == {"from_shot": "E01-SH001", "to_shot": 9}, "越界留给 schema 报"
 
     one = {"narration": {"text": "十个字的旁白吧"}, "duration_sec": 5,
            "dialogue": [{"text": "八个字的台词"}]}

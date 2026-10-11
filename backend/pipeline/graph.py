@@ -16,7 +16,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolInvocationError
 
 from . import quality, repair, review, validate, verification
-from .chat import check_truncation, extract_json
+from .chat import check_truncation, extract_json, is_truncated
 from .config import Settings
 from .errors import ConversionError
 from .prompt import load_system_prompt
@@ -187,6 +187,15 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
 
         doc = state["doc"]
         quality.apply_meta_overrides(doc, params)
+        # 程序算得对的呈现层字段直接改，不为它们花一轮修复
+        fixed = quality.normalize_curve_refs(doc)
+        if fixed:
+            log(f"批 {idx}：music.curve 有 {fixed} 处镜头引用写成序号，已换成镜头 ID")
+        if settings.auto_fit_duration:
+            fitted = quality.fit_durations(doc, settings.speech_cps)
+            if fitted:
+                log(f"批 {idx}：{fitted} 个镜头时长不够念完旁白/台词，已自动拉长"
+                    f"（单镜封顶 {quality.MAX_SHOT_SECONDS:g}s）")
         ok, hard, report, key, structured = _check_batch(
             doc, state["batch_text"], settings, workdir, idx, attempt,
             review_chat, log, state["frozen_units"])
@@ -271,11 +280,24 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             return {"repair_failed": True, "report": report, "tool_steps": steps}
         # 修复阶段同样带系统提示词——模型得知道分镜规则才补得对
         msg = chat.invoke([system_msg] + list(state["messages"]),
-                          tools=REPAIR_TOOLS)
-        # 先做截断诊断再读 tool_calls：被截断的工具参数会被补成合法值
-        check_truncation(msg, settings)
+                          tools=REPAIR_TOOLS, max_tokens=settings.repair_max_tokens)
         calls = list(msg.tool_calls)
         invalid = list(msg.invalid_tool_calls or [])
+        # 先做截断诊断再用 tool_calls：被截断的工具参数会被 parse_partial_json
+        # 补成「合法」值。补丁截断是补丁太大，打回要求拆小（不应用、不整批报错）
+        if is_truncated(msg) and (calls or invalid):
+            log(f"批 {state['idx']} 补丁输出撞上 {settings.repair_max_tokens} token"
+                "上限被截断，未应用，要求拆小重交")
+            return {"messages": [msg] + [ToolMessage(
+                content=(f"输出在 {settings.repair_max_tokens} token 上限处被截断，本步未执行："
+                         "补丁过大。只改报告点名的字段，不要整段替换 shots，"
+                         "拆成更小的补丁重新提交"),
+                tool_call_id=c["id"], name=c["name"], status="error")
+                for c in calls + invalid],
+                "tool_steps": steps,
+                "used_tools": list(state["used_tools"]) + [c["name"] for c in calls]}
+        # 没有工具调用的截断（推理块烧光预算等）照旧按原因报错
+        check_truncation(msg, settings)
         if not calls and not invalid:
             report = "修复工具调用无效：模型没有发起任何工具调用"
             log(f"批 {state['idx']} {report}")

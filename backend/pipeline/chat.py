@@ -133,22 +133,32 @@ class ChatInvoker:
     def usage_totals(self) -> dict:
         return self.usage.usage_totals()
 
-    def _runnable(self, model, tools):
+    def _runnable(self, model, tools, max_tokens=None):
         runnable = model.bind_tools(tools, parallel_tool_calls=False) if tools else model
+        if max_tokens:
+            # 推理块的预算也算在 max_tokens 里，开着 thinking 时要把它加回去，
+            # 否则 budget_tokens >= max_tokens 会被服务端直接 400
+            thinking = (None if self._thinking_rejected
+                        else _thinking_param(self._settings.thinking))
+            budget = (thinking or {}).get("budget_tokens", 0)
+            runnable = runnable.bind(max_tokens=max_tokens + budget)
         return runnable.with_retry(
             retry_if_exception_type=_transient_errors(),
             stop_after_attempt=self._settings.transport_retries + 1,
             wait_exponential_jitter=True,
         )
 
-    def invoke(self, messages, tools=None):
-        """调模型，返回 AIMessage。瞬时传输故障由 with_retry 指数退避重试。"""
+    def invoke(self, messages, tools=None, max_tokens=None):
+        """调模型，返回 AIMessage。瞬时传输故障由 with_retry 指数退避重试。
+
+        max_tokens 覆盖本次调用的输出上限（缺省用 settings.max_tokens）。
+        """
         import anthropic
         config = {"callbacks": [self.usage]}
         model = self._no_thinking if (self._thinking_rejected
                                       and self._no_thinking is not None) else self._model
         try:
-            return self._invoke_wrapped(model, tools, messages, config)
+            return self._invoke_wrapped(model, tools, messages, config, max_tokens)
         except anthropic.BadRequestError as e:
             if self._thinking_rejected or "thinking" not in str(e).lower() \
                     or _thinking_param(self._settings.thinking) is None:
@@ -159,12 +169,14 @@ class ChatInvoker:
             self._no_thinking = self._model if self._injected else build_chat_model(
                 replace_thinking(self._settings), model=self._model_name)
             self._thinking_rejected = True
-            return self._invoke_wrapped(self._no_thinking, tools, messages, config)
+            return self._invoke_wrapped(self._no_thinking, tools, messages, config,
+                                       max_tokens)
 
-    def _invoke_wrapped(self, model, tools, messages, config):
+    def _invoke_wrapped(self, model, tools, messages, config, max_tokens=None):
         """with_retry 耗尽后把原始传输异常转成 LLMError，让 CLI 打一行干净的失败。"""
         try:
-            return self._runnable(model, tools).invoke(messages, config=config)
+            return self._runnable(model, tools, max_tokens).invoke(messages,
+                                                                   config=config)
         except _transient_errors() as e:
             raise LLMError(
                 f"LLM 传输重试 {self._settings.transport_retries} 次后仍失败：{e!r}"
@@ -186,6 +198,10 @@ def message_text(msg, settings: Settings) -> str:
     return check_truncation(msg, settings)
 
 
+def is_truncated(msg) -> bool:
+    return (msg.response_metadata or {}).get("stop_reason") == "max_tokens"
+
+
 def check_truncation(msg, settings: Settings) -> str:
     """只检查截断，不要求有正文；返回正文（可能为空）。
 
@@ -202,7 +218,7 @@ def check_truncation(msg, settings: Settings) -> str:
                        if b.get("type") == "text")
         thinking_chars = sum(len(b.get("thinking", "") or "") for b in blocks
                              if b.get("type") == "thinking")
-    if (msg.response_metadata or {}).get("stop_reason") != "max_tokens":
+    if not is_truncated(msg):
         return text
     out_tokens = (msg.usage_metadata or {}).get("output_tokens", 0)
     if not text.strip() and thinking_chars:

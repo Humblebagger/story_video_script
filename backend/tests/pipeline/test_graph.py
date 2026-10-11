@@ -42,6 +42,11 @@ def main() -> int:
         narration_mode="selective", tts_voice="male_mature")
     settings = Settings(api_key="k", max_retries=0, normalize_input=False,
                         freeze_source_units=False)
+    # 校验节点会把念不完旁白的镜头时长自动拉长（quality.fit_durations），
+    # 归档产物里本就有这类镜头，所以「与归档一致」比的是拉长后的归档
+    from pipeline.quality import fit_durations
+    expected = json.loads(archived)
+    assert fit_durations(expected) > 0, "归档里应有念不完的镜头，否则这条规则没测到"
 
     # 1. 一次就过：图跑完，result 是产物，没有降级警告
     with tempfile.TemporaryDirectory() as d:
@@ -54,7 +59,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user="【小说原文】" + batch,
                                   batch_text=batch, idx=1, frozen_units=None)
-        assert doc == json.loads(archived), "一次就过时产物应与归档一致"
+        assert doc == expected, "一次就过时产物应与归档一致"
         assert warnings == []
         assert [r["status"] for r in records] == ["passed"]
         assert records[0]["mode"] == "generate" and records[0]["attempt"] == 1
@@ -74,7 +79,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user="【小说原文】" + batch,
                                   batch_text=batch, idx=1, frozen_units=None)
-        assert doc == json.loads(archived)
+        assert doc == expected
         assert [r["status"] for r in records] == ["unparseable", "passed"]
         print("graph: 不可解析 → 重试 → 通过 ✓")
 
@@ -140,7 +145,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
-        assert doc == json.loads(archived), "打完补丁应与归档一致"
+        assert doc == expected, "打完补丁应与归档一致"
         assert [r["status"] for r in records] == ["hard_failed", "passed"]
         assert records[1]["mode"] == "patch"
         assert records[1]["tools"] == ["validation_list", "json_patch"], \
@@ -204,7 +209,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
-        assert doc == json.loads(archived)
+        assert doc == expected
         assert [r["status"] for r in records] == ["hard_failed", "passed"]
         assert records[1]["tools"] == ["json_patch", "json_patch"]
         # 第 3 次模型请求（下标 2）里必须带着那条报错——模型是看着它改正的
@@ -226,7 +231,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
-        assert doc == json.loads(archived)
+        assert doc == expected
         assert [(r["mode"], r["status"]) for r in records] == [
             ("generate", "hard_failed"), ("patch", "unparseable"),
             ("patch", "passed")], \
@@ -255,7 +260,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
-        assert doc == json.loads(archived)
+        assert doc == expected
         assert [r["status"] for r in records] == ["hard_failed", "passed"]
         errs = [m for m in fake8.requests[2]["messages"]
                 if isinstance(m, ToolMessage)]
@@ -284,7 +289,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
-        assert doc == json.loads(archived)
+        assert doc == expected
         assert [(r["mode"], r["status"]) for r in records] == [
             ("generate", "hard_failed"), ("patch", "unparseable"),
             ("patch", "passed")]
@@ -292,7 +297,8 @@ def main() -> int:
         print("graph: 无工具调用 → 保留底稿，下一次再补 ✓")
 
     # 11. 修复回复撞 max_tokens：补丁参数可能被 parse_partial_json 截成「合法」值，
-    #     必须当截断报错，不能静默应用
+    #     绝不能应用。补丁截断说明补丁太大：打回要求拆小，同一轮里重交即可，
+    #     不整批报错。修复调用要带上独立的输出上限
     from pipeline.chat import LLMError
     with tempfile.TemporaryDirectory() as d:
         records, logs = [], []
@@ -309,17 +315,64 @@ def main() -> int:
         graph = build_batch_graph(chat=chat, review_chat=chat, settings=s11,
                                   params=params, workdir=Path(d),
                                   attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch, idx=1,
+                                  frozen_units=None)
+        assert doc == expected, "截断的残缺补丁不得被应用；拆小重交后的补丁才算数"
+        assert [r["status"] for r in records] == ["hard_failed", "passed"]
+        assert len(records) == 2, "截断打回发生在同一轮内，不另起一次尝试"
+        errs = [m for m in fake11.requests[2]["messages"]
+                if isinstance(m, ToolMessage)]
+        assert [m.tool_call_id for m in errs] == ["t1"] and errs[0].status == "error"
+        assert "截断" in errs[0].content and "拆成更小的补丁" in errs[0].content
+        assert "kwargs" in fake11.requests[1] and \
+            fake11.requests[1]["kwargs"].get("max_tokens") == s11.repair_max_tokens, \
+            "修复调用要带独立的输出上限"
+        assert "max_tokens" not in fake11.requests[0]["kwargs"], \
+            "整份生成仍用 settings.max_tokens，不得被修复上限误伤"
+        print("graph: 补丁撞 max_tokens → 不应用、打回拆小，同轮重交通过 ✓")
+
+    # 11b. 没有工具调用的截断（推理块烧光预算）仍按原因报错——那是配置问题
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s11b = patch_settings(1)
+        burned = AIMessage(content=[{"type": "thinking", "thinking": "想" * 500}],
+                           response_metadata={"stop_reason": "max_tokens"})
+        fake11b = FakeChat(responses=[json.dumps(bad, ensure_ascii=False), burned])
+        chat = ChatInvoker(s11b, chat=fake11b, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s11b,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
         try:
-            run_batch(graph, user=user_msg, batch_text=batch, idx=1,
-                      frozen_units=None)
-            raise AssertionError("修复回复被 max_tokens 截断应抛 LLMError")
+            run_batch(graph, user=user_msg, batch_text=batch, idx=1, frozen_units=None)
+            raise AssertionError("推理块烧光预算应抛 LLMError")
         except LLMError as e:
-            assert "max_tokens" in str(e)
-        assert [r["status"] for r in records] == ["hard_failed"], \
-            "截断的补丁不该被应用并走到再次校验"
-        assert len(fake11.requests) == 2 and len(fake11.responses) == 1
-        # stop_reason=tool_use 且正文为空是正常情形，不得误报（第 4 项已覆盖通过路径）
-        print("graph: 修复回复撞 max_tokens → LLMError，补丁未应用 ✓")
+            assert "推理块" in str(e)
+        print("graph: 修复轮推理块烧光预算 → 仍报补偿 2 的诊断 ✓")
+
+    # 11c. music.curve 镜号写成序号：程序换成镜头 ID，不为它花一轮修复
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s11c = patch_settings(1)
+        numbered = json.loads(archived)
+        ep0 = numbered["episodes"][0]
+        ids = [sh["id"] for sh in ep0["shots"]]
+        curve = ep0["music"]["curve"]
+        orig = [(seg["from_shot"], seg["to_shot"]) for seg in curve]
+        for seg in curve:
+            seg["from_shot"] = ids.index(seg["from_shot"]) + 1
+            seg["to_shot"] = str(ids.index(seg["to_shot"]) + 1)
+        fake11c = FakeChat(responses=[json.dumps(numbered, ensure_ascii=False)])
+        chat = ChatInvoker(s11c, chat=fake11c, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s11c,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch, idx=1,
+                                  frozen_units=None)
+        assert [r["status"] for r in records] == ["passed"], "首次生成就该通过"
+        assert [(seg["from_shot"], seg["to_shot"])
+                for seg in doc["episodes"][0]["music"]["curve"]] == orig
+        assert any("music.curve" in line for line in logs), "修正要在日志里说一声"
+        print("graph: music.curve 序号 → 镜头 ID，首次生成即通过 ✓")
 
     # 12. invalid_tool_calls 与多写工具同样处理：每个 id 都回一条 error ToolMessage
     with tempfile.TemporaryDirectory() as d:
@@ -339,7 +392,7 @@ def main() -> int:
                                   attempt_records=records, log=logs.append)
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
-        assert doc == json.loads(archived)
+        assert doc == expected
         errs = [m for m in fake12.requests[2]["messages"]
                 if isinstance(m, ToolMessage)]
         assert sorted(m.tool_call_id for m in errs) == ["m1", "m2"], \

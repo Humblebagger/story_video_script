@@ -248,7 +248,7 @@ def main() -> int:
         orig_wrapped = inv16._invoke_wrapped
         fallback_models = []
 
-        def fake_wrapped(model, tools, messages, config):
+        def fake_wrapped(model, tools, messages, config, max_tokens=None):
             if model is inv16._model:
                 return orig_wrapped(model, tools, messages, config)
             fallback_models.append(model)
@@ -263,6 +263,19 @@ def main() -> int:
         f"回退重建丢了 model 覆盖：{built}"
     assert fallback_models and fallback_models[0].model == "review-model-x"
     print("chat: thinking 回退保留评审模型覆盖 ✓")
+
+    # 17. 单次调用的输出上限覆盖（修复轮用）：开着 thinking 时要把推理预算加回去，
+    #     否则 budget_tokens >= max_tokens 会被服务端 400
+    fake17 = FakeChat(responses=["a", "b", "c"])
+    inv17 = ChatInvoker(Settings(api_key="k", thinking="disabled"), chat=fake17)
+    inv17.invoke([HumanMessage("x")], max_tokens=8000)
+    inv17.invoke([HumanMessage("x")])
+    assert fake17.requests[0]["kwargs"].get("max_tokens") == 8000
+    assert "max_tokens" not in fake17.requests[1]["kwargs"], "不传就不覆盖"
+    inv17t = ChatInvoker(Settings(api_key="k", thinking="1024"), chat=fake17)
+    inv17t.invoke([HumanMessage("x")], max_tokens=8000)
+    assert fake17.requests[2]["kwargs"].get("max_tokens") == 9024
+    print("chat: 单次输出上限覆盖，thinking 预算另计 ✓")
 
     print("\nALL PASS")
     return 0

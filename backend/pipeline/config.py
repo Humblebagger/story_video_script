@@ -46,6 +46,10 @@ class Settings:
     # 渲染估算按实际时长计价来解决，不靠回喂重试硬顶
     speech_overflow_max: float = 0.25
     speech_cps: float = 4.5                 # TTS 语速（字/秒），用于判定念不念得完
+    auto_fit_duration: bool = True          # 念不完的镜头由程序拉长时长（封顶 15s），不回喂模型
+    # 修复轮单次调用的输出上限。正常补丁实测 0.5k–3k token；不设上限时出现过一轮
+    # 49k token 的整段替换。撞上限时补丁不应用、打回要求拆小，而不是整批报错
+    repair_max_tokens: int = 8000
     strict: bool = False                    # True：软质量门重试耗尽直接失败（默认择优降级交付）
     review_enabled: bool = False            # LLM 评审阶段（弱模型部署时建议开启）
     review_model: Optional[str] = None      # 评审用模型（缺省与转换同模型）
@@ -77,6 +81,9 @@ def load_settings() -> Settings:
         narration_density_max=float(env("STORYBOARD_NARRATION_DENSITY_MAX", "0.6")),
         speech_overflow_max=float(env("STORYBOARD_SPEECH_OVERFLOW_MAX", "0.25")),
         speech_cps=float(env("STORYBOARD_SPEECH_CPS", "4.5")),
+        auto_fit_duration=env("STORYBOARD_AUTO_FIT_DURATION", "1") not in
+                          ("0", "false", "no"),
+        repair_max_tokens=int(env("STORYBOARD_REPAIR_MAX_TOKENS", "8000")),
         strict=env("STORYBOARD_STRICT", "") in ("1", "true", "yes"),
         review_enabled=env("STORYBOARD_REVIEW", "") in ("1", "true", "yes"),
         review_model=env("STORYBOARD_REVIEW_MODEL") or None,
