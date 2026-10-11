@@ -3,14 +3,15 @@ import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
-from . import quality, repair, review, validate, verification
+from . import validate, verification
+from .chat import ChatInvoker
 from .config import Settings, load_settings
 from .errors import ConversionError
-from .llm import extract_json
+from .graph import build_batch_graph, run_batch
 from .manifest import build_manifest, finish_manifest, sum_usage
-from .prompt import build_user_message, load_system_prompt
+from .prompt import build_user_message
 from .source_units import build_frozen_units, manifest_units, prompt_units
 from .splitter import normalize_source_text, split_batches
 
@@ -43,210 +44,6 @@ def _continuation_blocks(outputs: List[dict]) -> (str, str):
     return assets, continuation
 
 
-def _check_batch(doc: dict, batch_text: str, settings: Settings,
-                 workdir: Path, idx: int, attempt: int,
-                 review_llm, log, frozen_units=None):
-    """结构校验 → 质量门 → 可选评审。返回 (是否通过, 硬失败?, 报告, 择优键)。
-
-    硬失败（schema/lint/保真不过）的产物合同已破坏，不可交付；
-    软失败（密度门/评审分不过）的产物合法可用，仅质量不达标，
-    择优键（越大越接近达标）供重试耗尽后降级交付时挑最优一版。
-    """
-    # coverage 是后处理结果，不信任模型声明。先计算再覆写，然后从干净状态复验。
-    probe = verification.verify_document(
-        doc, frozen_units=frozen_units, original_text=batch_text)
-    verification.recompute_coverage_field(doc, probe.coverage)
-    structured = verification.verify_document(
-        doc, frozen_units=frozen_units, original_text=batch_text)
-
-    tmp = workdir / f"batch{idx}_attempt{attempt}.json"
-    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
-                   encoding="utf-8")
-    if not structured.ok:
-        return False, True, structured.render(), None, structured
-    lint_ok, lint_out = validate.run_lint(tmp)
-    fid_ok, fid_out = validate.run_fidelity(tmp, batch_text, workdir)
-    if not (lint_ok and fid_ok):
-        return (False, True, lint_out.strip() + "\n" + fid_out.strip(), None,
-                structured)
-
-    gate_ok, gate_report, ratio = quality.narration_density_gate(
-        doc, settings.narration_density_max)
-    if not gate_ok:
-        return False, False, gate_report, (1, -ratio), structured
-
-    # 时长必须够念完旁白与台词，否则成片时要么截断语音、要么被迫拉长镜头，
-    # 按名义时长做的预算当场失准。排在密度门之后择优（它已多过一道门）。
-    fit_ok, fit_report, over = quality.speech_fit_gate(
-        doc, settings.speech_overflow_max, settings.speech_cps)
-    if not fit_ok:
-        return False, False, fit_report, (2, -over), structured
-
-    if settings.review_enabled and review_llm is not None:
-        rev_ok, rev_report, overall = review.run_review(
-            review_llm, batch_text, doc, settings.review_min_score,
-            settings.review_dimension_min, settings.semantic_fidelity_min)
-        if rev_ok is None:
-            log(f"批 {idx} {rev_report}")
-            return False, False, rev_report, (3, -1.0), structured
-        else:
-            log(rev_report.splitlines()[0])
-            if not rev_ok:
-                # 评审失败排在前两道门之后择优（它已多过两道门）
-                return False, False, rev_report, (3, overall), structured
-    return True, False, structured.render(), None, structured
-
-
-def _usage_snapshot(llm) -> Optional[dict]:
-    """取 LLM 客户端的累计用量；测试用的 mock 没有这个方法，返回 None。"""
-    fn = getattr(llm, "usage_totals", None)
-    return fn() if callable(fn) else None
-
-
-def _usage_delta(before: Optional[dict], after: Optional[dict]) -> Optional[dict]:
-    """归到单次尝试头上的 token 增量（受限修复一轮可能调用多次，正好一并计入）。"""
-    if not before or not after:
-        return None
-    return {k: after[k] - before.get(k, 0) for k in after}
-
-
-_REPORT_LOG_LINES = 60
-
-
-def _log_report(log, report: str, workdir: Path, idx: int, attempt: int) -> None:
-    """把校验/质量门的失败原因逐行打进日志。
-
-    用户看不到工作目录，光说"未通过"等于没说；报告可能很长，
-    截断后指向落盘的完整报告，不让日志被单个批次淹掉。
-    """
-    lines = report.strip().splitlines()
-    if not lines:
-        log("  （校验器未给出细节）")
-        return
-    for line in lines[:_REPORT_LOG_LINES]:
-        log(f"  {line}")
-    if len(lines) > _REPORT_LOG_LINES:
-        path = workdir / f"batch{idx}_attempt{attempt}_report.txt"
-        try:
-            path.write_text(report + "\n", encoding="utf-8")
-            log(f"  …还有 {len(lines) - _REPORT_LOG_LINES} 行，完整报告见 {path}")
-        except OSError:
-            log(f"  …还有 {len(lines) - _REPORT_LOG_LINES} 行未显示")
-
-
-def _convert_batch(llm, system: str, user: str, batch_text: str, params,
-                   settings: Settings, workdir: Path, idx: int,
-                   review_llm, log, frozen_units=None,
-                   attempt_records=None) -> Tuple[dict, List[str]]:
-    """返回 (产物, 质量警告列表)。警告非空即降级交付。"""
-    messages = [{"role": "user", "content": user}]
-    last_report = ""
-    last_structured = verification.VerificationReport()
-    current_doc = None
-    repair_mode = False
-    candidates = []  # 软失败但结构合法的历次尝试：(择优键, 第几次, 产物, 报告)
-    for attempt in range(settings.max_retries + 1):
-        usage_before = _usage_snapshot(llm)
-        raw = llm.complete(system, messages)
-        used_tools = []
-        try:
-            payload = extract_json(raw)
-            if repair_mode:
-                for _ in range(8):
-                    tool = payload.get("tool") if isinstance(payload, dict) else None
-                    used_tools.append(tool or "invalid")
-                    if tool == "json_patch":
-                        doc = repair.apply_tool_call(current_doc, payload)
-                        break
-                    if repair.is_task_done(payload):
-                        doc = current_doc
-                        break
-                    tool_result = repair.run_inspection_tool(
-                        current_doc, last_structured, payload)
-                    messages.append({"role": "assistant", "content": raw})
-                    messages.append({"role": "user", "content":
-                                     "【工具结果】\n" + json.dumps(
-                                         tool_result, ensure_ascii=False)})
-                    raw = llm.complete(system, messages)
-                    payload = extract_json(raw)
-                else:
-                    raise repair.RepairError("单轮修复超过 8 个工具步骤")
-            else:
-                doc = payload
-        except (ValueError, repair.RepairError) as e:
-            last_report = (f"修复工具调用无效：{e}" if repair_mode
-                           else f"输出无法解析为 JSON：{e}")
-            log(f"批 {idx} 第 {attempt + 1} 次生成：{last_report}")
-            if attempt_records is not None:
-                attempt_records.append({"batch": idx, "attempt": attempt + 1,
-                                        "mode": "patch" if repair_mode else "generate",
-                                        "status": "unparseable", "report": last_report,
-                                        "tools": used_tools,
-                                        "usage": _usage_delta(
-                                            usage_before, _usage_snapshot(llm))})
-        else:
-            quality.apply_meta_overrides(doc, params)
-            ok, hard, last_report, key, last_structured = _check_batch(
-                doc, batch_text, settings, workdir, idx, attempt + 1,
-                review_llm, log, frozen_units)
-            if attempt_records is not None:
-                attempt_records.append({
-                    "batch": idx, "attempt": attempt + 1,
-                    "mode": "patch" if repair_mode else "generate",
-                    "status": "passed" if ok else ("hard_failed" if hard else "soft_failed"),
-                    "verification": last_structured.to_dict(),
-                    "report": last_report,
-                    "tools": used_tools,
-                    "usage": _usage_delta(usage_before, _usage_snapshot(llm)),
-                })
-            if ok:
-                log(f"批 {idx} 校验通过（第 {attempt + 1} 次生成）")
-                return doc, []
-            if not hard:
-                candidates.append((key, attempt + 1, doc, last_report))
-            current_doc = doc
-            log(f"批 {idx} 第 {attempt + 1} 次生成未通过"
-                f"{'校验' if hard else '质量门'}，原因如下：")
-            _log_report(log, last_report, workdir, idx, attempt + 1)
-        if attempt < settings.max_retries:
-            if current_doc is not None and settings.repair_mode == "patch":
-                repair_mode = True
-                log(f"批 {idx} 进入受限 JSON Patch 修复"
-                    f"（{attempt + 2}/{settings.max_retries + 1}）…")
-                messages = [
-                    {"role": "user", "content": user},
-                    {"role": "assistant", "content": json.dumps(
-                        current_doc, ensure_ascii=False)},
-                    {"role": "user", "content": repair.repair_request(
-                        last_structured, last_report)},
-                ]
-            else:
-                # rewrite 模式，或首次输出就没解析出 JSON（没有可打补丁的底稿）
-                repair_mode = False
-                log(f"批 {idx} 回喂校验报告重新输出整份"
-                    f"（{attempt + 2}/{settings.max_retries + 1}）…")
-                messages.append({"role": "assistant", "content": raw})
-                messages.append({"role": "user", "content":
-                                 "你的输出未通过自动校验，报告如下：\n\n" + last_report +
-                                 "\n\n请修正全部问题后重新输出完整 JSON"
-                                 "（只输出一个 JSON 对象，不要解释文字，不要代码块标记）。"})
-
-    if candidates and not settings.strict:
-        key, best_attempt, doc, report = max(candidates, key=lambda c: c[0])
-        log(f"批 {idx} 软质量门重试耗尽，择优降级交付第 {best_attempt} 次生成"
-            f"（产物结构合法、逐字保真；--strict 可改为直接失败）")
-        warning = (f"批 {idx} 软质量门重试 {settings.max_retries} 次后仍未达标，"
-                   f"择优交付第 {best_attempt} 次生成（共 {len(candidates)} 个合法候选）。"
-                   f"产物结构合法、逐字保真，仅转换质量未达阈值：\n{report}")
-        return doc, [warning]
-
-    (workdir / f"batch{idx}_failure_report.txt").write_text(
-        last_report + "\n", encoding="utf-8")
-    raise ConversionError(
-        f"批 {idx} 重试 {settings.max_retries} 次后仍未通过校验"
-        f"（已通过批次与失败报告保留在 {workdir}）", last_report)
-
-
 def convert_text(text: str,
                  params: Optional[ConvertParams] = None,
                  settings: Optional[Settings] = None,
@@ -259,7 +56,7 @@ def convert_text(text: str,
                  manifest_out: Optional[dict] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
-    llm 可注入任何带 complete(system, messages) -> str 的对象（测试用 mock）。
+    llm 可注入任何 BaseChatModel（测试用 FakeChat）。
     batches 可显式指定分批切片（缺省用 splitter 自动切）。
     硬校验（schema/lint/保真）不通过且重试耗尽时抛 ConversionError
     （.report 含完整校验报告）；软质量门（旁白密度/评审分）重试耗尽时
@@ -280,15 +77,16 @@ def convert_text(text: str,
             log(f"输入归一化：剔除 {removed} 个零宽/BOM 噪声字符"
                 f"（STORYBOARD_NORMALIZE_INPUT=0 关闭）")
     if llm is None:
-        from .llm import LLMClient
-        llm = LLMClient(settings)
-        review_llm = llm
-        if settings.review_enabled and settings.review_model \
-                and settings.review_model != settings.model:
-            from dataclasses import replace
-            review_llm = LLMClient(replace(settings, model=settings.review_model))
+        chat = ChatInvoker(settings, log=log)
     else:
-        review_llm = llm  # 注入的客户端（含测试 mock）同时承担评审调用
+        # 注入的 BaseChatModel（含测试替身）：共用一个用量回调，账才是一本
+        chat = ChatInvoker(settings, chat=llm, log=log)
+    review_chat = chat
+    if settings.review_enabled and settings.review_model \
+            and settings.review_model != settings.model and llm is None:
+        # 评审用另一档模型时单独建一个，但共用同一个 UsageCallback
+        review_chat = ChatInvoker(settings, model=settings.review_model,
+                                  usage=chat.usage, log=log)
     if batches is None:
         batches = split_batches(text, settings.batch_target_chars,
                                 settings.single_batch_max_chars)
@@ -306,12 +104,14 @@ def convert_text(text: str,
         run_manifest = manifest_out
     workdir = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="storyboard_"))
     workdir.mkdir(parents=True, exist_ok=True)
-    system = load_system_prompt()
+    attempt_records = run_manifest["attempts"]
     log(f"输入 {len(text)} 字符 → {len(batches)} 批（工作目录 {workdir}）")
+    graph = build_batch_graph(chat=chat, review_chat=review_chat,
+                              settings=settings, params=params, workdir=workdir,
+                              attempt_records=attempt_records, log=log)
 
     outputs: List[dict] = []
     batch_paths: List[Path] = []
-    attempt_records = run_manifest["attempts"]
     for i, batch in enumerate(batches, 1):
         if outputs:
             assets_block, cont_block = _continuation_blocks(outputs)
@@ -326,9 +126,8 @@ def convert_text(text: str,
         user = build_user_message(params, batch, assets_block, cont_block,
                                   expected_units)
         log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
-        doc, batch_warnings = _convert_batch(llm, system, user, batch, params,
-                                             settings, workdir, i, review_llm, log,
-                                             expected_units, attempt_records)
+        doc, batch_warnings = run_batch(graph, user=user, batch_text=batch,
+                                        idx=i, frozen_units=expected_units)
         run_manifest["usage"] = sum_usage(attempt_records)
         if batch_warnings and warnings_out is not None:
             warnings_out.extend(batch_warnings)

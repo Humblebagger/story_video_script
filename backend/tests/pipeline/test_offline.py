@@ -14,9 +14,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline.config import Settings
-from pipeline.convert import _REPORT_LOG_LINES, ConvertParams, convert_text
+from fakes import FakeChat
+from langchain_core.messages import AIMessage, HumanMessage
+from pipeline.chat import ChatInvoker
+from pipeline.convert import ConvertParams, convert_text
+from pipeline.graph import _REPORT_LOG_LINES
 from pipeline.prompt import load_system_prompt
 from pipeline.quality import apply_meta_overrides, narration_density_gate
 from pipeline.splitter import split_batches
@@ -37,34 +42,30 @@ def extract_passage(text: str) -> str:
     return text[m.end():] if m else text
 
 
-class MockLLM:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-
-    def complete(self, system, messages):
-        self.calls.append(messages)
-        return self.responses.pop(0)
+def user_msg(chat, i: int) -> str:
+    """第 i 次请求里的**首条** HumanMessage——即 build_user_message 拼出的用户消息。"""
+    humans = [m for m in chat.requests[i]["messages"]
+              if isinstance(m, HumanMessage)]
+    assert humans, f"第 {i} 次请求里没有 HumanMessage"
+    return humans[0].content
 
 
-class UsageMockLLM(MockLLM):
-    """带用量的 mock。真实客户端从 API 响应取 usage，这里用字符数替身，
-    只为验证「token 按尝试归属、汇总进清单」这条链路本身是对的。"""
+def last_human(chat, i: int) -> str:
+    """第 i 次请求里的**末条** HumanMessage——即回喂的校验报告或工具结果。"""
+    humans = [m for m in chat.requests[i]["messages"]
+              if isinstance(m, HumanMessage)]
+    assert humans, f"第 {i} 次请求里没有 HumanMessage"
+    return humans[-1].content
 
-    def __init__(self, responses):
-        super().__init__(responses)
-        self.usage = {"calls": 0, "input": 0, "output": 0,
-                      "cache_read": 0, "cache_write": 0}
 
-    def complete(self, system, messages):
-        out = super().complete(system, messages)
-        self.usage["calls"] += 1
-        self.usage["input"] += sum(len(m["content"]) for m in messages)
-        self.usage["output"] += len(out)
-        return out
+def tool_call(name, args, call_id):
+    return AIMessage(content="", tool_calls=[
+        {"name": name, "args": args, "id": call_id, "type": "tool_call"}])
 
-    def usage_totals(self):
-        return dict(self.usage)
+
+def review_invoker(responses):
+    return ChatInvoker(Settings(api_key="k"), chat=FakeChat(responses=responses),
+                       log=lambda m: None)
 
 
 def main() -> int:
@@ -84,7 +85,7 @@ def main() -> int:
     # 3. 全流程回放（按人肉实测的两批切法）
     b1 = extract_passage((YAO / "input_batch1.txt").read_text(encoding="utf-8"))
     b2 = extract_passage((YAO / "input_batch2.txt").read_text(encoding="utf-8"))
-    mock = MockLLM([
+    mock = FakeChat(responses=[
         (YAO / "output_batch1.json").read_text(encoding="utf-8"),
         (YAO / "output_batch2.json").read_text(encoding="utf-8"),
     ])
@@ -102,7 +103,7 @@ def main() -> int:
     print("回放: 2 批 → 逐批校验 → 合并 → 整章 lint+保真终检全通过，结果与归档逐字一致 ✓")
 
     # 4. 续批参数拼装（对照人肉实测 input_batch2.txt 的取值）
-    msg2 = mock.calls[1][0]["content"]
+    msg2 = user_msg(mock, 1)
     for expected in ("起始句子编号：u0068", "起始段落编号：29", "起始分集编号：E03",
                      '"C01"', "首批 meta（逐字沿用）"):
         assert expected in msg2, f"续批参数缺失: {expected}"
@@ -147,7 +148,7 @@ def main() -> int:
     verdict = ('{"scores": {"narration_selection": 4, "shot_language": 4, '
                '"asset_quality": 4, "semantic_fidelity": 5}, '
                '"overall": 4.3, "issues": []}')
-    mock2 = MockLLM([romance_json, verdict])
+    mock2 = FakeChat(responses=[romance_json, verdict])
     manifest2 = {}
     doc2 = convert_text(
         romance_text,
@@ -158,7 +159,7 @@ def main() -> int:
         settings=Settings(max_retries=0, review_enabled=True,
                           speech_overflow_max=1.0),
         llm=mock2, log=lambda m: None, manifest_out=manifest2)
-    assert len(mock2.calls) == 2, "应有 1 次生成 + 1 次评审调用"
+    assert len(mock2.requests) == 2, "应有 1 次生成 + 1 次评审调用"
     assert "评审总分" not in json.dumps(doc2), "评审结果不应混入产物"
     assert manifest2["state"] == "verified" and \
         manifest2["verification"]["status"] == "verified"
@@ -190,11 +191,11 @@ def main() -> int:
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
         warnings = []
-        patch8 = {"tool": "json_patch", "patch": [{
+        patch8 = tool_call("json_patch", {"patch": [{
             "op": "replace", "path": "/episodes/0/shots",
             "value": deg_doc(8)["episodes"][0]["shots"],
-        }]}
-        mock3 = MockLLM([json.dumps(deg_doc(10)), json.dumps(patch8)])
+        }]}, "c-patch")
+        mock3 = FakeChat(responses=[json.dumps(deg_doc(10)), patch8])
         doc3 = convert_text("他推门。", settings=Settings(max_retries=1),
                             llm=mock3, batches=["他推门。"],
                             log=lambda m: None, warnings_out=warnings)
@@ -206,33 +207,33 @@ def main() -> int:
 
         # 修复轮次可以先读取结构化工具结果，再提交受限补丁；仍只占一次修复 attempt。
         tool_manifest = {}
-        mock_tools = MockLLM([
-            json.dumps(deg_doc(10)), json.dumps({"tool": "coverage_query"}),
-            json.dumps(patch8),
+        mock_tools = FakeChat(responses=[
+            json.dumps(deg_doc(10)), tool_call("coverage_query", {}, "c-cov"),
+            patch8,
         ])
         convert_text("他推门。", settings=Settings(max_retries=1), llm=mock_tools,
                      batches=["他推门。"], log=lambda m: None,
                      manifest_out=tool_manifest)
-        assert len(mock_tools.calls) == 3
+        assert len(mock_tools.requests) == 3
         assert tool_manifest["attempts"][1]["tools"] == ["coverage_query", "json_patch"]
 
         # rewrite 模式：改造前的整份重写路径，保留下来做 A/B 标定；
         # 同时验证 token 账按尝试归属并汇总进清单——不然「补丁省不省」无从实测。
         rw_manifest = {}
-        mock_rw = UsageMockLLM([json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
+        mock_rw = FakeChat(responses=[json.dumps(deg_doc(10)), json.dumps(deg_doc(8))])
         convert_text("他推门。", llm=mock_rw, batches=["他推门。"],
                      settings=Settings(max_retries=1, repair_mode="rewrite"),
                      log=lambda m: None, manifest_out=rw_manifest,
                      warnings_out=[])
         assert rw_manifest["contracts"]["repair_mode"] == "rewrite"
         assert rw_manifest["attempts"][1]["mode"] == "generate", "rewrite 不应发补丁"
-        assert "重新输出完整 JSON" in mock_rw.calls[1][-1]["content"]
+        assert "重新输出完整 JSON" in last_human(mock_rw, 1)
         assert rw_manifest["attempts"][0]["usage"]["calls"] == 1
         assert rw_manifest["usage"]["calls"] == 2 and rw_manifest["usage"]["output"] > 0
         assert rw_manifest["usage"]["output"] == sum(
             a["usage"]["output"] for a in rw_manifest["attempts"])
 
-        mock4 = MockLLM([json.dumps(deg_doc(10)), json.dumps(patch8)])
+        mock4 = FakeChat(responses=[json.dumps(deg_doc(10)), patch8])
         try:
             convert_text("他推门。", settings=Settings(max_retries=1, strict=True),
                          llm=mock4, batches=["他推门。"], log=lambda m: None)
@@ -253,44 +254,15 @@ def main() -> int:
     convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
-        mock5 = MockLLM([json.dumps(deg_doc(1))])
+        mock5 = FakeChat(responses=[json.dumps(deg_doc(1))])
         convert_text("他\u200b推门。", settings=Settings(max_retries=0),
                      llm=mock5, log=lambda m: None)
-        assert "\u200b" not in mock5.calls[0][0]["content"], \
+        assert "\u200b" not in user_msg(mock5, 0), \
             "零宽字符不应出现在发给 LLM 的原文里"
     finally:
         convert_mod.validate.run_lint = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
     print("入口归一化: U+200B/BOM/U+2060 剔除，LLM 输入已清洗 ✓")
-
-    # 10. LLM 传输层重试：瞬时断连自动重试，确定性错误直接抛
-    import httpx
-    from pipeline import llm as llm_mod
-    from pipeline.llm import LLMClient, LLMError
-    client = LLMClient(Settings(api_key="offline-test"))
-    calls = []
-
-    def flaky(system, messages):
-        calls.append(1)
-        if len(calls) < 3:
-            raise httpx.RemoteProtocolError("peer closed connection")
-        return "ok"
-
-    client._stream_once = flaky
-    orig_sleep = llm_mod.time.sleep
-    llm_mod.time.sleep = lambda s: None
-    try:
-        assert client.complete("sys", []) == "ok" and len(calls) == 3
-        client._stream_once = lambda s, m: (_ for _ in ()).throw(
-            LLMError("输出被 max_tokens 截断"))
-        try:
-            client.complete("sys", [])
-            raise AssertionError("确定性错误不应被传输重试吞掉")
-        except LLMError:
-            pass
-    finally:
-        llm_mod.time.sleep = orig_sleep
-    print("传输重试: 断连 2 次后第 3 次成功 / 确定性错误直抛 ✓")
 
     # 11. 跨转换沿用资产库：首批就带【已有资产库】，且编号不走续批逻辑
     seed = {"characters": [{"id": "C01", "name": "华老栓"}],
@@ -298,17 +270,17 @@ def main() -> int:
     convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
-        mock6 = MockLLM([json.dumps(deg_doc(1))])
+        mock6 = FakeChat(responses=[json.dumps(deg_doc(1))])
         convert_text("他推门。", settings=Settings(max_retries=0),
                      llm=mock6, log=lambda m: None, seed_assets=seed)
-        sent = mock6.calls[0][0]["content"]
+        sent = user_msg(mock6, 0)
         assert "华老栓" in sent and '"C01"' in sent, "首批未注入历史资产库"
         assert "【续批参数】\n无" in sent, "沿用资产库不应触发续批编号（应从 u0001 起）"
 
-        mock7 = MockLLM([json.dumps(deg_doc(1))])   # 不传则维持原样
+        mock7 = FakeChat(responses=[json.dumps(deg_doc(1))])   # 不传则维持原样
         convert_text("他推门。", settings=Settings(max_retries=0),
                      llm=mock7, log=lambda m: None)
-        assert "【已有资产库】\n无" in mock7.calls[0][0]["content"]
+        assert "【已有资产库】\n无" in user_msg(mock7, 0)
     finally:
         convert_mod.validate.run_lint = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
@@ -525,7 +497,7 @@ def main() -> int:
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
         logs13 = []
-        mock8 = MockLLM([json.dumps(deg_doc(1))])
+        mock8 = FakeChat(responses=[json.dumps(deg_doc(1))])
         try:
             convert_text("他推门。", settings=Settings(max_retries=0),
                          llm=mock8, log=logs13.append)
@@ -541,7 +513,7 @@ def main() -> int:
         long_report = "\n".join(f"FAIL: 第 {i} 个问题" for i in range(200))
         convert_mod.validate.run_lint = lambda p: (False, long_report)
         logs14 = []
-        mock9 = MockLLM([json.dumps(deg_doc(1))])
+        mock9 = FakeChat(responses=[json.dumps(deg_doc(1))])
         try:
             convert_text("他推门。", settings=Settings(max_retries=0),
                          llm=mock9, log=logs14.append)
@@ -829,13 +801,13 @@ def main() -> int:
 
     low_semantic = ('{"scores":{"narration_selection":5,"shot_language":5,'
                     '"asset_quality":5,"semantic_fidelity":3},"overall":5,"issues":[]}')
-    ok, _, overall = run_review(MockLLM([low_semantic]), "原文", evidence_doc, 3.0, 3, 4)
+    ok, _, overall = run_review(review_invoker([low_semantic]), "原文", evidence_doc, 3.0, 3, 4)
     assert not ok and overall == 4.5, "服务端重算平均分，且语义忠实度独立设底线"
-    ok, report_text, overall = run_review(MockLLM(['{"scores":{"x":5}}']),
+    ok, report_text, overall = run_review(review_invoker(['{"scores":{"x":5}}']),
                                           "原文", evidence_doc, 3.0)
     assert ok is None and overall is None and "不可验证" in report_text
-    failing_review = MockLLM([])
-    failing_review.complete = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("offline"))
+    failing_review = review_invoker([])
+    failing_review.invoke = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("offline"))
     ok, report_text, overall = run_review(failing_review, "原文", evidence_doc, 3.0)
     assert ok is None and overall is None and "服务不可用" in report_text
     print("可验证审查: 冻结范围 / 证据定位 / 覆盖率重算 / 受限补丁 / 语义独立门槛 ✓")
@@ -990,78 +962,6 @@ def main() -> int:
         with contextlib.redirect_stdout(buf):
             assert cli_main(["verify", str(junk)]) == 2
     print("verify 子命令: 裸 IR 如实说明 / 提示词与产物指纹漂移点名 / 篡改非零退出 ✓")
-
-    # ---- 22. 推理模型：预算被 thinking 块吃光时要说人话 ----
-    # 实测 deepseek-v4-flash 是推理模型：批 1（1258 字）把 64000 个输出 token 全烧在
-    # thinking 块上，一个字正文都没产出，而报错只会说「撞 max_tokens，调小批长」——
-    # 照那条建议走两轮都是白跑。诊断说错方向比不诊断更贵。
-    from pipeline import llm as llm_mod
-
-    assert llm_mod._thinking_param("disabled") == {"type": "disabled"}
-    assert llm_mod._thinking_param("auto") is None, "auto 表示不发这个参数（老网关兼容）"
-    assert llm_mod._thinking_param("1024") == {"type": "enabled", "budget_tokens": 1024}
-
-    class _Usage:
-        input_tokens, output_tokens = 8, 60664
-        cache_read_input_tokens = cache_creation_input_tokens = 0
-
-    class _Block:
-        type = "thinking"
-        thinking = "我们需要理解用户的请求。" * 40
-
-    class _Final:
-        stop_reason = "max_tokens"
-        content = [_Block()]
-        usage = _Usage()
-
-    def fake_client(collect):
-        c = llm_mod.LLMClient.__new__(llm_mod.LLMClient)
-        c._settings = Settings(model="deepseek-v4-flash", max_tokens=64000)
-        c.calls = []
-        c._thinking = llm_mod._thinking_param("disabled")
-        c._thinking_rejected = False
-        c._bad_request = ValueError
-        c._collect = collect
-        return c
-
-    seen = []
-    client = fake_client(lambda kw: (seen.append(dict(kw)), ([], _Final()))[1])
-    try:
-        client._stream_once("sys", [{"role": "user", "content": "x"}])
-        raise AssertionError("推理块吃光预算必须报错")
-    except llm_mod.LLMError as e:
-        msg = str(e)
-    assert seen[0]["thinking"] == {"type": "disabled"}, "thinking 参数必须真的发出去"
-    assert "推理模型" in msg and "60664" in msg, "要点名是推理模型、烧了多少 token"
-    assert "STORYBOARD_THINKING" in msg, "要给出可执行的解法"
-    assert "调小 STORYBOARD_BATCH_CHARS 对这种情况无效" in msg, \
-        "必须明确否掉那条错误建议——照它走是白跑"
-    assert client.calls[-1]["output"] == 60664, "烧掉的 token 也要计入用量账"
-
-    # 正文出来了才是普通截断，报的是另一套话
-    class _TextFinal(_Final):
-        content = [type("B", (), {"type": "text", "text": "{"})()]
-    client2 = fake_client(lambda kw: (["{"], _TextFinal()))
-    try:
-        client2._stream_once("sys", [{"role": "user", "content": "x"}])
-        raise AssertionError("普通截断也要报错")
-    except llm_mod.LLMError as e:
-        assert "推理" not in str(e) and "STORYBOARD_MAX_TOKENS" in str(e)
-
-    # 网关不认 thinking 参数：摘掉重试一次，别让兼容性问题变成硬失败
-    calls = []
-
-    def picky(kw):
-        calls.append(dict(kw))
-        if "thinking" in kw:
-            raise ValueError("thinking: unsupported parameter")
-        return (["好"], type("F", (), {"stop_reason": "end_turn", "content": [],
-                                       "usage": _Usage()})())
-    client3 = fake_client(picky)
-    out = client3._stream_once("sys", [{"role": "user", "content": "x"}])
-    assert out == "好" and len(calls) == 2 and "thinking" not in calls[1]
-    assert client3._thinking_rejected, "被拒过一次就别再发了"
-    print("推理模型诊断: 预算烧在 thinking 块要点名 / 否掉错误建议 / 网关不认则摘掉重试 ✓")
 
     print("\nALL PASS")
     return 0

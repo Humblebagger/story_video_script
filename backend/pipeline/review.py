@@ -8,7 +8,9 @@ import json
 import math
 from typing import Optional, Tuple
 
-from .llm import extract_json
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from .chat import extract_json
 
 REVIEW_SYSTEM = """你是资深分镜审片人。用户给你一段小说原文和由它转换出的 NovelStoryboard 分镜 JSON（忠实转换模式：剧情属于小说，呈现属于转换器）。
 
@@ -29,17 +31,20 @@ SCORE_KEYS = (
 )
 
 
-def run_review(llm, batch_text: str, doc: dict,
+def run_review(chat, batch_text: str, doc: dict,
                min_score: float, dimension_min: int = 3,
                semantic_min: int = 4) -> Tuple[Optional[bool], str, Optional[float]]:
     """返回 (是否通过, 报告, 服务端重算总分)。
+
+    chat 是 chat.ChatInvoker；评审是一次性打分，不入图。
 
     None 表示评审器自身不可用；调用方必须把它记为未验证，不能当作通过。
     """
     user = (f"【小说原文】\n{batch_text}\n\n【分镜 JSON】\n"
             f"{json.dumps(doc, ensure_ascii=False)}")
     try:
-        raw = llm.complete(REVIEW_SYSTEM, [{"role": "user", "content": user}])
+        raw = chat.text(chat.invoke([SystemMessage(REVIEW_SYSTEM),
+                                     HumanMessage(user)]))
     except Exception as e:
         return None, f"[review] 评审服务不可用（{type(e).__name__}: {e}）", None
     try:
