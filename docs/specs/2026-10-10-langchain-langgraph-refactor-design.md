@@ -224,3 +224,31 @@ doc, batch_warnings = run_batch_graph(graph, state_in)
 | `recursion_limit` 与原"8 步"语义不完全等价 | 修复轮提前/延后中断 | 用离线用例固定步数边界行为 |
 | LangChain 抽象吞掉错误细节 | 诊断信息变笼统，退回被框架掩盖的坑 | §6 的四条补偿全部带测试 |
 | Python 3.12 下现有依赖行为变化 | 既有测试红 | 升级后先在 `main` 代码上跑一遍全量测试，确认是干净基线再动代码 |
+
+## 11. 验收记录（2026-10-11，langchain-impl 分支）
+
+**实跑**：鲁迅《药》全文（`tests/real_text_yao/input_full.txt`，清洗零宽字符 12 个后 4572 字），
+参数与 Ruling-5 的 CLI 命令一致（作品「药」、章节「全文（1919）」、民国江南写实风格、青灰冷色调），
+经自定义网关、模型 deepseek-v4-flash，耗时 343s，退出正常。
+
+| 项 | 结果 |
+|---|---|
+| 三层终检（schema / lint / 逐字保真） | 全过：131 句单元拼接与原文逐字一致，覆盖 131/131 |
+| 规模 | 3 批 → 3 集 / 124 镜 / 131 句（归档 4 集 / 133 镜 / 132 句，同量级） |
+| 修复循环 | 8 次尝试：3 次整份生成（均因 `music.curve` 镜号写成整数而硬失败）+ 5 轮原生工具修复，批 1、批 3 修复后通过；批 2 软质量门（时长不够念完旁白）重试耗尽，择优降级交付并给出警告 |
+| 工具调用 | 修复轮实际调用 `source_read` / `json_patch`，一轮内补丁失败→错误 ToolMessage 回喂→再提交的路径在真实网关上出现并跑通 |
+| 补丁省不省 | 整份生成每次输出 17.5k–28.3k token；补丁轮 0.5k–2.8k（批 2 第 3 次因整段替换达 49k，属个例） |
+| 用量账 | 13 次调用，input 144,854 / output 118,520 / cache_read 269,824，与逐次尝试之和一致 |
+| manifest 结构 | 顶层键与 `attempts[]` 每条的 batch / attempt / mode / status / report / tools / usage / verification 与改造前同形 |
+
+**§9 逐条**
+
+1. 五个测试文件（fakes / chat / tools / graph / offline）全绿；纯函数模块相对分支基点 3e8e565 零 diff。
+2. 本分支产出通过三层校验的产物（见上）。main 侧沿用归档产物作对照，未重跑。
+3. manifest 的 `usage` / `attempts` 同形（见上）。
+4. §6 四条补偿：补偿 1 → `test_chat.py` 第 5–6 项；补偿 2 → 第 7–9 项；补偿 3 → 第 2–3 项与 `test_graph.py` 的逐次尝试用量断言；
+   补偿 4 → 第 4 项。另补：传输重试耗尽仍抛 `LLMError`（第 14 项），`parallel_tool_calls=False` 已在真实网关实测接受。
+
+**顺带发现（改造前就存在，不属本次范围）**：`python -m pipeline verify --source` 直接拿原始文本比对，
+不做 `convert` 入口那一步零宽字符清洗，所以对含零宽字符的输入会误报 `FID-SOURCE-001`。
+用清洗后的原文复验本次产物为 PASS。
