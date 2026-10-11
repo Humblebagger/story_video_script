@@ -379,6 +379,40 @@ def main() -> int:
         assert any("music.curve" in line for line in logs), "修正要在日志里说一声"
         print("graph: music.curve 序号 → 镜头 ID，首次生成即通过 ✓")
 
+    # 13. 逐句朗读式退化：程序把有画面承载的动作/描写句移出旁白，首次生成即通过，
+    #     不为旁白密度花一轮修复
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        # 归档里不少句子是对白/心理，全念动作描写也只到约 54%；阈值压到 40% 才测得到
+        s13 = Settings(api_key="k", max_retries=1, normalize_input=False,
+                       freeze_source_units=False, repair_mode="patch",
+                       narration_density_max=0.4)
+        chatty = json.loads(archived)
+        units13 = {u["id"]: u for u in chatty["source"]["units"]}
+        for sh in chatty["episodes"][0]["shots"]:
+            refs = [r for r in sh["source"]["unit_refs"]
+                    if units13[r].get("kind") in ("action", "description")]
+            if refs and not sh.get("narration"):
+                sh["narration"] = {"unit_refs": refs,
+                                   "text": "".join(units13[r]["text"] for r in refs)}
+        from pipeline.quality import narration_density_gate
+        ok13, _, before = narration_density_gate(json.loads(json.dumps(chatty)),
+                                                 s13.narration_density_max)
+        assert not ok13, f"造出来的产物旁白占比 {before:.0%}，没超阈值就测不到裁剪"
+        fake13 = FakeChat(responses=[json.dumps(chatty, ensure_ascii=False)])
+        chat = ChatInvoker(s13, chat=fake13, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s13,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch, idx=1,
+                                  frozen_units=None)
+        assert [r["status"] for r in records] == ["passed"], \
+            [r["report"][:200] for r in records]
+        ok13, _, after = narration_density_gate(doc, s13.narration_density_max)
+        assert ok13 and after <= s13.narration_density_max
+        assert any("移出旁白" in line for line in logs)
+        print(f"graph: 旁白 {before:.0%} → 程序裁到 {after:.0%}，首次生成即通过 ✓")
+
     # 12. invalid_tool_calls 与多写工具同样处理：每个 id 都回一条 error ToolMessage
     with tempfile.TemporaryDirectory() as d:
         records, logs = [], []

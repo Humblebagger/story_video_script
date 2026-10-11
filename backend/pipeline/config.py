@@ -47,6 +47,7 @@ class Settings:
     speech_overflow_max: float = 0.25
     speech_cps: float = 4.5                 # TTS 语速（字/秒），用于判定念不念得完
     auto_fit_duration: bool = True          # 念不完的镜头由程序拉长时长（封顶 15s），不回喂模型
+    auto_prune_narration: bool = True       # selective 旁白超阈值时由程序把有画面承载的动作/描写句移出旁白
     # 修复轮单次调用的输出上限。正常补丁实测 0.5k–3k token；不设上限时出现过一轮
     # 49k token 的整段替换。撞上限时补丁不应用、打回要求拆小，而不是整批报错
     repair_max_tokens: int = 8000
@@ -83,6 +84,8 @@ def load_settings() -> Settings:
         speech_cps=float(env("STORYBOARD_SPEECH_CPS", "4.5")),
         auto_fit_duration=env("STORYBOARD_AUTO_FIT_DURATION", "1") not in
                           ("0", "false", "no"),
+        auto_prune_narration=env("STORYBOARD_AUTO_PRUNE_NARRATION", "1") not in
+                             ("0", "false", "no"),
         repair_max_tokens=int(env("STORYBOARD_REPAIR_MAX_TOKENS", "8000")),
         strict=env("STORYBOARD_STRICT", "") in ("1", "true", "yes"),
         review_enabled=env("STORYBOARD_REVIEW", "") in ("1", "true", "yes"),

@@ -175,22 +175,56 @@ def main() -> int:
         "只靠旁白承载的句子要说明：移除前先加进画面镜头的 source.unit_refs"
     print("旁白密度门: 归档通过 / 100% 旁白拦截 / 关闭与模式豁免生效 / 清单分可删与需先补画面 ✓")
 
-    # 旁白预算：selective 模式下由程序把比例换算成本批的具体句数，放在用户消息末尾
-    from pipeline.prompt import build_user_message
-    units10 = [{"id": f"u{i:04d}", "text": "他推门。", "para": 1} for i in range(1, 11)]
-    msg = build_user_message(YAO_PARAMS, "他推门。" * 10, frozen_units=units10,
-                             narration_density_max=0.6)
-    tail = msg[msg.rindex("【小说原文】"):]
-    assert "【旁白预算】" in tail, "预算要放在原文之后、消息末尾"
-    assert "本批共 10 个句单元" in msg and "约 2–4 句" in msg and "超过 6 句" in msg, msg[-400:]
-    assert "source.unit_refs" in msg[msg.index("【旁白预算】"):]
-    from dataclasses import replace as _replace
-    ot = build_user_message(_replace(YAO_PARAMS, narration_mode="original_text"),
-                            "x", frozen_units=units10, narration_density_max=0.6)
-    assert "【旁白预算】" not in ot, "original_text 模式逐句朗读，不设预算"
-    assert "【旁白预算】" not in build_user_message(YAO_PARAMS, "x"), \
-        "没有冻结句单元就不知道句数，不给预算"
-    print("旁白预算: selective 换算成本批句数 / 原文模式与兼容模式不给 ✓")
+    # 程序裁剪旁白：只动模型标为动作/描写、且已有画面引用的句子，先动作后描写，
+    # 按原文顺序裁到刚好不超阈值；旁白文本随之重建，空了就省略整个 narration
+    from pipeline.quality import fix_known_slips, prune_narration
+    kinds = ["action"] * 6 + ["description"] * 2 + ["psychology", "action"]
+    pdoc = {"meta": {"narration": {"mode": "selective"}},
+            "source": {"units": [{"id": f"u{i:04d}", "text": f"句{i}。", "kind": k}
+                                 for i, k in enumerate(kinds, 1)]},
+            "episodes": [{"shots": []}]}
+    pshots = pdoc["episodes"][0]["shots"]
+    # 镜头 1 的旁白引两句（u1+u2，文本严格拼接）；其余各一句；u10 没有画面引用
+    pshots.append({"source": {"unit_refs": ["u0001", "u0002"]},
+                   "narration": {"unit_refs": ["u0001", "u0002"], "text": "句1。句2。"}})
+    for i in range(3, 11):
+        sh = {"narration": {"unit_refs": [f"u{i:04d}"], "text": f"句{i}。"}}
+        if i != 10:
+            sh["source"] = {"unit_refs": [f"u{i:04d}"]}
+        pshots.append(sh)
+    assert prune_narration(pdoc, 0.6) == 4, "10 句全念、阈值 60%，应移出 4 句"
+    left = [r for sh in pshots for r in (sh.get("narration") or {}).get("unit_refs", [])]
+    assert left == ["u0005", "u0006", "u0007", "u0008", "u0009", "u0010"], left
+    assert "narration" not in pshots[0], "镜头 1 两句都移出后整个 narration 应省略"
+    assert pshots[1].get("narration") is None and pshots[3]["narration"]["text"] == "句5。"
+    ok, _, ratio = narration_density_gate(pdoc, 0.6)
+    assert ok and ratio == 0.6, "裁到刚好不超阈值"
+    assert prune_narration(pdoc, 0.6) == 0, "裁剪应幂等"
+
+    # 多句旁白里摘一句：严格拼接时重建；不严格拼接但该句原文只出现一次时摘掉子串
+    two = {"meta": {"narration": {"mode": "selective"}},
+           "source": {"units": [{"id": "u0001", "text": "他推门。", "kind": "action"},
+                                {"id": "u0002", "text": "她心里一沉。", "kind": "psychology"}]},
+           "episodes": [{"shots": [{"source": {"unit_refs": ["u0001", "u0002"]},
+                                    "narration": {"unit_refs": ["u0001", "u0002"],
+                                                  "text": "他推门，她心里一沉。"}}]}]}
+    assert prune_narration(two, 0.5) == 0, "原文「他推门。」不在旁白里（改了标点）：不敢动"
+    two["episodes"][0]["shots"][0]["narration"]["text"] = "他推门。　她心里一沉。"
+    assert prune_narration(two, 0.5) == 1
+    assert two["episodes"][0]["shots"][0]["narration"] == {
+        "unit_refs": ["u0002"], "text": "　她心里一沉。"}
+    # 非 selective 模式、或没超阈值：不动
+    pdoc["meta"]["narration"]["mode"] = "original_text"
+    assert prune_narration(pdoc, 0.1) == 0
+
+    # 已知笔误：机位 reverse → over_shoulder；narration: null → 省略
+    slips = {"episodes": [{"shots": [{"camera": {"angle": "reverse"}, "narration": None},
+                                     {"camera": {"angle": "low"}}]}]}
+    assert fix_known_slips(slips) == 2
+    assert slips["episodes"][0]["shots"][0] == {"camera": {"angle": "over_shoulder"}}
+    assert fix_known_slips(slips) == 0
+    print("旁白裁剪: 只动有画面承载的动作/描写句 / 裁到阈值即停 / 文本重建或不敢动 / 已知笔误修正 ✓")
+
 
     # 7. 评审阶段流程（mock：生成 1 次 + 评审 1 次通过）
     romance_text = extract_passage(

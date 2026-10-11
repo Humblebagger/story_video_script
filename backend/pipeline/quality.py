@@ -3,6 +3,8 @@
 与 tools/lint_storyboard.py 的分工：lint 管结构正确性（归档件的硬校验），
 这里管转换质量口径（弱模型执行不到位时的兜底），只在流水线内生效。
 """
+import json
+import math
 from typing import Tuple
 
 
@@ -77,6 +79,104 @@ def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str, floa
                    "须先把它加进呈现该内容的镜头的 source.unit_refs，否则就成了未覆盖：\n"
                    + "\n".join(fmt(bare)) + "\n")
     return False, report.rstrip("\n"), ratio
+
+
+# 程序裁剪旁白时，只动模型自己标成这两类的句子，先动作后描写（描写更可能是
+# 带文学性的点题句）。心理、交代类与对白一律不动——对白进旁白时要剔除引号部分，
+# 程序重建不了那段文本
+_PRUNABLE_KINDS = ("action", "description")
+
+
+def _narration_ratio(doc: dict) -> Tuple[float, set, list]:
+    units = [u for u in doc.get("source", {}).get("units", []) if not u.get("skipped")]
+    narrated = set()
+    for ep in doc.get("episodes", []):
+        for shot in ep.get("shots", []):
+            narrated.update((shot.get("narration") or {}).get("unit_refs") or [])
+    ids = {u["id"] for u in units}
+    return (len(narrated & ids) / len(units) if units else 0.0), narrated, units
+
+
+def _drop_from_narration(shot: dict, uid: str, texts: dict) -> bool:
+    """把 uid 从该镜头旁白里摘掉并重建旁白文本；重建不了就不动，返回是否摘掉。"""
+    nar = shot.get("narration") or {}
+    refs = nar.get("unit_refs") or []
+    if uid not in refs:
+        return False
+    rest = [r for r in refs if r != uid]
+    text = nar.get("text") or ""
+    if text == "".join(texts.get(r, "") for r in refs):
+        new_text = "".join(texts.get(r, "") for r in rest)
+    elif texts.get(uid) and text.count(texts[uid]) == 1:
+        new_text = text.replace(texts[uid], "", 1)
+    else:
+        return False
+    if not rest:
+        shot.pop("narration", None)       # schema 允许省略；空旁白对象反而不合法
+    else:
+        nar["unit_refs"], nar["text"] = rest, new_text
+    return True
+
+
+def prune_narration(doc: dict, max_ratio: float) -> int:
+    """selective 模式旁白占比超阈值时，由程序裁到刚好不超。返回移出旁白的句数。
+
+    实测弱模型首次生成旁白占比 93%–100%，给具体句数预算也不改；回喂清单重修
+    每次多一轮整份输入，还常删出未覆盖的句子。裁剪只取模型自己标为动作/描写、
+    且已被某镜头 source.unit_refs 引用（画面承载）的句子——移出旁白后仍有人承载，
+    覆盖率不变。按 _PRUNABLE_KINDS 的顺序、原文顺序逐句移出，到阈值即停。
+    """
+    mode = doc.get("meta", {}).get("narration", {}).get("mode")
+    if mode != "selective" or max_ratio >= 1.0:
+        return 0
+    ratio, narrated, units = _narration_ratio(doc)
+    if ratio <= max_ratio or not units:
+        return 0
+    pictured = set()
+    shots = [sh for ep in doc.get("episodes", []) for sh in ep.get("shots", [])]
+    for sh in shots:
+        pictured.update((sh.get("source") or {}).get("unit_refs") or [])
+    texts = {u["id"]: u.get("text") or "" for u in units}
+    order = [u for kind in _PRUNABLE_KINDS for u in units
+             if u.get("kind") == kind and u["id"] in narrated and u["id"] in pictured]
+    budget = math.floor(len(units) * max_ratio + 1e-9)
+    count = len(narrated & set(texts))
+    removed = 0
+    for u in order:
+        if count <= budget:
+            break
+        holders = [sh for sh in shots
+                   if u["id"] in ((sh.get("narration") or {}).get("unit_refs") or [])]
+        # 一句可能被多个镜头的旁白引用：必须全部摘掉才算移出，否则一处都不动
+        snapshot = [json.dumps(sh.get("narration"), ensure_ascii=False) for sh in holders]
+        if all(_drop_from_narration(sh, u["id"], texts) for sh in holders):
+            count -= 1
+            removed += 1
+        else:
+            for sh, snap in zip(holders, snapshot):
+                if snap != "null":
+                    sh["narration"] = json.loads(snap)
+    return removed
+
+
+def fix_known_slips(doc: dict) -> int:
+    """模型反复出现、语义无歧义的结构笔误，校验前直接改掉。返回修正处数。
+
+    - camera.angle 写成 reverse：那是场景卡机位的枚举（反打），镜头机位里对应
+      过肩拍 over_shoulder
+    - narration 写成 null：没有旁白就该省略这个字段
+    """
+    n = 0
+    for ep in doc.get("episodes", []):
+        for shot in ep.get("shots", []):
+            cam = shot.get("camera")
+            if isinstance(cam, dict) and cam.get("angle") == "reverse":
+                cam["angle"] = "over_shoulder"
+                n += 1
+            if "narration" in shot and shot["narration"] is None:
+                del shot["narration"]
+                n += 1
+    return n
 
 
 # 中文 TTS 的常见语速区间是 4–6 字/秒。取 4.5 作缺省偏保守：宁可判"念不完"，

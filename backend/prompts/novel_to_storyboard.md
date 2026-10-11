@@ -195,7 +195,4 @@ schema 为严格模式（`additionalProperties: false`）：**只能使用骨架
 章节：{chapter}
 
 {novel_text}
-
-【旁白预算】
-{仅 selective 模式且有冻结源单元时由程序追加：本批句单元数、按人工基准 18%–36% 换算的旁白句数、超过即打回的句数上限，以及「不进旁白的句子须被某镜头 source.unit_refs 引用」的提醒}
 ```

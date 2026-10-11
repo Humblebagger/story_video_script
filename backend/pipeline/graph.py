@@ -203,6 +203,15 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         fixed = quality.normalize_curve_refs(doc)
         if fixed:
             log(f"批 {idx}：music.curve 有 {fixed} 处镜头引用写成序号，已换成镜头 ID")
+        slips = quality.fix_known_slips(doc)
+        if slips:
+            log(f"批 {idx}：修正 {slips} 处已知笔误（机位 reverse→over_shoulder、空旁白字段）")
+        if settings.auto_prune_narration:
+            # 先裁旁白再拉时长：旁白变短，镜头就不必拉那么长
+            pruned = quality.prune_narration(doc, settings.narration_density_max)
+            if pruned:
+                log(f"批 {idx}：旁白占比超过 {settings.narration_density_max:.0%}，"
+                    f"已把 {pruned} 句有画面承载的动作/描写句移出旁白")
         if settings.auto_fit_duration:
             fitted = quality.fit_durations(doc, settings.speech_cps)
             if fitted:
