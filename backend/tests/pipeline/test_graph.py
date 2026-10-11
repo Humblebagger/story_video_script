@@ -94,6 +94,142 @@ def main() -> int:
             assert (Path(d) / "batch7_failure_report.txt").exists()
         print("graph: 重试耗尽 → ConversionError + 报告落盘 ✓")
 
+    # ---- 修复循环 ----
+    from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+    from pipeline.graph import _check_batch
+
+    bad = json.loads(archived)
+    # 删掉必填字段才是硬失败（SCHEMA-001）；置空串会全部通过——已实测
+    bad["episodes"][0]["shots"][0].pop("action")
+    good_action = json.loads(archived)["episodes"][0]["shots"][0]["action"]
+    user_msg = "【小说原文】" + batch
+
+    # 先验证这个造假产物真的硬失败——否则后面的用例都是空跑，测不到修复路径
+    with tempfile.TemporaryDirectory() as d:
+        ok, hard, rep_text, _, _ = _check_batch(
+            json.loads(json.dumps(bad)), batch, settings, Path(d), 99, 1,
+            None, lambda _: None, None)
+        assert not ok and hard, f"造假产物没有硬失败：{rep_text[:200]}"
+
+    def add_action(call_id):
+        """修复补丁：字段已被删，所以用 add 而不是 replace（replace 要求目标已存在）。"""
+        return AIMessage(content="", tool_calls=[
+            {"name": "json_patch", "id": call_id, "args": {"patch": [
+                {"op": "add", "path": "/episodes/0/shots/0/action",
+                 "value": good_action}]}}])
+
+    def look(call_id):
+        """修复轮里先查校验条目。每次都要新建对象：add_messages 按 id 去重，
+        同一个消息对象再返回一次会被当成「更新」而不是追加。"""
+        return AIMessage(content="", tool_calls=[
+            {"name": "validation_list", "args": {}, "id": call_id}])
+
+    def patch_settings(max_retries):
+        return Settings(api_key="k", max_retries=max_retries, normalize_input=False,
+                        freeze_source_units=False, repair_mode="patch")
+
+    # 4. 硬失败 → 受限补丁修复 → 通过
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s4 = patch_settings(1)
+        fake = FakeChat(responses=[json.dumps(bad, ensure_ascii=False),
+                                   look("c1"), add_action("c2")])
+        chat = ChatInvoker(s4, chat=fake, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s4,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
+                                  idx=1, frozen_units=None)
+        assert doc == json.loads(archived), "打完补丁应与归档一致"
+        assert [r["status"] for r in records] == ["hard_failed", "passed"]
+        assert records[1]["mode"] == "patch"
+        assert records[1]["tools"] == ["validation_list", "json_patch"], \
+            "用过哪些工具要进清单，不然修复过程没法审计"
+        assert any("受限 JSON Patch 修复" in line for line in logs)
+        # token 按尝试归账：生成 1 次调用，修复轮 2 次调用，互不串账
+        assert records[0]["usage"]["calls"] == 1
+        assert records[1]["usage"]["calls"] == 2, "上一次尝试的 token 串进了这一次"
+        # 补丁轮带系统提示词，且历史从干净的三条消息开始
+        first_repair = fake.requests[1]["messages"]
+        assert isinstance(first_repair[0], SystemMessage), "修复阶段丢了系统提示词"
+        assert [type(m).__name__ for m in first_repair[1:]] == [
+            "HumanMessage", "AIMessage", "HumanMessage"], \
+            "补丁轮的历史没清空，上一轮的整份原始输出被带了进来"
+        assert first_repair[1].content == user_msg
+        print("graph: 硬失败 → 补丁修复 → 通过；工具轨迹入清单、token 不串账、"
+              "历史从零开始 ✓")
+
+    # 5. 工具步数超上限：记为失败，不让单轮修复无限打转
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s5 = patch_settings(1)
+        fake5 = FakeChat(responses=[json.dumps(bad, ensure_ascii=False)]
+                         + [look(f"s{i}") for i in range(8)])
+        chat = ChatInvoker(s5, chat=fake5, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s5,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        try:
+            run_batch(graph, user=user_msg, batch_text=batch, idx=2,
+                      frozen_units=None)
+            raise AssertionError("重试耗尽且无合法候选应抛 ConversionError")
+        except ConversionError:
+            pass
+        assert [r["status"] for r in records] == ["hard_failed", "unparseable"]
+        assert "8 个工具步骤" in records[1]["report"], \
+            "超过 8 步要明说，与改造前 for _ in range(8) 等价"
+        assert len(fake5.requests) == 1 + 8, "单轮修复最多调模型 8 次"
+        print("graph: 单轮修复超 8 步即中断 ✓")
+
+    # 6. 补丁违规不崩图：错误以 ToolMessage 回给模型，模型看着报错改正后通过
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s6 = patch_settings(1)
+        fake6 = FakeChat(responses=[
+            json.dumps(bad, ensure_ascii=False),
+            # 第一次补丁碰锁定前缀 /meta
+            AIMessage(content="", tool_calls=[
+                {"name": "json_patch", "id": "c1", "args": {"patch": [
+                    {"op": "replace", "path": "/meta/title", "value": "篡改"}]}}]),
+            add_action("c2"),
+        ])
+        chat = ChatInvoker(s6, chat=fake6, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s6,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
+                                  idx=1, frozen_units=None)
+        assert doc == json.loads(archived)
+        assert [r["status"] for r in records] == ["hard_failed", "passed"]
+        assert records[1]["tools"] == ["json_patch", "json_patch"]
+        # 第 3 次模型请求（下标 2）里必须带着那条报错——模型是看着它改正的
+        errs = [m for m in fake6.requests[2]["messages"]
+                if isinstance(m, ToolMessage) and m.status == "error"]
+        assert errs and "锁定" in errs[0].content, "违规补丁的报错要回给模型"
+        print("graph: 违规补丁不崩图，报错回给模型后改正通过 ✓")
+
+    # 7. 一轮补丁失败（超步数）后保留底稿，下一次尝试再补一次，而不是退化成整份重写
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s7 = patch_settings(2)
+        fake7 = FakeChat(responses=[json.dumps(bad, ensure_ascii=False)]
+                         + [look(f"s{i}") for i in range(8)]
+                         + [add_action("p1")])
+        chat = ChatInvoker(s7, chat=fake7, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s7,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
+                                  idx=1, frozen_units=None)
+        assert doc == json.loads(archived)
+        assert [(r["mode"], r["status"]) for r in records] == [
+            ("generate", "hard_failed"), ("patch", "unparseable"),
+            ("patch", "passed")], \
+            "补丁轮失败后应保留底稿再补一次，而不是丢掉底稿整份重写"
+        # 第 3 次尝试的修复请求里，模型被告知上一轮工具调用无效
+        assert "8 个工具步骤" in fake7.requests[-1]["messages"][-1].content
+        print("graph: 补丁轮失败后保留底稿再补一次 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -8,15 +8,19 @@ import json
 from pathlib import Path
 from typing import Annotated, Any, List, Optional, TypedDict
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (AIMessage, AnyMessage, HumanMessage,
+                                     RemoveMessage, SystemMessage)
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
+from langgraph.graph.message import REMOVE_ALL_MESSAGES, add_messages
+from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt.tool_node import ToolInvocationError
 
 from . import quality, repair, review, validate, verification
 from .chat import extract_json
 from .config import Settings
 from .errors import ConversionError
 from .prompt import load_system_prompt
+from .tools import REPAIR_TOOLS
 
 _REPORT_LOG_LINES = 60
 _MAX_TOOL_STEPS = 8          # 与改造前 `for _ in range(8)` 等价
@@ -41,6 +45,8 @@ class BatchState(TypedDict):
     structured: Any
     candidates: list
     tool_steps: int
+    used_tools: List[str]     # 本次尝试用过的工具名，写进 attempt_records 供审计
+    repair_failed: bool       # 本轮补丁修复没产出新底稿（超步数 / 没发起工具调用）
     patch_applied: bool
     task_done: bool
     usage_mark: Optional[dict]
@@ -126,29 +132,30 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
 def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                       workdir: Path, attempt_records: list, log=print):
     """编译单批状态图。跨批不变的依赖由闭包持有，不进状态。"""
-    system = load_system_prompt()
+    # 22KB 系统提示词每次调用都发（整份生成与补丁修复都带，改造前即如此），
+    # 缓存标记丢了等于每次多付一次全价
+    system_msg = SystemMessage(content=[{
+        "type": "text", "text": load_system_prompt(),
+        "cache_control": {"type": "ephemeral"}}])
 
-    def _record(state: BatchState, status: str, used_tools: list,
-                structured=None, report: str = "") -> None:
+    def _record(state: BatchState, status: str, structured=None,
+                report: str = "") -> None:
         after = chat.usage_totals()
         before = state.get("usage_mark") or {}
         usage = ({k: after[k] - before.get(k, 0) for k in after}
                  if before else None)
         rec = {"batch": state["idx"], "attempt": state["attempt"],
                "mode": state["mode"], "status": status,
-               "report": report, "tools": used_tools, "usage": usage}
+               "report": report, "tools": list(state.get("used_tools") or []),
+               "usage": usage}
         if structured is not None:
             rec["verification"] = structured.to_dict()
         attempt_records.append(rec)
 
     def generate(state: BatchState) -> dict:
         """整份输出：文本 JSON 协议 + 容错解析。"""
-        messages = [SystemMessage(content=[{
-            # 22KB 系统提示词每批都发，缓存标记丢了等于每批多付一次全价
-            "type": "text", "text": system,
-            "cache_control": {"type": "ephemeral"}}])] + list(state["messages"])
         mark = chat.usage_totals()
-        msg = chat.invoke(messages)
+        msg = chat.invoke([system_msg] + list(state["messages"]))
         # 截断时 chat.text 抛 LLMError，让它直接冒出去——那是配置问题，重试解决不了
         raw = chat.text(msg)
         try:
@@ -162,13 +169,20 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         """确定性审查。本节点不调 LLM（评审阶段除外，由 settings 显式开启）。"""
         attempt = state["attempt"] + 1
         idx = state["idx"]
+        if state["repair_failed"]:
+            # 这一轮补丁修复没产出新底稿。底稿与结构化报告原样保留：
+            # 下一次尝试仍从同一份底稿打补丁，与改造前一致
+            report = state["report"]
+            log(f"批 {idx} 第 {attempt} 次生成：{report}")
+            _record({**state, "attempt": attempt}, "unparseable", report=report)
+            return {"attempt": attempt, "report": report, "used_tools": []}
         if state["doc"] is None:
             report = state["report"] or "输出无法解析为 JSON"
             log(f"批 {idx} 第 {attempt} 次生成：{report}")
-            _record({**state, "attempt": attempt}, "unparseable", [],
-                    report=report)
+            _record({**state, "attempt": attempt}, "unparseable", report=report)
             # 没有可打补丁的底稿，下一轮只能整份重写
-            return {"attempt": attempt, "mode": "generate", "report": report}
+            return {"attempt": attempt, "mode": "generate", "report": report,
+                    "used_tools": []}
 
         doc = state["doc"]
         quality.apply_meta_overrides(doc, params)
@@ -177,11 +191,11 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             review_chat, log, state["frozen_units"])
         _record({**state, "attempt": attempt},
                 "passed" if ok else ("hard_failed" if hard else "soft_failed"),
-                [], structured=structured, report=report)
+                structured=structured, report=report)
         if ok:
             log(f"批 {idx} 校验通过（第 {attempt} 次生成）")
             return {"attempt": attempt, "report": report,
-                    "structured": structured, "result": doc}
+                    "structured": structured, "result": doc, "used_tools": []}
         candidates = list(state["candidates"])
         if not hard:
             candidates.append((key, attempt, doc, report))
@@ -189,7 +203,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             f"{'校验' if hard else '质量门'}，原因如下：")
         _log_report(log, report, workdir, idx, attempt)
         return {"attempt": attempt, "report": report, "structured": structured,
-                "candidates": candidates}
+                "candidates": candidates, "used_tools": []}
 
     def finalize(state: BatchState) -> dict:
         """重试耗尽：有合法候选就择优降级交付，否则落盘报告并抛错。"""
@@ -218,28 +232,88 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         return "plan_repair"
 
     def plan_repair(state: BatchState) -> dict:
-        """占位：Task 8 接上受限补丁路径。当前一律整份重写。"""
+        """新一次尝试的起点：按 repair_mode 拼消息。有底稿就打补丁，否则整份重写。"""
         idx, attempt = state["idx"], state["attempt"]
+        # 每次尝试都从这里开始：token 计数起点、工具步数与各类标记在此一并重置，
+        # 否则上一次尝试的 token 会串进这一次的账里
+        reset = {"tool_steps": 0, "patch_applied": False, "task_done": False,
+                 "repair_failed": False, "used_tools": [],
+                 "usage_mark": chat.usage_totals()}
+        if state["doc"] is not None and settings.repair_mode == "patch":
+            log(f"批 {idx} 进入受限 JSON Patch 修复"
+                f"（{attempt + 1}/{settings.max_retries + 1}）…")
+            return {**reset, "mode": "patch", "messages": [
+                # 每轮补丁修复都从干净的三条消息开始，与改造前逐字一致。
+                # add_messages 默认是追加，要清空历史得先发一条 REMOVE_ALL_MESSAGES
+                RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                HumanMessage(state["user"]),
+                AIMessage(content=json.dumps(state["doc"], ensure_ascii=False)),
+                HumanMessage(repair.repair_request(state["structured"],
+                                                   state["report"])),
+            ]}
+        # rewrite 模式，或从未解析出过 JSON（没有可打补丁的底稿）。这条路上历史里
+        # 只有整份生成的往返、不含工具调用，直接追加回喂即可
         log(f"批 {idx} 回喂校验报告重新输出整份"
             f"（{attempt + 1}/{settings.max_retries + 1}）…")
-        return {"mode": "generate", "tool_steps": 0, "patch_applied": False,
-                "task_done": False,
-                "messages": [HumanMessage(
-                    "你的输出未通过自动校验，报告如下：\n\n" + state["report"] +
-                    "\n\n请修正全部问题后重新输出完整 JSON"
-                    "（只输出一个 JSON 对象，不要解释文字，不要代码块标记）。")]}
+        return {**reset, "mode": "generate", "messages": [HumanMessage(
+            "你的输出未通过自动校验，报告如下：\n\n" + state["report"] +
+            "\n\n请修正全部问题后重新输出完整 JSON"
+            "（只输出一个 JSON 对象，不要解释文字，不要代码块标记）。")]}
+
+    def repair_agent(state: BatchState) -> dict:
+        """修复代理：带工具调模型。每轮算一个工具步骤，上限与改造前一致。"""
+        steps = state["tool_steps"] + 1
+        if steps > _MAX_TOOL_STEPS:
+            report = f"修复工具调用无效：单轮修复超过 {_MAX_TOOL_STEPS} 个工具步骤"
+            log(f"批 {state['idx']} {report}")
+            return {"repair_failed": True, "report": report, "tool_steps": steps}
+        # 修复阶段同样带系统提示词——模型得知道分镜规则才补得对
+        msg = chat.invoke([system_msg] + list(state["messages"]),
+                          tools=REPAIR_TOOLS)
+        if not msg.tool_calls:
+            report = "修复工具调用无效：模型没有发起任何工具调用"
+            log(f"批 {state['idx']} {report}")
+            return {"messages": [msg], "repair_failed": True, "report": report,
+                    "tool_steps": steps}
+        return {"messages": [msg], "tool_steps": steps,
+                "used_tools": list(state["used_tools"])
+                + [c["name"] for c in msg.tool_calls]}
+
+    def route_after_repair(state: BatchState) -> str:
+        return "check" if state["repair_failed"] else "tools"
+
+    def route_after_tools(state: BatchState) -> str:
+        # json_patch / task_done 用 Command 置了标记，说明这一轮修复产出了新底稿
+        if state["patch_applied"] or state["task_done"]:
+            return "check"
+        return "repair_agent"
 
     builder = StateGraph(BatchState)
     builder.add_node("generate", generate)
     builder.add_node("check", check)
     builder.add_node("plan_repair", plan_repair)
+    builder.add_node("repair_agent", repair_agent)
+    builder.add_node("tools", ToolNode(
+        REPAIR_TOOLS,
+        # 补丁违规（锁定前缀、路径不存在）与参数不合 schema 都回给模型当 status=error
+        # 的 ToolMessage，让它在同一轮里看着报错改正（仍受单轮 8 步上限约束）；
+        # 其余异常是程序 bug，照常冒出去。不能只写 (RepairError,)：那会覆盖掉默认
+        # 处理器，模型把 patch 传成字符串时就会以 ToolInvocationError 崩图
+        handle_tool_errors=(repair.RepairError, ToolInvocationError)))
     builder.add_node("finalize", finalize)
     builder.add_edge(START, "generate")
     builder.add_edge("generate", "check")
     builder.add_conditional_edges("check", route_after_check,
                                   {END: END, "finalize": "finalize",
                                    "plan_repair": "plan_repair"})
-    builder.add_edge("plan_repair", "generate")
+    builder.add_conditional_edges(
+        "plan_repair",
+        lambda s: "repair_agent" if s["mode"] == "patch" else "generate",
+        {"repair_agent": "repair_agent", "generate": "generate"})
+    builder.add_conditional_edges("repair_agent", route_after_repair,
+                                  {"tools": "tools", "check": "check"})
+    builder.add_conditional_edges("tools", route_after_tools,
+                                  {"check": "check", "repair_agent": "repair_agent"})
     builder.add_edge("finalize", END)
     return builder.compile()
 
@@ -252,7 +326,9 @@ def run_batch(graph, *, user: str, batch_text: str, idx: int,
         "batch_text": batch_text, "idx": idx, "frozen_units": frozen_units,
         "attempt": 0, "mode": "generate", "doc": None, "report": "",
         "structured": verification.VerificationReport(), "candidates": [],
-        "tool_steps": 0, "patch_applied": False, "task_done": False,
+        "tool_steps": 0,
+        "used_tools": [], "repair_failed": False,
+        "patch_applied": False, "task_done": False,
         "usage_mark": None, "result": None, "warnings": [],
     }
     final = graph.invoke(state, config={"recursion_limit": recursion_limit or 200})
