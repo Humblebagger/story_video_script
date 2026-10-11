@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated, Any, List, Optional, TypedDict
 
 from langchain_core.messages import (AIMessage, AnyMessage, HumanMessage,
-                                     RemoveMessage, SystemMessage)
+                                     RemoveMessage, SystemMessage, ToolMessage)
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import REMOVE_ALL_MESSAGES, add_messages
 from langgraph.prebuilt import ToolNode
@@ -23,6 +23,7 @@ from .prompt import load_system_prompt
 from .tools import REPAIR_TOOLS
 
 _REPORT_LOG_LINES = 60
+_DOC_WRITERS = {"json_patch", "task_done"}
 _MAX_TOOL_STEPS = 8          # 与改造前 `for _ in range(8)` 等价
 
 
@@ -275,12 +276,25 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             log(f"批 {state['idx']} {report}")
             return {"messages": [msg], "repair_failed": True, "report": report,
                     "tool_steps": steps}
-        return {"messages": [msg], "tool_steps": steps,
-                "used_tools": list(state["used_tools"])
-                + [c["name"] for c in msg.tool_calls]}
+        used = list(state["used_tools"]) + [c["name"] for c in msg.tool_calls]
+        writers = [c for c in msg.tool_calls if c["name"] in _DOC_WRITERS]
+        if len(writers) > 1:
+            # 同一步里两个写 doc 的 Command 会让 LangGraph 抛 InvalidUpdateError。
+            # 不进 ToolNode；每个 tool_use 都必须有 tool_result，否则下一次请求非法
+            return {"messages": [msg] + [ToolMessage(
+                content="一次只能提交一个 json_patch / task_done，请只提交一个补丁",
+                tool_call_id=c["id"], name=c["name"], status="error")
+                for c in msg.tool_calls],
+                "tool_steps": steps, "used_tools": used}
+        return {"messages": [msg], "tool_steps": steps, "used_tools": used}
 
     def route_after_repair(state: BatchState) -> str:
-        return "check" if state["repair_failed"] else "tools"
+        if state["repair_failed"]:
+            return "check"
+        # 末尾已是 ToolMessage：并行写 doc 被拦下，错误已就位，直接回模型
+        if isinstance(state["messages"][-1], ToolMessage):
+            return "repair_agent"
+        return "tools"
 
     def route_after_tools(state: BatchState) -> str:
         # json_patch / task_done 用 Command 置了标记，说明这一轮修复产出了新底稿
@@ -311,11 +325,14 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         lambda s: "repair_agent" if s["mode"] == "patch" else "generate",
         {"repair_agent": "repair_agent", "generate": "generate"})
     builder.add_conditional_edges("repair_agent", route_after_repair,
-                                  {"tools": "tools", "check": "check"})
+                                  {"tools": "tools", "check": "check",
+                                   "repair_agent": "repair_agent"})
     builder.add_conditional_edges("tools", route_after_tools,
                                   {"check": "check", "repair_agent": "repair_agent"})
     builder.add_edge("finalize", END)
-    return builder.compile()
+    # 每次补丁尝试约 2*_MAX_TOOL_STEPS+4 个超步，再加首次生成与收尾，留足余量
+    limit = (settings.max_retries + 1) * (2 * _MAX_TOOL_STEPS + 6) + 10
+    return builder.compile().with_config(recursion_limit=limit)
 
 
 def run_batch(graph, *, user: str, batch_text: str, idx: int,
@@ -331,5 +348,6 @@ def run_batch(graph, *, user: str, batch_text: str, idx: int,
         "patch_applied": False, "task_done": False,
         "usage_mark": None, "result": None, "warnings": [],
     }
-    final = graph.invoke(state, config={"recursion_limit": recursion_limit or 200})
+    final = graph.invoke(state, config=({"recursion_limit": recursion_limit}
+                                     if recursion_limit else None))
     return final["result"], final["warnings"]

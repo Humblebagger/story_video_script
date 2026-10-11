@@ -65,7 +65,9 @@ def repair_request(report, extra_report: str = "") -> str:
         },
     }
     return ("你是受限分镜修复 Agent。根据以下工具结果只修改被报告的问题。"
-            "不要重写整份文档；只输出一个 JSON 工具调用对象。\n\n"
+            "不要重写整份文档；请直接调用提供的工具："
+            "需要时先用只读工具查询，每轮只提交一个 json_patch，改完后调用 task_done。"
+            "下面是可用工具与当前校验结果，其中 contract 仅为参数示例。\n\n"
             + json.dumps(payload, ensure_ascii=False, indent=2))
 
 

@@ -119,7 +119,7 @@ class ChatInvoker:
     def _runnable(self, model, tools):
         import anthropic
         import httpx2
-        runnable = model.bind_tools(tools) if tools else model
+        runnable = model.bind_tools(tools, parallel_tool_calls=False) if tools else model
         return runnable.with_retry(
             # anthropic 1.13 起 SDK 跑在 httpx2 上；httpx(0.28) 只是 langchain-core
             # 传递带入的，本调用路径永不抛它的异常。写错这一行，传输重试会静默失效，

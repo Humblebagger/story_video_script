@@ -230,6 +230,62 @@ def main() -> int:
         assert "8 个工具步骤" in fake7.requests[-1]["messages"][-1].content
         print("graph: 补丁轮失败后保留底稿再补一次 ✓")
 
+    # 8. 同一条回复里两个 json_patch：不进 ToolNode（否则并行写 doc 崩图），
+    #    每个 tool_use 都补一条错误 ToolMessage，模型改成单个补丁后通过
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s8 = patch_settings(1)
+        two = AIMessage(content="", tool_calls=[
+            {"name": "json_patch", "id": "a1", "args": {"patch": [
+                {"op": "add", "path": "/episodes/0/shots/0/action",
+                 "value": good_action}]}},
+            {"name": "json_patch", "id": "a2", "args": {"patch": [
+                {"op": "add", "path": "/episodes/0/shots/0/action",
+                 "value": good_action}]}}])
+        fake8 = FakeChat(responses=[json.dumps(bad, ensure_ascii=False),
+                                    two, add_action("a3")])
+        chat = ChatInvoker(s8, chat=fake8, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s8,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
+                                  idx=1, frozen_units=None)
+        assert doc == json.loads(archived)
+        assert [r["status"] for r in records] == ["hard_failed", "passed"]
+        errs = [m for m in fake8.requests[2]["messages"]
+                if isinstance(m, ToolMessage)]
+        assert sorted(m.tool_call_id for m in errs) == ["a1", "a2"], \
+            "每个 tool_use 都得有 tool_result"
+        assert all(m.status == "error" and "一次只能提交一个" in m.content
+                   for m in errs)
+        print("graph: 并行双补丁被拦下，错误回给模型后单补丁通过 ✓")
+
+    # 9. 工具路径绑定时关闭并行工具调用
+    tool_reqs = [r for r in fake8.requests if "tool_names" in r["kwargs"]]
+    assert tool_reqs and all(r["kwargs"].get("parallel_tool_calls") is False
+                             for r in tool_reqs), "工具路径没传 parallel_tool_calls=False"
+    assert "tool_names" not in fake8.requests[0]["kwargs"]
+    print("graph: 工具路径 parallel_tool_calls=False ✓")
+
+    # 10. 模型没发起任何工具调用：本轮记失败、底稿保留，下一次尝试再补
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s10 = patch_settings(2)
+        fake10 = FakeChat(responses=[json.dumps(bad, ensure_ascii=False),
+                                     "我觉得没问题", add_action("n1")])
+        chat = ChatInvoker(s10, chat=fake10, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s10,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
+                                  idx=1, frozen_units=None)
+        assert doc == json.loads(archived)
+        assert [(r["mode"], r["status"]) for r in records] == [
+            ("generate", "hard_failed"), ("patch", "unparseable"),
+            ("patch", "passed")]
+        assert "没有发起任何工具调用" in records[1]["report"]
+        print("graph: 无工具调用 → 保留底稿，下一次再补 ✓")
+
     print("\nALL PASS")
     return 0
 
