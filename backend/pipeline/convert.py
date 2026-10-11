@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 from . import quality, repair, review, validate, verification
 from .config import Settings, load_settings
+from .errors import ConversionError
 from .llm import extract_json
 from .manifest import build_manifest, finish_manifest, sum_usage
 from .prompt import build_user_message, load_system_prompt
@@ -26,12 +27,6 @@ class ConvertParams:
     target_platform: str = "抖音"
     narration_mode: str = "selective"
     tts_voice: str = "male_mature"
-
-
-class ConversionError(RuntimeError):
-    def __init__(self, msg: str, report: str = ""):
-        super().__init__(msg)
-        self.report = report
 
 
 def _continuation_blocks(outputs: List[dict]) -> (str, str):
