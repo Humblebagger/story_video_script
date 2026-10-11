@@ -6,7 +6,7 @@ callback handler，但 thinking 降级与截断诊断这两条实测补偿必须
 """
 import json
 import re
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
 
@@ -121,6 +121,7 @@ class ChatInvoker:
     def __init__(self, settings: Settings, *, model: Optional[str] = None,
                  chat=None, usage: Optional[UsageCallback] = None, log=print) -> None:
         self._settings = settings
+        self._model_name = model
         self._log = log
         self.usage = usage or UsageCallback()
         self._model = chat if chat is not None else build_chat_model(
@@ -156,7 +157,7 @@ class ChatInvoker:
             self._log(f"服务端不接受 thinking 参数（{str(e)[:120]}），"
                       "改用模型默认行为重试")
             self._no_thinking = self._model if self._injected else build_chat_model(
-                replace_thinking(self._settings))
+                replace_thinking(self._settings), model=self._model_name)
             self._thinking_rejected = True
             return self._invoke_wrapped(self._no_thinking, tools, messages, config)
 
@@ -181,6 +182,17 @@ def replace_thinking(settings: Settings) -> Settings:
 
 
 def message_text(msg, settings: Settings) -> str:
+    """AIMessage → 正文；撞 max_tokens 抛 LLMError。"""
+    return check_truncation(msg, settings)
+
+
+def check_truncation(msg, settings: Settings) -> str:
+    """只检查截断，不要求有正文；返回正文（可能为空）。
+
+    修复路径的回复可以只有 tool_call、没有正文，所以不能直接用 message_text 的
+    「要正文」语义——但截断诊断必须共用：LangChain 会把被截断的流式工具参数
+    用 parse_partial_json 补成合法 tool_call，不查 stop_reason 就会静默应用残缺补丁。
+    """
     content = msg.content
     if isinstance(content, str):
         text, thinking_chars = content, 0

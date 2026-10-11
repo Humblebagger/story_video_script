@@ -156,6 +156,11 @@ def main() -> int:
             "HumanMessage", "AIMessage", "HumanMessage"], \
             "补丁轮的历史没清空，上一轮的整份原始输出被带了进来"
         assert first_repair[1].content == user_msg
+        # 生成请求与修复请求都要带 system prompt 的缓存标记，否则每次多付全价
+        for i in (0, 1, 2):
+            sys_blocks = fake.requests[i]["messages"][0].content
+            assert sys_blocks[0]["cache_control"] == {"type": "ephemeral"}, \
+                f"第 {i + 1} 次请求的 system prompt 丢了 cache_control"
         print("graph: 硬失败 → 补丁修复 → 通过；工具轨迹入清单、token 不串账、"
               "历史从零开始 ✓")
 
@@ -285,6 +290,62 @@ def main() -> int:
             ("patch", "passed")]
         assert "没有发起任何工具调用" in records[1]["report"]
         print("graph: 无工具调用 → 保留底稿，下一次再补 ✓")
+
+    # 11. 修复回复撞 max_tokens：补丁参数可能被 parse_partial_json 截成「合法」值，
+    #     必须当截断报错，不能静默应用
+    from pipeline.chat import LLMError
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s11 = patch_settings(1)
+        trunc = AIMessage(
+            content="", tool_calls=[
+                {"name": "json_patch", "id": "t1", "args": {"patch": [
+                    {"op": "add", "path": "/episodes/0/shots/0/action",
+                     "value": good_action[:3]}]}}],
+            response_metadata={"stop_reason": "max_tokens"})
+        fake11 = FakeChat(responses=[json.dumps(bad, ensure_ascii=False),
+                                     trunc, add_action("t2")])
+        chat = ChatInvoker(s11, chat=fake11, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s11,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        try:
+            run_batch(graph, user=user_msg, batch_text=batch, idx=1,
+                      frozen_units=None)
+            raise AssertionError("修复回复被 max_tokens 截断应抛 LLMError")
+        except LLMError as e:
+            assert "max_tokens" in str(e)
+        assert [r["status"] for r in records] == ["hard_failed"], \
+            "截断的补丁不该被应用并走到再次校验"
+        assert len(fake11.requests) == 2 and len(fake11.responses) == 1
+        # stop_reason=tool_use 且正文为空是正常情形，不得误报（第 4 项已覆盖通过路径）
+        print("graph: 修复回复撞 max_tokens → LLMError，补丁未应用 ✓")
+
+    # 12. invalid_tool_calls 与多写工具同样处理：每个 id 都回一条 error ToolMessage
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s12 = patch_settings(1)
+        mixed = AIMessage(
+            content="", tool_calls=[
+                {"name": "validation_list", "args": {}, "id": "m1"}],
+            invalid_tool_calls=[
+                {"name": "json_patch", "args": '{"patch": [', "id": "m2",
+                 "error": "bad json", "type": "invalid_tool_call"}])
+        fake12 = FakeChat(responses=[json.dumps(bad, ensure_ascii=False),
+                                     mixed, add_action("m3")])
+        chat = ChatInvoker(s12, chat=fake12, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s12,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
+                                  idx=1, frozen_units=None)
+        assert doc == json.loads(archived)
+        errs = [m for m in fake12.requests[2]["messages"]
+                if isinstance(m, ToolMessage)]
+        assert sorted(m.tool_call_id for m in errs) == ["m1", "m2"], \
+            "tool_call 与 invalid_tool_call 的每个 id 都得有 tool_result"
+        assert all(m.status == "error" for m in errs)
+        print("graph: invalid_tool_calls 逐个回 error ToolMessage ✓")
 
     print("\nALL PASS")
     return 0

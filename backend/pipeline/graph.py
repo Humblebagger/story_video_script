@@ -16,7 +16,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolInvocationError
 
 from . import quality, repair, review, validate, verification
-from .chat import extract_json
+from .chat import check_truncation, extract_json
 from .config import Settings
 from .errors import ConversionError
 from .prompt import load_system_prompt
@@ -143,8 +143,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                 report: str = "") -> None:
         after = chat.usage_totals()
         before = state.get("usage_mark") or {}
-        usage = ({k: after[k] - before.get(k, 0) for k in after}
-                 if before else None)
+        usage = {k: after[k] - before.get(k, 0) for k in after}
         rec = {"batch": state["idx"], "attempt": state["attempt"],
                "mode": state["mode"], "status": status,
                "report": report, "tools": list(state.get("used_tools") or []),
@@ -176,14 +175,15 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             report = state["report"]
             log(f"批 {idx} 第 {attempt} 次生成：{report}")
             _record({**state, "attempt": attempt}, "unparseable", report=report)
-            return {"attempt": attempt, "report": report, "used_tools": []}
+            return {"attempt": attempt, "report": report, "doc": state["doc"],
+                    "used_tools": []}
         if state["doc"] is None:
             report = state["report"] or "输出无法解析为 JSON"
             log(f"批 {idx} 第 {attempt} 次生成：{report}")
             _record({**state, "attempt": attempt}, "unparseable", report=report)
             # 没有可打补丁的底稿，下一轮只能整份重写
             return {"attempt": attempt, "mode": "generate", "report": report,
-                    "used_tools": []}
+                    "doc": None, "used_tools": []}
 
         doc = state["doc"]
         quality.apply_meta_overrides(doc, params)
@@ -195,7 +195,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                 structured=structured, report=report)
         if ok:
             log(f"批 {idx} 校验通过（第 {attempt} 次生成）")
-            return {"attempt": attempt, "report": report,
+            return {"attempt": attempt, "report": report, "doc": doc,
                     "structured": structured, "result": doc, "used_tools": []}
         candidates = list(state["candidates"])
         if not hard:
@@ -203,8 +203,9 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         log(f"批 {idx} 第 {attempt} 次生成未通过"
             f"{'校验' if hard else '质量门'}，原因如下：")
         _log_report(log, report, workdir, idx, attempt)
-        return {"attempt": attempt, "report": report, "structured": structured,
-                "candidates": candidates, "used_tools": []}
+        return {"attempt": attempt, "report": report, "doc": doc,
+                "structured": structured, "candidates": candidates,
+                "used_tools": []}
 
     def finalize(state: BatchState) -> dict:
         """重试耗尽：有合法候选就择优降级交付，否则落盘报告并抛错。"""
@@ -271,20 +272,32 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         # 修复阶段同样带系统提示词——模型得知道分镜规则才补得对
         msg = chat.invoke([system_msg] + list(state["messages"]),
                           tools=REPAIR_TOOLS)
-        if not msg.tool_calls:
+        # 先做截断诊断再读 tool_calls：被截断的工具参数会被补成合法值
+        check_truncation(msg, settings)
+        calls = list(msg.tool_calls)
+        invalid = list(msg.invalid_tool_calls or [])
+        if not calls and not invalid:
             report = "修复工具调用无效：模型没有发起任何工具调用"
             log(f"批 {state['idx']} {report}")
             return {"messages": [msg], "repair_failed": True, "report": report,
                     "tool_steps": steps}
-        used = list(state["used_tools"]) + [c["name"] for c in msg.tool_calls]
-        writers = [c for c in msg.tool_calls if c["name"] in _DOC_WRITERS]
+        used = list(state["used_tools"]) + [c["name"] for c in calls]
+        writers = [c for c in calls if c["name"] in _DOC_WRITERS]
+        if invalid:
+            # 参数 JSON 解析失败的调用：ToolNode 看不见它们，但每个 tool_use
+            # 仍必须有 tool_result。整步作废，让模型重新提交
+            return {"messages": [msg] + [ToolMessage(
+                content="工具调用参数不是合法 JSON，本步未执行，请重新提交",
+                tool_call_id=c["id"], name=c["name"], status="error")
+                for c in calls + invalid],
+                "tool_steps": steps, "used_tools": used}
         if len(writers) > 1:
             # 同一步里两个写 doc 的 Command 会让 LangGraph 抛 InvalidUpdateError。
             # 不进 ToolNode；每个 tool_use 都必须有 tool_result，否则下一次请求非法
             return {"messages": [msg] + [ToolMessage(
                 content="一次只能提交一个 json_patch / task_done，请只提交一个补丁",
                 tool_call_id=c["id"], name=c["name"], status="error")
-                for c in msg.tool_calls],
+                for c in calls],
                 "tool_steps": steps, "used_tools": used}
         return {"messages": [msg], "tool_steps": steps, "used_tools": used}
 
@@ -336,7 +349,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
 
 
 def run_batch(graph, *, user: str, batch_text: str, idx: int,
-              frozen_units=None, recursion_limit: Optional[int] = None):
+              frozen_units=None):
     """跑一批，返回 (产物, 质量警告列表)。警告非空即降级交付。"""
     state: BatchState = {
         "messages": [HumanMessage(user)], "user": user,
@@ -348,6 +361,5 @@ def run_batch(graph, *, user: str, batch_text: str, idx: int,
         "patch_applied": False, "task_done": False,
         "usage_mark": None, "result": None, "warnings": [],
     }
-    final = graph.invoke(state, config=({"recursion_limit": recursion_limit}
-                                     if recursion_limit else None))
+    final = graph.invoke(state)
     return final["result"], final["warnings"]

@@ -229,6 +229,41 @@ def main() -> int:
     assert len(det_calls) == 1, "确定性错误不应被重放"
     print("chat: 确定性错误不被重试重放 ✓")
 
+    # 16. thinking 被拒后的回退重建必须保留 model 覆盖（评审 invoker 用的是评审模型）
+    import pipeline.chat as chat_mod
+    built = []
+    real_build = chat_mod.build_chat_model
+
+    def spy_build(settings, *, model=None):
+        built.append(model)
+        return real_build(settings, model=model)
+
+    chat_mod.build_chat_model = spy_build
+    try:
+        inv16 = ChatInvoker(Settings(api_key="k", thinking="2000"),
+                            model="review-model-x")     # 真实 ChatAnthropic，不联网
+        assert inv16._model.model == "review-model-x"
+        # 第一次 invoke 被网关拒 thinking；回退模型的调用打桩，不真发请求
+        inv16._model = FakeChat(responses=[picky])
+        orig_wrapped = inv16._invoke_wrapped
+        fallback_models = []
+
+        def fake_wrapped(model, tools, messages, config):
+            if model is inv16._model:
+                return orig_wrapped(model, tools, messages, config)
+            fallback_models.append(model)
+            return AIMessage(content="ok")
+
+        inv16._invoke_wrapped = fake_wrapped
+        inv16._log = lambda _: None
+        inv16.invoke([HumanMessage("x")])
+    finally:
+        chat_mod.build_chat_model = real_build
+    assert built == ["review-model-x", "review-model-x"], \
+        f"回退重建丢了 model 覆盖：{built}"
+    assert fallback_models and fallback_models[0].model == "review-model-x"
+    print("chat: thinking 回退保留评审模型覆盖 ✓")
+
     print("\nALL PASS")
     return 0
 
