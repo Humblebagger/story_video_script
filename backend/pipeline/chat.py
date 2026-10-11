@@ -95,6 +95,22 @@ def build_chat_model(settings: Settings, *, model: Optional[str] = None):
     return ChatAnthropic(**kwargs)
 
 
+def _transient_errors() -> tuple:
+    """可重试的瞬时传输故障——with_retry 与耗尽后的 LLMError 包装共用这一个来源。
+
+    anthropic 1.13 起 SDK 跑在 httpx2 上；httpx(0.28) 只是 langchain-core
+    传递带入的，本调用路径永不抛它的异常。写错这一行，传输重试会静默失效，
+    而它正是为实测到的网关流式中途断连而建。
+    APITimeoutError 是 APIConnectionError 的子类，无需单列。
+    """
+    import anthropic
+    import httpx2
+    return (anthropic.APIConnectionError,
+            anthropic.InternalServerError,
+            anthropic.RateLimitError,
+            httpx2.HTTPError)
+
+
 class ChatInvoker:
     """模型调用的唯一入口：组合 bind_tools / with_retry，并承接 thinking 降级。
 
@@ -117,18 +133,9 @@ class ChatInvoker:
         return self.usage.usage_totals()
 
     def _runnable(self, model, tools):
-        import anthropic
-        import httpx2
         runnable = model.bind_tools(tools, parallel_tool_calls=False) if tools else model
         return runnable.with_retry(
-            # anthropic 1.13 起 SDK 跑在 httpx2 上；httpx(0.28) 只是 langchain-core
-            # 传递带入的，本调用路径永不抛它的异常。写错这一行，传输重试会静默失效，
-            # 而它正是为实测到的网关流式中途断连而建。
-            # APITimeoutError 是 APIConnectionError 的子类，无需单列。
-            retry_if_exception_type=(anthropic.APIConnectionError,
-                                     anthropic.InternalServerError,
-                                     anthropic.RateLimitError,
-                                     httpx2.HTTPError),
+            retry_if_exception_type=_transient_errors(),
             stop_after_attempt=self._settings.transport_retries + 1,
             wait_exponential_jitter=True,
         )
@@ -140,7 +147,7 @@ class ChatInvoker:
         model = self._no_thinking if (self._thinking_rejected
                                       and self._no_thinking is not None) else self._model
         try:
-            return self._runnable(model, tools).invoke(messages, config=config)
+            return self._invoke_wrapped(model, tools, messages, config)
         except anthropic.BadRequestError as e:
             if self._thinking_rejected or "thinking" not in str(e).lower() \
                     or _thinking_param(self._settings.thinking) is None:
@@ -151,8 +158,16 @@ class ChatInvoker:
             self._no_thinking = self._model if self._injected else build_chat_model(
                 replace_thinking(self._settings))
             self._thinking_rejected = True
-            return self._runnable(self._no_thinking, tools).invoke(
-                messages, config=config)
+            return self._invoke_wrapped(self._no_thinking, tools, messages, config)
+
+    def _invoke_wrapped(self, model, tools, messages, config):
+        """with_retry 耗尽后把原始传输异常转成 LLMError，让 CLI 打一行干净的失败。"""
+        try:
+            return self._runnable(model, tools).invoke(messages, config=config)
+        except _transient_errors() as e:
+            raise LLMError(
+                f"LLM 传输重试 {self._settings.transport_retries} 次后仍失败：{e!r}"
+            ) from e
 
     def text(self, msg) -> str:
         """AIMessage → 正文文本。撞 max_tokens 时按原因分别报错。"""

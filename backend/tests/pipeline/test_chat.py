@@ -178,6 +178,57 @@ def main() -> int:
     assert m2.streaming is True and m2.stream_usage is True
     print("chat: 模型保持流式且流式带用量 ✓")
 
+    # 14. 传输重试耗尽：改造前抛干净的 LLMError，CLI 的 except LLMError 才会打一行
+    #     「转换失败」而不是整屏 traceback。退避打桩成不睡，免得测试白等。
+    import tenacity.nap
+    real_time = tenacity.nap.time
+    sleeps = []
+
+    class _NoSleep:
+        @staticmethod
+        def sleep(seconds):
+            sleeps.append(seconds)
+
+    always_down_calls = []
+
+    def always_down(messages):
+        always_down_calls.append(1)
+        raise anthropic.APIConnectionError(
+            request=httpx2.Request("POST", "http://x"))
+
+    tenacity.nap.time = _NoSleep
+    try:
+        try:
+            ChatInvoker(Settings(api_key="k", transport_retries=2),
+                        chat=FakeChat(responses=[always_down] * 3)).invoke(
+                [HumanMessage("x")])
+            raise AssertionError("重试耗尽应抛 LLMError")
+        except LLMError as e:
+            assert "传输重试 2 次后仍失败" in str(e)
+            assert isinstance(e.__cause__, anthropic.APIConnectionError)
+    finally:
+        tenacity.nap.time = real_time
+    assert len(always_down_calls) == 3, "1 次首发 + 2 次重试"
+    assert len(sleeps) == 2, "退避已打桩，没有真睡"
+    print("chat: 传输重试耗尽转成 LLMError ✓")
+
+    # 15. 确定性错误（LLMError）原样冒出，不被传输重试吞掉或重放
+    det_calls = []
+
+    def deterministic(messages):
+        det_calls.append(1)
+        raise LLMError("确定性错误")
+
+    try:
+        ChatInvoker(Settings(api_key="k", transport_retries=2),
+                    chat=FakeChat(responses=[deterministic] * 3)).invoke(
+            [HumanMessage("x")])
+        raise AssertionError("LLMError 应原样冒出")
+    except LLMError as e:
+        assert str(e) == "确定性错误"
+    assert len(det_calls) == 1, "确定性错误不应被重放"
+    print("chat: 确定性错误不被重试重放 ✓")
+
     print("\nALL PASS")
     return 0
 

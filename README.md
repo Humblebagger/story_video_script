@@ -31,11 +31,11 @@ frontend/   React + TS 界面（提交转换任务 + 审阅分镜 IR）
 
 ### 方式一：一键流水线（内置 LLM 调用，推荐）
 
-配好密钥即可独立部署：文本进，通过三层校验的分镜 JSON 出。
+需要 Python 3.12。配好密钥即可独立部署：文本进，通过三层校验的分镜 JSON 出。
 
 ```bash
 cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env        # 填入 ANTHROPIC_API_KEY
 
 # CLI：自动分批 → LLM 转换 → 校验失败回喂重试 → 合并 → 整章终检
@@ -56,7 +56,7 @@ docker build -t storyboard backend/
 docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 ```
 
-离线回归（不调 LLM，用《药》归档回放编排逻辑）：`.venv/bin/python tests/pipeline/test_offline.py`
+离线回归（不调 LLM，用《药》归档回放编排逻辑）：`for t in fakes chat tools graph offline; do .venv/bin/python tests/pipeline/test_$t.py || break; done`（test_fakes / test_chat / test_tools / test_graph / test_offline，各自应打印 `ALL PASS`）
 
 ### 方式二：配套前端界面
 
@@ -88,7 +88,10 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 
 | 路径 | 内容 |
 |---|---|
-| `backend/pipeline/` | 一键流水线（分批/LLM 调用/校验重试/合并编排 + 质量层），CLI 入口 `python3 -m pipeline` |
+| `backend/pipeline/` | 一键流水线（分批/LLM 调用（LangChain + LangGraph）/校验重试/合并编排 + 质量层），CLI 入口 `python3 -m pipeline` |
+| `backend/pipeline/chat.py` | LangChain 模型工厂、重试与用量回调 |
+| `backend/pipeline/graph.py` | LangGraph 单批状态图：生成→校验→修复循环 |
+| `backend/pipeline/tools.py` | 修复阶段的原生工具：查询 + 受限 JSON Patch |
 | `backend/server/app.py` | HTTP 服务（FastAPI，异步任务模型），配合 `backend/Dockerfile` 独立部署 |
 | `backend/schema/storyboard.schema.json` | NovelStoryboard v0.5 分镜 JSON Schema（严格模式：拒绝未知字段；v0.4 产物仍合法） |
 | `backend/docs/schema-design.md` | schema 设计决策说明 |

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import validate
 from .convert import ConversionError, ConvertParams, convert_text
-from .llm import LLMError
+from .chat import LLMError
 
 
 def main(argv=None) -> int:
