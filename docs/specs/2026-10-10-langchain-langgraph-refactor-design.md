@@ -35,7 +35,7 @@ ToolNode、InjectedState），也不追求最小改动量。
 `manifest.py`、`prompt.py`、`schema/storyboard.schema.json`、
 `prompts/novel_to_storyboard.md`、`repair.py` 中的工具实现函数
 （`source_read` / `asset_get` / `validation_list` / `coverage_query` /
-`apply_tool_call` 的补丁校验逻辑）。
+`apply_json_patch` 的补丁校验逻辑；实施时旧文本协议的分发器 `apply_tool_call` 等已删除）。
 
 `convert_text()` 的外壳同样不动：输入归一化、切批、冻结句单元、续批资产块、
 批次落盘、合并、整章终检、manifest 收尾。
@@ -134,7 +134,7 @@ system 提示词的 `cache_control: ephemeral` 缓存标记通过 `SystemMessage
 
 ### 4.3 `tools.py`
 
-6 个 `@tool`，与 `repair.ALLOWED_TOOLS` 一一对应：
+6 个 `@tool`（取代改造前的 `repair.ALLOWED_TOOLS` 文本协议清单）：
 `source_read` / `asset_get` / `validation_list` / `coverage_query` /
 `json_patch` / `task_done`。
 
@@ -222,7 +222,7 @@ doc, batch_warnings = run_batch_graph(graph, state_in)
 | 风险 | 影响 | 兜底 |
 |---|---|---|
 | 第三方网关（如 DeepSeek）对 `bind_tools` 的 `tool_calls` 支持不稳 | 修复阶段跑不通 | **本次改造最大的未验证风险**，需在分支上实测。兜底是修复阶段退回自研文本协议，图结构保留 |
-| `recursion_limit` 与原"8 步"语义不完全等价 | 修复轮提前/延后中断 | 用离线用例固定步数边界行为 |
+| 8 步上限若交给 `recursion_limit` 会整批中断而非进入下一次尝试 | 修复轮提前中断 | 实施改为 `tool_steps` 计数（超限置 repair_failed），`recursion_limit` 按 max_retries 推出只作兜底；离线用例固定步数边界 |
 | LangChain 抽象吞掉错误细节 | 诊断信息变笼统，退回被框架掩盖的坑 | §6 的四条补偿全部带测试 |
 | Python 3.12 下现有依赖行为变化 | 既有测试红 | 升级后先在 `main` 代码上跑一遍全量测试，确认是干净基线再动代码 |
 
