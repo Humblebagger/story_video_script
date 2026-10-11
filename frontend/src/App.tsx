@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  deleteHistory, getHistory, health, listHistory, listJobs, listLibrary, me, saveHistory,
+  deleteHistory, getHistory, getJobPartial, health, listHistory, listJobs, listLibrary, me,
+  saveHistory,
 } from './api'
 import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
 import type { User } from './auth'
@@ -37,6 +38,10 @@ export default function App() {
   const [alert, setAlert] = useState<string | null>(null)
   /** 服务端对当前产物的复验结果。保存一次刷新一次，不通过时它就是拦人的那块牌子 */
   const [verification, setVerification] = useState<VerificationReport | null>(null)
+  /** 正在看的是整章跑完之前的部分产物（只读）。null = 看的是正式产物或什么都没开 */
+  const [preview, setPreview] = useState<{ done: number; total: number } | null>(null)
+  /** 预览请求在路上时任务可能已经跑完：只有仍想看这个任务的预览时才落地 */
+  const previewFor = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(async () => {
@@ -68,13 +73,45 @@ export default function App() {
   const onJobDone = useCallback((done: Job) => {
     void refresh()
     announce(done)
-    if (done.status === 'failed') return
+    if (done.status === 'failed') return      // 失败时已打开的预览保留：已通过的批次照样能看
+    previewFor.current = null
+    setPreview(null)
     setDoc(done.result)
     setDocId(done.id)
     setDirty(false)
   }, [refresh, announce])
 
   const { job, error, submitting, start, attach, reset } = useJob(onJobDone)
+
+  /** 打开/刷新整章跑完之前的预览：已完成批次的合并结果，只读 */
+  const loadPreview = useCallback(async (jobId: string) => {
+    previewFor.current = jobId
+    try {
+      const p = await getJobPartial(jobId)
+      if (previewFor.current !== jobId) return
+      setDoc(p.doc)
+      setDocId(null)
+      setDirty(false)
+      setPreview({ done: p.batches_done, total: p.batches })
+    } catch (e) {
+      if (previewFor.current === jobId) {
+        setAlert(`预览加载失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+  }, [])
+
+  // 预览开着时又跑完了一批：自动换成更新的预览
+  useEffect(() => {
+    if (preview && job && previewFor.current === job.id
+        && (job.partial_batches ?? 0) > preview.done) {
+      void loadPreview(job.id)
+    }
+  }, [preview, job, loadPreview])
+
+  const closePreview = () => {
+    previewFor.current = null
+    setPreview(null)
+  }
 
   /** 任务列表巡检：独立于「是否正在看某个任务」。
    *  放到后台的任务靠它留在侧栏里可点回去，跑完也靠它播报——
@@ -158,6 +195,7 @@ export default function App() {
     try {
       const record = await getHistory(id)
       reset()
+      closePreview()
       setDoc(record.result)
       setDocId(record.id)
       setDirty(false)
@@ -180,6 +218,7 @@ export default function App() {
   /** 回到表单：在跑的任务不受影响，仍在后台继续，并留在侧栏可随时点回来 */
   const newConversion = () => {
     reset()
+    closePreview()
     setDoc(null)
     setDocId(null)
     setDirty(false)
@@ -191,6 +230,7 @@ export default function App() {
   const openJob = (id: string) => {
     if (job?.id === id) return
     reset()
+    closePreview()
     setDoc(null)
     setDocId(null)
     setAlert(null)
@@ -227,6 +267,7 @@ export default function App() {
       const parsed = JSON.parse(await f.text())
       if (!parsed?.meta || !parsed?.episodes) throw new Error('不是分镜 IR：缺少 meta / episodes')
       reset()
+      closePreview()
       setDoc(parsed as Storyboard)
       setDocId(null)          // 本地文件不入库，只能下载
       setDirty(false)
@@ -308,13 +349,20 @@ export default function App() {
           {error && <p className="alert">提交失败：{error}</p>}
           {alert && <p className="alert">{alert}</p>}
           {job && (
-            <JobPanel job={job} onReset={newConversion} onBackground={newConversion} />
+            <JobPanel
+              job={job}
+              onReset={newConversion}
+              onBackground={newConversion}
+              previewing={preview !== null}
+              onPreview={() => void loadPreview(job.id)}
+            />
           )}
           {verification && <VerificationPanel report={verification} doc={doc} />}
           {doc && (
             <StoryboardView
               doc={doc}
               canSave={docId !== null}
+              preview={preview}
               runId={docId}
               dirty={dirty}
               saving={saving}

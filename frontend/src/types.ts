@@ -313,6 +313,15 @@ export interface Job {
   chapter?: string
   chars?: number
   progress?: JobProgress | null
+  /** 已完成、可先预览的批数（部分产物本身走 /jobs/{id}/partial 单独取） */
+  partial_batches?: number
+}
+
+/** 已完成批次的合并结果：整章跑完之前的只读预览 */
+export interface JobPartial {
+  doc: Storyboard
+  batches_done: number
+  batches: number
 }
 
 /** 任务摘要：用于关掉页面后重新接上仍在后台跑的转换 */

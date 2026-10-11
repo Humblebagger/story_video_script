@@ -91,13 +91,37 @@ def main() -> int:
     ])
     logs = []
     progress = {}
+    partials = []
     # 归档由未清洗原文转换（units 保留 U+200B），关闭入口归一化以逐字回放
     doc = convert_text(full,
                        params=YAO_PARAMS,
                        settings=Settings(max_retries=0, normalize_input=False,
                                          freeze_source_units=False),
                        llm=mock, batches=[b1, b2],
-                       log=logs.append, progress_out=progress)
+                       log=logs.append, progress_out=progress,
+                       on_partial=lambda d, k, n: partials.append((d, k, n)))
+    # 分批先看：每批跑完（最后一批除外）把已完成的批次合并成部分产物交出去
+    assert [(k, n) for _, k, n in partials] == [(1, 2)], "只在非末批之后交部分产物"
+    part = partials[0][0]
+    b1_doc = json.loads((YAO / "output_batch1.json").read_text(encoding="utf-8"))
+    assert [u["id"] for u in part["source"]["units"]] == \
+        [u["id"] for u in b1_doc["source"]["units"]], "部分产物只含已完成批次的句子"
+    assert part["episodes"] and part["meta"]
+    # 两批以上要先合并：拿两份归档批次模拟「3 批里跑完了 2 批」
+    import tempfile as _tf      # main() 后面有局部 import tempfile，这里不能直接用那个名字
+    from pipeline.convert import _emit_partial
+    got2, plog = [], []
+    with _tf.TemporaryDirectory() as td:
+        _emit_partial(lambda d, k, n: got2.append((d, k, n)),
+                      [YAO / "output_batch1.json", YAO / "output_batch2.json"],
+                      Path(td), 2, 3, plog.append)
+    assert [(k, n) for _, k, n in got2] == [(2, 3)], plog
+    assert len(got2[0][0]["source"]["units"]) == 132, "两批合并后应含两批全部句子"
+    # 预览回调出错不能拖垮转换
+    with _tf.TemporaryDirectory() as td:
+        _emit_partial(lambda d, k, n: 1 / 0, [YAO / "output_batch1.json"],
+                      Path(td), 1, 2, plog.append)
+    assert any("预览回调出错" in line for line in plog)
     assert progress["phase"] == "done" and progress["batches"] == 2
     assert progress["batch"] == 2 and progress["done_chars"] == progress["total_chars"]
     assert progress["max_attempts"] == 1 and progress["attempt"] == 1
@@ -118,6 +142,35 @@ def main() -> int:
     assert _progress_view(job)["eta_sec"] is None
     assert _progress_view({"status": "queued", "progress": {}}) is None
     print("进度: 批次/尝试/阶段原地更新 / 剩余时间按字数外推且首批前不猜 ✓")
+
+    # 服务端：轮询只带「已完成几批」，部分产物走单独接口取；整章成功后清掉
+    from fastapi import HTTPException as _HE
+    from server.app import _jobs, get_job, get_job_partial, _on_partial
+    pj = {"id": "pj1", "user_id": "u1", "status": "running", "log": [], "progress": {},
+          "partial": None}
+    _jobs["pj1"] = pj
+    try:
+        _on_partial(pj, part, 1, 2)
+        polled = get_job("pj1", user={"id": "u1"})
+        assert polled["partial_batches"] == 1 and "partial" not in polled, \
+            "轮询不能每 1.5 秒都把整份部分产物带一遍"
+        got = get_job_partial("pj1", user={"id": "u1"})
+        assert got["batches_done"] == 1 and got["batches"] == 2 and got["doc"] is part
+        try:
+            get_job_partial("pj1", user={"id": "someone-else"})
+            raise AssertionError("别人的任务不能取")
+        except _HE as e:
+            assert e.status_code == 404
+        pj["partial"] = None
+        try:
+            get_job_partial("pj1", user={"id": "u1"})
+            raise AssertionError("没有部分产物时应 404")
+        except _HE as e:
+            assert e.status_code == 404
+        assert get_job("pj1", user={"id": "u1"})["partial_batches"] == 0
+    finally:
+        _jobs.pop("pj1", None)
+    print("分批先看: 非末批交部分产物 / 轮询只带批数 / 单独接口取且隔离用户 ✓")
     archived = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
     # 校验节点会把念不完旁白的镜头时长自动拉长；archived 留原样（后面的时长门
     # 用例要测的正是归档里念不完的镜头），比对用拉长后的副本

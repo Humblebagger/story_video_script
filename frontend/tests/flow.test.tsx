@@ -43,7 +43,7 @@ interface StubJob {
   id: string; status: string; log: string[]; result: unknown
   quality_report: string | null; error: string | null; verification?: unknown
   created_at: string; work_title: string; chapter: string; chars: number
-  user_id: string; progress?: unknown
+  user_id: string; progress?: unknown; partial_batches?: number
 }
 
 const jobs = new Map<string, StubJob>()
@@ -276,6 +276,13 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     id: j.id, status: j.status, created_at: j.created_at, work_title: j.work_title,
     chapter: j.chapter, chars: j.chars, log_lines: j.log.length,
     last_log: j.log[j.log.length - 1] ?? null, progress: j.progress ?? null })) })
+  if (path.startsWith('/jobs/') && path.endsWith('/partial')) {
+    const j = jobs.get(path.slice('/jobs/'.length, -'/partial'.length))
+    if (!j || j.user_id !== who) return err(404, 'job 不存在')
+    return j.partial_batches
+      ? json({ doc: DOC, batches_done: j.partial_batches, batches: 3 })
+      : err(404, '暂无已完成的批次可预览')
+  }
   if (path.startsWith('/jobs/')) {
     const j = jobs.get(path.slice('/jobs/'.length))
     return j && j.user_id === who ? json(j) : err(404, 'job 不存在')
@@ -409,6 +416,21 @@ jobs.get('job1')!.progress = { ...jobs.get('job1')!.progress as object,
 await settle(1600)
 must(has('第一批完成后估算剩余时间'), '第一批完成前不给剩余时间，要说明原因')
 console.log('4b. 进度可见 → 批次/尝试/阶段 + 已用/剩余时间，侧栏单行摘要 ✓')
+
+// 4c. 分批先看：已完成的批次先给人审阅，只读；又跑完一批时预览自动刷新
+must(!has('先审阅已完成的'), '还没有完成的批次时不该出现预览入口')
+jobs.get('job1')!.partial_batches = 1
+await settle(1600)
+await click(findByText('button', '先审阅已完成的 1 批'))
+must(has('预览：只含已完成的前 1/3 批'), '预览要标明只含前几批、只读')
+must(!has('编辑分镜') && !has('保存修改'), '预览不能编辑、不能保存')
+must(![...container.querySelectorAll('.tabs__btn')].some((b) => b.textContent === '渲染'),
+     '部分产物不能进渲染')
+must(has('放到后台，去开新转换'), '预览时任务面板仍在，转换照常继续')
+jobs.get('job1')!.partial_batches = 2
+await settle(1600)
+must(has('预览：只含已完成的前 2/3 批'), '又跑完一批时预览应自动刷新')
+console.log('4c. 分批先看 → 只读预览（不可编辑/保存/渲染），新批次完成自动刷新 ✓')
 
 // 5. 再放后台，让它在「没人看着」的情况下跑完：应弹通知并进历史
 await click(findByText('button', '放到后台，去开新转换'))
@@ -708,6 +730,32 @@ must(has('已拦在付费渲染之前'), '渲染门拦截要有明确说法')
 must(!has('[object Object]'), '结构化 detail 不能退化成 [object Object]')
 must(has('台词不是所引原文句的逐字摘录'), '拦截原因要逐条列出')
 console.log('17. 验证结果透出 → 保存复验不通过当场可见 / 渲染门给出可执行原因 ✓')
+
+// 18. 分批先看的两个收尾：预览开着时整章跑完 → 自动换成完整产物（不能被
+//     晚到的预览盖回去）；转换失败 → 已通过的批次照样能看
+await click(findByText('button', '＋ 新转换'))
+await type(container.querySelector('textarea') as unknown as HTMLTextAreaElement, '第三段原文。')
+await click(findByText('button', '开始转换'))
+jobs.get('job3')!.partial_batches = 1
+await settle(1600)
+await click(findByText('button', '先审阅已完成的 1 批'))
+must(has('预览：只含已完成的前 1/3 批'), '应打开预览')
+finishJob('job3')
+await settle(1800)
+must(!has('预览：只含'), '整章跑完后预览标记应消失')
+must(has('编辑分镜'), '完整产物可以编辑')
+
+await click(findByText('button', '＋ 新转换'))
+await type(container.querySelector('textarea') as unknown as HTMLTextAreaElement, '第四段原文。')
+await click(findByText('button', '开始转换'))
+jobs.get('job4')!.partial_batches = 2
+finishJob('job4', 'failed')
+await settle(1800)
+must(has('转换失败，但前 2 批已通过校验'), '失败时要告诉用户已通过的批次还在')
+await click(findByText('button', '查看已通过的 2 批'))
+must(has('预览：只含已完成的前 2/3 批'), '失败后仍能打开已通过批次的预览')
+must(has('转换失败，未通过的原因如下'), '失败原因仍要摆在面板上')
+console.log('18. 分批先看 → 跑完自动换完整产物 / 失败后已通过批次照样能看 ✓')
 
 root.unmount()
 console.log('\nALL PASS')

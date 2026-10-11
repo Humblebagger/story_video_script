@@ -4,7 +4,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from . import validate, verification
 from .chat import ChatInvoker
@@ -45,6 +45,24 @@ def _continuation_blocks(outputs: List[dict]) -> (str, str):
     return assets, continuation
 
 
+def _emit_partial(on_partial, batch_paths: List[Path], workdir: Path,
+                  done: int, total: int, log) -> None:
+    """把已完成的批次合并成一份部分产物交出去。只是预览：合并失败就不给，
+    不影响转换本身（整章跑完还会正式合并、终检）。"""
+    if done == 1:
+        partial_path = batch_paths[0]
+    else:
+        partial_path = workdir / f"partial_{done}.json"
+        ok, out = validate.run_merge(batch_paths, partial_path)
+        if not ok:
+            log(f"（前 {done} 批的预览合并失败，跳过预览：{out.strip()[:120]}）")
+            return
+    try:
+        on_partial(json.loads(partial_path.read_text(encoding="utf-8")), done, total)
+    except Exception as e:  # 预览是旁路，回调出错不能拖垮转换
+        log(f"（预览回调出错，已忽略：{e!r}）")
+
+
 def convert_text(text: str,
                  params: Optional[ConvertParams] = None,
                  settings: Optional[Settings] = None,
@@ -55,7 +73,8 @@ def convert_text(text: str,
                  warnings_out: Optional[List[str]] = None,
                  seed_assets: Optional[dict] = None,
                  manifest_out: Optional[dict] = None,
-                 progress_out: Optional[dict] = None) -> dict:
+                 progress_out: Optional[dict] = None,
+                 on_partial: Optional[Callable[[dict, int, int], None]] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何 BaseChatModel（测试用 FakeChat）。
@@ -67,6 +86,8 @@ def convert_text(text: str,
     模型须沿用其 ID 与描述——用于续写同一部小说的下一章时保持角色/场景一致。
     progress_out 由调用方持有、本函数原地更新：批次/尝试/阶段/已完成字数，
     供界面在分钟级的转换里显示走到了哪一步、大约还要多久。
+    on_partial(doc, 已完成批数, 总批数) 在每批（最后一批除外）通过后被调用，
+    doc 是已完成批次的合并结果，供界面在整章跑完之前先审阅。
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
@@ -152,6 +173,8 @@ def convert_text(text: str,
                         encoding="utf-8")
         outputs.append(doc)
         batch_paths.append(path)
+        if on_partial is not None and i < len(batches):
+            _emit_partial(on_partial, batch_paths, workdir, i, len(batches), log)
 
     progress.update({"phase": "merging"})
     if len(batch_paths) == 1:

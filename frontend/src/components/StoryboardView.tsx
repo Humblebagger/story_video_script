@@ -38,10 +38,12 @@ interface Props {
   saving: boolean
   onChange: (doc: Storyboard) => void
   onSave: () => void
+  /** 整章跑完之前的部分产物：只读，不能编辑、保存或渲染 */
+  preview?: { done: number; total: number } | null
 }
 
 export function StoryboardView({
-  doc, canSave, runId = null, dirty, saving, onChange, onSave,
+  doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null,
 }: Props) {
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
@@ -73,13 +75,15 @@ export function StoryboardView({
           <span className="tag">{meta?.video?.aspect_ratio}</span>
 
           <div className="sb__acts">
-            <button
-              className={`btn btn--sm${editing ? '' : ' btn--ghost'}`}
-              onClick={() => setEditing((v) => !v)}
-            >
-              {editing ? '完成编辑' : '编辑分镜'}
-            </button>
-            {canSave && (
+            {!preview && (
+              <button
+                className={`btn btn--sm${editing ? '' : ' btn--ghost'}`}
+                onClick={() => setEditing((v) => !v)}
+              >
+                {editing ? '完成编辑' : '编辑分镜'}
+              </button>
+            )}
+            {canSave && !preview && (
               <button
                 className="btn btn--sm"
                 disabled={!dirty || saving}
@@ -94,7 +98,14 @@ export function StoryboardView({
           </div>
         </div>
 
-        {editing && (
+        {preview && (
+          <p className="sb__preview">
+            预览：只含已完成的前 {preview.done}/{preview.total} 批，只读。
+            整章跑完后会自动换成完整产物，那时才能编辑、保存和渲染。
+          </p>
+        )}
+
+        {editing && !preview && (
           <p className="sb__editnote">
             编辑权只开在「呈现」一侧：分镜可改景别 / 运镜 / 时长 / 画面描述 / 氛围 / 音效 / 转场 / 角色表演，
             <b>资产卡</b>可改名称 / 别名 / 外貌 / 服装 / 状态 / 描述。
@@ -120,7 +131,7 @@ export function StoryboardView({
       </header>
 
       <nav className="tabs">
-        {TABS.map(([id, name]) => (
+        {TABS.filter(([id]) => !preview || id !== 'render').map(([id, name]) => (
           <button
             key={id}
             className={`tabs__btn${tab === id ? ' is-on' : ''}`}
@@ -149,7 +160,7 @@ export function StoryboardView({
         <AssetsView assets={doc.assets ?? {}} editing={editing} onChange={changeAsset} />
       )}
       {tab === 'source' && <SourceView doc={doc} idx={idx} focusUnit={focusUnit} />}
-      {tab === 'render' && <RenderView doc={doc} runId={runId} />}
+      {tab === 'render' && !preview && <RenderView doc={doc} runId={runId} />}
       {tab === 'json' && <pre className="json">{JSON.stringify(doc, null, 2)}</pre>}
     </div>
   )

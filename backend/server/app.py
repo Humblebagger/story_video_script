@@ -175,9 +175,11 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
         job["result"] = convert_text(req.text, params, settings=settings,
                                      log=log, warnings_out=warnings,
                                      seed_assets=seed, manifest_out=manifest,
-                                     progress_out=job["progress"])
+                                     progress_out=job["progress"],
+                                     on_partial=lambda d, k, n: _on_partial(job, d, k, n))
         job["manifest"] = manifest
         job["verification"] = manifest.get("verification")
+        job["partial"] = None    # 整章已出，预览作废；失败时则保留，已通过的批次照样能看
         if warnings:
             job["quality_report"] = "\n\n".join(warnings)
             job["status"] = "completed_with_warnings"
@@ -232,7 +234,7 @@ def submit(req: ConvertRequest, user: dict = Depends(current_user)):
            "result": None, "quality_report": None, "error": None, "persisted": False,
            "created_at": store.now_iso(),
            "work_title": req.work_title, "chapter": req.chapter,
-           "chars": len(req.text), "progress": {}}
+           "chars": len(req.text), "progress": {}, "partial": None}
     params = {name: getattr(req, name) for name in ConvertParams.__dataclass_fields__}
     try:
         store.save(user["id"], job_id, "queued", params, None)
@@ -243,6 +245,11 @@ def submit(req: ConvertRequest, user: dict = Depends(current_user)):
         _jobs[job_id] = job
     _executor.submit(_run_job, job, req, user["id"])
     return {"job_id": job_id, "status_url": f"/jobs/{job_id}"}
+
+
+def _on_partial(job: dict, doc: dict, done: int, total: int) -> None:
+    """转换线程回调：已完成批次的合并结果，供整章跑完前先审阅。"""
+    job["partial"] = {"doc": doc, "batches_done": done, "batches": total}
 
 
 def _progress_view(job: dict) -> Optional[dict]:
@@ -287,9 +294,23 @@ def get_job(job_id: str, user: dict = Depends(current_user)):
         job = _jobs.get(job_id)
     if job is None or job.get("user_id") != user["id"]:
         raise HTTPException(404, "job 不存在（服务重启会清空任务表）")
-    out = {k: v for k, v in job.items() if k != "user_id"}
+    # 部分产物有几百 KB，轮询每 1.5 秒一次，只带批数；要看再走 /partial 取
+    out = {k: v for k, v in job.items() if k not in ("user_id", "partial")}
     out["progress"] = _progress_view(job)
+    out["partial_batches"] = (job.get("partial") or {}).get("batches_done", 0)
     return out
+
+
+@app.get("/jobs/{job_id}/partial")
+def get_job_partial(job_id: str, user: dict = Depends(current_user)):
+    """已完成批次的合并结果（只读预览）。整章成功后不再提供，失败时保留。"""
+    with _lock:
+        job = _jobs.get(job_id)
+    if job is None or job.get("user_id") != user["id"]:
+        raise HTTPException(404, "job 不存在（服务重启会清空任务表）")
+    if not job.get("partial"):
+        raise HTTPException(404, "暂无已完成的批次可预览")
+    return job["partial"]
 
 
 # ---------- 历史记录 ----------

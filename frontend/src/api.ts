@@ -7,7 +7,8 @@ import { getToken, notifyUnauthorized } from './auth'
 import type { User } from './auth'
 import type {
   RenderPack,
-  ConvertRequest, Health, HistoryRecord, HistorySummary, Job, JobStatus, JobSummary,
+  ConvertRequest, Health, HistoryRecord, HistorySummary, Job, JobPartial, JobStatus,
+  JobSummary,
   LibraryWork, Storyboard, VerificationReport,
 } from './types'
 
@@ -144,6 +145,11 @@ export function submitConvert(payload: ConvertRequest): Promise<{ job_id: string
 
 export function getJob(jobId: string): Promise<Job> {
   return req<Job>(`/jobs/${jobId}`)
+}
+
+/** 已完成批次的合并结果（只读预览）。整章成功后不再提供 */
+export function getJobPartial(jobId: string): Promise<JobPartial> {
+  return req<JobPartial>(`/jobs/${jobId}/partial`)
 }
 
 /** 在跑/刚结束的任务：关掉页面后靠它重新接上 */

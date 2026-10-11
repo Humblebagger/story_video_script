@@ -9,9 +9,12 @@ interface Props {
   onReset: () => void
   /** 转换在后台线程池里跑，离开本页不会中断 */
   onBackground: () => void
+  /** 已完成批次的预览是否已经打开 */
+  previewing?: boolean
+  onPreview?: () => void
 }
 
-export function JobPanel({ job, onReset, onBackground }: Props) {
+export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: Props) {
   const logRef = useRef<HTMLPreElement>(null)
   const running = job.status === 'queued' || job.status === 'running'
 
@@ -41,6 +44,20 @@ export function JobPanel({ job, onReset, onBackground }: Props) {
       </header>
 
       {running && job.progress && <JobProgress progress={job.progress} />}
+
+      {/* 长章节要跑好几分钟：已完成的批次先给人看。失败时同样给，已通过的批次不白跑 */}
+      {!!job.partial_batches && (running || job.status === 'failed') && !previewing && onPreview && (
+        <div className="job__partial">
+          <span>
+            {running
+              ? `已完成 ${job.partial_batches} 批，可以先审阅，整章跑完后自动换成完整产物`
+              : `转换失败，但前 ${job.partial_batches} 批已通过校验`}
+          </span>
+          <button className="btn btn--sm" onClick={onPreview}>
+            {running ? `先审阅已完成的 ${job.partial_batches} 批` : `查看已通过的 ${job.partial_batches} 批`}
+          </button>
+        </div>
+      )}
 
       {job.status === 'failed' && job.error && (
         <div className="job__warn job__warn--err">
