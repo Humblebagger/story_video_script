@@ -11,7 +11,7 @@ _SECTION_RE = re.compile(r"^\s*[一二三四五六七八九十百0-9]{1,4}\s*$")
 # 零宽/BOM 排版噪声：不携带内容信息，但要求 LLM 在 JSON 输出里逐字复制
 # 不可见字符本质上不可靠（实测 DeepSeek 反复丢失 U+200B 导致保真失败）。
 # 不含 U+200C/U+200D（部分文字系统及 emoji 序列有实义），只删确定无义的三个。
-_ZERO_WIDTH_RE = re.compile("[\\u200b\\ufeff\\u2060]")  # 零宽空格 / BOM / 词连接符
+ZERO_WIDTH_RE = re.compile("[\\u200b\\ufeff\\u2060]")  # 零宽空格 / BOM / 词连接符
 
 
 def normalize_source_text(text: str) -> Tuple[str, int]:
@@ -20,7 +20,7 @@ def normalize_source_text(text: str) -> Tuple[str, int]:
     流水线入口调用（STORYBOARD_NORMALIZE_INPUT=0 关闭）；清洗后全链路
     （分批/LLM/保真检查）一律以清洗后的文本为"原文"。
     """
-    cleaned, n = _ZERO_WIDTH_RE.subn("", text)
+    cleaned, n = ZERO_WIDTH_RE.subn("", text)
     return cleaned, n
 
 

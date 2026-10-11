@@ -998,13 +998,38 @@ def main() -> int:
         assert code == 1, "冻结证据被改必须以非零退出，好让 CI 拦得住"
         assert "SOURCE-FROZEN-002" in out and "u0001" in out
 
+        # 带 --source 复验：convert 入口会剔除零宽字符，产物里的句单元是清洗后的；
+        # 拿未清洗的原文去比会误报 FID-SOURCE-001。产物本身不含零宽字符时，
+        # 原文按同一口径清洗后再比；产物保留了零宽字符（归档即如此）就按原样比
+        import re as _re
+        raw_source = YAO / "input_full.txt"
+        assert _re.search("[\u200b\ufeff\u2060]", raw_source.read_text(encoding="utf-8")), \
+            "原文里要真有零宽字符，否则这项测不到"
+        cleaned = json.loads(_re.sub("[\u200b\ufeff\u2060]", "",
+                                     json.dumps(yao_doc, ensure_ascii=False)))
+        clean_path = Path(td) / "clean.json"
+        clean_path.write_text(json.dumps(cleaned, ensure_ascii=False), encoding="utf-8")
+        code, out = run_cli("verify", str(clean_path), "--source", str(raw_source))
+        assert code == 0 and "FID-SOURCE-001" not in out, \
+            f"清洗后的产物对未清洗原文不该误报：{out[-300:]}"
+        assert "零宽字符" in out, "按清洗口径比对时要说一声"
+        code, out = run_cli("verify", str(bare), "--source", str(raw_source))
+        assert code == 0 and "FID-SOURCE-001" not in out, "保留零宽字符的归档按原样比对"
+        assert "零宽字符" not in out
+        # 产物被真改过时仍要拦住：清洗口径不能变成放水
+        tampered = json.loads(json.dumps(cleaned))
+        tampered["source"]["units"][-1]["text"] += "多"
+        clean_path.write_text(json.dumps(tampered, ensure_ascii=False), encoding="utf-8")
+        code, out = run_cli("verify", str(clean_path), "--source", str(raw_source))
+        assert code == 1 and "FID-SOURCE-001" in out
+
         # 不是 IR 也不是 run 记录：单独的退出码，别和验证不通过混为一谈
         junk = Path(td) / "junk.json"
         junk.write_text('{"hello": 1}', encoding="utf-8")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             assert cli_main(["verify", str(junk)]) == 2
-    print("verify 子命令: 裸 IR 如实说明 / 提示词与产物指纹漂移点名 / 篡改非零退出 ✓")
+    print("verify 子命令: 裸 IR 如实说明 / 提示词与产物指纹漂移点名 / 篡改非零退出 / 零宽字符口径一致 ✓")
 
     print("\nALL PASS")
     return 0

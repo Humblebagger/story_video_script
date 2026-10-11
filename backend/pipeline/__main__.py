@@ -118,6 +118,18 @@ def _verify(args) -> int:
                   for u in (doc.get("source") or {}).get("units") or []])
     source_text = (Path(args.source).read_text(encoding="utf-8")
                    if args.source else None)
+    notes = []
+    if source_text is not None:
+        # convert 入口默认剔除零宽字符，产物的句单元是清洗后的文本；拿未清洗的原文
+        # 去比会误报 FID-SOURCE-001。产物自己不含零宽字符，就按同一口径清洗原文；
+        # 产物保留了它们（关掉归一化转出来的，如《药》归档）则原样比
+        from .splitter import ZERO_WIDTH_RE, normalize_source_text
+        units_text = "".join(u.get("text") or "" for u in frozen)
+        if not ZERO_WIDTH_RE.search(units_text):
+            source_text, removed = normalize_source_text(source_text)
+            if removed:
+                notes.append(f"原文含 {removed} 个零宽字符，已按 convert 入口的口径"
+                             "清洗后再比对（产物句单元本就不含它们）")
 
     # 先按确定性口径重算 coverage 再复验：文档里声明的那份不作数
     probe = verification.verify_document(doc, frozen_units=frozen,
@@ -145,6 +157,8 @@ def _verify(args) -> int:
                           "artifact_sha256": fingerprint},
                          ensure_ascii=False, indent=2))
     else:
+        for line in notes:
+            print(f"NOTE {line}")
         print(report.render())
         for line in drift:
             print(f"DRIFT {line}")
