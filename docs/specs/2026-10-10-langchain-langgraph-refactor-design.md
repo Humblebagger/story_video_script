@@ -128,8 +128,9 @@ system 提示词的 `cache_control: ephemeral` 缓存标记通过 `SystemMessage
 
 择优键语义不变：`(1, -密度比)` < `(2, -超时比)` < `(3, 评审总分)`，越大越接近达标。
 
-现有"单轮修复超过 8 个工具步骤"的上限，改由图的 `recursion_limit` 表达；
-超限时与现在一样记为修复失败、进入下一次尝试。
+"单轮修复超过 8 个工具步骤"的上限由状态里的 `tool_steps` 计数表达，
+超限时与改造前一样置 `repair_failed`、进入下一次尝试；`recursion_limit`
+只是按 `max_retries` 推出的兜底，不承载这条语义。
 
 ### 4.3 `tools.py`
 
