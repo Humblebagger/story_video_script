@@ -219,9 +219,10 @@ def main() -> int:
 
     # 已知笔误：机位 reverse → over_shoulder；narration: null → 省略
     slips = {"episodes": [{"shots": [{"camera": {"angle": "reverse"}, "narration": None},
-                                     {"camera": {"angle": "low"}}]}]}
-    assert fix_known_slips(slips) == 2
+                                     {"camera": {"angle": "low", "movement": "whip_pan"}}]}]}
+    assert fix_known_slips(slips) == 3
     assert slips["episodes"][0]["shots"][0] == {"camera": {"angle": "over_shoulder"}}
+    assert slips["episodes"][0]["shots"][1]["camera"]["movement"] == "pan", "甩镜归入摇镜"
     assert fix_known_slips(slips) == 0
     print("旁白裁剪: 只动有画面承载的动作/描写句 / 裁到阈值即停 / 文本重建或不敢动 / 已知笔误修正 ✓")
 
@@ -839,15 +840,22 @@ def main() -> int:
     fit_durations({"episodes": [{"shots": [odd]}]})
     assert odd["duration_sec"] == 2.5, "按 0.5s 向上取整"
 
-    # music.curve 序号 → 镜头 ID；越界与已是 ID 的不动
+    # music.curve 序号 → 镜头 ID；越界的截到本集首/末镜（实测模型数错镜头数，
+    # 写出本集只有 40 镜时的第 41、44 镜）；本集不存在的同集镜头 ID 同样截到末镜
     curve_doc = {"episodes": [{"shots": [{"id": "E01-SH001"}, {"id": "E01-SH002"}],
                                "music": {"curve": [
                                    {"from_shot": 1, "to_shot": "2"},
-                                   {"from_shot": "E01-SH001", "to_shot": 9}]}}]}
-    assert normalize_curve_refs(curve_doc) == 2
+                                   {"from_shot": "E01-SH001", "to_shot": 9},
+                                   {"from_shot": 0, "to_shot": "E01-SH041"},
+                                   {"from_shot": "E02-SH005", "to_shot": "E01-SH002"}]}}]}
+    assert normalize_curve_refs(curve_doc) == 5
     segs = curve_doc["episodes"][0]["music"]["curve"]
     assert segs[0] == {"from_shot": "E01-SH001", "to_shot": "E01-SH002"}
-    assert segs[1] == {"from_shot": "E01-SH001", "to_shot": 9}, "越界留给 schema 报"
+    assert segs[1] == {"from_shot": "E01-SH001", "to_shot": "E01-SH002"}, "越界截到末镜"
+    assert segs[2] == {"from_shot": "E01-SH001", "to_shot": "E01-SH002"}, \
+        "序号 0 截到首镜；本集不存在的镜头 ID 截到末镜"
+    assert segs[3]["from_shot"] == "E02-SH005", "别的集的 ID 不归这里管，留给 lint 报"
+    assert normalize_curve_refs(curve_doc) == 0, "应幂等"
 
     one = {"narration": {"text": "十个字的旁白吧"}, "duration_sec": 5,
            "dialogue": [{"text": "八个字的台词"}]}

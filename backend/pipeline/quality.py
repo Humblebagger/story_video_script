@@ -159,11 +159,16 @@ def prune_narration(doc: dict, max_ratio: float) -> int:
     return removed
 
 
+# 运镜枚举之外、但语义归属无歧义的写法（实测出现过的才收）
+_MOVEMENT_ALIASES = {"whip_pan": "pan"}
+
+
 def fix_known_slips(doc: dict) -> int:
     """模型反复出现、语义无歧义的结构笔误，校验前直接改掉。返回修正处数。
 
     - camera.angle 写成 reverse：那是场景卡机位的枚举（反打），镜头机位里对应
       过肩拍 over_shoulder
+    - camera.movement 写成 whip_pan（甩镜）：枚举里归 pan
     - narration 写成 null：没有旁白就该省略这个字段
     """
     n = 0
@@ -172,6 +177,9 @@ def fix_known_slips(doc: dict) -> int:
             cam = shot.get("camera")
             if isinstance(cam, dict) and cam.get("angle") == "reverse":
                 cam["angle"] = "over_shoulder"
+                n += 1
+            if isinstance(cam, dict) and cam.get("movement") in _MOVEMENT_ALIASES:
+                cam["movement"] = _MOVEMENT_ALIASES[cam["movement"]]
                 n += 1
             if "narration" in shot and shot["narration"] is None:
                 del shot["narration"]
@@ -233,24 +241,34 @@ def fit_durations(doc: dict, cps: float = DEFAULT_SPEECH_CPS,
 
 
 def normalize_curve_refs(doc: dict) -> int:
-    """music.curve 里写成序号的镜头引用（1 / "3"）换成本集第 n 镜的 ID。
+    """music.curve 的镜头引用规整成本集真实存在的镜头 ID。返回修正处数。
 
-    实测三批首次生成全部因为这一处硬失败（schema 要求 E01-SH001 形式），每批白搭
-    一轮修复。序号越界的不动，留给 schema 校验报出来。返回修正处数。
+    - 写成序号（1 / "3"）的换成本集第 n 镜的 ID：实测三批首次生成全部因此硬失败
+    - 越界的截到本集首/末镜：实测模型数错镜头数，本集 40 镜却写第 41、44 镜
+    - 本集前缀、但本集不存在的镜头 ID（E01-SH041）同样截到末镜
+    别的集的 ID 不归这里管，留给 lint 报。情绪曲线是呈现层，截到边界只是让
+    该段落在本集末尾，不影响任何溯源。
     """
     n = 0
     for ep in doc.get("episodes", []):
-        ids = [s.get("id") for s in ep.get("shots", [])]
+        ids = [s.get("id") for s in ep.get("shots", []) if isinstance(s.get("id"), str)]
+        if not ids:
+            continue
+        known = set(ids)
+        prefix = ids[0].split("-SH")[0] + "-SH" if "-SH" in ids[0] else None
         for seg in (ep.get("music") or {}).get("curve") or []:
             for key in ("from_shot", "to_shot"):
                 v = seg.get(key)
                 if isinstance(v, bool):
                     continue
                 if isinstance(v, int) or (isinstance(v, str) and v.isdigit()):
-                    i = int(v)
-                    if 1 <= i <= len(ids) and isinstance(ids[i - 1], str):
-                        seg[key] = ids[i - 1]
-                        n += 1
+                    i = min(max(int(v), 1), len(ids))
+                    seg[key] = ids[i - 1]
+                    n += 1
+                elif (isinstance(v, str) and prefix and v.startswith(prefix)
+                      and v not in known):
+                    seg[key] = ids[-1]
+                    n += 1
     return n
 
 

@@ -202,10 +202,10 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         # 程序算得对的呈现层字段直接改，不为它们花一轮修复
         fixed = quality.normalize_curve_refs(doc)
         if fixed:
-            log(f"批 {idx}：music.curve 有 {fixed} 处镜头引用写成序号，已换成镜头 ID")
+            log(f"批 {idx}：music.curve 有 {fixed} 处镜头引用写成序号或越界，已规整为本集镜头 ID")
         slips = quality.fix_known_slips(doc)
         if slips:
-            log(f"批 {idx}：修正 {slips} 处已知笔误（机位 reverse→over_shoulder、空旁白字段）")
+            log(f"批 {idx}：修正 {slips} 处已知笔误（机位 reverse、运镜 whip_pan、空旁白字段）")
         if settings.auto_prune_narration:
             # 先裁旁白再拉时长：旁白变短，镜头就不必拉那么长
             pruned = quality.prune_narration(doc, settings.narration_density_max)
