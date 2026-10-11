@@ -163,7 +163,34 @@ def main() -> int:
     ok, _, _ = narration_density_gate(degraded, 0.6)   # 非 selective 不适用
     assert ok
     degraded["meta"]["narration"]["mode"] = "selective"
-    print("旁白密度门: 归档通过 / 100% 旁白拦截 / 关闭与模式豁免生效 ✓")
+    # 回喂清单要分清「可直接移除」与「只靠旁白承载」：实测模型照清单删旁白，
+    # 把没有画面引用的句子删成无人承载，修复轮反而掉进 COVERAGE-001 硬失败
+    shots = degraded["episodes"][0]["shots"]
+    for i in range(5):                       # 前 5 句另有镜头画面引用
+        shots[i]["source"] = {"unit_refs": [f"u{i + 1:04d}"]}
+    ok, report, _ = narration_density_gate(degraded, 0.6)
+    safe, _, rest = report.partition("只靠旁白承载")
+    assert "u0001" in safe and "u0005" in safe and "u0006" not in safe, report
+    assert "u0006" in rest and "source.unit_refs" in rest, \
+        "只靠旁白承载的句子要说明：移除前先加进画面镜头的 source.unit_refs"
+    print("旁白密度门: 归档通过 / 100% 旁白拦截 / 关闭与模式豁免生效 / 清单分可删与需先补画面 ✓")
+
+    # 旁白预算：selective 模式下由程序把比例换算成本批的具体句数，放在用户消息末尾
+    from pipeline.prompt import build_user_message
+    units10 = [{"id": f"u{i:04d}", "text": "他推门。", "para": 1} for i in range(1, 11)]
+    msg = build_user_message(YAO_PARAMS, "他推门。" * 10, frozen_units=units10,
+                             narration_density_max=0.6)
+    tail = msg[msg.rindex("【小说原文】"):]
+    assert "【旁白预算】" in tail, "预算要放在原文之后、消息末尾"
+    assert "本批共 10 个句单元" in msg and "约 2–4 句" in msg and "超过 6 句" in msg, msg[-400:]
+    assert "source.unit_refs" in msg[msg.index("【旁白预算】"):]
+    from dataclasses import replace as _replace
+    ot = build_user_message(_replace(YAO_PARAMS, narration_mode="original_text"),
+                            "x", frozen_units=units10, narration_density_max=0.6)
+    assert "【旁白预算】" not in ot, "original_text 模式逐句朗读，不设预算"
+    assert "【旁白预算】" not in build_user_message(YAO_PARAMS, "x"), \
+        "没有冻结句单元就不知道句数，不给预算"
+    print("旁白预算: selective 换算成本批句数 / 原文模式与兼容模式不给 ✓")
 
     # 7. 评审阶段流程（mock：生成 1 次 + 评审 1 次通过）
     romance_text = extract_passage(

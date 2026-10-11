@@ -138,7 +138,7 @@ def convert_text(text: str,
             assets_block = cont_block = "无"
         expected_units = prompt_units(frozen, i) if settings.freeze_source_units else None
         user = build_user_message(params, batch, assets_block, cont_block,
-                                  expected_units)
+                                  expected_units, settings.narration_density_max)
         log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
         progress.update({"batch": i, "batch_chars": len(batch)})
         doc, batch_warnings = run_batch(graph, user=user, batch_text=batch,

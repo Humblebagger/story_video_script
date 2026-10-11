@@ -52,15 +52,31 @@ def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str, floa
     candidates = [u for u in units
                   if u["id"] in narrated
                   and u.get("kind") in ("action", "description", "dialogue")]
-    lines = [f"  {u['id']} [{u['kind']}] {u['text'][:30]}" for u in candidates[:40]]
+    # 已被某镜头画面引用的句子，从旁白里拿掉仍有人承载；只靠旁白承载的，直接删
+    # 就成了未覆盖——实测模型照单删旁白，修复轮反而掉进 COVERAGE-001 硬失败
+    pictured = set()
+    for ep in doc.get("episodes", []):
+        for shot in ep.get("shots", []):
+            pictured.update((shot.get("source") or {}).get("unit_refs") or [])
+    safe = [u for u in candidates if u["id"] in pictured]
+    bare = [u for u in candidates if u["id"] not in pictured]
+
+    def fmt(us):
+        return [f"  {u['id']} [{u['kind']}] {u['text'][:30]}" for u in us[:40]]
+
     report = (
         f"[quality] selective 模式下旁白占比 {ratio:.0%}，超过阈值 {max_ratio:.0%}"
         f"——「能拍出来的不念」未执行（人工基准约 20%–35%）。\n"
-        f"以下被旁白朗读的句子多为可拍内容，请逐句重新裁决：画面或台词已完整承载的，"
-        f"从 narration.unit_refs 中移除（保持 source.unit_refs 不变）；只保留画面承载"
-        f"不了的信息——时间跳跃、人名身份交代、因果前史、心理核心语义、点题句：\n"
-        + "\n".join(lines))
-    return False, report, ratio
+        f"以下被旁白朗读的句子多为可拍内容，请逐句重新裁决，只保留画面承载不了的"
+        f"信息——时间跳跃、人名身份交代、因果前史、心理核心语义、点题句。\n")
+    if safe:
+        report += ("已有镜头画面引用、可直接从 narration.unit_refs 中移除的：\n"
+                   + "\n".join(fmt(safe)) + "\n")
+    if bare:
+        report += ("只靠旁白承载的（没有任何镜头的 source.unit_refs 引用它们）：若要移除，"
+                   "须先把它加进呈现该内容的镜头的 source.unit_refs，否则就成了未覆盖：\n"
+                   + "\n".join(fmt(bare)) + "\n")
+    return False, report.rstrip("\n"), ratio
 
 
 # 中文 TTS 的常见语速区间是 4–6 字/秒。取 4.5 作缺省偏保守：宁可判"念不完"，
