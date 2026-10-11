@@ -284,6 +284,21 @@ export interface ConvertRequest {
   import_assets?: boolean
 }
 
+/** 转换进度（服务端 _progress_view）。剩余时间在第一批跑完之前为 null——没有依据不瞎猜 */
+export interface JobProgress {
+  batches: number
+  batch: number
+  batch_chars?: number
+  total_chars: number
+  done_chars: number
+  attempt: number
+  max_attempts: number
+  phase: 'starting' | 'generating' | 'regenerating' | 'checking' | 'repairing'
+    | 'merging' | 'done'
+  elapsed_sec: number | null
+  eta_sec: number | null
+}
+
 export interface Job {
   id: string
   status: JobStatus
@@ -297,6 +312,7 @@ export interface Job {
   work_title?: string
   chapter?: string
   chars?: number
+  progress?: JobProgress | null
 }
 
 /** 任务摘要：用于关掉页面后重新接上仍在后台跑的转换 */
@@ -309,6 +325,7 @@ export interface JobSummary {
   chars: number | null
   log_lines: number
   last_log: string | null
+  progress?: JobProgress | null
 }
 
 export interface Health {

@@ -90,13 +90,34 @@ def main() -> int:
         (YAO / "output_batch2.json").read_text(encoding="utf-8"),
     ])
     logs = []
+    progress = {}
     # 归档由未清洗原文转换（units 保留 U+200B），关闭入口归一化以逐字回放
     doc = convert_text(full,
                        params=YAO_PARAMS,
                        settings=Settings(max_retries=0, normalize_input=False,
                                          freeze_source_units=False),
                        llm=mock, batches=[b1, b2],
-                       log=logs.append)
+                       log=logs.append, progress_out=progress)
+    assert progress["phase"] == "done" and progress["batches"] == 2
+    assert progress["batch"] == 2 and progress["done_chars"] == progress["total_chars"]
+    assert progress["max_attempts"] == 1 and progress["attempt"] == 1
+
+    # 服务端的进度视图：第一批跑完之前不猜剩余时间；之后按已完成字数线性外推
+    import time as _time
+    from server.app import _progress_view
+    now = _time.time()
+    job = {"status": "running", "progress": {
+        "batches": 2, "batch": 1, "total_chars": 1000, "done_chars": 0,
+        "phase": "generating", "started_at": now - 60}}
+    v = _progress_view(job)
+    assert v["eta_sec"] is None and 59 <= v["elapsed_sec"] <= 61
+    assert "started_at" not in v, "不把服务端时钟交给浏览器去减"
+    job["progress"].update({"done_chars": 400, "batch": 2})
+    assert 88 <= _progress_view(job)["eta_sec"] <= 92, "60s 完成 40%，剩余约 90s"
+    job["status"] = "succeeded"
+    assert _progress_view(job)["eta_sec"] is None
+    assert _progress_view({"status": "queued", "progress": {}}) is None
+    print("进度: 批次/尝试/阶段原地更新 / 剩余时间按字数外推且首批前不猜 ✓")
     archived = json.loads((YAO / "output_merged.json").read_text(encoding="utf-8"))
     # 校验节点会把念不完旁白的镜头时长自动拉长；archived 留原样（后面的时长门
     # 用例要测的正是归档里念不完的镜头），比对用拉长后的副本

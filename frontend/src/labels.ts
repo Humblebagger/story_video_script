@@ -71,6 +71,24 @@ export const JOB_STATUS: Record<JobStatus, string> = {
   draft_invalid: '草稿未过验证',
 }
 
+export const PHASE: Record<string, string> = {
+  starting: '准备中', generating: '生成分镜', regenerating: '整份重写',
+  checking: '校验中', repairing: '受限修复', merging: '合并终检', done: '收尾',
+}
+
+/** 秒数 → 「3 分 05 秒」/「42 秒」 */
+export function fmtDuration(sec: number): string {
+  const s = Math.max(0, Math.round(sec))
+  const m = Math.floor(s / 60)
+  return m ? `${m} 分 ${String(s % 60).padStart(2, '0')} 秒` : `${s} 秒`
+}
+
+/** 剩余时间只给到分钟粒度：按字数线性外推本就粗，精确到秒是假精确 */
+export function fmtEta(sec: number): string {
+  if (sec < 60) return '不到 1 分钟'
+  return `约 ${Math.round(sec / 60)} 分钟`
+}
+
 export const INTENSITY: Record<string, string> = { low: '弱', mid: '中', high: '强' }
 
 /** 角色外貌与声音的键是 schema 写死的（additionalProperties: false），

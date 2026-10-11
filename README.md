@@ -150,6 +150,8 @@ python3 adapters/seedance.py examples/example_storyboard_suspense.json --out out
 - [x] 验证结果贯通到界面与命令行：`PUT /history/{id}` 整份复验，不合格标 `draft_invalid` 但**照样保存**（不丢用户的工作），前端当场摊开 Finding 并把 JSON Pointer 翻成集号镜号；`/render/plan` 验证不过直接 422，拦在付费渲染之前，拦截原因逐条可读（此前结构化 detail 会退化成 `[object Object]`）。`python3 -m pipeline verify` 对已落盘产物重新独立验证并核对契约漂移——清单此前只写不读，提示词改版后回头编辑旧产物是在静默混用两套契约
 - [x] 讲述顺序与口径一致性：`ORDER-001` 拦镜头回跳（原有规则只看单镜头内部相不相邻，管不到镜头之间，第 3 镜引 u0050、第 4 镜引 u0010 以前完全合法）；覆盖率的三处实现（`verification.py` / `lint_storyboard.py` / `merge_storyboard.py`）由测试钉在一起——3 份归档 × 2 种旁白模式必须同结果，否则某天两个数对不上而没人知道该信谁
 - [x] token 用量按尝试归账（`STORYBOARD_REPAIR_MODE=patch|rewrite` 可切回改造前的整份重写路径做 A/B）——「受限补丁比整份重写省」在此之前只是结构推断，没有实测支撑
+- [x] **降成本**：程序能算对的呈现层字段不再交给模型返工——`music.curve` 写成序号的镜头引用在校验前换成镜头 ID，念不完旁白/台词的镜头时长由程序拉长（0.5s 取整、封顶 15s，`STORYBOARD_AUTO_FIT_DURATION=0` 关闭），封顶后仍念不完的才回喂要求拆镜；修复轮单次输出设独立上限（`STORYBOARD_REPAIR_MAX_TOKENS`，默认 8000），补丁撞上限不应用、打回要求拆小。《药》全文同参数实测：调用 13→8 次、输出 token 118.5k→63.8k、耗时 343s→225s，质量警告 1→0
+- [x] **进度可见**：任务面板显示「批 2/3 · 第 2 次尝试（最多 3）· 受限修复」与进度条，已用时间 + 按已完成字数外推的剩余时间（第一批跑完前不猜），侧栏给单行摘要；`verify --source` 按 convert 入口的口径清洗零宽字符再比对，不再误报 `FID-SOURCE-001`
 
 ### 弱模型实跑的三类故障与防线
 

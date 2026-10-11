@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { JOB_STATUS, label } from '../labels'
 import type { HistorySummary, JobSummary } from '../types'
+import { JobProgress } from './JobProgress'
 
 interface Props {
   runs: HistorySummary[]
@@ -54,7 +55,9 @@ export function HistoryPanel({
                 <b className="hrun__title">{j.work_title || '转换中'}</b>
               </div>
               {j.chapter && <p className="hrun__chapter">{j.chapter}</p>}
-              <p className="hrun__last">{j.last_log ?? '排队中…'}</p>
+              {j.progress
+                ? <JobProgress progress={j.progress} compact />
+                : <p className="hrun__last">{j.last_log ?? '排队中…'}</p>}
             </li>
           ))}
         </ul>

@@ -1,6 +1,7 @@
 """编排器：文本 → 分批 → LLM 转换 → 校验（失败回喂重试）→ 合并 → 整章终检。"""
 import json
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -53,7 +54,8 @@ def convert_text(text: str,
                  log=print,
                  warnings_out: Optional[List[str]] = None,
                  seed_assets: Optional[dict] = None,
-                 manifest_out: Optional[dict] = None) -> dict:
+                 manifest_out: Optional[dict] = None,
+                 progress_out: Optional[dict] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何 BaseChatModel（测试用 FakeChat）。
@@ -63,6 +65,8 @@ def convert_text(text: str,
     择优降级交付，质量报告追加进 warnings_out（settings.strict 时同样抛错）。
     seed_assets 为历史资产库（assets 对象），传入后首批即带【已有资产库】，
     模型须沿用其 ID 与描述——用于续写同一部小说的下一章时保持角色/场景一致。
+    progress_out 由调用方持有、本函数原地更新：批次/尝试/阶段/已完成字数，
+    供界面在分钟级的转换里显示走到了哪一步、大约还要多久。
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
@@ -106,9 +110,19 @@ def convert_text(text: str,
     workdir.mkdir(parents=True, exist_ok=True)
     attempt_records = run_manifest["attempts"]
     log(f"输入 {len(text)} 字符 → {len(batches)} 批（工作目录 {workdir}）")
+    progress = progress_out if progress_out is not None else {}
+    progress.update({"batches": len(batches), "batch": 0,
+                     "total_chars": sum(len(b) for b in batches), "done_chars": 0,
+                     "attempt": 0, "max_attempts": settings.max_retries + 1,
+                     "phase": "starting", "started_at": time.time()})
+
+    def on_progress(phase: str, attempt: int) -> None:
+        progress.update({"phase": phase, "attempt": attempt})
+
     graph = build_batch_graph(chat=chat, review_chat=review_chat,
                               settings=settings, params=params, workdir=workdir,
-                              attempt_records=attempt_records, log=log)
+                              attempt_records=attempt_records, log=log,
+                              progress=on_progress)
 
     outputs: List[dict] = []
     batch_paths: List[Path] = []
@@ -126,8 +140,10 @@ def convert_text(text: str,
         user = build_user_message(params, batch, assets_block, cont_block,
                                   expected_units)
         log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
+        progress.update({"batch": i, "batch_chars": len(batch)})
         doc, batch_warnings = run_batch(graph, user=user, batch_text=batch,
                                         idx=i, frozen_units=expected_units)
+        progress["done_chars"] += len(batch)
         run_manifest["usage"] = sum_usage(attempt_records)
         if batch_warnings and warnings_out is not None:
             warnings_out.extend(batch_warnings)
@@ -137,6 +153,7 @@ def convert_text(text: str,
         outputs.append(doc)
         batch_paths.append(path)
 
+    progress.update({"phase": "merging"})
     if len(batch_paths) == 1:
         merged_path = batch_paths[0]
     else:
@@ -171,4 +188,5 @@ def convert_text(text: str,
         run_manifest["verification"] = final_report.to_dict()
         raise ConversionError("合并后整章终检未通过", lint_out + "\n" + fid_out)
     finish_manifest(run_manifest, merged_doc, final_report, "verified")
+    progress.update({"phase": "done"})
     return merged_doc

@@ -34,6 +34,7 @@ import os
 import copy
 import sys
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -173,7 +174,8 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
     try:
         job["result"] = convert_text(req.text, params, settings=settings,
                                      log=log, warnings_out=warnings,
-                                     seed_assets=seed, manifest_out=manifest)
+                                     seed_assets=seed, manifest_out=manifest,
+                                     progress_out=job["progress"])
         job["manifest"] = manifest
         job["verification"] = manifest.get("verification")
         if warnings:
@@ -230,7 +232,7 @@ def submit(req: ConvertRequest, user: dict = Depends(current_user)):
            "result": None, "quality_report": None, "error": None, "persisted": False,
            "created_at": store.now_iso(),
            "work_title": req.work_title, "chapter": req.chapter,
-           "chars": len(req.text)}
+           "chars": len(req.text), "progress": {}}
     params = {name: getattr(req, name) for name in ConvertParams.__dataclass_fields__}
     try:
         store.save(user["id"], job_id, "queued", params, None)
@@ -241,6 +243,24 @@ def submit(req: ConvertRequest, user: dict = Depends(current_user)):
         _jobs[job_id] = job
     _executor.submit(_run_job, job, req, user["id"])
     return {"job_id": job_id, "status_url": f"/jobs/{job_id}"}
+
+
+def _progress_view(job: dict) -> Optional[dict]:
+    """进度快照 + 服务端算好的已用/预计剩余秒数（不让浏览器拿自己的时钟去减）。
+
+    预计剩余按已完成字数线性外推：第一批跑完之前没有依据，宁可不给也不瞎猜。
+    """
+    p = dict(job.get("progress") or {})
+    if not p:
+        return None
+    started = p.pop("started_at", None)
+    elapsed = time.time() - started if started else None
+    p["elapsed_sec"] = round(elapsed) if elapsed is not None else None
+    done, total = p.get("done_chars") or 0, p.get("total_chars") or 0
+    running = job.get("status") in ("queued", "running") and p.get("phase") != "done"
+    p["eta_sec"] = (round(elapsed / done * (total - done))
+                    if running and elapsed and done and total > done else None)
+    return p
 
 
 @app.get("/jobs")
@@ -257,6 +277,7 @@ def list_jobs(user: dict = Depends(current_user)):
         "work_title": j.get("work_title"), "chapter": j.get("chapter"),
         "chars": j.get("chars"), "log_lines": len(j["log"]),
         "last_log": j["log"][-1] if j["log"] else None,
+        "progress": _progress_view(j),
     } for j in sorted(jobs, key=lambda x: x.get("created_at") or "", reverse=True)]}
 
 
@@ -266,7 +287,9 @@ def get_job(job_id: str, user: dict = Depends(current_user)):
         job = _jobs.get(job_id)
     if job is None or job.get("user_id") != user["id"]:
         raise HTTPException(404, "job 不存在（服务重启会清空任务表）")
-    return {k: v for k, v in job.items() if k != "user_id"}
+    out = {k: v for k, v in job.items() if k != "user_id"}
+    out["progress"] = _progress_view(job)
+    return out
 
 
 # ---------- 历史记录 ----------

@@ -140,13 +140,18 @@ def main() -> int:
         fake = FakeChat(responses=[json.dumps(bad, ensure_ascii=False),
                                    look("c1"), add_action("c2")])
         chat = ChatInvoker(s4, chat=fake, log=logs.append)
+        phases = []
         graph = build_batch_graph(chat=chat, review_chat=chat, settings=s4,
                                   params=params, workdir=Path(d),
-                                  attempt_records=records, log=logs.append)
+                                  attempt_records=records, log=logs.append,
+                                  progress=lambda ph, a: phases.append((ph, a)))
         doc, warnings = run_batch(graph, user=user_msg, batch_text=batch,
                                   idx=1, frozen_units=None)
         assert doc == expected, "打完补丁应与归档一致"
         assert [r["status"] for r in records] == ["hard_failed", "passed"]
+        # 进度回调：界面靠它显示「第几次尝试、在干什么」
+        assert phases == [("generating", 1), ("checking", 1),
+                          ("repairing", 2), ("repairing", 2), ("checking", 2)], phases
         assert records[1]["mode"] == "patch"
         assert records[1]["tools"] == ["validation_list", "json_patch"], \
             "用过哪些工具要进清单，不然修复过程没法审计"

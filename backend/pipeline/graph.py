@@ -131,8 +131,17 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
 
 
 def build_batch_graph(*, chat, review_chat, settings: Settings, params,
-                      workdir: Path, attempt_records: list, log=print):
-    """编译单批状态图。跨批不变的依赖由闭包持有，不进状态。"""
+                      workdir: Path, attempt_records: list, log=print,
+                      progress=None):
+    """编译单批状态图。跨批不变的依赖由闭包持有，不进状态。
+
+    progress(phase, attempt) 在每个节点开工时被调用，供界面显示「第几次尝试、
+    在干什么」。phase ∈ generating / regenerating / checking / repairing。
+    """
+    def emit(phase: str, attempt: int) -> None:
+        if progress is not None:
+            progress(phase, attempt)
+
     # 22KB 系统提示词每次调用都发（整份生成与补丁修复都带，改造前即如此），
     # 缓存标记丢了等于每次多付一次全价
     system_msg = SystemMessage(content=[{
@@ -154,6 +163,8 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
 
     def generate(state: BatchState) -> dict:
         """整份输出：文本 JSON 协议 + 容错解析。"""
+        emit("generating" if state["attempt"] == 0 else "regenerating",
+             state["attempt"] + 1)
         mark = chat.usage_totals()
         msg = chat.invoke([system_msg] + list(state["messages"]))
         # 截断时 chat.text 抛 LLMError，让它直接冒出去——那是配置问题，重试解决不了
@@ -169,6 +180,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         """确定性审查。本节点不调 LLM（评审阶段除外，由 settings 显式开启）。"""
         attempt = state["attempt"] + 1
         idx = state["idx"]
+        emit("checking", attempt)
         if state["repair_failed"]:
             # 这一轮补丁修复没产出新底稿。底稿与结构化报告原样保留：
             # 下一次尝试仍从同一份底稿打补丁，与改造前一致
@@ -274,6 +286,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
     def repair_agent(state: BatchState) -> dict:
         """修复代理：带工具调模型。每轮算一个工具步骤，上限与改造前一致。"""
         steps = state["tool_steps"] + 1
+        emit("repairing", state["attempt"] + 1)
         if steps > _MAX_TOOL_STEPS:
             report = f"修复工具调用无效：单轮修复超过 {_MAX_TOOL_STEPS} 个工具步骤"
             log(f"批 {state['idx']} {report}")

@@ -43,7 +43,7 @@ interface StubJob {
   id: string; status: string; log: string[]; result: unknown
   quality_report: string | null; error: string | null; verification?: unknown
   created_at: string; work_title: string; chapter: string; chars: number
-  user_id: string
+  user_id: string; progress?: unknown
 }
 
 const jobs = new Map<string, StubJob>()
@@ -275,7 +275,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   if (path === '/jobs') return json({ jobs: [...jobs.values()].filter((j) => j.user_id === who).map((j) => ({
     id: j.id, status: j.status, created_at: j.created_at, work_title: j.work_title,
     chapter: j.chapter, chars: j.chars, log_lines: j.log.length,
-    last_log: j.log[j.log.length - 1] ?? null })) })
+    last_log: j.log[j.log.length - 1] ?? null, progress: j.progress ?? null })) })
   if (path.startsWith('/jobs/')) {
     const j = jobs.get(path.slice('/jobs/'.length))
     return j && j.user_id === who ? json(j) : err(404, 'job 不存在')
@@ -391,6 +391,24 @@ console.log('3. 放到后台 → 回到表单，任务留在侧栏 ✓')
 await click(findByText('li', '批 1/1（8 字符）：调用 LLM…'))
 must(has('放到后台，去开新转换'), '点侧栏在跑任务应能回到任务面板')
 console.log('4. 点侧栏 → 回到任务面板 ✓')
+
+// 4b. 进度可见：任务面板给出批次/尝试/阶段与剩余时间，侧栏给单行摘要
+jobs.get('job1')!.progress = {
+  batches: 3, batch: 2, batch_chars: 2000, total_chars: 4500, done_chars: 1300,
+  attempt: 2, max_attempts: 3, phase: 'repairing', elapsed_sec: 125, eta_sec: 130,
+}
+await settle(3600)          // 任务面板 1.5s 一轮、侧栏 3s 一轮，都等到
+must(has('受限修复'), '任务面板应显示当前阶段')
+must(has('批 2/3 · 第 2 次尝试（最多 3）'), '任务面板应显示批次与尝试次数')
+must(has('已用 2 分 05 秒'), '应显示已用时间')
+must(has('预计还需约 2 分钟'), '应显示预计剩余时间（分钟粒度）')
+must(!!container.querySelector('[role="progressbar"]'), '应有进度条')
+must(has('批 2/3 · 受限修复 · 还需约 2 分钟'), '侧栏应显示单行进度摘要')
+jobs.get('job1')!.progress = { ...jobs.get('job1')!.progress as object,
+                               done_chars: 0, eta_sec: null, batch: 1 }
+await settle(1600)
+must(has('第一批完成后估算剩余时间'), '第一批完成前不给剩余时间，要说明原因')
+console.log('4b. 进度可见 → 批次/尝试/阶段 + 已用/剩余时间，侧栏单行摘要 ✓')
 
 // 5. 再放后台，让它在「没人看着」的情况下跑完：应弹通知并进历史
 await click(findByText('button', '放到后台，去开新转换'))

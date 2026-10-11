@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { JOB_STATUS, label } from '../labels'
 import type { Job } from '../types'
+import { JobProgress } from './JobProgress'
 import { VerificationPanel } from './VerificationPanel'
 
 interface Props {
@@ -38,6 +39,8 @@ export function JobPanel({ job, onReset, onBackground }: Props) {
           <button className="btn btn--sm btn--ghost" onClick={onReset}>新建转换</button>
         )}
       </header>
+
+      {running && job.progress && <JobProgress progress={job.progress} />}
 
       {job.status === 'failed' && job.error && (
         <div className="job__warn job__warn--err">
