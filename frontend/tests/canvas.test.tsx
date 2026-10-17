@@ -22,6 +22,32 @@ g.requestAnimationFrame = (cb: (t: number) => void) =>
   setTimeout(() => cb(performance.now()), 16) as unknown as number
 g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 
+/* 桩后端：关键帧提示词 + 关键帧图（一开始只有首镜有图） */
+const kfImages = new Map<string, string>([['E01-SH001', 'image/png']])
+const puts: { shot: string; type: string }[] = []
+g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
+  const path = String(url).replace(/^\/api/, '')
+  const method = init?.method ?? 'GET'
+  const json = (data: unknown) => ({ ok: true, status: 200, json: async () => data })
+  if (path === '/render/keyframes') {
+    const d = JSON.parse(String(init!.body)).result as Storyboard
+    return json({ keyframes: d.episodes.flatMap((e) => e.shots).map((s) => ({
+      shot_id: s.id, prompt: `写实，电影静帧\n画面：${s.action}\n场景：某处`, negative_prompt: '血腥',
+      reference_assets: (s.characters ?? []).map((c) => c.ref), aspect_ratio: '9:16' })) })
+  }
+  const m = path.match(/^\/novels\/n1\/chapters\/c1\/versions\/v1\/keyframes(?:\/(.+))?$/)
+  if (!m) throw new Error(`桩后端未实现的路径: ${method} ${path}`)
+  if (!m[1]) return json({ shots: [...kfImages.keys()] })
+  const shot = decodeURIComponent(m[1])
+  if (method === 'PUT') {
+    puts.push({ shot, type: init!.headers!['Content-Type'] })
+    kfImages.set(shot, init!.headers!['Content-Type'])
+    return json({ shot_id: shot, bytes: 4 })
+  }
+  if (method === 'DELETE') { kfImages.delete(shot); return json({ deleted: shot }) }
+  return { ok: true, status: 200, blob: async () => new Blob(['img'], { type: kfImages.get(shot) }) }
+}
+
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { StoryboardView } = await import('../src/components/StoryboardView')
@@ -52,7 +78,8 @@ const click = async (el: Element) => {
 }
 
 await act(async () => {
-  root.render(<StoryboardView doc={doc} canSave={false} dirty={false} saving={false}
+  root.render(<StoryboardView doc={doc} canSave dirty={false} saving={false}
+                              version={{ nid: 'n1', cid: 'c1', vid: 'v1' }}
                               onChange={() => {}} onSave={() => {}} />)
 })
 
@@ -106,14 +133,41 @@ await click(unit)
 must(!container.querySelector('.tlc') && !!container.querySelector('.src'), '点原文句应回到原文溯源页')
 console.log('4. 点原文句 → 原文溯源页 ✓')
 
-// 5. Esc 关闭
+// 5. 静帧预演：已上传的关键帧按播放头显示；没图的镜头给提示词占位；上传 / 删除；导出提示词
 await click(button('时间轴画布'))
+await settle(120)
+must(has('关键帧 1/133'), '应读出已上传的关键帧数')
+must(!!container.querySelector('.tlc__frame img'), '首镜有图：预演画面显示关键帧图')
+must(container.querySelectorAll('.tlc__kfdot').length === 1, '有图的镜头在轴上打点')
+await click(container.querySelector('button[title="下一镜"]')!)
+must(has('还没有关键帧图') && has(shots[1].action.slice(0, 8)), '没图的镜头显示提示词占位')
+await click(button('看提示词'))
+must(!!container.querySelector('.tlc__prompt') && has('负面：血腥'), '可以展开看完整提示词')
+const file = new File([new Uint8Array([1, 2, 3, 4])], 'kf.webp', { type: 'image/webp' })
+const input = container.querySelector('.tlc__kf input[type="file"]') as unknown as HTMLInputElement
+must(!!input, '存进版本的产物可以上传关键帧')
+await act(async () => {
+  Object.defineProperty(input, 'files', { value: [file], configurable: true })
+  input.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
+})
+await settle(80)
+must(puts.length === 1 && puts[0].shot === shots[1].id && puts[0].type === 'image/webp',
+     '上传应按镜头 PUT 原始图片，带上图片类型')
+must(has('关键帧 2/133') && !!container.querySelector('.tlc__frame img'), '上传后预演立刻换成这张图')
+await click(button('删除'))
+must(has('关键帧 1/133') && has('还没有关键帧图'), '删除后回到占位')
+must(!(button('下载提示词') as HTMLButtonElement).disabled, '提示词清单可导出')
+await click(button('预演'))
+must(!container.querySelector('.tlc__frame'), '预演画面可以收起')
+console.log('5. 静帧预演 → 显示已上传关键帧 / 无图给提示词占位 / 上传 / 删除 / 导出提示词 ✓')
+
+// 6. Esc 关闭
 await act(async () => {
   win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event)
 })
 await settle()
 must(!container.querySelector('.tlc'), 'Esc 应关闭画布')
-console.log('5. Esc 关闭 ✓')
+console.log('6. Esc 关闭 ✓')
 
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

@@ -1333,3 +1333,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tlc__unit code { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
 
 .shot.is-flash { outline: 2px solid var(--accent); outline-offset: 3px; transition: outline-color .3s; }
+
+/* 静帧预演 */
+.tlc__kfcount { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tlc__kfdot { fill: var(--explicit); pointer-events: none; }
+.tlc__frame {
+  position: absolute; top: 44px; left: 108px; z-index: 2; margin: 0;
+  height: min(46vh, 520px); max-width: 40vw;
+  background: #111; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .22); display: flex; align-items: center; justify-content: center;
+}
+.tlc__frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tlc__frame figcaption {
+  position: absolute; left: 8px; bottom: 6px; font-family: var(--mono); font-size: 11px;
+  color: #fff; background: rgb(0 0 0 / .45); padding: 1px 6px; border-radius: 4px;
+}
+.tlc__noframe { padding: 16px; color: #bbb; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.tlc__noframe b { color: #eee; font-size: 12.5px; }
+.tlc__kf { border-top: 1px solid var(--line-2); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.tlc__kfhead { display: flex; gap: 6px; align-items: center; }
+.tlc__kfthumb { width: 100%; border-radius: 6px; }
+.tlc__kfacts { display: flex; gap: 5px; flex-wrap: wrap; }
+.tlc__kfnote { font-size: 11.5px; color: var(--faint); }
+.tlc__kferr { font-size: 12px; color: var(--danger); }
+.tlc__prompt { white-space: pre-wrap; font-size: 11.5px; line-height: 1.6; margin: 0; padding: 8px;
+               background: var(--panel-2); border-radius: 6px; max-height: 240px; overflow: auto; }

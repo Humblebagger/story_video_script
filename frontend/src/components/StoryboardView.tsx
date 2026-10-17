@@ -3,7 +3,7 @@ import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
 import { buildIndex, pct } from '../resolve'
-import type { Shot, Storyboard } from '../types'
+import type { Shot, Storyboard, VersionRef } from '../types'
 import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
 import { RenderView } from './RenderView'
@@ -41,10 +41,12 @@ interface Props {
   onSave: () => void
   /** 整章跑完之前的部分产物：只读，不能编辑、保存或渲染 */
   preview?: { done: number; total: number } | null
+  /** 产物所属的章节版本：画布上传关键帧图要用 */
+  version?: VersionRef | null
 }
 
 export function StoryboardView({
-  doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null,
+  doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
 }: Props) {
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
@@ -187,7 +189,8 @@ export function StoryboardView({
       {tab === 'render' && !preview && <RenderView doc={doc} runId={runId} />}
       {tab === 'json' && <pre className="json">{JSON.stringify(doc, null, 2)}</pre>}
       {canvas && (
-        <TimelineCanvas doc={doc} onClose={() => setCanvas(false)} onJumpShot={jumpShot}
+        <TimelineCanvas doc={doc} version={preview ? null : version}
+                        onClose={() => setCanvas(false)} onJumpShot={jumpShot}
                         onJumpUnit={(u) => { setCanvas(false); pickUnit(u) }} />
       )}
     </div>

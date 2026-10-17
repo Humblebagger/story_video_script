@@ -457,6 +457,24 @@ export interface Novel {
   chapters: ChapterSummary[]
 }
 
+/* ---------- 静帧预演（backend/render/keyframes.py） ---------- */
+
+/** 一镜的关键帧出图提示词：静态单帧，人物/场景/道具描述取自资产卡 */
+export interface KeyframePrompt {
+  shot_id: string
+  prompt: string
+  negative_prompt: string
+  reference_assets: string[]
+  aspect_ratio: string
+}
+
+/** 关键帧挂在哪个版本上（只有存进后端的版本才能上传图） */
+export interface VersionRef {
+  nid: string
+  cid: string
+  vid: string
+}
+
 /* ---------- 渲染任务包 ---------- */
 
 /** 与 edit.ts 的 AssetKind 同值；types.ts 不反向依赖 edit.ts，故在此独立声明 */

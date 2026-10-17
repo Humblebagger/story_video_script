@@ -31,6 +31,11 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
 
 渲染任务包（下游消费入口，只读、不落盘、不改 IR）：
   POST /render/plan        → 分镜 IR → 机器可读渲染任务清单 + 人读版生产包 + 费用估算
+  POST /render/keyframes   → 分镜 IR → 每镜一条关键帧出图提示词（静帧预演用）
+
+静帧预演的关键帧图（在别处出图后上传，挂在版本上、不进 IR）：
+  GET                 /novels/{nid}/chapters/{cid}/versions/{vid}/keyframes            已有关键帧的镜头
+  GET/PUT/DELETE      /novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}  取图 / 上传（原始图片体）/ 删
 
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
@@ -45,7 +50,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -56,6 +62,7 @@ from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
 from pipeline import novel_memory, verification
 from pipeline.chat import ChatInvoker
+from render import keyframes as keyframes_mod
 from render import plan as render_plan_mod
 from server import auth, library, novels, store
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
@@ -608,6 +615,49 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
                           "markdown": seedance.render_episode(
                               doc, ep, req.max_clip_seconds)})
     return {"plan": plan, "packs": packs, "verification": report.to_dict()}
+
+
+class KeyframesRequest(BaseModel):
+    result: dict
+
+
+@app.post("/render/keyframes")
+def render_keyframes(req: KeyframesRequest, user: dict = Depends(current_user)):
+    """每镜一条关键帧出图提示词。传屏幕上的产物（可能还没保存），改完镜头立刻能看到变化。"""
+    try:
+        return {"keyframes": keyframes_mod.keyframe_plan(req.result)}
+    except (KeyError, TypeError, AttributeError) as e:
+        raise HTTPException(422, f"分镜结构不完整，无法组装关键帧提示词：{e}")
+
+
+_KF = "/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes"
+
+
+@app.get(_KF)
+def keyframes_list(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    return {"shots": _novel_call(novels.list_keyframes, user["id"], nid, cid, vid)}
+
+
+@app.put(_KF + "/{shot_id}")
+async def keyframes_put(nid: str, cid: str, vid: str, shot_id: str, request: Request,
+                        user: dict = Depends(novel_user)):
+    data = await request.body()
+    return _novel_call(novels.save_keyframe, user["id"], nid, cid, vid, shot_id,
+                       request.headers.get("content-type", ""), data)
+
+
+@app.get(_KF + "/{shot_id}")
+def keyframes_get(nid: str, cid: str, vid: str, shot_id: str,
+                  user: dict = Depends(novel_user)):
+    path, kind = _novel_call(novels.keyframe_file, user["id"], nid, cid, vid, shot_id)
+    return FileResponse(path, media_type=kind)
+
+
+@app.delete(_KF + "/{shot_id}")
+def keyframes_delete(nid: str, cid: str, vid: str, shot_id: str,
+                     user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_keyframe, user["id"], nid, cid, vid, shot_id)
+    return {"deleted": shot_id}
 
 
 # ---------- 长期记忆：人物生命周期、主线剧情、创作限制 ----------

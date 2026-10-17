@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { buildTimeline, fmtClock, litFraction, shotIndexAt } from '../timeline'
 import type { CharLane, Timeline } from '../timeline'
-import type { Storyboard } from '../types'
+import type { Storyboard, VersionRef } from '../types'
+import { promptSheet, useKeyframes } from '../useKeyframes'
 
 interface Props {
   doc: Storyboard
@@ -11,6 +12,8 @@ interface Props {
   onJumpShot: (shotId: string) => void
   /** 点原文句：回原文溯源页定位到这一句 */
   onJumpUnit: (unitId: string) => void
+  /** 产物所属的版本：有它才能上传关键帧图（本地 JSON / 分批预览只有提示词） */
+  version?: VersionRef | null
 }
 
 const GUTTER = 92          // 左侧泳道名一栏
@@ -53,7 +56,20 @@ function litPath(lane: CharLane, t: number, x: (s: number) => number): string {
 
 /** 时间轴画布：无边框、全屏，拖动平移、滚轮缩放；横轴是可播时长。
  *  只读的播放视图——编辑仍在分镜页，画布将来的编辑走 timelineOps.ts 的操作层。 */
-export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit }: Props) {
+function downloadText(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version = null }: Props) {
+  const kf = useKeyframes(doc, version)
+  const [animatic, setAnimatic] = useState(true)
+  const [showPrompt, setShowPrompt] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const tl = useMemo(() => buildTimeline(doc), [doc])
   const { rows, height } = useMemo(() => layoutRows(tl), [tl])
   const rowOf = Object.fromEntries(rows.map((r) => [r.key, r]))
@@ -187,6 +203,19 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit }: Props) 
         <button className="btn btn--sm btn--ghost" onClick={() => setPps((v) => Math.min(400, v * 1.5))}>＋</button>
         <button className="btn btn--sm btn--ghost" onClick={() => setPps((v) => Math.max(1, v / 1.5))}>－</button>
         <button className="btn btn--sm btn--ghost" onClick={fit}>适应</button>
+        <button className={`btn btn--sm${animatic ? '' : ' btn--ghost'}`}
+                title="静帧预演：按播放头显示当前镜头的关键帧图" onClick={() => setAnimatic((v) => !v)}>
+          预演
+        </button>
+        <span className="tlc__kfcount" title="已上传关键帧图的镜头数">
+          关键帧 {Object.keys(kf.urls).length}/{tl.shots.length}
+        </span>
+        <button className="btn btn--sm btn--ghost" disabled={!Object.keys(kf.prompts).length}
+                title="全部镜头的关键帧出图提示词，拿去任意出图工具批量生成"
+                onClick={() => downloadText(`${doc.meta?.title ?? 'storyboard'}-关键帧提示词.md`,
+                  promptSheet(doc.meta?.title ?? '', tl.shots.map((x) => kf.prompts[x.id]).filter(Boolean)))}>
+          下载提示词
+        </button>
         <span className="tlc__hint">⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · 点时间刻度跳转 · 空格播放 · Esc 关闭</span>
         <button className="btn btn--sm btn--ghost tlc__close" onClick={onClose}>✕ 关闭画布</button>
       </div>
@@ -234,6 +263,9 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit }: Props) 
               {s.playable > s.nominal + 0.05 && (
                 <rect className="tlc__over" x={x(s.start + s.nominal)} y={shotRow.y + ROW.shot - 9}
                       width={(s.playable - s.nominal) * pps} height={3} />
+              )}
+              {kf.urls[s.id] && (
+                <circle className="tlc__kfdot" cx={x(s.start) + 6} cy={shotRow.y + 8} r={2.5} />
               )}
               {s.playable * pps > 46 && (
                 <text x={x(s.start) + 5} y={shotRow.y + ROW.shot / 2 + 4}>{s.id.replace(/^E\d+-/, '')}</text>
@@ -327,6 +359,21 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit }: Props) 
         <polygon className="tlc__head" points={`${playX - 6},0 ${playX + 6},0 ${playX},8`} />
       </svg>
 
+      {cur && animatic && (
+        <figure className="tlc__frame" onPointerDown={(e) => e.stopPropagation()}
+                style={{ aspectRatio: (doc.meta?.video?.aspect_ratio ?? '9:16').replace(':', ' / ') }}>
+          {kf.urls[cur.id]
+            ? <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
+            : (
+              <div className="tlc__noframe">
+                <b>{cur.id} · 还没有关键帧图</b>
+                <p>{(kf.prompts[cur.id]?.prompt ?? cur.shot.action).split('\n').slice(1, 3).join(' ')}</p>
+              </div>
+            )}
+          <figcaption>{cur.id} · {fmtClock(cur.start)}</figcaption>
+        </figure>
+      )}
+
       {cur && (
         <aside className="tlc__panel" onPointerDown={(e) => e.stopPropagation()}>
           <header>
@@ -357,6 +404,47 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit }: Props) 
               </button>
             ))}
           </div>
+          <section className="tlc__kf">
+            <div className="tlc__kfhead">
+              <b>关键帧</b>
+              {kf.urls[cur.id] ? <span className="tag">已上传</span> : <span className="tag tag--ghost">未出图</span>}
+            </div>
+            {kf.urls[cur.id] && <img className="tlc__kfthumb" src={kf.urls[cur.id]} alt="" />}
+            <div className="tlc__kfacts">
+              <button className="btn btn--sm btn--ghost" disabled={!kf.prompts[cur.id]}
+                      onClick={() => void navigator.clipboard?.writeText(kf.prompts[cur.id].prompt)}>
+                复制提示词
+              </button>
+              <button className="btn btn--sm btn--ghost" onClick={() => setShowPrompt((v) => !v)}>
+                {showPrompt ? '收起' : '看提示词'}
+              </button>
+              {kf.canUpload && (
+                <>
+                  <button className="btn btn--sm" disabled={kf.busy === cur.id}
+                          onClick={() => fileRef.current?.click()}>
+                    {kf.busy === cur.id ? '上传中…' : kf.urls[cur.id] ? '换图' : '上传图'}
+                  </button>
+                  {kf.urls[cur.id] && (
+                    <button className="btn btn--sm btn--ghost" onClick={() => void kf.remove(cur.id)}>删除</button>
+                  )}
+                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
+                         onChange={(e) => {
+                           const f = e.target.files?.[0]
+                           if (f) void kf.upload(cur.id, f)
+                           e.target.value = ''
+                         }} />
+                </>
+              )}
+            </div>
+            {!kf.canUpload && <p className="tlc__kfnote">本地 JSON / 分批预览只有提示词；存进章节版本后才能上传关键帧图。</p>}
+            {showPrompt && kf.prompts[cur.id] && (
+              <pre className="tlc__prompt">{kf.prompts[cur.id].prompt}{
+                kf.prompts[cur.id].negative_prompt ? `\n\n负面：${kf.prompts[cur.id].negative_prompt}` : ''}{
+                kf.prompts[cur.id].reference_assets.length
+                  ? `\n垫图：${kf.prompts[cur.id].reference_assets.join('、')}` : ''}</pre>
+            )}
+            {kf.error && <p className="tlc__kferr">{kf.error}</p>}
+          </section>
           <button className="btn btn--sm btn--ghost" onClick={() => onJumpShot(cur.id)}>在分镜页打开这一镜</button>
         </aside>
       )}

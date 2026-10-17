@@ -7,7 +7,7 @@ import { getToken, notifyUnauthorized } from './auth'
 import type { User } from './auth'
 import type {
   Chapter, Constraint, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
-  LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
+  KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
   VerificationReport, VersionRecord,
 } from './types'
 
@@ -37,7 +37,8 @@ export class ApiError extends Error {
 
 const BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+/** 带 token 发请求，统一处理 401 与错误 detail；成功时返回原始 Response */
+async function send(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken()
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -61,7 +62,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
         : fallback)
     throw new ApiError(message || `${res.status} ${res.statusText}`, res.status, detail)
   }
-  return res.json() as Promise<T>
+  return res
+}
+
+async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>
 }
 
 const jsonPost = (body: unknown): RequestInit => ({
@@ -276,4 +281,36 @@ export function renderPlan(
       ...(opts.cnyPerSecond ? { cny_per_second: opts.cnyPerSecond } : {}),
     }),
   })
+}
+
+/* ---------- 静帧预演：关键帧 ---------- */
+
+/** 每镜一条关键帧出图提示词（传屏幕上的产物，可能还没保存） */
+export function renderKeyframes(doc: Storyboard): Promise<{ keyframes: KeyframePrompt[] }> {
+  return req('/render/keyframes', jsonPost({ result: doc }))
+}
+
+const keyframePath = (nid: string, cid: string, vid: string) =>
+  `${versionPath(nid, cid, vid)}/keyframes`
+
+/** 这个版本里已经上传了关键帧图的镜头 */
+export function listKeyframes(nid: string, cid: string, vid: string): Promise<{ shots: string[] }> {
+  return req(keyframePath(nid, cid, vid))
+}
+
+/** 取一张关键帧图。<img src> 带不了 token，所以带 token 取回来转成 blob URL（用完要 revoke） */
+export async function keyframeUrl(nid: string, cid: string, vid: string, shotId: string) {
+  const res = await send(`${keyframePath(nid, cid, vid)}/${enc(shotId)}`)
+  return URL.createObjectURL(await res.blob())
+}
+
+/** 上传（或替换）一镜的关键帧图：PNG / JPEG / WebP，≤ 8MB */
+export function uploadKeyframe(nid: string, cid: string, vid: string, shotId: string, file: Blob) {
+  return req<{ shot_id: string; bytes: number }>(`${keyframePath(nid, cid, vid)}/${enc(shotId)}`, {
+    method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+}
+
+export function deleteKeyframe(nid: string, cid: string, vid: string, shotId: string) {
+  return req<{ deleted: string }>(`${keyframePath(nid, cid, vid)}/${enc(shotId)}`,
+                                  { method: 'DELETE' })
 }

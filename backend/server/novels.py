@@ -399,6 +399,7 @@ def delete_version(user_id: str, nid: str, cid: str, vid: str) -> None:
         if not path.exists():
             raise NotFound("版本不存在")
         path.unlink()
+        shutil.rmtree(_chapter_dir(user_id, nid, cid) / "keyframes" / vid, ignore_errors=True)
 
 
 # ---------- 采用：版本 → 长期记忆 ----------
@@ -831,6 +832,59 @@ def record_digest(user_id: str, nid: str, cid: str, vid: str, proposals: list,
                              "synopsis_kept_user": bool(synopsis and user_written)}
         _save_chapter(user_id, nid, chapter)
     return chapter["digest"]
+
+
+# ---------- 静帧预演：每镜一张关键帧图（用户在别处出图后上传） ----------
+
+KEYFRAME_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+KEYFRAME_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _keyframe_dir(user_id: str, nid: str, cid: str, vid: str) -> Path:
+    return _chapter_dir(user_id, nid, cid) / "keyframes" / _check_id(vid)
+
+
+def list_keyframes(user_id: str, nid: str, cid: str, vid: str) -> list:
+    get_version(user_id, nid, cid, vid)
+    root = _keyframe_dir(user_id, nid, cid, vid)
+    return sorted(p.stem for p in root.glob("*.*")) if root.exists() else []
+
+
+def save_keyframe(user_id: str, nid: str, cid: str, vid: str, shot_id: str,
+                  content_type: str, data: bytes) -> dict:
+    """关键帧挂在版本上（不进 IR）：镜头 ID 只在一个版本内有意义。"""
+    _check_id(shot_id)          # 镜头 ID 会拼进文件名
+    ext = KEYFRAME_TYPES.get((content_type or "").split(";")[0].strip())
+    if not ext:
+        raise NovelError("关键帧只收 PNG / JPEG / WebP 图片")
+    if not data or len(data) > KEYFRAME_MAX_BYTES:
+        raise NovelError(f"图片为空或超过 {KEYFRAME_MAX_BYTES // 1024 // 1024}MB")
+    v = get_version(user_id, nid, cid, vid)
+    shots = {s.get("id") for ep in (v.get("result") or {}).get("episodes") or []
+             for s in ep.get("shots") or []}
+    if shot_id not in shots:
+        raise NotFound(f"这个版本里没有镜头 {shot_id}")
+    root = _keyframe_dir(user_id, nid, cid, vid)
+    root.mkdir(parents=True, exist_ok=True)
+    for old in root.glob(f"{_check_id(shot_id)}.*"):
+        old.unlink()
+    (root / f"{shot_id}.{ext}").write_bytes(data)
+    return {"shot_id": shot_id, "bytes": len(data)}
+
+
+def keyframe_file(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> tuple:
+    """(文件路径, content-type)；没有则抛 NotFound。"""
+    root = _keyframe_dir(user_id, nid, cid, vid)
+    for path in root.glob(f"{_check_id(shot_id)}.*") if root.exists() else []:
+        kind = next((t for t, e in KEYFRAME_TYPES.items() if e == path.suffix[1:]), None)
+        if kind:
+            return path, kind
+    raise NotFound("这个镜头还没有关键帧")
+
+
+def delete_keyframe(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> None:
+    path, _ = keyframe_file(user_id, nid, cid, vid, shot_id)
+    path.unlink()
 
 
 # ---------- 旧数据迁移 ----------

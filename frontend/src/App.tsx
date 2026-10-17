@@ -528,6 +528,8 @@ export default function App() {
               canSave={docVid !== null}
               preview={preview}
               runId={docVid}
+              version={novel && chapter && docVid
+                ? { nid: novel.id, cid: chapter.id, vid: docVid } : null}
               dirty={dirty}
               saving={saving}
               onChange={(next) => { setDoc(next); setDirty(true) }}

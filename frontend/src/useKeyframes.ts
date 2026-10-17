@@ -1,0 +1,90 @@
+/** 静帧预演的数据：每镜的关键帧出图提示词 + 已上传的关键帧图（blob URL）。
+ *
+ *  出图模型暂不接：提示词拿去任意工具出图，再把图传回来挂到镜头上。
+ *  图挂在版本上（不进 IR），所以只有存进后端的版本能上传；本地打开的 JSON / 分批预览只有提示词。
+ */
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { deleteKeyframe, keyframeUrl, listKeyframes, renderKeyframes, uploadKeyframe } from './api'
+import type { KeyframePrompt, Storyboard, VersionRef } from './types'
+
+export function useKeyframes(doc: Storyboard, version: VersionRef | null | undefined) {
+  const [prompts, setPrompts] = useState<Record<string, KeyframePrompt>>({})
+  const [urls, setUrls] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const live = useRef<Record<string, string>>({})
+  const { nid, cid, vid } = version ?? {}
+
+  useEffect(() => {
+    let gone = false
+    renderKeyframes(doc)
+      .then((r) => { if (!gone) setPrompts(Object.fromEntries(r.keyframes.map((k) => [k.shot_id, k]))) })
+      .catch((e) => { if (!gone) setError(`关键帧提示词生成失败：${e instanceof Error ? e.message : e}`) })
+    return () => { gone = true }
+  }, [doc])
+
+  const put = useCallback((shotId: string, url: string | null) => {
+    const old = live.current[shotId]
+    if (old) URL.revokeObjectURL(old)
+    if (url) live.current[shotId] = url
+    else delete live.current[shotId]
+    setUrls({ ...live.current })
+  }, [])
+
+  useEffect(() => {
+    if (!nid || !cid || !vid) return
+    let gone = false
+    void (async () => {
+      try {
+        const { shots } = await listKeyframes(nid, cid, vid)
+        for (const s of shots) {
+          const url = await keyframeUrl(nid, cid, vid, s)
+          if (gone) { URL.revokeObjectURL(url); return }
+          put(s, url)
+        }
+      } catch (e) {
+        if (!gone) setError(`关键帧读取失败：${e instanceof Error ? e.message : e}`)
+      }
+    })()
+    return () => {
+      gone = true
+      for (const u of Object.values(live.current)) URL.revokeObjectURL(u)
+      live.current = {}
+      setUrls({})
+    }
+  }, [nid, cid, vid, put])
+
+  const upload = useCallback(async (shotId: string, file: File) => {
+    if (!nid || !cid || !vid) return
+    setBusy(shotId)
+    setError(null)
+    try {
+      await uploadKeyframe(nid, cid, vid, shotId, file)
+      put(shotId, URL.createObjectURL(file))
+    } catch (e) {
+      setError(`上传失败：${e instanceof Error ? e.message : e}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [nid, cid, vid, put])
+
+  const remove = useCallback(async (shotId: string) => {
+    if (!nid || !cid || !vid) return
+    try {
+      await deleteKeyframe(nid, cid, vid, shotId)
+      put(shotId, null)
+    } catch (e) {
+      setError(`删除失败：${e instanceof Error ? e.message : e}`)
+    }
+  }, [nid, cid, vid, put])
+
+  return { prompts, urls, error, busy, canUpload: !!(nid && cid && vid), upload, remove }
+}
+
+/** 全部关键帧提示词导出成一份文本，方便整批拿去出图工具 */
+export function promptSheet(title: string, list: KeyframePrompt[]): string {
+  return [`# ${title} · 关键帧出图提示词（${list.length} 镜）`, '', ...list.flatMap((k) => [
+    `## ${k.shot_id}（${k.aspect_ratio}）`, k.prompt,
+    ...(k.negative_prompt ? [`负面：${k.negative_prompt}`] : []),
+    ...(k.reference_assets.length ? [`垫图：${k.reference_assets.join('、')}`] : []), ''])].join('\n')
+}
