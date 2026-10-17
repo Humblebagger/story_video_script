@@ -1,38 +1,17 @@
-"""HTTP 服务：POST 小说文本 → 后台转换 → GET 取分镜 JSON。
+"""HTTP 服务：小说 → 章节 → 版本的会话管理，后台转换，取分镜 IR。
 
 启动：uvicorn server.app:app --host 0.0.0.0 --port 8000
-转换耗时为分钟级（LLM 长输出），故采用异步任务模型：
-  POST /convert          → {"job_id": ...}
-  GET  /jobs             → 本人在跑/刚结束的任务摘要（关掉页面后靠它重新接上）
-  GET  /jobs/{job_id}    → {"status": queued|running|succeeded|completed_with_warnings|failed,
-                            "result": 分镜JSON, "quality_report": 降级交付时的质量报告, "log": [...]}
-completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽，产物结构合法、
-逐字保真但质量未达阈值，已择优交付历次尝试中最优一版（请求置 strict=true 改为直接失败）。
-
-任务表在内存中（进程重启后实时日志会清空），但 queued/running/成功/失败状态与产物均会落盘：
-  GET    /history         → 历史记录摘要列表
-  GET    /history/{id}    → 单条完整记录（含分镜 JSON）
-  PUT    /history/{id}    → 保存人工编辑后的分镜
-  DELETE /history/{id}    → 删除记录
-
-资产库（独立于任何一次转换的一等实体，可增删改，转换时可注入、转换后可入库）：
-  GET    /library                      → 按作品列出
-  POST   /library/{work}               → 新建一部空作品
-  GET    /library/{work}               → 某作品的全部资产卡
-  PUT    /library/{work}/{kind}/{id}   → 新建或覆盖一张卡
-  DELETE /library/{work}/{kind}/{id}   → 删除一张卡
-  POST   /library/{work}/import        → 把一次转换的 assets 并入库
-  DELETE /library/{work}               → 删除整部作品的资产库
 
 小说级会话（总会话 = 小说，长期记忆；二级会话 = 章节；每次转换 = 一个版本，短期记忆）。
-首次访问时自动把上面的旧记录与资产库迁到这套结构下（旧文件保留）：
+首次访问时自动把旧的转换记录（runs/）与资产库（library.json）迁到这套结构下（旧文件保留）：
   GET/POST            /novels                                   小说列表 / 新建
   GET/PATCH/DELETE    /novels/{nid}                             详情（含章节摘要与长期记忆）/ 改 / 删
   POST                /novels/{nid}/chapters                    新建章节
   GET/PATCH/DELETE    /novels/{nid}/chapters/{cid}              详情（含版本列表）/ 改 / 删
-  POST                /novels/{nid}/chapters/{cid}/versions     转换本章 → {"job_id"}（进度照旧走 /jobs）
+  POST                /novels/{nid}/chapters/{cid}/versions     转换本章 → {"job_id"}（进度走 /jobs）
   GET/PUT/DELETE      /novels/{nid}/chapters/{cid}/versions/{vid}        取 / 人工编辑并复验 / 删
   POST                /novels/{nid}/chapters/{cid}/versions/{vid}/adopt  采用 → 写入长期记忆
+  POST                /novels/{nid}/chapters/{cid}/digest       重跑章后整理（采用后自动跑一次）
   GET                 /novels/{nid}/memory                      长期记忆
   PUT/DELETE          /novels/{nid}/memory/assets/{kind}/{id}   资产卡增改删
   POST                /novels/{nid}/memory/lifecycle            手动添加人物生命周期（死亡/永久伤病/下线）
@@ -40,7 +19,15 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   PUT                 /novels/{nid}/memory/plot                 全书梗概
   PUT                 /novels/{nid}/memory/plot/chapters/{cid}  改某章摘要
   POST                /novels/{nid}/memory/constraints          新增创作限制；PATCH/DELETE …/{kid}
-  POST                /novels/{nid}/chapters/{cid}/digest       重跑章后整理（采用后自动跑一次）
+
+转换耗时为分钟级（LLM 长输出），故采用异步任务模型：
+  GET  /jobs             → 本人在跑/刚结束的任务摘要（关掉页面后靠它重新接上）
+  GET  /jobs/{job_id}    → {"status": queued|running|succeeded|completed_with_warnings|failed,
+                            "result": 分镜JSON, "quality_report": 降级交付时的质量报告, "log": [...]}
+  GET  /jobs/{job_id}/partial → 已完成批次的合并结果（只读预览）
+completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽，产物结构合法、
+逐字保真但质量未达阈值，已择优交付历次尝试中最优一版（请求置 strict=true 改为直接失败）。
+任务表在内存中（进程重启后实时日志会清空），但状态与产物都落进版本记录。
 
 渲染任务包（下游消费入口，只读、不落盘、不改 IR）：
   POST /render/plan        → 分镜 IR → 机器可读渲染任务清单 + 人读版生产包 + 费用估算
@@ -142,33 +129,12 @@ def me(user: dict = Depends(current_user)):
 
 # ---------- 转换 ----------
 
-class ConvertRequest(BaseModel):
-    text: str = Field(..., min_length=1, description="小说原文（纯文本）")
-    work_title: str = _D.work_title
-    chapter: str = _D.chapter
-    style_prefix: str = _D.style_prefix
-    art_style: str = _D.art_style
-    color_tone: str = _D.color_tone
-    aspect_ratio: str = _D.aspect_ratio
-    target_platform: str = _D.target_platform
-    narration_mode: str = _D.narration_mode
-    tts_voice: str = _D.tts_voice
-    strict: bool = False   # True：软质量门重试耗尽直接失败（默认择优降级交付）
-    # 沿用资产库：默认自动取本人该作品的资产库（没有则为空），
-    # 也可显式传一份覆盖。续写下一章时角色/场景 ID 与描述保持一致，防跨章漂移
-    use_library: bool = True
-    seed_assets: Optional[dict] = None
-    # 转换成功后把产物里的资产卡并回库（新 ID 新增，同 ID 按追加规则合并）
-    import_assets: bool = True
-
-
 def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
              seed: Optional[dict], persist, after_success,
              numbering: Optional[dict] = None,
              context: Optional[novel_memory.NovelContext] = None) -> None:
-    """跑一次转换并把状态/产物写回。persist(status, **fields) 决定落到哪
-    （旧的转换记录，或小说章节的某个版本）；after_success(job, log) 做成功后的
-    长期记忆动作（旧路径：资产入库；新路径：首个成功版本自动采用）。"""
+    """跑一次转换并把状态/产物写回。persist(status, **fields) 把状态落到章节的
+    版本记录；after_success(job, log) 做成功后的长期记忆动作（首个成功版本自动采用）。"""
     job["status"] = "running"
 
     def save(status, **fields):
@@ -230,53 +196,6 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
         save("failed", error=job["error"], manifest=manifest)
 
 
-def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
-    """旧接口 /convert：扁平转换记录 + 按作品名的资产库。"""
-    params = ConvertParams(
-        work_title=req.work_title, chapter=req.chapter,
-        style_prefix=req.style_prefix, art_style=req.art_style,
-        color_tone=req.color_tone, aspect_ratio=req.aspect_ratio,
-        target_platform=req.target_platform, narration_mode=req.narration_mode,
-        tts_voice=req.tts_voice)
-    seed = req.seed_assets
-    if seed is None and req.use_library:
-        seed = library.seed_for(user_id, req.work_title)
-        if seed:
-            n = sum(len(v) for v in seed.values())
-            job["log"].append(f"沿用资产库《{req.work_title}》共 {n} 张卡（模型须复用其 ID 与描述）")
-
-    def after_success(job, log):
-        if req.import_assets:
-            r = library.import_assets(user_id, req.work_title,
-                                      job["result"].get("assets") or {})
-            log(f"资产入库《{req.work_title}》：新增 {r['added']} 张，"
-                f"合并 {r['merged']} 张（可在资产库页管理）")
-
-    _execute(job, req.text, params, req.strict, seed,
-             lambda status, **f: store.update_state(user_id, job["id"], status, **f),
-             after_success)
-
-
-@app.post("/convert")
-def submit(req: ConvertRequest, user: dict = Depends(current_user)):
-    job_id = uuid.uuid4().hex[:12]
-    job = {"id": job_id, "user_id": user["id"], "status": "queued", "log": [],
-           "result": None, "quality_report": None, "error": None, "persisted": False,
-           "created_at": store.now_iso(),
-           "work_title": req.work_title, "chapter": req.chapter,
-           "chars": len(req.text), "progress": {}, "partial": None}
-    params = {name: getattr(req, name) for name in ConvertParams.__dataclass_fields__}
-    try:
-        store.save(user["id"], job_id, "queued", params, None)
-        job["persisted"] = True
-    except OSError as e:
-        raise HTTPException(500, f"无法建立持久化任务记录：{e}")
-    with _lock:
-        _jobs[job_id] = job
-    _executor.submit(_run_job, job, req, user["id"])
-    return {"job_id": job_id, "status_url": f"/jobs/{job_id}"}
-
-
 def _on_partial(job: dict, doc: dict, done: int, total: int) -> None:
     """转换线程回调：已完成批次的合并结果，供整章跑完前先审阅。"""
     job["partial"] = {"doc": doc, "batches_done": done, "batches": total}
@@ -312,6 +231,7 @@ def list_jobs(user: dict = Depends(current_user)):
     return {"jobs": [{
         "id": j["id"], "status": j["status"], "created_at": j.get("created_at"),
         "work_title": j.get("work_title"), "chapter": j.get("chapter"),
+        "novel_id": j.get("novel_id"), "chapter_id": j.get("chapter_id"),
         "chars": j.get("chars"), "log_lines": len(j["log"]),
         "last_log": j["log"][-1] if j["log"] else None,
         "progress": _progress_view(j),
@@ -343,25 +263,6 @@ def get_job_partial(job_id: str, user: dict = Depends(current_user)):
     return job["partial"]
 
 
-# ---------- 历史记录 ----------
-
-@app.get("/history")
-def history(user: dict = Depends(current_user)):
-    """历史记录摘要（不含分镜正文，列表要轻）。"""
-    return {"runs": store.list_runs(user["id"])}
-
-
-@app.get("/history/{run_id}")
-def history_get(run_id: str, user: dict = Depends(current_user)):
-    try:
-        record = store.get(user["id"], run_id)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    if record is None:
-        raise HTTPException(404, "历史记录不存在")
-    return record
-
-
 def _frozen_of(record: dict) -> Optional[list]:
     """一条记录的冻结证据：清单里的冻结句单元；旧记录没有清单，就用它当时产物里的句单元。"""
     frozen = ((record.get("manifest") or {}).get("scope") or {}).get("units")
@@ -387,39 +288,6 @@ def _reverify(existing: dict, result: dict,
                ("succeeded", "completed_with_warnings") else "succeeded")
               if report.ok else "draft_invalid")
     return doc, report, status, frozen
-
-
-@app.put("/history/{run_id}")
-def history_update(run_id: str, result: dict = Body(..., embed=False),
-                   user: dict = Depends(current_user)):
-    """保存人工编辑后的分镜。
-
-    只覆盖 result；创建时间与制作参数保持原样，另记 edited_at。
-    """
-    try:
-        existing = store.get(user["id"], run_id)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    if existing is None:
-        raise HTTPException(404, "历史记录不存在")
-
-    doc, report, status, frozen = _reverify(existing, result)
-    record = store.update_result(user["id"], run_id, doc,
-                                 verification=report.to_dict(), status=status,
-                                 frozen_units=frozen or None)
-    return {"id": run_id, "edited_at": record["edited_at"], "status": status,
-            "verification": report.to_dict()}
-
-
-@app.delete("/history/{run_id}")
-def history_delete(run_id: str, user: dict = Depends(current_user)):
-    try:
-        ok = store.delete(user["id"], run_id)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    if not ok:
-        raise HTTPException(404, "历史记录不存在")
-    return {"deleted": run_id}
 
 
 # ---------- 小说级会话：小说 → 章节 → 版本 ----------
@@ -712,12 +580,11 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
     frozen = None
     if req.run_id:
         try:
-            record = (store.get(user["id"], req.run_id)
-                      or novels.find_version(user["id"], req.run_id))
+            record = novels.find_version(user["id"], req.run_id)
         except ValueError as e:
             raise HTTPException(400, str(e))
         if record is None:
-            raise HTTPException(404, "历史记录不存在")
+            raise HTTPException(404, "版本不存在")
         frozen = _frozen_of(record)
     probe = verification.verify_document(doc, frozen_units=frozen or None)
     verification.recompute_coverage_field(doc, probe.coverage)
@@ -741,80 +608,6 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
                           "markdown": seedance.render_episode(
                               doc, ep, req.max_clip_seconds)})
     return {"plan": plan, "packs": packs, "verification": report.to_dict()}
-
-
-# ---------- 资产库 ----------
-
-@app.get("/library")
-def library_list(user: dict = Depends(current_user)):
-    return {"works": library.list_works(user["id"])}
-
-
-@app.post("/library/backfill")
-def library_backfill(user: dict = Depends(current_user)):
-    """从本人的历史记录补齐资产库。
-
-    早于「自动入库」的转换、以及关掉 import_assets 的转换，资产都不在库里。
-    同 ID 走追加式合并，不覆盖人工编辑，因此重复点是安全的。
-    """
-    return {"works": library.backfill_from_runs(user["id"])}
-
-
-@app.post("/library/{work}")
-def library_create_work(work: str, user: dict = Depends(current_user)):
-    """建一部空作品，供「先设定人物场景、再去转换」的用法。"""
-    try:
-        created = library.create_work(user["id"], work)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-    if not created:
-        raise HTTPException(409, f"《{work}》已在资产库中")
-    return {"work_title": work, "created": True}
-
-
-@app.get("/library/{work}")
-def library_get(work: str, user: dict = Depends(current_user)):
-    got = library.get_work(user["id"], work)
-    if got is None:
-        raise HTTPException(404, "资产库里没有这部作品")
-    return got
-
-
-@app.put("/library/{work}/{kind}/{card_id}")
-def library_upsert(work: str, kind: str, card_id: str,
-                   card: dict = Body(..., embed=False),
-                   user: dict = Depends(current_user)):
-    if card.get("id") != card_id:
-        raise HTTPException(422, f"卡片 id 与路径不一致：{card.get('id')!r} != {card_id!r}")
-    try:
-        return library.upsert_card(user["id"], work, kind, card)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-
-
-@app.delete("/library/{work}/{kind}/{card_id}")
-def library_delete_card(work: str, kind: str, card_id: str,
-                        user: dict = Depends(current_user)):
-    try:
-        ok = library.delete_card(user["id"], work, kind, card_id)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-    if not ok:
-        raise HTTPException(404, "资产卡不存在")
-    return {"deleted": card_id}
-
-
-@app.post("/library/{work}/import")
-def library_import(work: str, assets: dict = Body(..., embed=False),
-                   user: dict = Depends(current_user)):
-    return library.import_assets(user["id"], work, assets)
-
-
-@app.delete("/library/{work}")
-def library_delete_work(work: str, user: dict = Depends(current_user)):
-    if not library.delete_work(user["id"], work):
-        raise HTTPException(404, "资产库里没有这部作品")
-    return {"deleted": work}
 
 
 # ---------- 长期记忆：人物生命周期、主线剧情、创作限制 ----------

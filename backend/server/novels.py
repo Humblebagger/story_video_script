@@ -186,8 +186,9 @@ def list_novels(user_id: str) -> list:
 
 def get_novel(user_id: str, nid: str) -> dict:
     novel = _load_novel(user_id, nid)
-    return {**novel, "chapters": [_chapter_summary(user_id, nid, c)
-                                  for c in _chapters(user_id, nid)]}
+    memory = {k: v for k, v in novel["memory"].items() if k != "asset_origin"}
+    return {**novel, "memory": memory,
+            "chapters": [_chapter_summary(user_id, nid, c) for c in _chapters(user_id, nid)]}
 
 
 def update_novel(user_id: str, nid: str, *, title: Optional[str] = None,

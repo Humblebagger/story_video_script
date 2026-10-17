@@ -264,10 +264,8 @@ export interface VerificationReport {
   coverage?: VerificationCoverage
 }
 
-export interface ConvertRequest {
-  text: string
-  work_title: string
-  chapter: string
+/** 制作参数（backend ConvertParams 去掉作品名/章节名）：小说级默认值，转换时可按章覆写 */
+export interface NovelParams {
   style_prefix: string
   art_style: string
   color_tone: string
@@ -275,13 +273,6 @@ export interface ConvertRequest {
   target_platform: string
   narration_mode: NarrationMode
   tts_voice: string
-  strict: boolean
-  /** 自动沿用本人该作品的资产库（模型须复用其中的 ID 与描述，防跨章角色漂移） */
-  use_library?: boolean
-  /** 显式指定一份资产库，优先于 use_library */
-  seed_assets?: Assets | null
-  /** 转换成功后把产物里的资产卡并回库 */
-  import_assets?: boolean
 }
 
 /** 转换进度（服务端 _progress_view）。剩余时间在第一批跑完之前为 null——没有依据不瞎猜 */
@@ -335,6 +326,8 @@ export interface JobSummary {
   log_lines: number
   last_log: string | null
   progress?: JobProgress | null
+  novel_id?: string | null
+  chapter_id?: string | null
 }
 
 export interface Health {
@@ -344,15 +337,23 @@ export interface Health {
   users?: number
 }
 
-/* ---------- 历史记录（后端 runs/ 落盘） ---------- */
+/* ---------- 小说级会话（backend/server/novels.py） ---------- */
 
-export interface HistorySummary {
+export interface NovelSummary {
   id: string
-  created_at: string
+  title: string
+  updated_at: string | null
+  chapters: number
+  adopted: number
+  asset_counts: Record<string, number>
+}
+
+/** 一次转换 = 一个版本（短期记忆）。列表里只带摘要 */
+export interface VersionSummary {
+  id: string
+  created_at: string | null
   edited_at: string | null
   status: JobStatus
-  work_title: string | null
-  chapter: string | null
   units: number
   episodes: number
   shots: number
@@ -360,26 +361,100 @@ export interface HistorySummary {
   verification_status?: 'verified' | 'failed' | null
 }
 
-export interface HistoryRecord {
+export interface VersionRecord {
   id: string
+  novel_id: string
+  chapter_id: string
   created_at: string
   edited_at: string | null
   status: JobStatus
-  params: Record<string, string>
+  params: Record<string, unknown>
   quality_report: string | null
   verification?: VerificationReport | null
-  result: Storyboard
+  error?: string | null
+  result: Storyboard | null
 }
 
-/* ---------- 资产库（独立于任何一次转换的一等实体） ---------- */
+/** 采用版本后的「章后整理」：人物生命周期提议 + 本章摘要 */
+export interface DigestState {
+  status: 'running' | 'done' | 'failed' | 'off'
+  at: string
+  version_id?: string
+  proposed?: number
+  dropped?: string[]
+  synopsis_kept_user?: boolean
+  error?: string
+}
 
+export interface ChapterSummary {
+  id: string
+  title: string
+  order: number
+  adopted_version: string | null
+  legacy_numbering: boolean
+  chars: number
+  versions: VersionSummary[]
+  latest_status: JobStatus | null
+  digest?: DigestState | null
+}
 
-export interface LibraryWork {
-  work_title: string
+export interface Chapter {
+  id: string
+  title: string
+  order: number
+  text: string
+  adopted_version: string | null
+  legacy_numbering?: boolean
+  versions: VersionSummary[]
+  digest?: DigestState | null
+}
+
+export type LifecycleType = 'deceased' | 'permanent_condition' | 'departed'
+
+/** 主线人物不可逆的状态变化：死亡 / 永久伤病 / 永久下线 */
+export interface LifecycleEntry {
+  id: string
+  character_id: string
+  type: LifecycleType
+  detail: string
+  since: { chapter_id: string | null; unit_ref: string | null }
+  evidence_quote: string
+  origin: 'model' | 'user'
+  status: 'proposed' | 'confirmed' | 'rejected'
+  written_by: { chapter_id: string; version_id: string } | null
+}
+
+export interface ChapterSynopsis {
+  chapter_id: string
+  synopsis: string
+  origin: 'model' | 'user'
+}
+
+export interface Constraint {
+  id: string
+  text: string
+  negative_prompt: string
+  keywords: string[]
+  enabled: boolean
+}
+
+/** 长期记忆：只由各章的采用版写入 */
+export interface NovelMemory {
+  assets: Assets
+  numbering: { next_unit: number; next_para: number; next_episode: number }
+  lifecycle: LifecycleEntry[]
+  plot: { outline: string; chapters: ChapterSynopsis[] }
+  constraints: Constraint[]
+}
+
+export interface Novel {
+  id: string
+  title: string
+  created_at: string
   updated_at: string
-  counts: Record<string, number>
-  /** 列表接口只返回统计，取单部作品时才带上卡片 */
-  assets?: Assets
+  params: Partial<NovelParams>
+  memory: NovelMemory
+  chapters: ChapterSummary[]
 }
 
 /* ---------- 渲染任务包 ---------- */

@@ -1,6 +1,6 @@
 /** 交互流程回归：在真实 DOM（happy-dom）里驱动 App，用桩后端替代真实转换。
  *
- *  重点守的是「放到后台还能不能回来」——这条路径一旦断掉，
+ *  会话结构是 小说 → 章节 → 版本。重点守的是「放到后台还能不能回来」——这条路径一旦断掉，
  *  分钟级的任务就既看不见也点不回去，用户只能干等。类型检查与构建都拦不住这种 bug。
  *
  *  跑法：npm test
@@ -37,42 +37,69 @@ g.confirm = () => true
 // localStorage：happy-dom 提供，但要确保 App 启动时是干净的未登录态
 win.localStorage.clear()
 
-/* ---------- 桩后端：一个可手动结束的转换任务 ---------- */
+/* ---------- 桩后端：小说 → 章节 → 版本 + 可手动结束的转换任务 ---------- */
 
 interface StubJob {
   id: string; status: string; log: string[]; result: unknown
   quality_report: string | null; error: string | null; verification?: unknown
   created_at: string; work_title: string; chapter: string; chars: number
   user_id: string; progress?: unknown; partial_batches?: number
+  novel_id: string; chapter_id: string
+}
+interface StubVersion {
+  id: string; created_at: string; edited_at: string | null; status: string
+  result: unknown; verification: unknown; error: string | null
+}
+interface StubChapter {
+  id: string; title: string; order: number; text: string
+  adopted_version: string | null; versions: StubVersion[]; digest: unknown
+}
+type Card = { id: string; name?: string }
+interface StubNovel {
+  id: string; title: string; params: Record<string, unknown>; updated_at: string
+  chapters: StubChapter[]
+  memory: {
+    assets: Record<string, Card[]>
+    numbering: { next_unit: number; next_para: number; next_episode: number }
+    lifecycle: Record<string, unknown>[]
+    plot: { outline: string; chapters: { chapter_id: string; synopsis: string; origin: string }[] }
+    constraints: Record<string, unknown>[]
+  }
 }
 
 const jobs = new Map<string, StubJob>()
-const histories = new Map<string, Record<string, unknown>[]>()
-const hist = (u: string) => {
-  if (!histories.has(u)) histories.set(u, [])
-  return histories.get(u)!
-}
 const users = new Map<string, string>()
-const libs = new Map<string, Map<string, Record<string, { id: string }[]>>>()
-
+const novelsOf = new Map<string, StubNovel[]>()
+const shelf = (u: string) => {
+  if (!novelsOf.has(u)) novelsOf.set(u, [])
+  return novelsOf.get(u)!
+}
 const user = (name: string) => ({ id: name, username: name, created_at: '' })
 const auth = (init?: { headers?: Record<string, string> }) => {
   const h = (init?.headers ?? {}).Authorization ?? ''
   return h.startsWith('Bearer tok-') && users.has(h.slice(11)) ? h.slice(11) : null
 }
-const lib = (u: string, work: string) => {
-  const m = libs.get(u) ?? new Map()
-  libs.set(u, m)
-  if (!m.has(work)) m.set(work, {})
-  return m.get(work)!
-}
-const counts = (w: Record<string, { id: string }[]>) => Object.fromEntries(
-  ['characters', 'locations', 'props', 'creatures'].map((k) => [k, (w[k] ?? []).length]))
-const libWorks = (u: string) => [...(libs.get(u) ?? new Map()).entries()]
-  .map(([t, w]) => ({ work_title: t, updated_at: '', counts: counts(w) }))
+const KINDS = ['characters', 'locations', 'props', 'creatures']
+const counts = (a: Record<string, Card[]>) =>
+  Object.fromEntries(KINDS.map((k) => [k, (a[k] ?? []).length]))
+const vsum = (v: StubVersion) => ({
+  id: v.id, created_at: v.created_at, edited_at: v.edited_at, status: v.status,
+  units: 1, episodes: 1, shots: 1, has_quality_report: false,
+  verification_status: (v.verification as { status?: string } | null)?.status ?? null })
+const chapterView = (c: StubChapter) => ({
+  ...c, versions: [...c.versions].reverse().map(vsum) })
+const chapterSummary = (c: StubChapter) => ({
+  id: c.id, title: c.title, order: c.order, adopted_version: c.adopted_version,
+  legacy_numbering: false, chars: c.text.length,
+  versions: [...c.versions].reverse().map(vsum),
+  latest_status: c.versions.length ? c.versions[c.versions.length - 1].status : null,
+  digest: c.digest })
+const novelView = (n: StubNovel) => ({ ...n, chapters: n.chapters.map(chapterSummary) })
 /** 前端 PUT 回来的编辑结果，用于校验编辑没有破坏跨引用 */
 const saved: Record<string, never>[] = []
 const renderCalls: { seconds: number; shots: number; model: string }[] = []
+let seq = 0
+let ids = 0
 
 const VERIFIED = { status: 'verified', findings: [], coverage: { selected: ['u0001'], covered: ['u0001'], waived: [], failed: [] } }
 const INVALID = {
@@ -90,7 +117,6 @@ const INVALID = {
 let nextSaveVerdict: { status: string; verification: unknown } | null = null
 /** 置位后下一次 /render/plan 返回 422 验证拦截 */
 let blockNextRender = false
-let seq = 0
 
 const DOC = {
   meta: { schema_version: '0.4', title: '药', fidelity_mode: 'faithful',
@@ -125,19 +151,43 @@ const DOC = {
     source: { unit_refs: ['u0001'], derivation: 'explicit' } }] }],
 }
 
+
+/** 采用：资产卡并进长期记忆，章后整理给出一条待确认的人物状态提议和本章摘要 */
+function adopt(n: StubNovel, c: StubChapter, v: StubVersion) {
+  c.adopted_version = v.id
+  const assets = (v.result as typeof DOC).assets as unknown as Record<string, Card[]>
+  for (const k of KINDS) {
+    const lst = (n.memory.assets[k] ??= [])
+    for (const card of assets[k] ?? []) {
+      if (!lst.some((x) => x.id === card.id)) lst.push(JSON.parse(JSON.stringify(card)))
+    }
+  }
+  n.memory.lifecycle = n.memory.lifecycle.filter((e) =>
+    (e.since as { chapter_id: string }).chapter_id !== c.id || e.status === 'confirmed')
+  n.memory.lifecycle.push({
+    id: `l${++ids}`, character_id: 'C01', type: 'deceased', detail: '病死',
+    since: { chapter_id: c.id, unit_ref: 'u0001' }, evidence_quote: '他推门。',
+    origin: 'model', status: 'proposed', written_by: { chapter_id: c.id, version_id: v.id } })
+  n.memory.plot.chapters = n.memory.plot.chapters.filter((s) => s.chapter_id !== c.id)
+  n.memory.plot.chapters.push({ chapter_id: c.id, synopsis: '老栓推门进屋。', origin: 'model' })
+  c.digest = { status: 'done', at: '', version_id: v.id, proposed: 1, dropped: [] }
+}
+
 function finishJob(id: string, status = 'succeeded') {
   const j = jobs.get(id)!
   j.status = status
   j.log.push('批 1 校验通过（第 1 次生成）')
+  const n = shelf(j.user_id).find((x) => x.id === j.novel_id)!
+  const c = n.chapters.find((x) => x.id === j.chapter_id)!
+  const v = c.versions.find((x) => x.id === id)!
+  v.status = status
   if (status === 'succeeded') {
-    j.result = DOC
-    hist(j.user_id).unshift({ id, created_at: j.created_at, edited_at: null, status,
-                              work_title: j.work_title, chapter: j.chapter,
-                              units: 1, episodes: 1, shots: 1, has_quality_report: false })
-    j.verification = VERIFIED
+    j.result = v.result = JSON.parse(JSON.stringify(DOC))
+    j.verification = v.verification = VERIFIED
+    if (!c.adopted_version) adopt(n, c, v)
   } else {
-    j.error = '批 1 重试 2 次后仍未通过校验\nFAIL: 引用了不存在的资产 C09'
-    j.verification = INVALID
+    j.error = v.error = '批 1 重试 2 次后仍未通过校验\nFAIL: 引用了不存在的资产 C09'
+    j.verification = v.verification = INVALID
   }
 }
 
@@ -153,20 +203,21 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   const err = (status: number, detail: unknown) => ({
     ok: false, status, text: async () => JSON.stringify({ detail }),
     json: async () => ({ detail }) })
+  const body = () => JSON.parse(init!.body!)
 
   if (path === '/healthz') return json({ status: 'ok', model: 'stub',
                                          api_key_configured: true, users: users.size })
 
   // 认证：注册/登录发 token，其余接口一律要带 token
   if (path === '/auth/register' && method === 'POST') {
-    const b = JSON.parse(init!.body!)
+    const b = body()
     if (users.has(b.username)) return err(400, '用户名已被占用')
     if ((b.password ?? '').length < 6) return err(400, '密码至少 6 位')
     users.set(b.username, b.password)
     return json({ token: `tok-${b.username}`, user: user(b.username) })
   }
   if (path === '/auth/login' && method === 'POST') {
-    const b = JSON.parse(init!.body!)
+    const b = body()
     if (users.get(b.username) !== b.password) return err(401, '用户名或密码不正确')
     return json({ token: `tok-${b.username}`, user: user(b.username) })
   }
@@ -174,7 +225,6 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   if (!who) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}',
                      json: async () => ({ detail: '未登录' }) }
   if (path === '/auth/me') return json(user(who))
-
   if (path === '/render/plan' && method === 'POST') {
     const b = JSON.parse(init!.body!)
     if (blockNextRender) {
@@ -229,53 +279,12 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
       packs: [{ episode: 'E01', title: '开端', markdown: '# 药 · E01 —— Seedance 2.0 生产包' }],
     })
   }
-  if (path === '/library') return json({ works: libWorks(who) })
-  if (path.startsWith('/library/')) {
-    const seg = path.slice('/library/'.length).split('/').map(decodeURIComponent)
-    const work = seg[0]
-    if (method === 'PUT' && seg.length === 3) {
-      const card = JSON.parse(init!.body!)
-      const w = lib(who, work)
-      const lst = (w[seg[1]] ??= [])
-      const i = lst.findIndex((c: { id: string }) => c.id === card.id)
-      if (i >= 0) lst[i] = card; else lst.push(card)
-      return json(card)
-    }
-    if (method === 'DELETE' && seg.length === 3) {
-      const w = lib(who, work)
-      w[seg[1]] = (w[seg[1]] ?? []).filter((c: { id: string }) => c.id !== seg[2])
-      return json({ deleted: seg[2] })
-    }
-    if (method === 'POST' && seg.length === 1) {
-      if (libs.get(who)?.has(work)) return err(409, '已在资产库中')
-      lib(who, work)
-      return json({ work_title: work, created: true })
-    }
-    if (method === 'DELETE') { libs.get(who)?.delete(work); return json({ deleted: work }) }
-    if (!libs.get(who)?.has(work)) return err(404, '资产库里没有这部作品')
-    return json({ work_title: work, updated_at: '', counts: counts(lib(who, work)),
-                  assets: lib(who, work) })
-  }
-  if (path === '/history') return json({ runs: hist(who) })
-  if (path.startsWith('/history/') && method === 'PUT') {
-    saved.push(JSON.parse(init!.body!))
-    // 服务端每次保存都整份复验并把结果带回来；nextSaveVerdict 用来演一次不通过
-    const verdict = nextSaveVerdict ?? { status: 'succeeded', verification: VERIFIED }
-    nextSaveVerdict = null
-    const row = hist(who).find((r) => r.id === path.slice('/history/'.length))
-    if (row) { row.status = verdict.status; row.edited_at = '2026-08-03T15:00:00+00:00' }
-    return json({ id: path.slice('/history/'.length),
-                  edited_at: '2026-08-03T15:00:00+00:00', ...verdict })
-  }
-  if (path.startsWith('/history/')) {
-    const id = path.slice('/history/'.length)
-    return json({ id, created_at: '', edited_at: null, status: 'succeeded',
-                  params: {}, quality_report: null, result: DOC })
-  }
+
   if (path === '/jobs') return json({ jobs: [...jobs.values()].filter((j) => j.user_id === who).map((j) => ({
     id: j.id, status: j.status, created_at: j.created_at, work_title: j.work_title,
     chapter: j.chapter, chars: j.chars, log_lines: j.log.length,
-    last_log: j.log[j.log.length - 1] ?? null, progress: j.progress ?? null })) })
+    last_log: j.log[j.log.length - 1] ?? null, progress: j.progress ?? null,
+    novel_id: j.novel_id, chapter_id: j.chapter_id })) })
   if (path.startsWith('/jobs/') && path.endsWith('/partial')) {
     const j = jobs.get(path.slice('/jobs/'.length, -'/partial'.length))
     if (!j || j.user_id !== who) return err(404, 'job 不存在')
@@ -287,16 +296,123 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     const j = jobs.get(path.slice('/jobs/'.length))
     return j && j.user_id === who ? json(j) : err(404, 'job 不存在')
   }
-  if (path === '/convert' && method === 'POST') {
-    const body = JSON.parse(init!.body!)
+
+  // ---------- 小说 → 章节 → 版本 ----------
+  const seg = path.split('/').filter(Boolean).map(decodeURIComponent)
+  if (seg[0] !== 'novels') throw new Error(`桩后端未实现的路径: ${method} ${path}`)
+  const mine = shelf(who)
+  if (seg.length === 1 && method === 'GET') return json({ novels: mine.map((n) => ({
+    id: n.id, title: n.title, updated_at: n.updated_at, chapters: n.chapters.length,
+    adopted: n.chapters.filter((c) => c.adopted_version).length,
+    asset_counts: counts(n.memory.assets) })) })
+  if (seg.length === 1 && method === 'POST') {
+    const b = body()
+    if (mine.some((n) => n.title === b.title)) return err(422, `《${b.title}》已存在`)
+    const n: StubNovel = { id: `n${++ids}`, title: b.title, params: b.params ?? {},
+      updated_at: '', chapters: [], memory: {
+        assets: Object.fromEntries(KINDS.map((k) => [k, []])),
+        numbering: { next_unit: 1, next_para: 1, next_episode: 1 },
+        lifecycle: [], plot: { outline: '', chapters: [] }, constraints: [] } }
+    mine.unshift(n)
+    return json(novelView(n))
+  }
+  const n = mine.find((x) => x.id === seg[1])
+  if (!n) return err(404, '小说不存在')
+  if (seg.length === 2) {
+    if (method === 'DELETE') { mine.splice(mine.indexOf(n), 1); return json({ deleted: n.id }) }
+    if (method === 'PATCH') Object.assign(n, body())
+    return json(novelView(n))
+  }
+  if (seg[2] === 'memory') {
+    const m = n.memory
+    if (seg.length === 3) return json(m)
+    if (seg[3] === 'assets') {
+      const lst = (m.assets[seg[4]] ??= [])
+      if (method === 'DELETE') { m.assets[seg[4]] = lst.filter((c) => c.id !== seg[5]); return json({ deleted: seg[5] }) }
+      const card = body()
+      const i = lst.findIndex((c) => c.id === card.id)
+      if (i >= 0) lst[i] = card; else lst.push(card)
+      return json(card)
+    }
+    if (seg[3] === 'lifecycle') {
+      if (seg.length === 4) {
+        const e = { id: `l${++ids}`, ...body(), origin: 'user', status: 'confirmed',
+                    since: { chapter_id: null, unit_ref: null }, evidence_quote: '', written_by: null }
+        m.lifecycle.push(e)
+        return json(e)
+      }
+      const e = m.lifecycle.find((x) => x.id === seg[4])
+      if (!e) return err(404, '生命周期记录不存在')
+      if (method === 'DELETE') { m.lifecycle.splice(m.lifecycle.indexOf(e), 1); return json({ deleted: seg[4] }) }
+      const b = body()
+      for (const k of Object.keys(b)) if (b[k] != null) e[k] = b[k]
+      return json(e)
+    }
+    if (seg[3] === 'plot') {
+      if (seg.length === 4) { m.plot.outline = body().outline; return json(m.plot) }
+      m.plot.chapters = m.plot.chapters.filter((s) => s.chapter_id !== seg[5])
+      m.plot.chapters.push({ chapter_id: seg[5], synopsis: body().synopsis, origin: 'user' })
+      return json(m.plot.chapters[m.plot.chapters.length - 1])
+    }
+    if (seg[3] === 'constraints') {
+      if (seg.length === 4) {
+        const k = { id: `k${++ids}`, negative_prompt: '', keywords: [], enabled: true, ...body() }
+        m.constraints.push(k)
+        return json(k)
+      }
+      const k = m.constraints.find((x) => x.id === seg[4])!
+      if (method === 'DELETE') { m.constraints.splice(m.constraints.indexOf(k), 1); return json({ deleted: seg[4] }) }
+      Object.assign(k, body())
+      return json(k)
+    }
+  }
+  if (seg[2] === 'chapters' && seg.length === 3 && method === 'POST') {
+    const b = body()
+    const c: StubChapter = { id: `c${++ids}`, title: b.title, text: b.text ?? '',
+      order: n.chapters.length + 1, adopted_version: null, versions: [], digest: null }
+    n.chapters.push(c)
+    return json(chapterView(c))
+  }
+  const c = n.chapters.find((x) => x.id === seg[3])
+  if (!c) return err(404, '章节不存在')
+  if (seg.length === 4) {
+    if (method === 'DELETE') { n.chapters.splice(n.chapters.indexOf(c), 1); return json({ deleted: c.id }) }
+    if (method === 'PATCH') Object.assign(c, body())
+    return json(chapterView(c))
+  }
+  if (seg[4] === 'digest') return json({ digest: 'running' })
+  if (seg[4] === 'versions' && seg.length === 5 && method === 'POST') {
     const id = `job${++seq}`
+    c.versions.push({ id, created_at: new Date(seq * 1000).toISOString(), edited_at: null,
+                      status: 'running', result: null, verification: null, error: null })
     jobs.set(id, { id, status: 'running', log: ['批 1/1（8 字符）：调用 LLM…'],
                    result: null, quality_report: null, error: null,
-                   created_at: new Date(0).toISOString(), work_title: body.work_title,
-                   chapter: body.chapter, chars: body.text.length, user_id: who })
-    return json({ job_id: id, status_url: `/jobs/${id}` })
+                   created_at: new Date(0).toISOString(), work_title: n.title,
+                   chapter: c.title, chars: c.text.length, user_id: who,
+                   novel_id: n.id, chapter_id: c.id })
+    return json({ job_id: id, version_id: id, status_url: `/jobs/${id}` })
   }
-  throw new Error(`桩后端未实现的路径: ${method} ${path}`)
+  const v = c.versions.find((x) => x.id === seg[5])
+  if (!v) return err(404, '版本不存在')
+  if (seg[6] === 'adopt') {
+    if (!['succeeded', 'completed_with_warnings'].includes(v.status)) return err(422, '这个版本不能采用')
+    const changed = c.adopted_version !== v.id
+    if (changed) adopt(n, c, v)
+    return json({ chapter_id: c.id, adopted_version: v.id, added: 0, merged: 6,
+                  retracted: 0, changed, digest: changed ? 'running' : undefined })
+  }
+  if (method === 'PUT') {
+    const doc = body()
+    saved.push(doc)
+    // 服务端每次保存都整份复验并把结果带回来；nextSaveVerdict 用来演一次不通过
+    const verdict = nextSaveVerdict ?? { status: 'succeeded', verification: VERIFIED }
+    nextSaveVerdict = null
+    Object.assign(v, { result: doc, status: verdict.status, verification: verdict.verification,
+                       edited_at: '2026-08-03T15:00:00+00:00' })
+    return json({ id: v.id, edited_at: v.edited_at, ...verdict })
+  }
+  if (method === 'DELETE') { c.versions.splice(c.versions.indexOf(v), 1); return json({ deleted: v.id }) }
+  return json({ ...v, novel_id: n.id, chapter_id: c.id, params: {}, quality_report: null })
 }
 
 /* ---------- 驱动 ---------- */
@@ -342,7 +458,7 @@ await act(async () => { root.render(<App />) })
 await settle()
 
 // 0. 未登录：只能看到登录页，看不到任何业务界面
-must(has('登录') && !has('小说原文'), '未登录时不应显示转换界面')
+must(has('登录') && !has('新建小说'), '未登录时不应显示业务界面')
 must(has('第一个注册的账号'), '服务端无账号时应引导注册')
 
 const setter = Object.getOwnPropertyDescriptor(
@@ -372,31 +488,41 @@ must((findByText('button', '注册并进入') as HTMLButtonElement).disabled,
 await type(cIn, 'pw123456', false)
 must(!has('两次输入的密码不一致'), '改对后提示应消失')
 await click(findByText('button', '注册并进入'))
-must(has('小说原文'), '注册后应进入转换界面')
+must(has('新建小说'), '注册后应进入新建小说')
 must(has('alice'), '顶栏应显示当前用户')
 console.log('0. 未登录挡在门外 / 密码二次确认 → 注册后进入 ✓')
 
-// 1-2. 填原文与作品名并提交
-const ta = container.querySelector('textarea') as unknown as HTMLTextAreaElement
-await type(ta, '他推门。走进屋里。')
-const titleInput = findByText('label', '作品名')
-  .querySelector('input') as unknown as HTMLElement
-await type(titleInput, '药', false)
+// 1. 新建小说：导入原文按章节标记自动拆章
+const field = (name: string) => findByText('label', name).querySelector('input') as unknown as HTMLElement
+await type(field('小说标题'), '药', false)
+await type(container.querySelector('.form__text textarea') as unknown as HTMLElement,
+           '一\n他推门。\n二\n走进屋里。\n')
+must(has('识别出 2 章'), '应按「一 二」识别出两章')
+await click(findByText('button', '建小说并导入 2 章'))
+await settle(150)
+must(shelf('alice')[0]?.chapters.length === 2, '应建出小说与两个章节')
+must(has('本章原文') && has('开始转换'), '建完应直接打开第一章')
+must(!!container.querySelector('.hnovel.is-open') && has('未转换'), '侧栏应展开小说并列出章节')
+console.log('1. 新建小说 → 导入原文自动拆章 / 打开第一章 ✓')
+
+// 2. 转换本章 → 任务面板
 await click(findByText('button', '开始转换'))
-must(has('放到后台，去开新转换'), '提交后应显示任务面板')
-must(jobs.size === 1, '桩后端应收到一个转换任务')
-console.log('2. 提交 → 任务面板（转换中）✓')
+must(has('放到后台'), '提交后应显示任务面板')
+must(jobs.size === 1 && jobs.get('job1')!.chapter_id === shelf('alice')[0].chapters[0].id,
+     '桩后端应收到本章的转换任务')
+console.log('2. 转换本章 → 任务面板（转换中）✓')
 
-// 3. 放到后台：必须回到表单，且任务仍留在侧栏里可见
-await click(findByText('button', '放到后台，去开新转换'))
-must(has('小说原文'), '放到后台后应回到表单')
-must(!has('放到后台，去开新转换'), '放到后台后不应还停在任务面板')
+// 3. 放到后台：回到章节页，任务仍留在侧栏里可见
+await click(findByText('button', '放到后台'))
+must(!has('放到后台'), '放到后台后不应还停在任务面板')
+must(has('本章原文'), '放到后台后应回到章节页')
 must(has('批 1/1（8 字符）：调用 LLM…'), '侧栏必须留着在跑的任务及其最新日志')
-console.log('3. 放到后台 → 回到表单，任务留在侧栏 ✓')
+must(has('转换中…'), '章节上要标出正在转换')
+console.log('3. 放到后台 → 回到章节页，任务留在侧栏 ✓')
 
-// 4. 点侧栏的在跑任务：必须能回到任务面板（用户报的就是这一步回不去）
+// 4. 点侧栏的在跑任务：必须能回到任务面板
 await click(findByText('li', '批 1/1（8 字符）：调用 LLM…'))
-must(has('放到后台，去开新转换'), '点侧栏在跑任务应能回到任务面板')
+must(has('放到后台'), '点侧栏在跑任务应能回到任务面板')
 console.log('4. 点侧栏 → 回到任务面板 ✓')
 
 // 4b. 进度可见：任务面板给出批次/尝试/阶段与剩余时间，侧栏给单行摘要
@@ -426,33 +552,35 @@ must(has('预览：只含已完成的前 1/3 批'), '预览要标明只含前几
 must(!has('编辑分镜') && !has('保存修改'), '预览不能编辑、不能保存')
 must(![...container.querySelectorAll('.tabs__btn')].some((b) => b.textContent === '渲染'),
      '部分产物不能进渲染')
-must(has('放到后台，去开新转换'), '预览时任务面板仍在，转换照常继续')
+must(has('放到后台'), '预览时任务面板仍在，转换照常继续')
 jobs.get('job1')!.partial_batches = 2
 await settle(1600)
 must(has('预览：只含已完成的前 2/3 批'), '又跑完一批时预览应自动刷新')
 console.log('4c. 分批先看 → 只读预览（不可编辑/保存/渲染），新批次完成自动刷新 ✓')
 
-// 5. 再放后台，让它在「没人看着」的情况下跑完：应弹通知并进历史
-await click(findByText('button', '放到后台，去开新转换'))
+// 5. 再放后台，让它在「没人看着」的情况下跑完：应弹通知，首个成功版本自动采用
+await click(findByText('button', '放到后台'))
 finishJob('job1')
 await settle(3600)          // 等一次巡检（在跑时 3s 一轮）
 must(notifications.some((n) => n.title === '转换完成'), '后台跑完必须弹桌面通知')
 must(!has('批 1/1（8 字符）：调用 LLM…'), '跑完后不应还挂在「在跑」列表里')
-console.log('5. 后台跑完 → 桌面通知 ✓（共', notifications.length, '条）')
+must(has('✓ 采用 v1'), '首个成功版本应自动采用，侧栏标出采用版')
+console.log('5. 后台跑完 → 桌面通知 / 自动采用 ✓（共', notifications.length, '条）')
 
-// 6. 从历史点开产物
-await click(findByText('li', '药'))
-must(has('E01-SH001') && has('推门'), '应能从历史打开分镜产物')
+// 6. 打开章节：摆出采用版
+const chapterItem = (i: number) =>
+  container.querySelectorAll('.hchap__item')[i] as unknown as HTMLElement
+await click(chapterItem(0))
+must(has('E01-SH001') && has('推门'), '打开章节应摆出采用版的分镜')
 must(has('编辑分镜') && has('下载 JSON'), '产物应带编辑与下载入口')
-// 角色名只在资产卡页签出现（镜头层只写引用），顺带验一下页签切换
+must(has('v1 ★') && has('采用版：资产卡'), '版本条要标出采用版')
+must(has('1 条人物状态待确认'), '章后整理的结果要在章节页说出来')
 await click(findByText('button', '资产卡'))
 must(has('华老栓') && has('C01'), '资产卡页签应展示角色卡')
-console.log('6. 历史 → 打开产物 + 页签切换 ✓')
+console.log('6. 章节 → 采用版产物 + 页签切换 ✓')
 
-// 7. 失败任务：原因要摊在面板上
-await click(findByText('button', '＋ 新转换'))
-await type(container.querySelector('textarea') as unknown as HTMLTextAreaElement, '另一段原文。')
-await click(findByText('button', '开始转换'))
+// 7. 重转出一个失败版本：原因要摊在面板上
+await click(findByText('button', '重新转换（新版本）'))
 finishJob('job2', 'failed')
 await settle(1800)          // 附着轮询 1.5s 一轮
 must(has('转换失败，未通过的原因如下'), '失败应高亮原因区块')
@@ -460,11 +588,14 @@ must(has('不存在的资产 C09'), '失败的具体原因必须显示给用户'
 // 报错文本之外还得给结构化发现——用户要据此改，不是据此叹气
 must(has('SOURCE-FROZEN-002') && has('台词不是所引原文句的逐字摘录'),
      '失败任务应摊开逐条验证发现')
-console.log('7. 失败 → 原因摊开显示（含结构化验证发现）✓')
+await click(findByText('button', 'v2'))
+must(has('这一版转换失败'), '点开失败版本要说明它没有产物')
+must(!has('采用此版') || (findByText('button', '采用此版') as HTMLButtonElement).disabled,
+     '失败版本不能采用')
+console.log('7. 失败 → 原因摊开显示（含结构化验证发现）/ 失败版本不可采用 ✓')
 
 // 8. 资产卡编辑：改得动内容，但跨引用的 ID 一个都不能变
-await click(findByText('button', '＋ 新转换'))
-await click(findByText('li', '药'))
+await click(findByText('button', 'v1'))
 await click(findByText('button', '编辑分镜'))
 await click(findByText('button', '资产卡'))
 
@@ -502,30 +633,64 @@ must(sh.location_ref === 'S01' && sh.characters[0].ref === 'C01'
 must(JSON.stringify(out.source.units) === JSON.stringify(DOC.source.units), '原文 units 不得变动')
 console.log('9. 保存 → 内容已改 / ID 与跨引用逐字未变 ✓')
 
-// 10. 资产库管理页：新建 / 编辑 / 删除（聚合视图做不到的三件事）
-lib('alice', '药').characters = [{ id: 'C01', name: '华老栓' }]
-await click(findByText('button', '资产库'))
+// 9b. 再转一版并改采用它
+await click(findByText('button', '重新转换（新版本）'))
+finishJob('job3')
+await settle(1800)
+must(has('E01-SH001') && has('采用此版'), '新版本跑完应摆出来，可以改采用')
+await click(findByText('button', '采用此版'))
 await settle(120)
-must(has('华老栓') && has('C01'), '资产库应列出已有卡片')
+must(shelf('alice')[0].chapters[0].adopted_version === 'job3', '采用应写回后端')
+must(has('v3 ★') && has('已采用'), '版本条应改标 v3 为采用版')
+console.log('9b. 新版本 → 改采用 ✓')
 
+// 10. 小说页：章后整理的人物状态提议高亮待确认，确认后才进后续章节的转换
+await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
+must(has('《药》') && has('人物生命周期（1 待确认）'), '小说页要突出待确认的提议')
+must(has('他推门。') && has('模型提议'), '提议要附原文证据')
+// 页签文案里也有「待确认」，按钮要按全文匹配
+await click([...container.querySelectorAll('.life__acts button')]
+  .find((b) => b.textContent === '确认') as unknown as HTMLElement)
+must(shelf('alice')[0].memory.lifecycle[0].status === 'confirmed', '确认应写回后端')
+must(!has('1 待确认'), '确认后不再提示待确认')
+console.log('10. 小说页 → 人物生命周期提议附证据 / 确认 ✓')
+
+// 11. 资产库并入小说页：新建 / 编辑
+await click(findByText('button', '资产库'))
+must(has('华老栓') && has('C01'), '资产库应列出采用版写入的卡片')
 const addName = container.querySelector('.lib__add input') as unknown as HTMLElement
-await type(addName, '康大叔', false)
+await type(addName, '赵四', false)
 await click(findByText('button', '＋ 新建'))
-must(lib('alice', '药').characters.some((c) => c.id === 'C02'), '新建卡应写回后端并自动续号')
-must(has('康大叔'), '新建的卡应出现在页面上')
-console.log('10. 资产库 → 新建卡片（ID 自动续号 C02）✓')
-
-// 编辑已有卡并保存
+must(shelf('alice')[0].memory.assets.characters.some((c) => c.id === 'C03' && c.name === '赵四'),
+     '新建卡应写回长期记忆并自动续号（C01、C02 已占用）')
 const nameInputs = [...container.querySelectorAll('.acard header input')] as unknown as HTMLElement[]
 await type(nameInputs[0], '华老栓（库中改名）', false)
 await click(findByText('button', '保存修改'))
-must(lib('alice', '药').characters[0].name === '华老栓（库中改名）', '编辑应 PUT 回后端')
-console.log('11. 资产库 → 编辑并保存 ✓')
+must(shelf('alice')[0].memory.assets.characters[0].name === '华老栓（库中改名）', '编辑应 PUT 回后端')
+console.log('11. 小说页资产库 → 新建（自动续号）/ 编辑并保存 ✓')
+
+// 11b. 创作限制与主线剧情
+await click(findByText('button', '创作限制'))
+await type(field('规则（给模型看）'), '不出现血腥画面', false)
+await type(field('负面提示词（可空，逗号分隔）'), '血迹，伤口特写', false)
+await type(field('扫描关键词（可空，逗号分隔）'), '血，伤口', false)
+await click(findByText('button', '＋ 新增限制'))
+const k = shelf('alice')[0].memory.constraints[0]
+must(k?.text === '不出现血腥画面' && JSON.stringify(k.keywords) === '["血","伤口"]',
+     '限制应连同负面提示词与关键词写回')
+must(has('负面提示词：血迹，伤口特写'), '限制应列在页面上')
+await click(container.querySelector('.cons__item input[type="checkbox"]') as unknown as HTMLElement)
+must(shelf('alice')[0].memory.constraints[0].enabled === false, '可以停用一条限制')
+await click(findByText('button', '主线剧情'))
+must(has('老栓推门进屋。') && has('自动'), '逐章摘要应列出（采用后自动生成）')
+await type(container.querySelector('.plot textarea') as unknown as HTMLElement, '华老栓买药救子。')
+await click(findByText('button', '保存梗概'))
+must(shelf('alice')[0].memory.plot.outline === '华老栓买药救子。', '全书梗概应写回')
+console.log('11b. 创作限制（负面提示词/关键词/停用）/ 主线剧情（梗概 + 逐章摘要）✓')
 
 // 12. 换个账号：看不到 alice 的任何东西
 await click(findByText('button', '退出'))
-// 注意：登录页文案里本就含「资产库」三字，故以业务界面元素判断是否已登出
-must(has('login__tab') && !has('小说原文') && !has('新卡名称'), '退出后应回到登录页')
+must(has('login__tab') && !has('新建小说'), '退出后应回到登录页')
 must(!has('第一个注册的账号'), '已有账号时不该再显示首次注册引导')
 must(fields().length === 2, '登录模式下不该出现确认密码框')
 // 已有账号时默认停在「登录」页签，先切到注册
@@ -539,34 +704,24 @@ await type(c2, 'pw654321', false)
 await click(findByText('button', '注册并进入'))
 await settle(120)
 must(has('bob') && !has('alice'), '顶栏应换成新用户')
-must(!has('药') && !has('华老栓'), 'bob 不该看到 alice 的历史记录')
+must(!has('药') && !has('华老栓'), 'bob 不该看到 alice 的小说')
+must(has('还没有小说'), 'bob 的书架应为空')
+console.log('12. 换账号 → 小说与长期记忆完全隔离 ✓')
+
+// 13. 从零建小说再设定人物——「先设定人物场景再去转换」是常见用法
+await type(field('小说标题'), '鲍勃的新书', false)
+await click(findByText('button', '建小说'))
+await settle(150)
+must(shelf('bob').length === 1 && has('《鲍勃的新书》'), '不导入原文也能建小说，建完打开小说页')
 await click(findByText('button', '资产库'))
-await settle(120)
-must(!has('华老栓') && !has('康大叔'), 'bob 不该看到 alice 的资产库')
-must(has('资产库还是空的'), 'bob 的资产库应为空')
-console.log('12. 换账号 → 历史与资产库完全隔离 ✓')
-
-
-// 13. 空库也要能从零建作品——「先设定人物场景再去转换」是常见用法
-await click(findByText('button', '资产库'))
-await settle(120)
-must(has('资产库还是空的'), 'bob 的资产库应为空')
-const workInput = container.querySelector('.lib__newwork input') as unknown as HTMLElement
-must(!!workInput, '资产库为空时也必须有新建作品的入口')
-await type(workInput, '鲍勃的新书', false)
-await click(findByText('button', '＋ 建作品'))
-await settle(120)
-must(libs.get('bob')?.has('鲍勃的新书') === true, '新建作品应写回后端')
-must(has('新卡名称'), '建完作品应能直接新建卡片')
-
 const cardInput = container.querySelector('.lib__add input') as unknown as HTMLElement
-for (const n of ['赵老三', '钱掌柜']) {
-  await type(cardInput, n, false)
+for (const name of ['赵老三', '钱掌柜']) {
+  await type(cardInput, name, false)
   await click(findByText('button', '＋ 新建'))
   await settle(60)
 }
-must(lib('bob', '鲍勃的新书').characters.length === 2, '应建出两张角色卡')
-console.log('13. 空库 → 从零建作品 + 建卡片 ✓')
+must(shelf('bob')[0].memory.assets.characters.length === 2, '应建出两张角色卡')
+console.log('13. 空小说 → 先建角色卡 ✓')
 
 // 14. 资产库搜索：按名称过滤，跨类别
 const search = container.querySelector('.lib__search') as unknown as HTMLElement
@@ -589,8 +744,9 @@ await type(p3, 'pw123456', false)
 // 页签和提交按钮文案都是「登录」，必须按 type=submit 取，否则点回的是页签
 await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
 await settle(200)
-must(has('小说原文'), 'alice 应已重新登录')
-await click(findByText('li', '药'))
+must(has('药'), 'alice 应已重新登录并看到自己的小说')
+await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
+await click(chapterItem(0))
 await click(findByText('button', '编辑分镜'))
 
 const area = container.querySelector('.ed__at textarea') as unknown as HTMLTextAreaElement
@@ -733,23 +889,19 @@ console.log('17. 验证结果透出 → 保存复验不通过当场可见 / 渲�
 
 // 18. 分批先看的两个收尾：预览开着时整章跑完 → 自动换成完整产物（不能被
 //     晚到的预览盖回去）；转换失败 → 已通过的批次照样能看
-await click(findByText('button', '＋ 新转换'))
-await type(container.querySelector('textarea') as unknown as HTMLTextAreaElement, '第三段原文。')
-await click(findByText('button', '开始转换'))
-jobs.get('job3')!.partial_batches = 1
+await click(findByText('button', '重新转换（新版本）'))
+jobs.get('job4')!.partial_batches = 1
 await settle(1600)
 await click(findByText('button', '先审阅已完成的 1 批'))
 must(has('预览：只含已完成的前 1/3 批'), '应打开预览')
-finishJob('job3')
+finishJob('job4')
 await settle(1800)
 must(!has('预览：只含'), '整章跑完后预览标记应消失')
 must(has('编辑分镜'), '完整产物可以编辑')
 
-await click(findByText('button', '＋ 新转换'))
-await type(container.querySelector('textarea') as unknown as HTMLTextAreaElement, '第四段原文。')
-await click(findByText('button', '开始转换'))
-jobs.get('job4')!.partial_batches = 2
-finishJob('job4', 'failed')
+await click(findByText('button', '重新转换（新版本）'))
+jobs.get('job5')!.partial_batches = 2
+finishJob('job5', 'failed')
 await settle(1800)
 must(has('转换失败，但前 2 批已通过校验'), '失败时要告诉用户已通过的批次还在')
 await click(findByText('button', '查看已通过的 2 批'))
@@ -757,5 +909,7 @@ must(has('预览：只含已完成的前 2/3 批'), '失败后仍能打开已通
 must(has('转换失败，未通过的原因如下'), '失败原因仍要摆在面板上')
 console.log('18. 分批先看 → 跑完自动换完整产物 / 失败后已通过批次照样能看 ✓')
 
-root.unmount()
+// 收尾前等在路上的请求落地，再在 act 里卸载，免得卸载后还有状态更新
+await settle(300)
+await act(async () => { root.unmount() })
 console.log('\nALL PASS')

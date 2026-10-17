@@ -47,16 +47,21 @@ cp .env.example .env        # 填入 ANTHROPIC_API_KEY
 
 # 或部署为 HTTP 服务（转换为分钟级任务，异步取结果）
 .venv/bin/uvicorn server.app:app --host 0.0.0.0 --port 8000
-curl -X POST localhost:8000/convert -H 'Content-Type: application/json' \
-     -d '{"text": "……小说原文……", "work_title": "药"}'   # → {"job_id": "..."}
-curl localhost:8000/jobs/<job_id>                            # → status / result / log
+H='Authorization: Bearer <token>'                             # POST /auth/login 取得
+curl -X POST localhost:8000/novels -H "$H" -H 'Content-Type: application/json' \
+     -d '{"title": "药"}'                                     # → 小说（总会话，长期记忆）
+curl -X POST localhost:8000/novels/<nid>/chapters -H "$H" -H 'Content-Type: application/json' \
+     -d '{"title": "第一章", "text": "……本章原文……"}'        # → 章节（二级会话）
+curl -X POST localhost:8000/novels/<nid>/chapters/<cid>/versions -H "$H" \
+     -H 'Content-Type: application/json' -d '{}'              # → {"job_id": "..."}，即版本 id
+curl -H "$H" localhost:8000/jobs/<job_id>                    # → status / result / log
 
 # 或 Docker 部署
 docker build -t storyboard backend/
 docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 ```
 
-离线回归（不调 LLM，用《药》归档回放编排逻辑）：`for t in fakes chat tools graph offline; do .venv/bin/python tests/pipeline/test_$t.py || break; done`（test_fakes / test_chat / test_tools / test_graph / test_offline，各自应打印 `ALL PASS`）
+离线回归（不调 LLM，用《药》归档回放编排逻辑）：`for t in tests/pipeline/test_*.py tests/server/test_*.py; do .venv/bin/python $t || break; done`（各自应打印 `ALL PASS`）
 
 ### 方式二：配套前端界面
 
@@ -64,8 +69,9 @@ docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 cd frontend && npm install && npm run dev    # http://localhost:5173，/api 代理到 8000
 ```
 
-粘贴原文 → 选制作参数 → 提交，日志实时回显；转换完成后按「分镜 / 资产卡 / 原文溯源 / JSON」
-四个页签审阅。**原文溯源**页逐句标出被哪些镜头引用、是否念作旁白，未覆盖句标红——
+左侧书架按「小说 → 章节」组织：建小说（可导入整本自动拆章）→ 打开一章 → 转换，日志实时回显；
+每次转换是本章的一个版本，采用版写进小说的长期记忆（资产库、编号接续、人物生命周期、主线剧情、创作限制），
+下一章转换时自动带上。转换完成后按「分镜 / 资产卡 / 原文溯源 / 渲染 / JSON」页签审阅。**原文溯源**页逐句标出被哪些镜头引用、是否念作旁白，未覆盖句标红——
 IR 声称「每句可溯源」，这一页就是当场查证它。顶栏「打开本地 JSON」可离线审阅归档产物，不花 API 费用。
 细节见 `frontend/README.md`。
 

@@ -1,7 +1,7 @@
 /** 枚举值 → 中文标签。IR 里存英文枚举（机器消费），界面上一律显示中文。 */
 import type {
   CameraAngle, CameraMovement, Derivation, DialogueType, FidelityMode,
-  JobStatus, LocationAngle, Mood, NarrationMode, ShotSize, TimeOfDay,
+  JobStatus, LifecycleEntry, LifecycleType, LocationAngle, Mood, NarrationMode, ShotSize, TimeOfDay,
   Transition, UnitKind,
 } from './types'
 
@@ -106,4 +106,12 @@ export const VOICE_FIELDS: [string, string][] = [
 export function label<K extends string>(map: Record<K, string>, key?: string): string {
   if (!key) return ''
   return (map as Record<string, string>)[key] ?? key
+}
+
+export const LIFECYCLE_TYPE: Record<LifecycleType, string> = {
+  deceased: '死亡', permanent_condition: '永久伤病/残疾', departed: '永久下线',
+}
+
+export const LIFECYCLE_STATUS: Record<LifecycleEntry['status'], string> = {
+  proposed: '待确认', confirmed: '已确认', rejected: '已驳回',
 }

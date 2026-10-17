@@ -1,15 +1,14 @@
 /** 转换服务客户端。开发期走 vite 代理的 /api，生产可用 VITE_API_BASE 直连。
  *
  *  除注册/登录外的所有接口都要带 token；后端按 token 判定身份，
- *  各人只看得到自己的历史记录与资产库。
+ *  各人只看得到自己的小说。会话结构：小说（长期记忆）→ 章节 → 版本（每次转换）。
  */
 import { getToken, notifyUnauthorized } from './auth'
 import type { User } from './auth'
 import type {
-  RenderPack,
-  ConvertRequest, Health, HistoryRecord, HistorySummary, Job, JobPartial, JobStatus,
-  JobSummary,
-  LibraryWork, Storyboard, VerificationReport,
+  Chapter, Constraint, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
+  LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
+  VerificationReport, VersionRecord,
 } from './types'
 
 /** 带结构化 detail 的接口错误。
@@ -87,60 +86,8 @@ export function me() {
   return req<User>('/auth/me')
 }
 
-/* ---------- 资产库 ---------- */
-
-export function listLibrary(): Promise<{ works: LibraryWork[] }> {
-  return req<{ works: LibraryWork[] }>('/library')
-}
-
-export function createLibraryWork(work: string) {
-  return req<{ work_title: string }>(`/library/${encodeURIComponent(work)}`,
-    { method: 'POST' })
-}
-
-export function getLibraryWork(work: string): Promise<LibraryWork> {
-  return req<LibraryWork>(`/library/${encodeURIComponent(work)}`)
-}
-
-export function upsertCard(work: string, kind: string, card: { id: string }) {
-  return req<Record<string, unknown>>(
-    `/library/${encodeURIComponent(work)}/${kind}/${encodeURIComponent(card.id)}`,
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(card) })
-}
-
-export function deleteCard(work: string, kind: string, cardId: string) {
-  return req<{ deleted: string }>(
-    `/library/${encodeURIComponent(work)}/${kind}/${encodeURIComponent(cardId)}`,
-    { method: 'DELETE' })
-}
-
-export function deleteLibraryWork(work: string) {
-  return req<{ deleted: string }>(`/library/${encodeURIComponent(work)}`,
-    { method: 'DELETE' })
-}
-
-/** 从本人历史记录补齐资产库（同 ID 追加式合并，重复调用安全） */
-export function backfillLibrary() {
-  return req<{ works: { work_title: string; added: number; merged: number }[] }>(
-    '/library/backfill', { method: 'POST' })
-}
-
-export function importAssets(work: string, assets: unknown) {
-  return req<{ added: number; merged: number }>(
-    `/library/${encodeURIComponent(work)}/import`, jsonPost(assets))
-}
-
 export function health(): Promise<Health> {
   return req<Health>('/healthz')
-}
-
-export function submitConvert(payload: ConvertRequest): Promise<{ job_id: string }> {
-  return req<{ job_id: string }>('/convert', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
 }
 
 export function getJob(jobId: string): Promise<Job> {
@@ -159,38 +106,156 @@ export function listJobs(): Promise<{ jobs: JobSummary[] }> {
 
 export const TERMINAL = ['succeeded', 'completed_with_warnings', 'failed']
 
-/* ---------- 历史记录 ---------- */
+/* ---------- 小说 / 章节 / 版本 ---------- */
 
-export function listHistory(): Promise<{ runs: HistorySummary[] }> {
-  return req<{ runs: HistorySummary[] }>('/history')
+const enc = encodeURIComponent
+const jsonBody = (method: string, body: unknown): RequestInit => ({
+  method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+})
+const novelPath = (nid: string) => `/novels/${enc(nid)}`
+const chapterPath = (nid: string, cid: string) => `${novelPath(nid)}/chapters/${enc(cid)}`
+const versionPath = (nid: string, cid: string, vid: string) =>
+  `${chapterPath(nid, cid)}/versions/${enc(vid)}`
+
+export function listNovels(): Promise<{ novels: NovelSummary[] }> {
+  return req('/novels')
 }
 
-export function getHistory(id: string): Promise<HistoryRecord> {
-  return req<HistoryRecord>(`/history/${id}`)
+export function createNovel(title: string, params: Partial<NovelParams> = {}): Promise<Novel> {
+  return req('/novels', jsonPost({ title, params }))
+}
+
+export function getNovel(nid: string): Promise<Novel> {
+  return req(novelPath(nid))
+}
+
+export function updateNovel(nid: string,
+                            patch: { title?: string; params?: Partial<NovelParams> }) {
+  return req<Novel>(novelPath(nid), jsonBody('PATCH', patch))
+}
+
+export function deleteNovel(nid: string) {
+  return req<{ deleted: string }>(novelPath(nid), { method: 'DELETE' })
+}
+
+export function createChapter(nid: string, title: string, text = ''): Promise<Chapter> {
+  return req(`${novelPath(nid)}/chapters`, jsonPost({ title, text }))
+}
+
+export function getChapter(nid: string, cid: string): Promise<Chapter> {
+  return req(chapterPath(nid, cid))
+}
+
+export function updateChapter(nid: string, cid: string,
+                              patch: { title?: string; text?: string; order?: number }) {
+  return req<Chapter>(chapterPath(nid, cid), jsonBody('PATCH', patch))
+}
+
+export function deleteChapter(nid: string, cid: string) {
+  return req<{ deleted: string }>(chapterPath(nid, cid), { method: 'DELETE' })
+}
+
+/** 转换本章 → 新版本。job_id 即版本 id，进度照旧走 /jobs */
+export function convertChapter(nid: string, cid: string,
+                               opts: { overrides?: Partial<NovelParams>; strict?: boolean } = {}) {
+  return req<{ job_id: string; version_id: string }>(
+    `${chapterPath(nid, cid)}/versions`,
+    jsonPost({ overrides: opts.overrides ?? {}, strict: opts.strict ?? false }))
+}
+
+export function getVersion(nid: string, cid: string, vid: string): Promise<VersionRecord> {
+  return req(versionPath(nid, cid, vid))
 }
 
 export interface SaveResult {
   id: string
   edited_at: string
-  /** 复验不通过时是 draft_invalid：记录已存下，但不许进渲染 */
+  /** 复验不通过时是 draft_invalid：版本已存下，但不许采用、不许进渲染 */
   status: JobStatus
   verification: VerificationReport
 }
 
-/** 保存人工编辑后的分镜（覆盖 result，保留创建时间与制作参数）。
+/** 保存人工编辑后的分镜（覆盖该版本的 result）。
  *  服务端会整份复验，结果一并返回——调用方必须看 status，不能只当保存成功。 */
-export function saveHistory(id: string, doc: Storyboard): Promise<SaveResult> {
-  return req<SaveResult>(`/history/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(doc),
-  })
+export function saveVersion(nid: string, cid: string, vid: string,
+                            doc: Storyboard): Promise<SaveResult> {
+  return req(versionPath(nid, cid, vid), jsonBody('PUT', doc))
 }
 
-export function deleteHistory(id: string): Promise<{ deleted: string }> {
-  return req<{ deleted: string }>(`/history/${id}`, { method: 'DELETE' })
+export function deleteVersion(nid: string, cid: string, vid: string) {
+  return req<{ deleted: string }>(versionPath(nid, cid, vid), { method: 'DELETE' })
 }
 
+export function adoptVersion(nid: string, cid: string, vid: string) {
+  return req<{ adopted_version: string; added: number; merged: number; retracted: number;
+               changed: boolean; digest?: string }>(
+    `${versionPath(nid, cid, vid)}/adopt`, { method: 'POST' })
+}
+
+export function rerunDigest(nid: string, cid: string) {
+  return req<{ digest: string }>(`${chapterPath(nid, cid)}/digest`, { method: 'POST' })
+}
+
+/* ---------- 长期记忆 ---------- */
+
+export function getMemory(nid: string): Promise<NovelMemory> {
+  return req(`${novelPath(nid)}/memory`)
+}
+
+export function upsertMemoryCard(nid: string, kind: string, card: { id: string }) {
+  return req<Record<string, unknown>>(
+    `${novelPath(nid)}/memory/assets/${kind}/${enc(card.id)}`, jsonBody('PUT', card))
+}
+
+export function deleteMemoryCard(nid: string, kind: string, cardId: string) {
+  return req<{ deleted: string }>(
+    `${novelPath(nid)}/memory/assets/${kind}/${enc(cardId)}`, { method: 'DELETE' })
+}
+
+export function addLifecycle(nid: string, entry: {
+  character_id: string; type: LifecycleType; detail?: string; chapter_id?: string | null
+}): Promise<LifecycleEntry> {
+  return req(`${novelPath(nid)}/memory/lifecycle`, jsonPost(entry))
+}
+
+/** 确认 / 驳回 / 修改一条生命周期记录 */
+export function updateLifecycle(nid: string, lid: string, patch: {
+  status?: LifecycleEntry['status']; type?: LifecycleType; detail?: string
+}): Promise<LifecycleEntry> {
+  return req(`${novelPath(nid)}/memory/lifecycle/${enc(lid)}`, jsonPost(patch))
+}
+
+export function deleteLifecycle(nid: string, lid: string) {
+  return req<{ deleted: string }>(`${novelPath(nid)}/memory/lifecycle/${enc(lid)}`,
+                                  { method: 'DELETE' })
+}
+
+export function setOutline(nid: string, outline: string) {
+  return req<{ outline: string }>(`${novelPath(nid)}/memory/plot`,
+                                  jsonBody('PUT', { outline }))
+}
+
+export function setSynopsis(nid: string, cid: string, synopsis: string) {
+  return req<{ synopsis: string }>(`${novelPath(nid)}/memory/plot/chapters/${enc(cid)}`,
+                                   jsonBody('PUT', { synopsis }))
+}
+
+export function addConstraint(nid: string,
+                              c: Partial<Omit<Constraint, 'id'>>): Promise<Constraint> {
+  return req(`${novelPath(nid)}/memory/constraints`, jsonPost(c))
+}
+
+export function updateConstraint(nid: string, kid: string,
+                                 patch: Partial<Omit<Constraint, 'id'>>): Promise<Constraint> {
+  return req(`${novelPath(nid)}/memory/constraints/${enc(kid)}`, jsonBody('PATCH', patch))
+}
+
+export function deleteConstraint(nid: string, kid: string) {
+  return req<{ deleted: string }>(`${novelPath(nid)}/memory/constraints/${enc(kid)}`,
+                                  { method: 'DELETE' })
+}
+
+/* ---------- 渲染任务包 ---------- */
 
 /** 分镜 IR → 渲染任务清单 + 人读版生产包 + 费用估算。
  *  传当前屏幕上的产物（可能还没保存），所以人工改完能立刻看到提示词与费用变化。 */

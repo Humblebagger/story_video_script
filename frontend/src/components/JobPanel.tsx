@@ -35,11 +35,11 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
               分钟级任务，可以离开本页——转换在后台继续，完成后桌面通知你
             </span>
             <button className="btn btn--sm btn--ghost" onClick={onBackground}>
-              放到后台，去开新转换
+              放到后台
             </button>
           </>
         ) : (
-          <button className="btn btn--sm btn--ghost" onClick={onReset}>新建转换</button>
+          <button className="btn btn--sm btn--ghost" onClick={onReset}>关闭任务面板</button>
         )}
       </header>
 

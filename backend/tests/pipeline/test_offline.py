@@ -1026,10 +1026,11 @@ def main() -> int:
     assert ok is None and overall is None and "服务不可用" in report_text
     print("可验证审查: 冻结范围 / 证据定位 / 覆盖率重算 / 受限补丁 / 语义独立门槛 ✓")
 
-    # 无效人工编辑允许保存为草稿，但不能借此绕过渲染前验证；旧记录也要在
-    # 第一次编辑时固化原始 source.units，不能拿篡改后的结果当新基线。
+    # 无效人工编辑允许保存为草稿，但不能借此绕过渲染前验证；没有清单的版本（旧记录迁来的）
+    # 也要在第一次编辑时固化原始 source.units，不能拿篡改后的结果当新基线。
     from fastapi import HTTPException
-    from server.app import history_update, render_plan as api_render_plan, RenderPlanRequest
+    from server import novels
+    from server.app import versions_update, render_plan as api_render_plan, RenderPlanRequest
     api_data = _Path(_tempfile.mkdtemp(prefix="storyboard_api_gate_"))
     old_auth_paths = auth.DATA_DIR, auth.USERS_FILE, auth.SECRET_FILE, auth.LEGACY_RUNS
     auth.DATA_DIR = api_data
@@ -1038,12 +1039,16 @@ def main() -> int:
     auth.LEGACY_RUNS = None
     try:
         gate_user = auth.register("gatecheck", "pw123456")
-        store.save(gate_user["id"], "gate1", "succeeded", {}, evidence_doc)
+        gnid = novels.create_novel(gate_user["id"], "门")["id"]
+        gcid = novels.create_chapter(gate_user["id"], gnid, "第一章")["id"]
+        novels.create_version(gate_user["id"], gnid, gcid, "gate1", {}, "")
+        novels.update_version_state(gate_user["id"], gnid, gcid, "gate1", "succeeded",
+                                    result=evidence_doc)
         invalid_edit = json.loads(json.dumps(evidence_doc))
         invalid_edit["source"]["units"][0]["text"] += "篡改"
-        saved = history_update("gate1", invalid_edit, gate_user)
+        saved = versions_update(gnid, gcid, "gate1", invalid_edit, gate_user)
         assert saved["status"] == "draft_invalid"
-        persisted = store.get(gate_user["id"], "gate1")
+        persisted = novels.get_version(gate_user["id"], gnid, gcid, "gate1")
         assert persisted["manifest"]["scope"]["units"][0]["text"] != \
             invalid_edit["source"]["units"][0]["text"], "旧记录原始证据必须固化"
         try:

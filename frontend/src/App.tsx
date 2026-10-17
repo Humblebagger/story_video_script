@@ -1,38 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  deleteHistory, getHistory, getJobPartial, health, listHistory, listJobs, listLibrary, me,
-  saveHistory,
+  adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
+  getChapter, getJobPartial, getNovel, getVersion, health, listJobs, listNovels, me,
+  rerunDigest, saveVersion, updateChapter,
 } from './api'
 import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
 import type { User } from './auth'
-import { ConvertForm } from './components/ConvertForm'
-import { HistoryPanel } from './components/HistoryPanel'
+import { ChapterPage } from './components/ChapterPage'
 import { JobPanel } from './components/JobPanel'
-import { LibraryView } from './components/LibraryView'
 import { LoginView } from './components/LoginView'
+import type { NewNovel } from './components/NewNovelForm'
+import { NewNovelForm } from './components/NewNovelForm'
+import { NovelPage } from './components/NovelPage'
+import { NovelSidebar } from './components/NovelSidebar'
 import { StoryboardView } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
 import { notify, primeNotifications } from './notify'
 import type {
-  ConvertRequest, Health, HistorySummary, Job, JobSummary, LibraryWork, Storyboard, VerificationReport,
+  Chapter, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
+  VerificationReport,
 } from './types'
 import { useJob } from './useJob'
 
 const RUNNING = ['queued', 'running']
+const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export default function App() {
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
-  const [page, setPage] = useState<'convert' | 'library'>('convert')
   const [svc, setSvc] = useState<Health | null>(null)
   const [svcDown, setSvcDown] = useState(false)
 
-  const [runs, setRuns] = useState<HistorySummary[]>([])
+  const [novels, setNovels] = useState<NovelSummary[]>([])
+  const [novelsLoading, setNovelsLoading] = useState(true)
   const [running, setRunning] = useState<JobSummary[]>([])
-  const [runsLoading, setRunsLoading] = useState(true)
-  const [works, setWorks] = useState<LibraryWork[]>([])
+  /** 打开的小说（总会话）与章节（二级会话）；都为空时主区是新建小说 */
+  const [novel, setNovel] = useState<Novel | null>(null)
+  const [chapter, setChapter] = useState<Chapter | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const [doc, setDoc] = useState<Storyboard | null>(null)
-  const [docId, setDocId] = useState<string | null>(null)
+  /** doc 属于哪个版本；本地打开的 JSON 与分批预览都没有 */
+  const [docVid, setDocVid] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [alert, setAlert] = useState<string | null>(null)
@@ -43,16 +51,30 @@ export default function App() {
   /** 预览请求在路上时任务可能已经跑完：只有仍想看这个任务的预览时才落地 */
   const previewFor = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  /** 异步回来时用户可能已经切走：只认仍然打开着的那一章 */
+  const openChapterId = useRef<string | null>(null)
+  openChapterId.current = chapter?.id ?? null
 
-  const refresh = useCallback(async () => {
+  const refreshNovels = useCallback(async () => {
     try {
-      const [h, a] = await Promise.all([listHistory(), listLibrary()])
-      setRuns(h.runs)
-      setWorks(a.works)
+      setNovels((await listNovels()).novels)
     } catch {
       /* 服务未连通时由 svcDown 统一提示，这里不再重复报错 */
     } finally {
-      setRunsLoading(false)
+      setNovelsLoading(false)
+    }
+  }, [])
+
+  /** 重新取打开着的小说与章节（转换完成、采用、改记忆之后） */
+  const reloadOpen = useCallback(async (nid?: string, cid?: string | null) => {
+    try {
+      if (nid) setNovel(await getNovel(nid))
+      if (nid && cid) {
+        const c = await getChapter(nid, cid)
+        if (openChapterId.current === cid) setChapter(c)
+      }
+    } catch (e) {
+      setAlert(msg(e))
     }
   }, [])
 
@@ -69,17 +91,24 @@ export default function App() {
                 `${who} 已生成，点开即可审阅`)
   }, [])
 
+  const novelRef = useRef<Novel | null>(null)
+  novelRef.current = novel
+
   // 任务跑完且用户正看着它：直接把产物摆出来
   const onJobDone = useCallback((done: Job) => {
-    void refresh()
+    void refreshNovels()
     announce(done)
+    // 巡检要过几秒才发现它结束了；在那之前章节页不能还显示「转换中」
+    setRunning((list) => list.filter((j) => j.id !== done.id))
+    const nid = novelRef.current?.id
+    if (nid) void reloadOpen(nid, openChapterId.current)
     if (done.status === 'failed') return      // 失败时已打开的预览保留：已通过的批次照样能看
     previewFor.current = null
     setPreview(null)
     setDoc(done.result)
-    setDocId(done.id)
+    setDocVid(done.id)
     setDirty(false)
-  }, [refresh, announce])
+  }, [refreshNovels, reloadOpen, announce])
 
   const { job, error, submitting, start, attach, reset } = useJob(onJobDone)
 
@@ -90,13 +119,11 @@ export default function App() {
       const p = await getJobPartial(jobId)
       if (previewFor.current !== jobId) return
       setDoc(p.doc)
-      setDocId(null)
+      setDocVid(null)
       setDirty(false)
       setPreview({ done: p.batches_done, total: p.batches })
     } catch (e) {
-      if (previewFor.current === jobId) {
-        setAlert(`预览加载失败：${e instanceof Error ? e.message : String(e)}`)
-      }
+      if (previewFor.current === jobId) setAlert(`预览加载失败：${msg(e)}`)
     }
   }, [])
 
@@ -108,10 +135,17 @@ export default function App() {
     }
   }, [preview, job, loadPreview])
 
-  const closePreview = () => {
+  /** 清掉主区的产物与任务面板（不影响后台在跑的转换） */
+  const clearWork = useCallback(() => {
+    reset()
     previewFor.current = null
     setPreview(null)
-  }
+    setDoc(null)
+    setDocVid(null)
+    setDirty(false)
+    setAlert(null)
+    setVerification(null)
+  }, [reset])
 
   /** 任务列表巡检：独立于「是否正在看某个任务」。
    *  放到后台的任务靠它留在侧栏里可点回去，跑完也靠它播报——
@@ -131,11 +165,15 @@ export default function App() {
         if (done) { announce(done); finished = true }
       }
       prevRunning.current = liveIds
-      if (finished) void refresh()
+      if (finished) {
+        void refreshNovels()
+        const nid = novelRef.current?.id
+        if (nid) void reloadOpen(nid, openChapterId.current)
+      }
     } catch {
       /* 巡检失败静默重试，不打扰用户 */
     }
-  }, [announce, refresh])
+  }, [announce, refreshNovels, reloadOpen])
 
   // 登录态失效（token 过期或被撤销）→ 退回登录页
   useEffect(() => onUnauthorized(() => setUser(null)), [])
@@ -149,9 +187,9 @@ export default function App() {
     if (!user) return
     // 缓存的用户信息可能已过期，向服务端确认一次
     me().then(setUser).catch(() => { /* 401 已由 onUnauthorized 处理 */ })
-    void refresh()
+    void refreshNovels()
     void watchJobs()
-  }, [user?.id, refresh, watchJobs])
+  }, [user?.id, refreshNovels, watchJobs])
 
   // 常驻巡检：有任务在跑时勤一点，闲时慢一点
   useEffect(() => {
@@ -160,101 +198,196 @@ export default function App() {
     return () => clearInterval(t)
   }, [user, running.length, watchJobs])
 
-  // 只在首次进入页面时自动接上后台任务；之后由用户点选，
-  // 否则「放到后台」会被立刻重新附着，等于按钮失灵
-  const bootstrapped = useRef(false)
+  // 章后整理在后台跑（一次小调用）：跑着时盯一下，完了刷新小说页的待确认提议
   useEffect(() => {
-    if (bootstrapped.current || !running.length) return
-    bootstrapped.current = true
-    if (!job && !doc) attach(running[0].id)
-  }, [running, job, doc, attach])
+    if (!novel || !chapter || chapter.digest?.status !== 'running') return
+    const t = window.setTimeout(() => void reloadOpen(novel.id, chapter.id), 2000)
+    return () => clearTimeout(t)
+  }, [novel, chapter, reloadOpen])
 
-  const logout = () => {
-    clearSession()
+  const confirmLeave = () => !dirty || confirm('当前修改尚未保存，确定切换？')
+
+  const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
     reset()
-    setUser(null)
-    setDoc(null)
-    setDocId(null)
-    setRuns([])
-    setWorks([])
-    setRunning([])
-    setPage('convert')
+    previewFor.current = null
+    setPreview(null)
+    setAlert(null)
+    setVerification(null)
+    try {
+      const v = await getVersion(nid, cid, vid)
+      if (openChapterId.current !== cid) return
+      setDoc(v.result)
+      setDocVid(v.result ? v.id : null)
+      setDirty(false)
+      if (!v.result) {
+        setVerification(v.verification ?? null)
+        setAlert(v.status === 'failed'
+          ? `这一版转换失败：${(v.error ?? '').split('\n')[0]}`
+          : '这一版还没有产物（仍在转换或已中断）')
+      }
+    } catch (e) {
+      setAlert(`打开版本失败：${msg(e)}`)
+    }
+  }, [reset])
+
+  const openNovel = async (nid: string) => {
+    if (!confirmLeave()) return
+    clearWork()
+    setChapter(null)
+    try {
+      setNovel(await getNovel(nid))
+    } catch (e) {
+      setAlert(`打开小说失败：${msg(e)}`)
+    }
   }
 
-  const submit = (payload: ConvertRequest) => {
+  /** 打开章节：本章有转换在跑就接上任务面板，否则摆出采用版（没有就最新一版） */
+  const openChapter = async (cid: string, nid = novel?.id, jobId?: string) => {
+    if (!nid || !confirmLeave()) return
+    clearWork()
+    try {
+      const [n, c] = await Promise.all([
+        novel?.id === nid ? Promise.resolve(novel) : getNovel(nid), getChapter(nid, cid)])
+      setNovel(n)
+      openChapterId.current = c.id
+      setChapter(c)
+      const live = jobId ?? running.find((j) => j.chapter_id === cid)?.id
+      if (live) attach(live)
+      else {
+        const vid = c.adopted_version ?? c.versions[0]?.id
+        if (vid) void openVersion(nid, cid, vid)
+      }
+    } catch (e) {
+      setAlert(`打开章节失败：${msg(e)}`)
+    }
+  }
+
+  const openJob = (j: JobSummary) => {
+    if (job?.id === j.id) return
+    if (j.novel_id && j.chapter_id) void openChapter(j.chapter_id, j.novel_id, j.id)
+    else { clearWork(); attach(j.id) }
+  }
+
+  const newNovel = () => {
+    if (!confirmLeave()) return
+    clearWork()
+    setNovel(null)
+    setChapter(null)
+  }
+
+  const submitNovel = async (n: NewNovel) => {
+    setBusy(true)
+    setAlert(null)
+    try {
+      const created = await createNovel(n.title, n.params)
+      const chapters = []
+      for (const c of n.chapters) chapters.push(await createChapter(created.id, c.title, c.text))
+      await refreshNovels()
+      setNovel(await getNovel(created.id))
+      if (chapters.length) await openChapter(chapters[0].id, created.id)
+    } catch (e) {
+      setAlert(`新建小说失败：${msg(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const newChapter = async () => {
+    if (!novel || !confirmLeave()) return
+    try {
+      const c = await createChapter(novel.id, `第${novel.chapters.length + 1}章`)
+      await refreshNovels()
+      await openChapter(c.id, novel.id)
+      setNovel(await getNovel(novel.id))
+    } catch (e) {
+      setAlert(`新建章节失败：${msg(e)}`)
+    }
+  }
+
+  const convert = (opts: { narration_mode?: NarrationMode; strict: boolean }) => {
+    if (!novel || !chapter) return
     primeNotifications()
-    bootstrapped.current = true      // 自己提交的任务无需再自动附着
-    void start(payload)
+    clearWork()
+    const { strict, ...overrides } = opts
+    const [nid, cid] = [novel.id, chapter.id]
+    void start(() => convertChapter(nid, cid, { overrides, strict }),
+               { work_title: novel.title, chapter: chapter.title })
+      .then(() => reloadOpen(nid, cid))
     void watchJobs()                 // 立刻让它出现在侧栏，随时可以放后台再点回来
   }
 
-  const openRun = async (id: string) => {
-    if (dirty && !confirm('当前修改尚未保存，确定切换？')) return
-    setAlert(null)
-    setVerification(null)
-    try {
-      const record = await getHistory(id)
-      reset()
-      closePreview()
-      setDoc(record.result)
-      setDocId(record.id)
-      setDirty(false)
-    } catch (e) {
-      setAlert(`打开记录失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  const removeRun = async (id: string) => {
-    if (!confirm('删除这条历史记录？该操作不可撤销。')) return
-    try {
-      await deleteHistory(id)
-      if (docId === id) newConversion()
-      await refresh()
-    } catch (e) {
-      setAlert(`删除失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  /** 回到表单：在跑的任务不受影响，仍在后台继续，并留在侧栏可随时点回来 */
-  const newConversion = () => {
-    reset()
-    closePreview()
-    setDoc(null)
-    setDocId(null)
-    setDirty(false)
-    setAlert(null)
-    setVerification(null)
+  /** 放到后台：任务面板收起，回到本章；转换在后台继续，侧栏可随时点回来 */
+  const background = () => {
+    clearWork()
     void watchJobs()
   }
 
-  const openJob = (id: string) => {
-    if (job?.id === id) return
-    reset()
-    closePreview()
-    setDoc(null)
-    setDocId(null)
-    setAlert(null)
-    setVerification(null)
-    attach(id)
+  const adopt = async (vid: string) => {
+    if (!novel || !chapter) return
+    try {
+      const r = await adoptVersion(novel.id, chapter.id, vid)
+      setAlert(`已采用：资产库新增 ${r.added} 张、合并 ${r.merged} 张${
+        r.retracted ? `，撤回旧版独有的 ${r.retracted} 张` : ''}${
+        r.digest === 'running' ? '；章后整理已开始（人物状态提议与本章摘要）' : ''}`)
+      await reloadOpen(novel.id, chapter.id)
+      void refreshNovels()
+    } catch (e) {
+      setAlert(`采用失败：${msg(e)}`)
+    }
+  }
+
+  const removeVersion = async (vid: string) => {
+    if (!novel || !chapter || !confirm('删除这个版本？该操作不可撤销。')) return
+    try {
+      await deleteVersion(novel.id, chapter.id, vid)
+      if (docVid === vid) { setDoc(null); setDocVid(null); setDirty(false) }
+      await reloadOpen(novel.id, chapter.id)
+    } catch (e) {
+      setAlert(`删除失败：${msg(e)}`)
+    }
+  }
+
+  const removeChapter = async () => {
+    if (!novel || !chapter) return
+    if (!confirm(`删除「${chapter.title}」及其全部版本？它写进长期记忆的资产卡、摘要与人物状态会一并撤回。`)) return
+    try {
+      await deleteChapter(novel.id, chapter.id)
+      clearWork()
+      setChapter(null)
+      await reloadOpen(novel.id)
+      void refreshNovels()
+    } catch (e) {
+      setAlert(`删除失败：${msg(e)}`)
+    }
+  }
+
+  const saveText = async (patch: { title?: string; text?: string }) => {
+    if (!novel || !chapter) return
+    try {
+      await updateChapter(novel.id, chapter.id, patch)
+      await reloadOpen(novel.id, chapter.id)
+    } catch (e) {
+      setAlert(`保存章节失败：${msg(e)}`)
+    }
   }
 
   const save = async () => {
-    if (!docId || !doc) return
+    if (!novel || !chapter || !docVid || !doc) return
     setSaving(true)
     setAlert(null)
     setVerification(null)
     try {
-      const res = await saveHistory(docId, doc)
+      const res = await saveVersion(novel.id, chapter.id, docVid, doc)
       // 后端整份复验过了才返回。不看 status 就等于假装保存成功——
       // 用户会一路改到点渲染时才被 422 挡住，那时早忘了改过什么。
       setVerification(res.verification)
       if (res.status === 'draft_invalid') {
-        setAlert('已保存，但这份分镜没通过服务端复验，暂时不能进渲染（详见下方报告）')
+        setAlert('已保存，但这份分镜没通过服务端复验，暂时不能采用、不能进渲染（详见下方报告）')
       }
       setDirty(false)
-      await refresh()
+      await reloadOpen(novel.id, chapter.id)
     } catch (e) {
-      setAlert(`保存失败：${e instanceof Error ? e.message : String(e)}`)
+      setAlert(`保存失败：${msg(e)}`)
     } finally {
       setSaving(false)
     }
@@ -266,36 +399,37 @@ export default function App() {
     try {
       const parsed = JSON.parse(await f.text())
       if (!parsed?.meta || !parsed?.episodes) throw new Error('不是分镜 IR：缺少 meta / episodes')
-      reset()
-      closePreview()
-      setDoc(parsed as Storyboard)
-      setDocId(null)          // 本地文件不入库，只能下载
-      setDirty(false)
+      clearWork()
+      setChapter(null)
+      setNovel(null)
+      setDoc(parsed as Storyboard)    // 本地文件不入库，只能下载
     } catch (e) {
-      setAlert(`读取失败：${e instanceof Error ? e.message : String(e)}`)
+      setAlert(`读取失败：${msg(e)}`)
     }
+  }
+
+  const logout = () => {
+    clearSession()
+    clearWork()
+    setUser(null)
+    setNovel(null)
+    setChapter(null)
+    setNovels([])
+    setRunning([])
   }
 
   if (!user) {
     return <LoginView firstRun={(svc?.users ?? 0) === 0} onDone={setUser} />
   }
 
+  const converting = !!chapter && (running.some((j) => j.chapter_id === chapter.id)
+    || (!!job && RUNNING.includes(job.status)))
+
   return (
     <div className="app">
       <header className="top">
         <div className="top__brand">
           <h1>小说 → 分镜 IR</h1>
-          <nav className="top__nav">
-            {([['convert', '转换'], ['library', '资产库']] as const).map(([p, name]) => (
-              <button
-                key={p}
-                className={`top__navbtn${page === p ? ' is-on' : ''}`}
-                onClick={() => setPage(p)}
-              >
-                {name}
-              </button>
-            ))}
-          </nav>
         </div>
         <div className="top__right">
           <button className="btn btn--sm btn--ghost" onClick={() => fileRef.current?.click()}>
@@ -327,32 +461,62 @@ export default function App() {
         </div>
       </header>
 
-      {page === 'library' ? (
-        <main className="main main--wide"><LibraryView /></main>
-      ) : (
       <div className="shell">
-        <HistoryPanel
-          runs={runs}
+        <NovelSidebar
+          novels={novels}
+          novel={novel}
+          chapterId={chapter?.id ?? null}
           running={running}
-          activeId={job?.id ?? docId}
-          loading={runsLoading}
-          onOpen={openRun}
+          activeJobId={job?.id ?? null}
+          loading={novelsLoading}
+          onOpenNovel={(nid) => void openNovel(nid)}
+          onOpenChapter={(cid) => void openChapter(cid)}
           onOpenJob={openJob}
-          onDelete={removeRun}
-          onNew={newConversion}
+          onNewNovel={newNovel}
+          onNewChapter={() => void newChapter()}
         />
 
         <main className="main">
-          {!job && !doc && (
-            <ConvertForm disabled={submitting || svcDown} works={works} onSubmit={submit} />
+          {!novel && !doc && !job && (
+            <NewNovelForm disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
+          )}
+          {novel && !chapter && (
+            <NovelPage
+              key={novel.id}
+              novel={novel}
+              onChanged={() => { void reloadOpen(novel.id); void refreshNovels() }}
+              onDeleted={() => { setNovel(null); void refreshNovels() }}
+              onOpenChapter={(cid) => void openChapter(cid)}
+            />
+          )}
+          {novel && chapter && (
+            <ChapterPage
+              key={chapter.id}
+              novel={novel}
+              chapter={chapter}
+              versionId={docVid}
+              converting={converting}
+              disabled={submitting || svcDown}
+              onConvert={convert}
+              onOpenVersion={(vid) => {
+                if (confirmLeave()) void openVersion(novel.id, chapter.id, vid)
+              }}
+              onAdopt={(vid) => void adopt(vid)}
+              onDeleteVersion={(vid) => void removeVersion(vid)}
+              onSaveText={saveText}
+              onDelete={() => void removeChapter()}
+              onRerunDigest={() => void rerunDigest(novel.id, chapter.id)
+                .then(() => reloadOpen(novel.id, chapter.id))
+                .catch((e) => setAlert(msg(e)))}
+            />
           )}
           {error && <p className="alert">提交失败：{error}</p>}
           {alert && <p className="alert">{alert}</p>}
           {job && (
             <JobPanel
               job={job}
-              onReset={newConversion}
-              onBackground={newConversion}
+              onReset={reset}
+              onBackground={background}
               previewing={preview !== null}
               onPreview={() => void loadPreview(job.id)}
             />
@@ -361,9 +525,9 @@ export default function App() {
           {doc && (
             <StoryboardView
               doc={doc}
-              canSave={docId !== null}
+              canSave={docVid !== null}
               preview={preview}
-              runId={docId}
+              runId={docVid}
               dirty={dirty}
               saving={saving}
               onChange={(next) => { setDoc(next); setDirty(true) }}
@@ -372,7 +536,6 @@ export default function App() {
           )}
         </main>
       </div>
-      )}
     </div>
   )
 }

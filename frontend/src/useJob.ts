@@ -5,8 +5,8 @@
  *  完成时通过 onDone 回调触发桌面通知。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getJob, submitConvert, TERMINAL } from './api'
-import type { ConvertRequest, Job } from './types'
+import { getJob, TERMINAL } from './api'
+import type { Job } from './types'
 
 const POLL_MS = 1500
 
@@ -46,14 +46,15 @@ export function useJob(onDone?: (job: Job) => void) {
     void tick()
   }, [stop])
 
-  const start = useCallback(async (payload: ConvertRequest) => {
+  /** submit 发起一次转换（如 convertChapter），返回任务 id；meta 用于任务面板的标题 */
+  const start = useCallback(async (submit: () => Promise<{ job_id: string }>,
+                                   meta: { work_title: string; chapter: string }) => {
     setError(null)
     setSubmitting(true)
     try {
-      const { job_id } = await submitConvert(payload)
+      const { job_id } = await submit()
       setJob({ id: job_id, status: 'queued', log: [], result: null,
-               quality_report: null, error: null,
-               work_title: payload.work_title, chapter: payload.chapter })
+               quality_report: null, error: null, ...meta })
       poll(job_id)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
