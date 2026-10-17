@@ -3,7 +3,7 @@ import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
-import { buildTimeline, fitText, fmtClock, textPx, litFraction, shotIndexAt } from '../timeline'
+import { buildTimeline, fitText, fmtClock, previewFrom, shotSpan, speechAt, textPx, litFraction, shotIndexAt } from '../timeline'
 import { applyOp } from '../timelineOps'
 import type { TimelineOp } from '../timelineOps'
 import { AssetsView } from './AssetsView'
@@ -176,7 +176,13 @@ export function TimelineCanvas({
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const drag = useRef<{ x: number; y: number; tx: number; ty: number; scrub: boolean
-                        moved?: boolean; resize?: { shotId: string; start: number } } | null>(null)
+                        moved?: boolean; resize?: { shotId: string; start: number }
+                        /** 在时间刻度上拖：圈出一段时间，空格预览这一段 */
+                        select?: number } | null>(null)
+  /** 选区（秒）：空格只播这一段；没有选区时空格播当前这一镜 */
+  const [range, setRange] = useState<{ start: number; end: number } | null>(null)
+  /** 本次播放播到哪儿停（null = 播到片尾） */
+  const stopAt = useRef<number | null>(null)
   /** 拖动平移之后松手会补发一次 click，不能当成选中镜头 */
   const suppressClick = useRef(false)
 
@@ -215,8 +221,8 @@ export function TimelineCanvas({
       // 正在输入框里打字：空格、Esc、⌘Z 都归输入框自己
       const el = e.target as HTMLElement | null
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
-      if (e.key === 'Escape') onClose()
-      if (e.key === ' ') { e.preventDefault(); setPlaying((p) => !p) }
+      if (e.key === 'Escape') { if (rangeRef.current) setRange(null); else onClose() }
+      if (e.key === ' ') { e.preventDefault(); previewRef.current() }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         if (e.shiftKey) redo(); else undo()
@@ -225,6 +231,8 @@ export function TimelineCanvas({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, undo, redo])
+  const rangeRef = useRef(range)
+  rangeRef.current = range
 
   // 播放：按真实时间（×速度）推进播放头，到头停
   const tRef = useRef(0)
@@ -235,11 +243,13 @@ export function TimelineCanvas({
     let raf = 0
     const tick = (now: number) => {
       // 累计在 ref 里而不是读上一帧渲染出的 t：两帧之间不保证已经重新渲染过
-      const next = Math.min(tl.total, tRef.current + (now - last) / 1000 * speed)
+      const end = Math.min(tl.total, stopAt.current ?? tl.total)
+      // rAF 的时间戳是这一帧的起点，可能早于开播那一刻：不夹住的话首帧会倒退，从镜首开播会退回上一镜
+      const next = Math.min(end, tRef.current + Math.max(0, now - last) / 1000 * speed)
       last = now
       tRef.current = next
       setT(next)
-      if (next >= tl.total) {
+      if (next >= end) {
         setPlaying(false)
         return
       }
@@ -259,6 +269,28 @@ export function TimelineCanvas({
   const current = shotIndexAt(tl, t)
   const cur = tl.shots[current]
   const curPrompt = cur ? kf.promptOf(cur.id) : undefined
+
+  /** 空格：播选区（没有选区就播当前这一镜），播到段尾停；正在播就暂停 */
+  const preview = () => {
+    if (playing) { setPlaying(false); return }
+    const seg = range ?? (cur ? { start: cur.start, end: cur.end } : null)
+    if (!seg) return
+    const from = previewFrom(seg, tRef.current)
+    // 停在段尾前一毫秒：停在正好段尾，播放头就算进了下一镜，再按空格会播成下一镜
+    stopAt.current = seg.end - 0.001
+    tRef.current = from
+    setT(from)
+    setPlaying(true)
+  }
+  const previewRef = useRef(preview)
+  previewRef.current = preview
+  /** 整章播放（播放按钮）：不设终点 */
+  const playAll = () => {
+    if (playing) { setPlaying(false); return }
+    stopAt.current = null
+    if (tRef.current >= tl.total) { tRef.current = 0; setT(0) }
+    setPlaying(true)
+  }
 
   const timeAt = (clientX: number) => {
     const left = box.current?.getBoundingClientRect().left ?? 0
@@ -280,9 +312,13 @@ export function TimelineCanvas({
   const onPointerDown = (e: React.PointerEvent) => {
     suppressClick.current = false
     const top = box.current?.getBoundingClientRect().top ?? 0
-    const scrub = e.clientY - top < RULER
-    drag.current = { x: e.clientX, y: e.clientY, tx, ty, scrub }
-    if (scrub) setT(timeAt(e.clientX))
+    const onRuler = e.clientY - top < RULER
+    const left = box.current?.getBoundingClientRect().left ?? 0
+    // 刻度上按在播放头附近 = 拖播放头；别处按下拖动 = 圈选区，只点一下 = 跳过去
+    const scrub = onRuler && Math.abs(e.clientX - left - playX) <= 8
+    drag.current = { x: e.clientX, y: e.clientY, tx, ty, scrub,
+                     ...(onRuler && !scrub ? { select: timeAt(e.clientX) } : {}) }
+    if (onRuler) { setPlaying(false); seek(timeAt(e.clientX)) }
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
   }
   const onPointerMove = (e: React.PointerEvent) => {
@@ -296,12 +332,22 @@ export function TimelineCanvas({
       op({ kind: 'setDuration', shotId: d.resize.shotId, sec }, false)
       return
     }
-    if (d.scrub) { setT(timeAt(e.clientX)); return }
+    if (d.scrub) { seek(timeAt(e.clientX)); return }
+    if (d.select !== undefined) {
+      if (d.moved) {
+        const now = timeAt(e.clientX)
+        setRange({ start: Math.min(d.select, now), end: Math.max(d.select, now) })
+        seek(Math.min(d.select, now))
+      }
+      return
+    }
     userView.current = true
     setTx(d.tx + e.clientX - d.x)
     setTy(Math.min(0, d.ty + e.clientY - d.y))
   }
   const onPointerUp = () => {
+    // 刻度上只点不拖：清掉选区
+    if (drag.current?.select !== undefined && !drag.current.moved) setRange(null)
     // 只有平移才吞掉随后的 click；拖把手的 click 在把手上就拦住了
     if (drag.current?.moved && !drag.current.resize) suppressClick.current = true
     drag.current = null
@@ -313,16 +359,27 @@ export function TimelineCanvas({
     drag.current = { x: e.clientX, y: e.clientY, tx, ty, scrub: false, resize: { shotId, start } }
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
   }
-  /** 点镜头 / 角色节点：就地选中（播放头跳到这一镜），不离开画布 */
-  const selectShot = (shotId: string) => {
+  const seek = (sec: number) => {
+    tRef.current = sec
+    setT(sec)
+  }
+  /** 点镜头 / 角色节点：就地选中（播放头跳到这一镜），不离开画布。
+   *  按住 Shift 点：从当前镜到这一镜圈成选区，空格预览这一段 */
+  const selectShot = (shotId: string, extend = false) => {
     if (suppressClick.current) { suppressClick.current = false; return }
     const s = tl.shots.find((x) => x.id === shotId)
     if (!s) return
     setPlaying(false)
-    tRef.current = s.start
-    setT(s.start)
+    if (extend && cur) {
+      const span = shotSpan(tl, range ? (shotIndexAtStart(range.start) ?? cur.id) : cur.id, shotId)
+      if (span) { setRange(span); seek(span.start) }
+      return
+    }
+    setRange(null)
+    seek(s.start)
     setPanel('shot')
   }
+  const shotIndexAtStart = (sec: number) => tl.shots[shotIndexAt(tl, sec)]?.id
 
   // 只画视野内的刻度
   const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * pps >= 70) ?? 600
@@ -342,7 +399,7 @@ export function TimelineCanvas({
             <button className={`btn btn--sm${editing ? '' : ' btn--ghost'}`} onClick={() => setEditing((v) => !v)}>
               {editing ? '完成编辑' : '编辑'}
             </button>
-            {editing && (
+            {(editing || past.current.length > 0 || future.current.length > 0) && (
               <>
                 <button className="btn btn--sm btn--ghost" disabled={!past.current.length} title="撤销（⌘Z）"
                         onClick={undo}>↶ 撤销</button>
@@ -357,14 +414,12 @@ export function TimelineCanvas({
             )}
           </span>
         )}
-        <button className="btn btn--sm" onClick={() => {
-          if (t >= tl.total) setT(0)
-          setPlaying((p) => !p)
-        }}>{playing ? '❚❚ 暂停' : '▶ 播放'}</button>
+        <button className="btn btn--sm" title="从播放头播到片尾（空格只播选区或当前这一镜）"
+                onClick={playAll}>{playing ? '❚❚ 暂停' : '▶ 播放'}</button>
         <button className="btn btn--sm btn--ghost" title="上一镜" disabled={current <= 0}
-                onClick={() => setT(tl.shots[Math.max(0, current - 1)].start)}>⏮</button>
+                onClick={() => seek(tl.shots[Math.max(0, current - 1)].start)}>⏮</button>
         <button className="btn btn--sm btn--ghost" title="下一镜" disabled={current >= tl.shots.length - 1}
-                onClick={() => setT(tl.shots[Math.min(tl.shots.length - 1, current + 1)].start)}>⏭</button>
+                onClick={() => seek(tl.shots[Math.min(tl.shots.length - 1, current + 1)].start)}>⏭</button>
         <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
           {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
         </select>
@@ -377,8 +432,16 @@ export function TimelineCanvas({
         <span className="tlc__kfcount" title="已上传关键帧图的镜头数">
           关键帧 {Object.keys(kf.urls).length}/{tl.shots.length}
         </span>
-        <span className="tlc__help" title={`⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · 点时间刻度跳转 · 空格播放 · Esc 关闭${
-          editing ? '\n编辑：点镜头选中 · 拖镜头右缘改时长 · 双击角色节点改动作 · 右侧改本镜全部呈现字段 · ⌘Z 撤销' : ''}`}>?</span>
+        {range && (
+          <span className="tlc__range">
+            选区 {fmtClock(range.start)}–{fmtClock(range.end)}（{(range.end - range.start).toFixed(1)}s）
+            <button className="tlc__linkbtn" title="清除选区（Esc）" onClick={() => setRange(null)}>✕</button>
+          </span>
+        )}
+        <span className="tlc__help" title={`空格 预览：播选区，没选区就播当前这一镜，播到段尾停 · ▶ 播放 从播放头播到片尾
+在时间刻度上拖 = 圈选区 · 拖播放头 = 拖着看 · Shift+点镜头 = 从当前镜圈到这一镜
+${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · Esc 清选区 / 关闭${
+          editing ? '\n编辑：双击角色节点改动作 · 右侧改本镜全部呈现字段' : ''}`}>?</span>
         <button className="btn btn--sm btn--ghost tlc__close" title="关闭画布（Esc）" onClick={onClose}>✕</button>
       </div>
 
@@ -391,6 +454,11 @@ export function TimelineCanvas({
             <rect key={r.key} x={0} y={r.y} width={width} height={r.h}
                   className={i % 2 ? 'tlc__lane tlc__lane--alt' : 'tlc__lane'} />
           ))}
+
+          {range && (
+            <rect className="tlc__rangeband" x={x(range.start)} y={RULER}
+                  width={Math.max(1, (range.end - range.start) * pps)} height={height - RULER} />
+          )}
 
           {/* 集 / 场景 */}
           {tl.episodes.map((e) => (
@@ -419,7 +487,7 @@ export function TimelineCanvas({
           {tl.shots.map((s, i) => (
             <g key={s.id} className={`tlc__shot tlc__shot--${s.shot.source?.derivation ?? 'explicit'}${
                  i === current ? ' is-cur' : ''}${s.end <= t ? ' is-past' : ''}`}
-               onClick={() => selectShot(s.id)} onDoubleClick={() => onJumpShot(s.id)}>
+               onClick={(e) => selectShot(s.id, e.shiftKey)} onDoubleClick={() => onJumpShot(s.id)}>
               <rect x={x(s.start) + 1} y={shotRow.y + 6} width={Math.max(2, s.playable * pps - 2)}
                     height={ROW.shot - 12} rx={3} />
               {s.playable > s.nominal + 0.05 && (
@@ -434,7 +502,7 @@ export function TimelineCanvas({
               </text>
               <title>{`${s.id} · ${label(SHOT_SIZE, s.shot.shot_size)} · ${s.playable.toFixed(1)}s${
                 s.playable > s.nominal + 0.05 ? `（标称 ${s.nominal}s，念完旁白台词需更久）` : ''}\n${s.shot.action}`}</title>
-              {editing && (
+              {editable && (
                 <rect className="tlc__grip" data-shot={s.id} x={x(s.start + s.nominal) - 4} y={shotRow.y + 4}
                       width={8} height={ROW.shot - 8}
                       onPointerDown={(e) => startResize(e, s.id, s.start)}
@@ -476,15 +544,24 @@ export function TimelineCanvas({
                 )}
                 {lit && <path className="tlc__link tlc__link--lit" d={lit}
                               transform={`translate(0, ${cy})`} />}
-                {c.nodes.map((n, ni) => {
-                  const on = n.shotId === cur?.id
-                  // 标签居中在节点下方，最多占到左右相邻节点的中点，相邻标签就不会叠
-                  const gap = Math.min(ni ? n.t - c.nodes[ni - 1].t : Infinity,
-                                       ni < c.nodes.length - 1 ? c.nodes[ni + 1].t - n.t : Infinity) * pps
-                  const tag = fitText(n.action, on ? Math.max(gap, 160) : Math.min(gap, 200) - 6, 11, 3)
-                  // 居中放不下时往里挪：贴着泳道名一栏或画布右缘的标签不被挡住半截
-                  const half = textPx(tag) / 2
-                  const tx = Math.min(Math.max(x(n.t), GUTTER + 4 + half), Math.max(GUTTER + 4 + half, width - 4 - half))
+                {(() => {
+                  // 先算好每个节点的标签与位置：当前节点的标签可以放宽，与它相撞的邻居标签这一刻先不写
+                  const labels = c.nodes.map((n, ni) => {
+                    const on = n.shotId === cur?.id
+                    // 标签居中在节点下方，最多占到左右相邻节点的中点，相邻标签就不会叠
+                    const gap = Math.min(ni ? n.t - c.nodes[ni - 1].t : Infinity,
+                                         ni < c.nodes.length - 1 ? c.nodes[ni + 1].t - n.t : Infinity) * pps
+                    const tag = fitText(n.action, on ? Math.max(gap, 160) : Math.min(gap, 200) - 6, 11, 3)
+                    // 居中放不下时往里挪：贴着泳道名一栏或画布右缘的标签不被挡住半截
+                    const half = textPx(tag) / 2
+                    const tx = Math.min(Math.max(x(n.t), GUTTER + 4 + half), Math.max(GUTTER + 4 + half, width - 4 - half))
+                    return { on, tag, tx, half }
+                  })
+                  const hot = labels.find((l) => l.on && l.tag)
+                  return labels.map((l) => (hot && !l.on && Math.abs(l.tx - hot.tx) < l.half + hot.half + 6
+                    ? { ...l, tag: '' } : l))
+                })().map(({ on, tag, tx }, ni) => {
+                  const n = c.nodes[ni]
                   return (
                     <g key={n.shotId} className={`tlc__node${n.t <= t ? ' is-past' : ''}${on ? ' is-cur' : ''}`}
                        data-node={`${c.ref}@${n.shotId}`}
@@ -534,6 +611,10 @@ export function TimelineCanvas({
         {/* 时间刻度（不随上下平移） */}
         <g className="tlc__ruler">
           <rect x={0} y={0} width={width} height={RULER} />
+          {range && (
+            <rect className="tlc__rangeruler" x={x(range.start)} y={0}
+                  width={Math.max(1, (range.end - range.start) * pps)} height={RULER} />
+          )}
           {ticks.map((s) => (
             <g key={s}>
               <line x1={x(s)} x2={x(s)} y1={RULER - 8} y2={RULER} />
@@ -561,6 +642,25 @@ export function TimelineCanvas({
         <line className="tlc__head" x1={playX} x2={playX} y1={0} y2="100%" />
         <polygon className="tlc__head" points={`${playX - 6},0 ${playX + 6},0 ${playX},8`} />
       </svg>
+
+      {/* 播放时的预览窗：当前镜的关键帧（没图给镜头描述占位）+ 此刻在念的旁白 / 台词字幕 */}
+      {playing && animatic && cur && (
+        <div className="tlc__pip" onPointerDown={(e) => e.stopPropagation()}>
+          {kf.urls[cur.id]
+            ? <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
+            : (
+              <div className="tlc__pipph"><p>{cur.shot.action}</p></div>
+            )}
+          <div className="tlc__subs">
+            {speechAt(tl, t).map((sp, i) => (
+              <p key={i} className={`tlc__sub tlc__sub--${sp.kind}`}>
+                {sp.kind === 'dialogue' && sp.who ? `${sp.who}：` : ''}{sp.text}
+              </p>
+            ))}
+          </div>
+          <span className="tlc__pipclock">{cur.id} · {label(SHOT_SIZE, cur.shot.shot_size)} · {fmtClock(t)}{stopAt.current !== null && ` / ${fmtClock(stopAt.current)}`}</span>
+        </div>
+      )}
 
       {nodeEdit && (
         <input className="tlc__nodeedit" autoFocus value={nodeEdit.value}

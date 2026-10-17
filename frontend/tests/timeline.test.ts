@@ -5,7 +5,8 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import {
-  buildTimeline, fitText, fmtClock, litFraction, playableSeconds, shotIndexAt,
+  buildTimeline, fitText, fmtClock, litFraction, playableSeconds, previewFrom, shotIndexAt, shotSpan,
+  speechAt,
 } from '../src/timeline'
 import { applyOp } from '../src/timelineOps'
 import type { Storyboard } from '../src/types'
@@ -98,6 +99,21 @@ must(fitText('S01 华家茶馆', 30, 11, 4) === '', '可以要求至少留几个
 must(fitText('SH012', 20, 10, Infinity) === '' && fitText('SH012', 40, 10, Infinity) === 'SH012',
      '镜头号放不下就整个不写，不截成「SH…」')
 console.log('6b. 标签按宽度截断 → 不溢出 / 不留残片 ✓')
+
+// 6c. 选区与空格预览：镜头选区不分先后；播放头在段内接着播、到尾或在段外从段首重播；字幕取当时在念的那句
+{
+  const tl6 = buildTimeline(DOC)
+  const [a, b] = [tl6.shots[1], tl6.shots[3]]
+  must(JSON.stringify(shotSpan(tl6, b.id, a.id)) === JSON.stringify({ start: a.start, end: b.end }), '选区覆盖两镜之间')
+  must(shotSpan(tl6, a.id, 'nope') === null, '不存在的镜头没有选区')
+  const seg = { start: 10, end: 20 }
+  must(previewFrom(seg, 12) === 12 && previewFrom(seg, 19.99) === 10 && previewFrom(seg, 25) === 10 && previewFrom(seg, 3) === 10,
+       '段内接着播，段尾 / 段外从段首重播')
+  const sp = tl6.speech[0]
+  must(!!sp && speechAt(tl6, (sp.start + sp.end) / 2).includes(sp), '字幕取当时在念的那句')
+  must(speechAt(tl6, tl6.total + 1).length === 0, '片尾之后没有字幕')
+  console.log('6c. 选区 / 空格预览起点 / 字幕 ✓')
+}
 
 // 7. 操作层：改时长（取 0.5s、夹 schema 范围）、改角色动作；锁死字段没有任何操作能碰
 let d = applyOp(DOC, { kind: 'setDuration', shotId: 'E02-SH001', sec: 7.3 })

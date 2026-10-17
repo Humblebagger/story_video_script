@@ -226,3 +226,24 @@ export function fitText(text: string, maxPx: number, fontPx = 11, minChars = 2):
   }
   return text
 }
+
+/** 选区：从镜头 a 到镜头 b（不分先后）铺满的时间段 */
+export function shotSpan(tl: Timeline, a: string, b: string): { start: number; end: number } | null {
+  const ia = tl.shots.findIndex((s) => s.id === a)
+  const ib = tl.shots.findIndex((s) => s.id === b)
+  if (ia < 0 || ib < 0) return null
+  const [lo, hi] = ia <= ib ? [ia, ib] : [ib, ia]
+  return { start: tl.shots[lo].start, end: tl.shots[hi].end }
+}
+
+/** 某一时刻正在念的旁白 / 台词（预览窗的字幕）；旁白在前 */
+export function speechAt(tl: Timeline, t: number): SpeechSeg[] {
+  return tl.speech
+    .filter((s) => s.start <= t && t < s.end)
+    .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'narration' ? -1 : 1))
+}
+
+/** 按空格从哪儿播到哪儿：播放头在段内（且没到尾）就接着播，否则从段首重播 */
+export function previewFrom(seg: { start: number; end: number }, t: number): number {
+  return t >= seg.start && t < seg.end - 0.05 ? t : seg.start
+}

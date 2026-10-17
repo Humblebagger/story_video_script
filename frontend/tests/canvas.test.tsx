@@ -57,7 +57,7 @@ const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { useState } = await import('react')
 const { StoryboardView } = await import('../src/components/StoryboardView')
-const { buildTimeline } = await import('../src/timeline')
+const { buildTimeline, fmtClock } = await import('../src/timeline')
 import type { Chapter, Novel, Storyboard } from '../src/types'
 import type { Workbench } from '../src/components/CanvasPanels'
 
@@ -229,11 +229,10 @@ console.log('5. 静帧预演 → 显示已上传关键帧 / 无图只占一条 /
 // 6. 画布上就地编辑：拖右缘改时长、双击角色节点改动作、右侧改本镜呈现字段；撤销重做；保存
 const ptr = (type: string, clientX: number) =>
   new win.PointerEvent(type, { bubbles: true, clientX, clientY: 100, pointerId: 1 }) as unknown as Event
-must(!container.querySelector('.tlc__grip'), '不进编辑态不出现拖拽把手')
 // 分镜页顶栏也有「编辑分镜」，按钮要在画布的编辑条里找
 const editBtn = () => container.querySelector('.tlc__editbar button') as unknown as HTMLElement
-await click(editBtn())
-must(editBtn().textContent === '完成编辑' && (button('撤销') as HTMLButtonElement).disabled, '进入编辑态，撤销栈为空')
+must(editBtn().textContent === '编辑' && !!container.querySelector('.tlc__grip'), '不进编辑态也能拖右缘改时长')
+must(![...container.querySelectorAll('button')].some((b) => b.textContent?.includes('撤销')), '没改过不出现撤销')
 const s2 = shots[1]
 const start = buildTimeline(doc).shots[1].start
 const grip = container.querySelector(`.tlc__grip[data-shot="${s2.id}"]`)!
@@ -254,6 +253,8 @@ await act(async () => {
 })
 await settle()
 must(dur() === s2.duration_sec, '⌘Z 撤销')
+await click(editBtn())
+must(editBtn().textContent === '完成编辑', '进入编辑态（改角色动作、右侧表单）')
 
 const node = container.querySelector(`[data-node="C01@${s2.id}"]`)!
 await act(async () => { node.dispatchEvent(new win.MouseEvent('dblclick', { bubbles: true }) as unknown as Event) })
@@ -291,8 +292,7 @@ must(JSON.stringify(latest.episodes[0].shots[0].source) === JSON.stringify(shots
 await click(button('保存修改'))
 must(saves === 1 && has('已保存'), '画布里直接保存，不必退回分镜页')
 await click(editBtn())
-must(!container.querySelector('.tlc__grip') && !container.querySelector('.tlc__panel .ed__at textarea'),
-     '完成编辑后回到只读')
+must(!container.querySelector('.tlc__panel .ed__at textarea'), '完成编辑后右侧回到只读详情')
 console.log('6. 画布上就地编辑 → 拖右缘改时长 / 双击节点改动作 / 右侧改本镜 / 撤销重做（含 ⌘Z）/ 直接保存 ✓')
 
 // 6b. 侧栏其余页签：资产卡（编辑态可改，进同一套撤销）/ 剧情（小说长期记忆）/ 任务（重新转换、版本）
@@ -344,6 +344,57 @@ must(calls.includes('adopt:v1'), '保存后在画布里采用正在看的版本'
 await click(container.querySelectorAll('.tlc__shot')[2])
 must(!!container.querySelector('.tlc__panel > header'), '在别的页签时点镜头回到「本镜」')
 console.log('6b. 侧栏页签 → 资产卡就地改（共用撤销）/ 剧情与限制 / 重新转换、切版本、采用 ✓')
+
+// 6c. 选区与空格预览：Shift+点镜头圈选区，Esc 先清选区；空格只播当前这一镜，播到镜尾停，再按从镜首重播
+const tlNow = () => buildTimeline(latest)
+const shotEls = () => container.querySelectorAll('.tlc__shot')
+await click(shotEls()[1])
+await act(async () => {
+  shotEls()[3].dispatchEvent(new win.MouseEvent('click', { bubbles: true, shiftKey: true }) as unknown as Event)
+})
+await settle()
+const span = { start: tlNow().shots[1].start, end: tlNow().shots[3].end }
+must(!!container.querySelector('.tlc__rangeband') && has(`选区 ${fmtClock(span.start)}–${fmtClock(span.end)}`),
+     'Shift+点镜头：从当前镜圈到那一镜')
+const esc = async () => {
+  await act(async () => { win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event) })
+  await settle()
+}
+await esc()
+must(!container.querySelector('.tlc__rangeband') && !!container.querySelector('.tlc'), 'Esc 先清选区，不关画布')
+// 在时间刻度上拖：圈出一段
+const svg = container.querySelector('.tlc__svg')!
+const rptr = (type: string, sec: number) =>
+  new win.PointerEvent(type, { bubbles: true, clientX: 132 + sec * 0.3, clientY: 10, pointerId: 1 }) as unknown as Event
+await act(async () => { svg.dispatchEvent(rptr('pointerdown', 300)) })
+await act(async () => { svg.dispatchEvent(rptr('pointermove', 400)) })
+await act(async () => { svg.dispatchEvent(rptr('pointerup', 400)) })
+await settle()
+must(!!container.querySelector('.tlc__rangeband') && /^5:0\d /.test(container.querySelector('.tlc__clock')!.textContent ?? ''),
+     '在刻度上拖出选区，播放头跳到选区起点')
+await act(async () => { svg.dispatchEvent(rptr('pointerdown', 500)) })
+await act(async () => { svg.dispatchEvent(rptr('pointerup', 500)) })
+await settle()
+must(!container.querySelector('.tlc__rangeband'), '刻度上只点一下：清选区并跳过去')
+// 挑一个短镜头，空格预览它
+const shortest = tlNow().shots.reduce((a, b) => (b.playable < a.playable ? b : a))
+await click(shotEls()[shortest.index])
+await click(button('预演'))          // 第 5 步收起了预演；预览窗跟着「预演」开关
+const space = async () => {
+  await act(async () => { win.dispatchEvent(new win.KeyboardEvent('keydown', { key: ' ' }) as unknown as Event) })
+}
+await space()
+await settle(60)
+must(has('❚❚ 暂停') && !!container.querySelector('.tlc__pip'), '空格开始预览，出现预览窗')
+await settle(shortest.playable * 1000 + 400)   // 画布重开过，速度回到 1×
+must(has('▶ 播放') && !container.querySelector('.tlc__pip'), `只播这一镜（${shortest.playable.toFixed(1)}s），播到镜尾自己停`)
+must(container.querySelector('.tlc__panel > header b')?.textContent === shortest.id, '停下后仍停在这一镜，不跳到下一镜')
+await space()
+await settle(60)
+const clk = container.querySelector('.tlc__clock')!.textContent ?? ''
+must(clk.startsWith(fmtClock(shortest.start)), `再按空格从镜首重播，实为 ${clk}`)
+await space()
+console.log('6c. 选区（Shift+点 / 刻度上拖 / Esc 清）/ 空格只播当前镜、镜尾自停、再按重播 / 预览窗 ✓')
 
 // 7. Esc 关闭
 await act(async () => {
