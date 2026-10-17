@@ -190,6 +190,8 @@ export function StoryboardView({
       {tab === 'json' && <pre className="json">{JSON.stringify(doc, null, 2)}</pre>}
       {canvas && (
         <TimelineCanvas doc={doc} version={preview ? null : version}
+                        onChange={preview ? undefined : onChange}
+                        canSave={canSave && !preview} dirty={dirty} saving={saving} onSave={onSave}
                         onClose={() => setCanvas(false)} onJumpShot={jumpShot}
                         onJumpUnit={(u) => { setCanvas(false); pickUnit(u) }} />
       )}

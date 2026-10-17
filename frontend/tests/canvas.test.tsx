@@ -50,7 +50,9 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
 
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
+const { useState } = await import('react')
 const { StoryboardView } = await import('../src/components/StoryboardView')
+const { buildTimeline } = await import('../src/timeline')
 import type { Storyboard } from '../src/types'
 
 const doc: Storyboard = JSON.parse(
@@ -77,11 +79,19 @@ const click = async (el: Element) => {
   await settle()
 }
 
-await act(async () => {
-  root.render(<StoryboardView doc={doc} canSave dirty={false} saving={false}
-                              version={{ nid: 'n1', cid: 'c1', vid: 'v1' }}
-                              onChange={() => {}} onSave={() => {}} />)
-})
+/** 有状态的宿主：画布里的改动经 onChange 回到这里，和 App 里一样 */
+let latest = doc
+let saves = 0
+function Host() {
+  const [d, setD] = useState(doc)
+  const [dirty, setDirty] = useState(false)
+  latest = d
+  return <StoryboardView doc={d} canSave dirty={dirty} saving={false}
+                         version={{ nid: 'n1', cid: 'c1', vid: 'v1' }}
+                         onChange={(n) => { setD(n); setDirty(true) }}
+                         onSave={() => { saves++; setDirty(false) }} />
+}
+await act(async () => { root.render(<Host />) })
 
 // 1. 打开画布：全屏、全部镜头上轴、每个角色一条泳道
 await click(button('时间轴画布'))
@@ -117,13 +127,16 @@ must(container.querySelectorAll('.tlc__char .tlc__link--lit').length >= 1, '角�
 must(has(shots[3].id) && has(shots[3].action.slice(0, 8)), '浮层应换成当前镜的详情')
 console.log(`2. 播放 / 暂停 → 播放头推进（${clock.split(' ')[0]}）/ 逐镜前进 / 镜头与角色连线逐段点亮 ✓`)
 
-// 3. 点镜头：关画布、回分镜页并定位到那一镜
+// 3. 点镜头：就地选中（不离开画布）；要去分镜页走浮层里的按钮
 const target = shots[5].id
 await click(container.querySelectorAll('.tlc__shot')[5])
-must(!container.querySelector('.tlc'), '点镜头应关闭画布')
+must(!!container.querySelector('.tlc'), '点镜头不应离开画布')
+must(container.querySelector('.tlc__panel header b')?.textContent === target, '点镜头应选中它，浮层换成这一镜')
+await click(button('在分镜页打开这一镜'))
+must(!container.querySelector('.tlc'), '「在分镜页打开」应关闭画布')
 must(!!win.document.getElementById(`shot-${target}`), '分镜页应有该镜头的锚点')
 must(win.document.getElementById(`shot-${target}`)!.classList.contains('is-flash'), '定位的镜头要闪一下')
-console.log(`3. 点镜头 → 回分镜页定位 ${target} ✓`)
+console.log(`3. 点镜头 → 就地选中 / 按钮回分镜页定位 ${target} ✓`)
 
 // 4. 点浮层里的原文句：回原文溯源页
 await click(button('时间轴画布'))
@@ -161,13 +174,82 @@ await click(button('预演'))
 must(!container.querySelector('.tlc__frame'), '预演画面可以收起')
 console.log('5. 静帧预演 → 显示已上传关键帧 / 无图给提示词占位 / 上传 / 删除 / 导出提示词 ✓')
 
-// 6. Esc 关闭
+// 6. 画布上就地编辑：拖右缘改时长、双击角色节点改动作、右侧改本镜呈现字段；撤销重做；保存
+const ptr = (type: string, clientX: number) =>
+  new win.PointerEvent(type, { bubbles: true, clientX, clientY: 100, pointerId: 1 }) as unknown as Event
+must(!container.querySelector('.tlc__grip'), '不进编辑态不出现拖拽把手')
+// 分镜页顶栏也有「编辑分镜」，按钮要在画布的编辑条里找
+const editBtn = () => container.querySelector('.tlc__editbar button') as unknown as HTMLElement
+await click(editBtn())
+must(editBtn().textContent === '完成编辑' && (button('撤销') as HTMLButtonElement).disabled, '进入编辑态，撤销栈为空')
+const s2 = shots[1]
+const start = buildTimeline(doc).shots[1].start
+const grip = container.querySelector(`.tlc__grip[data-shot="${s2.id}"]`)!
+// 画布宽度在 happy-dom 里是 0，适应后每秒 2px、无平移：横坐标 = 泳道名栏 92 + 秒 × 2
+await act(async () => { grip.dispatchEvent(ptr('pointerdown', 92 + (start + s2.duration_sec) * 2)) })
+await act(async () => { grip.dispatchEvent(ptr('pointermove', 92 + (start + 6.2) * 2)) })
+await act(async () => { grip.dispatchEvent(ptr('pointerup', 92 + (start + 6.2) * 2)) })
+await settle()
+const dur = () => latest.episodes[0].shots[1].duration_sec
+must(dur() === 6, `拖右缘应把时长改成 6s（取 0.5s），实为 ${dur()}`)
+must(has('保存修改'), '画布上的改动要让保存按钮亮起')
+await click(button('撤销'))
+must(dur() === s2.duration_sec, '撤销应恢复原时长')
+await click(button('重做'))
+must(dur() === 6, '重做应回到 6s')
+await act(async () => {
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'z', metaKey: true }) as unknown as Event)
+})
+await settle()
+must(dur() === s2.duration_sec, '⌘Z 撤销')
+
+const node = container.querySelector(`[data-node="C01@${s2.id}"]`)!
+await act(async () => { node.dispatchEvent(new win.MouseEvent('dblclick', { bubbles: true }) as unknown as Event) })
+await settle()
+const ne = container.querySelector('.tlc__nodeedit') as unknown as HTMLInputElement
+must(!!ne, '双击角色节点应出现就地输入框')
+await act(async () => {
+  Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!.call(ne, '惊坐而起')
+  ne.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+})
+await act(async () => {
+  ne.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event)
+})
+await settle()
+must(latest.episodes[0].shots[1].characters!.find((c) => c.ref === 'C01')!.action === '惊坐而起',
+     '回车应写回该角色本镜的动作')
+must(!container.querySelector('.tlc__nodeedit'), '写回后收起输入框')
+
+await click(container.querySelectorAll('.tlc__shot')[0])
+const area = container.querySelector('.tlc__panel .ed__at textarea') as unknown as HTMLTextAreaElement
+must(!!area, '编辑态下右侧是本镜的编辑表单（与分镜页同一套，锁死规则沿用）')
+must(!!container.querySelector('.tlc__panel') && has('🔒'), '锁死字段照样标出')
+await act(async () => {
+  Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!.call(area, '画布上改的画面')
+  area.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+})
+await act(async () => {
+  area.dispatchEvent(new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event)
+})
+await settle()
+must(latest.episodes[0].shots[0].action === '画布上改的画面', '右侧表单的改动应写回产物')
+must(has('▶ 播放'), '在输入框里敲空格不能触发播放')
+must(JSON.stringify(latest.episodes[0].shots[0].source) === JSON.stringify(shots[0].source),
+     '溯源锚点不受画布编辑影响')
+await click(button('保存修改'))
+must(saves === 1 && has('已保存'), '画布里直接保存，不必退回分镜页')
+await click(editBtn())
+must(!container.querySelector('.tlc__grip') && !container.querySelector('.tlc__panel textarea'),
+     '完成编辑后回到只读')
+console.log('6. 画布上就地编辑 → 拖右缘改时长 / 双击节点改动作 / 右侧改本镜 / 撤销重做（含 ⌘Z）/ 直接保存 ✓')
+
+// 7. Esc 关闭
 await act(async () => {
   win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event)
 })
 await settle()
 must(!container.querySelector('.tlc'), 'Esc 应关闭画布')
-console.log('6. Esc 关闭 ✓')
+console.log('7. Esc 关闭 ✓')
 
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

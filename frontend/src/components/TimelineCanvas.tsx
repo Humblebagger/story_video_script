@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
+import { stampVersion, updateShot } from '../edit'
+import { buildIndex } from '../resolve'
 import { buildTimeline, fmtClock, litFraction, shotIndexAt } from '../timeline'
+import { applyOp } from '../timelineOps'
+import type { TimelineOp } from '../timelineOps'
+import { ShotCard } from './ShotCard'
 import type { CharLane, Timeline } from '../timeline'
 import type { Storyboard, VersionRef } from '../types'
 import { promptSheet, useKeyframes } from '../useKeyframes'
@@ -14,7 +19,16 @@ interface Props {
   onJumpUnit: (unitId: string) => void
   /** 产物所属的版本：有它才能上传关键帧图（本地 JSON / 分批预览只有提示词） */
   version?: VersionRef | null
+  /** 给了就能在画布上直接编辑（分批预览不给）；改动与分镜页是同一份产物 */
+  onChange?: (doc: Storyboard) => void
+  canSave?: boolean
+  dirty?: boolean
+  saving?: boolean
+  onSave?: () => void
 }
+
+/** 连续打字时把一串改动并成一步撤销 */
+const UNDO_MERGE_MS = 800
 
 const GUTTER = 92          // 左侧泳道名一栏
 const RULER = 30
@@ -55,7 +69,7 @@ function litPath(lane: CharLane, t: number, x: (s: number) => number): string {
 }
 
 /** 时间轴画布：无边框、全屏，拖动平移、滚轮缩放；横轴是可播时长。
- *  只读的播放视图——编辑仍在分镜页，画布将来的编辑走 timelineOps.ts 的操作层。 */
+ *  可就地编辑：拖右缘改时长、双击角色节点改动作（timelineOps.ts），右侧是本镜的编辑表单；自带撤销重做。 */
 function downloadText(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }))
   const a = document.createElement('a')
@@ -65,8 +79,66 @@ function downloadText(name: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
-export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version = null }: Props) {
+export function TimelineCanvas({
+  doc, onClose, onJumpShot, onJumpUnit, version = null,
+  onChange, canSave = false, dirty = false, saving = false, onSave,
+}: Props) {
   const kf = useKeyframes(doc, version)
+  const idx = useMemo(() => buildIndex(doc), [doc])
+  const editable = !!onChange
+  const [editing, setEditing] = useState(false)
+
+  /* ---- 编辑：每次改动都落成新文档交给上层（与分镜页同一份），画布自带撤销 / 重做 ---- */
+  const docRef = useRef(doc)
+  docRef.current = doc
+  // 撤销栈放 ref 里（改动要同步生效），history 计数只用来触发按钮重渲染
+  const past = useRef<Storyboard[]>([])
+  const future = useRef<Storyboard[]>([])
+  const [, setHistory] = useState(0)
+  const lastRecord = useRef(0)
+  const checkpoint = useCallback(() => {
+    past.current = [...past.current.slice(-49), docRef.current]
+    future.current = []
+    setHistory((n) => n + 1)
+  }, [])
+  /** record=false：拖动途中的连续改动，撤销点在按下那一刻已经记过 */
+  const commit = useCallback((next: Storyboard, record = true) => {
+    if (!onChange || next === docRef.current) return
+    const now = Date.now()
+    if (record && now - lastRecord.current > UNDO_MERGE_MS) checkpoint()
+    if (record) lastRecord.current = now
+    docRef.current = next
+    onChange(stampVersion(next))
+  }, [onChange, checkpoint])
+  const op = (o: TimelineOp, record = true) => commit(applyOp(docRef.current, o), record)
+  const undo = useCallback(() => {
+    const prev = past.current[past.current.length - 1]
+    if (!prev || !onChange) return
+    past.current = past.current.slice(0, -1)
+    future.current = [docRef.current, ...future.current]
+    lastRecord.current = 0
+    docRef.current = prev
+    onChange(prev)
+    setHistory((n) => n + 1)
+  }, [onChange])
+  const redo = useCallback(() => {
+    const next = future.current[0]
+    if (!next || !onChange) return
+    future.current = future.current.slice(1)
+    past.current = [...past.current, docRef.current]
+    lastRecord.current = 0
+    docRef.current = next
+    onChange(next)
+    setHistory((n) => n + 1)
+  }, [onChange])
+  const [resizing, setResizing] = useState<{ shotId: string; sec: number } | null>(null)
+  const [nodeEdit, setNodeEdit] = useState<{
+    shotId: string; ref: string; value: string; left: number; top: number } | null>(null)
+  const finishNodeEdit = (save: boolean) => {
+    if (nodeEdit && save) op({ kind: 'setCharacterAction', shotId: nodeEdit.shotId,
+                               ref: nodeEdit.ref, action: nodeEdit.value })
+    setNodeEdit(null)
+  }
   const [animatic, setAnimatic] = useState(true)
   const [showPrompt, setShowPrompt] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -84,7 +156,10 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
   const [t, setT] = useState(0)                   // 播放头（秒）
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
-  const drag = useRef<{ x: number; y: number; tx: number; ty: number; scrub: boolean } | null>(null)
+  const drag = useRef<{ x: number; y: number; tx: number; ty: number; scrub: boolean
+                        moved?: boolean; resize?: { shotId: string; start: number } } | null>(null)
+  /** 拖动平移之后松手会补发一次 click，不能当成选中镜头 */
+  const suppressClick = useRef(false)
 
   // 打开时让整章正好铺满一屏宽
   const fit = useCallback(() => {
@@ -104,12 +179,19 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
   // Esc 关闭；空格播放/暂停
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 正在输入框里打字：空格、Esc、⌘Z 都归输入框自己
+      const el = e.target as HTMLElement | null
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
       if (e.key === 'Escape') onClose()
       if (e.key === ' ') { e.preventDefault(); setPlaying((p) => !p) }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) redo(); else undo()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, undo, redo])
 
   // 播放：按真实时间（×速度）推进播放头，到头停
   const tRef = useRef(0)
@@ -161,6 +243,7 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
+    suppressClick.current = false
     const top = box.current?.getBoundingClientRect().top ?? 0
     const scrub = e.clientY - top < RULER
     drag.current = { x: e.clientX, y: e.clientY, tx, ty, scrub }
@@ -170,11 +253,39 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current
     if (!d) return
+    if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) > 4) d.moved = true
+    if (d.resize) {
+      // 拖镜头右缘改标称时长（取 0.5s、夹到 schema 范围由操作层负责）
+      const sec = Math.max(0.5, Math.min(15, Math.round((timeAt(e.clientX) - d.resize.start) * 2) / 2))
+      setResizing({ shotId: d.resize.shotId, sec })
+      op({ kind: 'setDuration', shotId: d.resize.shotId, sec }, false)
+      return
+    }
     if (d.scrub) { setT(timeAt(e.clientX)); return }
     setTx(d.tx + e.clientX - d.x)
     setTy(Math.min(0, d.ty + e.clientY - d.y))
   }
-  const onPointerUp = () => { drag.current = null }
+  const onPointerUp = () => {
+    // 只有平移才吞掉随后的 click；拖把手的 click 在把手上就拦住了
+    if (drag.current?.moved && !drag.current.resize) suppressClick.current = true
+    drag.current = null
+    setResizing(null)
+  }
+  const startResize = (e: React.PointerEvent, shotId: string, start: number) => {
+    e.stopPropagation()
+    checkpoint()                      // 整次拖动算一步撤销
+    drag.current = { x: e.clientX, y: e.clientY, tx, ty, scrub: false, resize: { shotId, start } }
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  }
+  /** 点镜头 / 角色节点：就地选中（播放头跳到这一镜），不离开画布 */
+  const selectShot = (shotId: string) => {
+    if (suppressClick.current) { suppressClick.current = false; return }
+    const s = tl.shots.find((x) => x.id === shotId)
+    if (!s) return
+    setPlaying(false)
+    tRef.current = s.start
+    setT(s.start)
+  }
 
   // 只画视野内的刻度
   const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * pps >= 70) ?? 600
@@ -257,7 +368,7 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
           {tl.shots.map((s, i) => (
             <g key={s.id} className={`tlc__shot tlc__shot--${s.shot.source?.derivation ?? 'explicit'}${
                  i === current ? ' is-cur' : ''}${s.end <= t ? ' is-past' : ''}`}
-               onClick={() => onJumpShot(s.id)}>
+               onClick={() => selectShot(s.id)} onDoubleClick={() => onJumpShot(s.id)}>
               <rect x={x(s.start) + 1} y={shotRow.y + 6} width={Math.max(2, s.playable * pps - 2)}
                     height={ROW.shot - 12} rx={3} />
               {s.playable > s.nominal + 0.05 && (
@@ -272,6 +383,19 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
               )}
               <title>{`${s.id} · ${label(SHOT_SIZE, s.shot.shot_size)} · ${s.playable.toFixed(1)}s${
                 s.playable > s.nominal + 0.05 ? `（标称 ${s.nominal}s，念完旁白台词需更久）` : ''}\n${s.shot.action}`}</title>
+              {editing && (
+                <rect className="tlc__grip" data-shot={s.id} x={x(s.start + s.nominal) - 4} y={shotRow.y + 4}
+                      width={8} height={ROW.shot - 8}
+                      onPointerDown={(e) => startResize(e, s.id, s.start)}
+                      onClick={(e) => e.stopPropagation()}>
+                  <title>{`拖动改时长（标称 ${s.nominal}s）`}</title>
+                </rect>
+              )}
+              {resizing?.shotId === s.id && (
+                <text className="tlc__resizing" x={x(s.start + s.nominal) + 6} y={shotRow.y - 2}>
+                  {resizing.sec}s
+                </text>
+              )}
             </g>
           ))}
 
@@ -292,7 +416,14 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
                   const on = n.shotId === cur?.id
                   return (
                     <g key={n.shotId} className={`tlc__node${n.t <= t ? ' is-past' : ''}${on ? ' is-cur' : ''}`}
-                       onClick={() => onJumpShot(n.shotId)}>
+                       data-node={`${c.ref}@${n.shotId}`}
+                       onClick={() => selectShot(n.shotId)}
+                       onDoubleClick={() => {
+                         if (!editing) return
+                         setNodeEdit({ shotId: n.shotId, ref: c.ref,
+                                       value: n.fromShotAction ? '' : n.action,
+                                       left: x(n.t), top: cy + ty })
+                       }}>
                       <circle cx={x(n.t)} cy={cy} r={on ? 6 : 4} />
                       {(pps * (n.end - n.start) > 60 || on) && (
                         <text x={x(n.t)} y={cy + 17} textAnchor="middle">
@@ -359,6 +490,41 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
         <polygon className="tlc__head" points={`${playX - 6},0 ${playX + 6},0 ${playX},8`} />
       </svg>
 
+      {editable && (
+        <div className="tlc__editbar" onPointerDown={(e) => e.stopPropagation()}>
+          <button className={`btn btn--sm${editing ? '' : ' btn--ghost'}`} onClick={() => setEditing((v) => !v)}>
+            {editing ? '完成编辑' : '编辑'}
+          </button>
+          {editing && (
+            <>
+              <button className="btn btn--sm btn--ghost" disabled={!past.current.length} title="撤销（⌘Z）"
+                      onClick={undo}>↶ 撤销</button>
+              <button className="btn btn--sm btn--ghost" disabled={!future.current.length} title="重做（⌘⇧Z）"
+                      onClick={redo}>↷ 重做</button>
+              <span className="tlc__hint">点镜头选中 · 拖镜头右缘改时长 · 双击角色节点改动作 · 右侧改本镜全部呈现字段</span>
+            </>
+          )}
+          {canSave && onSave && (
+            <button className="btn btn--sm" disabled={!dirty || saving} onClick={onSave}>
+              {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {nodeEdit && (
+        <input className="tlc__nodeedit" autoFocus value={nodeEdit.value}
+               placeholder="本镜动作（留空则用镜头描述）"
+               style={{ left: nodeEdit.left, top: nodeEdit.top }}
+               onPointerDown={(e) => e.stopPropagation()}
+               onChange={(e) => setNodeEdit({ ...nodeEdit, value: e.target.value })}
+               onKeyDown={(e) => {
+                 if (e.key === 'Enter') finishNodeEdit(true)
+                 if (e.key === 'Escape') finishNodeEdit(false)
+               }}
+               onBlur={() => finishNodeEdit(true)} />
+      )}
+
       {cur && animatic && (
         <figure className="tlc__frame" onPointerDown={(e) => e.stopPropagation()}
                 style={{ aspectRatio: (doc.meta?.video?.aspect_ratio ?? '9:16').replace(':', ' / ') }}>
@@ -375,7 +541,13 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
       )}
 
       {cur && (
-        <aside className="tlc__panel" onPointerDown={(e) => e.stopPropagation()}>
+        <aside className={`tlc__panel${editing ? ' tlc__panel--edit' : ''}`}
+               onPointerDown={(e) => e.stopPropagation()}>
+          {editing && (
+            <ShotCard key={cur.id} shot={cur.shot} idx={idx} editing onPickUnit={onJumpUnit}
+                      onChange={(patch) => commit(updateShot(docRef.current, cur.episodeId, cur.id, patch))} />
+          )}
+          {!editing && <>
           <header>
             <b>{cur.id}</b>
             <span>{label(SHOT_SIZE, cur.shot.shot_size)} · {fmtClock(cur.start)}–{fmtClock(cur.end)}
@@ -404,6 +576,7 @@ export function TimelineCanvas({ doc, onClose, onJumpShot, onJumpUnit, version =
               </button>
             ))}
           </div>
+          </>}
           <section className="tlc__kf">
             <div className="tlc__kfhead">
               <b>关键帧</b>
