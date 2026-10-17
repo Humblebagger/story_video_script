@@ -169,6 +169,7 @@ def fix_known_slips(doc: dict) -> int:
     - camera.angle 写成 reverse：那是场景卡机位的枚举（反打），镜头机位里对应
       过肩拍 over_shoulder
     - camera.movement 写成 whip_pan（甩镜）：枚举里归 pan
+    - shot_size 写成 pov：主观镜头是机位不是景别，挪到 camera.angle，景别取 medium
     - narration 写成 null：没有旁白就该省略这个字段
     """
     n = 0
@@ -180,6 +181,12 @@ def fix_known_slips(doc: dict) -> int:
                 n += 1
             if isinstance(cam, dict) and cam.get("movement") in _MOVEMENT_ALIASES:
                 cam["movement"] = _MOVEMENT_ALIASES[cam["movement"]]
+                n += 1
+            if shot.get("shot_size") == "pov":
+                shot["shot_size"] = "medium"
+                cam = shot.setdefault("camera", {})
+                if isinstance(cam, dict) and cam.get("angle") in (None, "eye_level"):
+                    cam["angle"] = "pov"
                 n += 1
             if "narration" in shot and shot["narration"] is None:
                 del shot["narration"]

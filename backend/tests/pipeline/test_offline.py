@@ -272,8 +272,11 @@ def main() -> int:
 
     # 已知笔误：机位 reverse → over_shoulder；narration: null → 省略
     slips = {"episodes": [{"shots": [{"camera": {"angle": "reverse"}, "narration": None},
-                                     {"camera": {"angle": "low", "movement": "whip_pan"}}]}]}
-    assert fix_known_slips(slips) == 3
+                                     {"camera": {"angle": "low", "movement": "whip_pan"}},
+                                     {"shot_size": "pov", "camera": {"angle": "eye_level"}}]}]}
+    assert fix_known_slips(slips) == 4
+    assert slips["episodes"][0]["shots"][2] == {"shot_size": "medium",
+                                                "camera": {"angle": "pov"}}, "pov 是机位不是景别"
     assert slips["episodes"][0]["shots"][0] == {"camera": {"angle": "over_shoulder"}}
     assert slips["episodes"][0]["shots"][1]["camera"]["movement"] == "pan", "甩镜归入摇镜"
     assert fix_known_slips(slips) == 0

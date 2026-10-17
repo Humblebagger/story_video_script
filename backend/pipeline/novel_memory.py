@@ -57,11 +57,11 @@ def _lifecycle_line(entry: dict, names: dict) -> str:
     kind = entry.get("type")
     if kind == "deceased":
         return (f"- {who}：{at}已死亡{('（' + detail + '）') if detail else ''}。"
-                "现实时间线的镜头不得让他/她出场；回忆、梦境、他人讲述的画面可以，"
+                "现实时间线的镜头不得让该角色出场；回忆、梦境、他人讲述的画面可以，"
                 "须在 action 里写明是回忆或梦境。")
     if kind == "departed":
         return (f"- {who}：{at}已永久离开故事{('（' + detail + '）') if detail else ''}。"
-                "现实时间线的镜头不得让他/她出场；回忆、他人讲述的画面可以，须在 action 里写明。")
+                "现实时间线的镜头不得让该角色出场；回忆、他人讲述的画面可以，须在 action 里写明。")
     return (f"- {who}：{at}永久状态变化——{detail or '见原文'}。"
             "此后外貌与动作须体现这一点（资产卡外貌描述同步保持）。")
 
