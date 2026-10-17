@@ -152,6 +152,8 @@ await settle(120)
 must(has('关键帧 1/133'), '应读出已上传的关键帧数')
 must(!!container.querySelector('.tlc__frame img'), '首镜有图：预演画面显示关键帧图')
 must(container.querySelectorAll('.tlc__kfdot').length === 1, '有图的镜头在轴上打点')
+must(container.querySelectorAll('.tlc__thumb image').length === 1 && has('画面'),
+     '画布上有「画面」泳道，已上传的关键帧直接铺在对应镜头下')
 await click(container.querySelector('button[title="下一镜"]')!)
 must(has('还没有关键帧图') && !container.querySelector('.tlc__frame p'), '没图的镜头只给一条占位，画面框里不塞提示词')
 const pa = () => container.querySelector('textarea.tlc__prompt') as unknown as HTMLTextAreaElement
@@ -176,6 +178,7 @@ await settle(80)
 must(puts.length === 1 && puts[0].shot === shots[1].id && puts[0].type === 'image/webp',
      '上传应按镜头 PUT 原始图片，带上图片类型')
 must(has('关键帧 2/133') && !!container.querySelector('.tlc__frame img'), '上传后预演立刻换成这张图')
+must(container.querySelectorAll('.tlc__thumb image').length === 2, '上传后画面泳道立刻多一张')
 await click(button('删除'))
 must(has('关键帧 1/133') && has('还没有关键帧图'), '删除后回到占位')
 must(!(button('下载全章提示词') as HTMLButtonElement).disabled, '提示词清单可导出')

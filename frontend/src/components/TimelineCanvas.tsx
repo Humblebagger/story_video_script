@@ -32,12 +32,12 @@ const UNDO_MERGE_MS = 800
 
 const GUTTER = 132         // 左侧泳道名一栏：角色两行（名字 / ID），不再挤成一行截断
 const RULER = 30
-const ROW = { episode: 24, scene: 26, shot: 38, char: 44, speech: 30, music: 26 }
+const ROW = { episode: 24, scene: 26, shot: 38, frame: 72, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
 
 interface Row { key: string; label: string; sub?: string; y: number; h: number }
 
-function layoutRows(tl: Timeline): { rows: Row[]; height: number } {
+function layoutRows(tl: Timeline, withFrames: boolean): { rows: Row[]; height: number } {
   const rows: Row[] = []
   let y = RULER
   const push = (key: string, lbl: string, h: number, sub?: string) => {
@@ -47,6 +47,8 @@ function layoutRows(tl: Timeline): { rows: Row[]; height: number } {
   push('episode', '集', ROW.episode)
   push('scene', '场景', ROW.scene)
   push('shot', '镜头', ROW.shot)
+  // 有关键帧图才出这条泳道：图直接铺在画布上，不必盯着侧栏
+  if (withFrames) push('frame', '画面', ROW.frame)
   for (const c of tl.characters) push(`c:${c.ref}`, c.name, ROW.char, c.ref)
   push('speech', '旁白/台词', ROW.speech)
   push('music', 'BGM', ROW.music)
@@ -145,7 +147,8 @@ export function TimelineCanvas({
   const [animatic, setAnimatic] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
   const tl = useMemo(() => buildTimeline(doc), [doc])
-  const { rows, height } = useMemo(() => layoutRows(tl), [tl])
+  const withFrames = Object.keys(kf.urls).length > 0
+  const { rows, height } = useMemo(() => layoutRows(tl, withFrames), [tl, withFrames])
   const rowOf = Object.fromEntries(rows.map((r) => [r.key, r]))
   const units = useMemo(() => Object.fromEntries(
     (doc.source?.units ?? []).map((u) => [u.id, u.text])), [doc])
@@ -432,6 +435,19 @@ export function TimelineCanvas({
             </g>
           ))}
 
+          {/* 画面：已上传的关键帧按镜头宽度整张放进去（不裁切），点一下选中该镜 */}
+          {rowOf.frame && tl.shots.map((s, i) => kf.urls[s.id] && (
+            <g key={`f-${s.id}`} className={`tlc__thumb${i === current ? ' is-cur' : ''}`}
+               onClick={() => selectShot(s.id)} onDoubleClick={() => onJumpShot(s.id)}>
+              <rect x={x(s.start) + 1} y={rowOf.frame.y + 4} width={Math.max(2, s.playable * pps - 2)}
+                    height={ROW.frame - 8} rx={3} />
+              <image href={kf.urls[s.id]} x={x(s.start) + 2} y={rowOf.frame.y + 5}
+                     width={Math.max(1, s.playable * pps - 4)} height={ROW.frame - 10}
+                     preserveAspectRatio="xMidYMid meet" />
+              <title>{`${s.id} 关键帧`}</title>
+            </g>
+          ))}
+
           {/* 角色泳道：出场节点 + 动作顺序连线 */}
           {tl.characters.map((c) => {
             const r = rowOf[`c:${c.ref}`]
@@ -549,8 +565,8 @@ export function TimelineCanvas({
           {animatic && (
             kf.urls[cur.id]
               ? (
-                <figure className="tlc__frame"
-                        style={{ aspectRatio: (doc.meta?.video?.aspect_ratio ?? '9:16').replace(':', ' / ') }}>
+                // 按图自己的比例整张显示：传上来的图未必是成片画幅，裁成 9:16 会只剩中间一条
+                <figure className="tlc__frame">
                   <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
                   <figcaption>{cur.id} · {fmtClock(cur.start)}</figcaption>
                 </figure>
