@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateShot } from '../edit'
 import { buildIndex } from '../resolve'
-import { buildTimeline, fmtClock, litFraction, shotIndexAt } from '../timeline'
+import { buildTimeline, fitText, fmtClock, litFraction, shotIndexAt } from '../timeline'
 import { applyOp } from '../timelineOps'
 import type { TimelineOp } from '../timelineOps'
 import { ShotCard } from './ShotCard'
@@ -30,21 +30,24 @@ interface Props {
 /** 连续打字时把一串改动并成一步撤销 */
 const UNDO_MERGE_MS = 800
 
-const GUTTER = 92          // 左侧泳道名一栏
+const GUTTER = 132         // 左侧泳道名一栏：角色两行（名字 / ID），不再挤成一行截断
 const RULER = 30
 const ROW = { episode: 24, scene: 26, shot: 38, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
 
-interface Row { key: string; label: string; y: number; h: number }
+interface Row { key: string; label: string; sub?: string; y: number; h: number }
 
 function layoutRows(tl: Timeline): { rows: Row[]; height: number } {
   const rows: Row[] = []
   let y = RULER
-  const push = (key: string, lbl: string, h: number) => { rows.push({ key, label: lbl, y, h }); y += h }
+  const push = (key: string, lbl: string, h: number, sub?: string) => {
+    rows.push({ key, label: lbl, sub, y, h })
+    y += h
+  }
   push('episode', '集', ROW.episode)
   push('scene', '场景', ROW.scene)
   push('shot', '镜头', ROW.shot)
-  for (const c of tl.characters) push(`c:${c.ref}`, `${c.ref} ${c.name}`, ROW.char)
+  for (const c of tl.characters) push(`c:${c.ref}`, c.name, ROW.char, c.ref)
   push('speech', '旁白/台词', ROW.speech)
   push('music', 'BGM', ROW.music)
   return { rows, height: y + 12 }
@@ -140,7 +143,6 @@ export function TimelineCanvas({
     setNodeEdit(null)
   }
   const [animatic, setAnimatic] = useState(true)
-  const [showPrompt, setShowPrompt] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const tl = useMemo(() => buildTimeline(doc), [doc])
   const { rows, height } = useMemo(() => layoutRows(tl), [tl])
@@ -162,16 +164,30 @@ export function TimelineCanvas({
   const suppressClick = useRef(false)
 
   // 打开时让整章正好铺满一屏宽
+  /** 用户自己缩放 / 平移过之后，画布区宽度变化就不再自动铺满，免得把人调好的视图冲掉 */
+  const userView = useRef(false)
   const fit = useCallback(() => {
+    userView.current = false
     const w = box.current?.clientWidth ?? 1200
     setWidth(w)
-    if (tl.total > 0) setPps(Math.max(2, (w - GUTTER - 40) / tl.total))
+    if (tl.total > 0) setPps(Math.max(0.3, (w - GUTTER - 32) / tl.total))
     setTx(0)
     setTy(0)
   }, [tl.total])
   useEffect(() => { fit() }, [fit])
+  // 进出编辑态时右侧栏变宽变窄：没手动调过视图就重新铺满
   useEffect(() => {
-    const onResize = () => setWidth(box.current?.clientWidth ?? 1200)
+    if (!userView.current && tl.total > 0) setPps(Math.max(0.3, (width - GUTTER - 32) / tl.total))
+  }, [width, tl.total])
+  // 画布区宽度会随右侧栏变（编辑态更宽），只盯窗口 resize 不够
+  useEffect(() => {
+    const el = box.current
+    const onResize = () => setWidth(el?.clientWidth ?? 1200)
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(onResize)
+      ro.observe(el)
+      return () => ro.disconnect()
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -225,6 +241,7 @@ export function TimelineCanvas({
 
   const current = shotIndexAt(tl, t)
   const cur = tl.shots[current]
+  const curPrompt = cur ? kf.promptOf(cur.id) : undefined
 
   const timeAt = (clientX: number) => {
     const left = box.current?.getBoundingClientRect().left ?? 0
@@ -232,6 +249,7 @@ export function TimelineCanvas({
   }
 
   const onWheel = (e: React.WheelEvent) => {
+    userView.current = true
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { setTx((v) => v - e.deltaX); return }
     if (e.shiftKey) { setTy((v) => Math.min(0, v - e.deltaY)); return }
     // 以光标处的时刻为锚点缩放：光标下的那一秒不动
@@ -262,6 +280,7 @@ export function TimelineCanvas({
       return
     }
     if (d.scrub) { setT(timeAt(e.clientX)); return }
+    userView.current = true
     setTx(d.tx + e.clientX - d.x)
     setTy(Math.min(0, d.ty + e.clientY - d.y))
   }
@@ -297,8 +316,29 @@ export function TimelineCanvas({
   const mid = (i: number) => (tl.shots[i].start + tl.shots[i].end) / 2
 
   return (
-    <div className="tlc" ref={box}>
+    <div className="tlc">
+      <div className="tlc__main" ref={box}>
       <div className="tlc__bar" onPointerDown={(e) => e.stopPropagation()}>
+        {editable && (
+          <span className="tlc__editbar">
+            <button className={`btn btn--sm${editing ? '' : ' btn--ghost'}`} onClick={() => setEditing((v) => !v)}>
+              {editing ? '完成编辑' : '编辑'}
+            </button>
+            {editing && (
+              <>
+                <button className="btn btn--sm btn--ghost" disabled={!past.current.length} title="撤销（⌘Z）"
+                        onClick={undo}>↶ 撤销</button>
+                <button className="btn btn--sm btn--ghost" disabled={!future.current.length} title="重做（⌘⇧Z）"
+                        onClick={redo}>↷ 重做</button>
+              </>
+            )}
+            {canSave && onSave && (
+              <button className="btn btn--sm" disabled={!dirty || saving} onClick={onSave}>
+                {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
+              </button>
+            )}
+          </span>
+        )}
         <button className="btn btn--sm" onClick={() => {
           if (t >= tl.total) setT(0)
           setPlaying((p) => !p)
@@ -311,9 +351,7 @@ export function TimelineCanvas({
           {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
         </select>
         <span className="tlc__clock">{fmtClock(t)} / {fmtClock(tl.total)}</span>
-        <button className="btn btn--sm btn--ghost" onClick={() => setPps((v) => Math.min(400, v * 1.5))}>＋</button>
-        <button className="btn btn--sm btn--ghost" onClick={() => setPps((v) => Math.max(1, v / 1.5))}>－</button>
-        <button className="btn btn--sm btn--ghost" onClick={fit}>适应</button>
+        <button className="btn btn--sm btn--ghost" title="整章铺满一屏" onClick={fit}>适应</button>
         <button className={`btn btn--sm${animatic ? '' : ' btn--ghost'}`}
                 title="静帧预演：按播放头显示当前镜头的关键帧图" onClick={() => setAnimatic((v) => !v)}>
           预演
@@ -321,14 +359,9 @@ export function TimelineCanvas({
         <span className="tlc__kfcount" title="已上传关键帧图的镜头数">
           关键帧 {Object.keys(kf.urls).length}/{tl.shots.length}
         </span>
-        <button className="btn btn--sm btn--ghost" disabled={!Object.keys(kf.prompts).length}
-                title="全部镜头的关键帧出图提示词，拿去任意出图工具批量生成"
-                onClick={() => downloadText(`${doc.meta?.title ?? 'storyboard'}-关键帧提示词.md`,
-                  promptSheet(doc.meta?.title ?? '', tl.shots.map((x) => kf.prompts[x.id]).filter(Boolean)))}>
-          下载提示词
-        </button>
-        <span className="tlc__hint">⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · 点时间刻度跳转 · 空格播放 · Esc 关闭</span>
-        <button className="btn btn--sm btn--ghost tlc__close" onClick={onClose}>✕ 关闭画布</button>
+        <span className="tlc__help" title={`⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · 点时间刻度跳转 · 空格播放 · Esc 关闭${
+          editing ? '\n编辑：点镜头选中 · 拖镜头右缘改时长 · 双击角色节点改动作 · 右侧改本镜全部呈现字段 · ⌘Z 撤销' : ''}`}>?</span>
+        <button className="btn btn--sm btn--ghost tlc__close" title="关闭画布（Esc）" onClick={onClose}>✕</button>
       </div>
 
       <svg className="tlc__svg" width={width} height="100%"
@@ -346,14 +379,14 @@ export function TimelineCanvas({
             <g key={e.key} className="tlc__seg tlc__seg--ep">
               <rect x={x(e.start)} y={rowOf.episode.y + 3} width={Math.max(1, (e.end - e.start) * pps - 2)}
                     height={ROW.episode - 6} rx={4} />
-              <text x={x(e.start) + 6} y={rowOf.episode.y + 16}>{e.label}</text>
+              <text x={x(e.start) + 6} y={rowOf.episode.y + 16}>{fitText(e.label, (e.end - e.start) * pps - 12, 11, 3)}</text>
             </g>
           ))}
           {tl.scenes.map((s, i) => (
             <g key={`${s.key}-${i}`} className="tlc__seg tlc__seg--scene">
               <rect x={x(s.start)} y={rowOf.scene.y + 3} width={Math.max(1, (s.end - s.start) * pps - 2)}
                     height={ROW.scene - 6} rx={4} />
-              {(s.end - s.start) * pps > 40 && <text x={x(s.start) + 6} y={rowOf.scene.y + 17}>{s.label}</text>}
+              <text x={x(s.start) + 6} y={rowOf.scene.y + 17}>{fitText(s.label, (s.end - s.start) * pps - 12, 11, 4)}</text>
             </g>
           ))}
 
@@ -378,9 +411,9 @@ export function TimelineCanvas({
               {kf.urls[s.id] && (
                 <circle className="tlc__kfdot" cx={x(s.start) + 6} cy={shotRow.y + 8} r={2.5} />
               )}
-              {s.playable * pps > 46 && (
-                <text x={x(s.start) + 5} y={shotRow.y + ROW.shot / 2 + 4}>{s.id.replace(/^E\d+-/, '')}</text>
-              )}
+              <text x={x(s.start) + 5} y={shotRow.y + ROW.shot / 2 + 4}>
+                {fitText(s.id.replace(/^E\d+-/, ''), s.playable * pps - 9, 10, Infinity)}
+              </text>
               <title>{`${s.id} · ${label(SHOT_SIZE, s.shot.shot_size)} · ${s.playable.toFixed(1)}s${
                 s.playable > s.nominal + 0.05 ? `（标称 ${s.nominal}s，念完旁白台词需更久）` : ''}\n${s.shot.action}`}</title>
               {editing && (
@@ -412,8 +445,12 @@ export function TimelineCanvas({
                 )}
                 {lit && <path className="tlc__link tlc__link--lit" d={lit}
                               transform={`translate(0, ${cy})`} />}
-                {c.nodes.map((n) => {
+                {c.nodes.map((n, ni) => {
                   const on = n.shotId === cur?.id
+                  // 标签居中在节点下方，最多占到左右相邻节点的中点，相邻标签就不会叠
+                  const gap = Math.min(ni ? n.t - c.nodes[ni - 1].t : Infinity,
+                                       ni < c.nodes.length - 1 ? c.nodes[ni + 1].t - n.t : Infinity) * pps
+                  const tag = fitText(n.action, on ? Math.max(gap, 160) : Math.min(gap, 200) - 6, 11, 3)
                   return (
                     <g key={n.shotId} className={`tlc__node${n.t <= t ? ' is-past' : ''}${on ? ' is-cur' : ''}`}
                        data-node={`${c.ref}@${n.shotId}`}
@@ -425,11 +462,7 @@ export function TimelineCanvas({
                                        left: x(n.t), top: cy + ty })
                        }}>
                       <circle cx={x(n.t)} cy={cy} r={on ? 6 : 4} />
-                      {(pps * (n.end - n.start) > 60 || on) && (
-                        <text x={x(n.t)} y={cy + 17} textAnchor="middle">
-                          {n.action.length > 10 ? `${n.action.slice(0, 10)}…` : n.action}
-                        </text>
-                      )}
+                      {tag && <text x={x(n.t)} y={cy + 19} textAnchor="middle">{tag}</text>}
                       <title>{`${c.name} · ${n.shotId}\n动作：${n.action}${n.fromShotAction ? '（镜头描述）' : ''}${
                         n.expression ? `\n表情：${n.expression}` : ''}${n.position ? `\n位置：${n.position}` : ''}${
                         n.outfit ? `\n服装：${n.outfit}` : ''}`}</title>
@@ -457,7 +490,7 @@ export function TimelineCanvas({
                     style={{ fill: m.mood ? `hsl(${MOOD_HUE[m.mood]} 55% 55% / ${
                       m.intensity === 'high' ? 0.75 : m.intensity === 'low' ? 0.3 : 0.5})` : undefined }} />
               {(m.end - m.start) * pps > 40 && m.mood && (
-                <text x={x(m.start) + 8} y={rowOf.music.y + 17}>{label(MOOD, m.mood)}</text>
+                <text x={x(m.start) + 8} y={rowOf.music.y + 17}>{fitText(label(MOOD, m.mood), (m.end - m.start) * pps - 14)}</text>
               )}
               <title>{`${m.mood ? label(MOOD, m.mood) : ''} ${m.intensity ?? ''}${m.label ? `\n${m.label}` : ''}`}</title>
             </g>
@@ -478,10 +511,15 @@ export function TimelineCanvas({
         {/* 泳道名（不随左右平移） */}
         <g className="tlc__labels" transform={`translate(0, ${ty})`}>
           <rect x={0} y={RULER} width={GUTTER} height={height} />
-          {rows.map((r) => (
-            <text key={r.key} x={8} y={r.y + Math.min(r.h / 2 + 4, 20)}>
-              {r.label.length > 9 ? `${r.label.slice(0, 9)}…` : r.label}
-            </text>
+          <line className="tlc__gutterline" x1={GUTTER} x2={GUTTER} y1={RULER} y2={height} />
+          {rows.map((r) => r.sub ? (
+            <g key={r.key}>
+              <text className="tlc__lname" x={12} y={r.y + 18}>{fitText(r.label, GUTTER - 20, 12)}</text>
+              <text className="tlc__lsub" x={12} y={r.y + 32}>{r.sub}</text>
+              <title>{`${r.sub} ${r.label}`}</title>
+            </g>
+          ) : (
+            <text key={r.key} className="tlc__lfixed" x={12} y={r.y + r.h / 2 + 4}>{r.label}</text>
           ))}
         </g>
 
@@ -489,28 +527,6 @@ export function TimelineCanvas({
         <line className="tlc__head" x1={playX} x2={playX} y1={0} y2="100%" />
         <polygon className="tlc__head" points={`${playX - 6},0 ${playX + 6},0 ${playX},8`} />
       </svg>
-
-      {editable && (
-        <div className="tlc__editbar" onPointerDown={(e) => e.stopPropagation()}>
-          <button className={`btn btn--sm${editing ? '' : ' btn--ghost'}`} onClick={() => setEditing((v) => !v)}>
-            {editing ? '完成编辑' : '编辑'}
-          </button>
-          {editing && (
-            <>
-              <button className="btn btn--sm btn--ghost" disabled={!past.current.length} title="撤销（⌘Z）"
-                      onClick={undo}>↶ 撤销</button>
-              <button className="btn btn--sm btn--ghost" disabled={!future.current.length} title="重做（⌘⇧Z）"
-                      onClick={redo}>↷ 重做</button>
-              <span className="tlc__hint">点镜头选中 · 拖镜头右缘改时长 · 双击角色节点改动作 · 右侧改本镜全部呈现字段</span>
-            </>
-          )}
-          {canSave && onSave && (
-            <button className="btn btn--sm" disabled={!dirty || saving} onClick={onSave}>
-              {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
-            </button>
-          )}
-        </div>
-      )}
 
       {nodeEdit && (
         <input className="tlc__nodeedit" autoFocus value={nodeEdit.value}
@@ -525,24 +541,23 @@ export function TimelineCanvas({
                onBlur={() => finishNodeEdit(true)} />
       )}
 
-      {cur && animatic && (
-        <figure className="tlc__frame" onPointerDown={(e) => e.stopPropagation()}
-                style={{ aspectRatio: (doc.meta?.video?.aspect_ratio ?? '9:16').replace(':', ' / ') }}>
-          {kf.urls[cur.id]
-            ? <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
-            : (
-              <div className="tlc__noframe">
-                <b>{cur.id} · 还没有关键帧图</b>
-                <p>{(kf.prompts[cur.id]?.prompt ?? cur.shot.action).split('\n').slice(1, 3).join(' ')}</p>
-              </div>
-            )}
-          <figcaption>{cur.id} · {fmtClock(cur.start)}</figcaption>
-        </figure>
-      )}
+      </div>
 
       {cur && (
         <aside className={`tlc__panel${editing ? ' tlc__panel--edit' : ''}`}
                onPointerDown={(e) => e.stopPropagation()}>
+          {animatic && (
+            kf.urls[cur.id]
+              ? (
+                <figure className="tlc__frame"
+                        style={{ aspectRatio: (doc.meta?.video?.aspect_ratio ?? '9:16').replace(':', ' / ') }}>
+                  <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
+                  <figcaption>{cur.id} · {fmtClock(cur.start)}</figcaption>
+                </figure>
+              )
+              // 没图只占一条：画面里不塞文字，提示词在下面关键帧一节里看和改
+              : <div className="tlc__frame tlc__noframe">{cur.id} · 还没有关键帧图</div>
+          )}
           {editing && (
             <ShotCard key={cur.id} shot={cur.shot} idx={idx} editing onPickUnit={onJumpUnit}
                       onChange={(patch) => commit(updateShot(docRef.current, cur.episodeId, cur.id, patch))} />
@@ -582,14 +597,16 @@ export function TimelineCanvas({
               <b>关键帧</b>
               {kf.urls[cur.id] ? <span className="tag">已上传</span> : <span className="tag tag--ghost">未出图</span>}
             </div>
-            {kf.urls[cur.id] && <img className="tlc__kfthumb" src={kf.urls[cur.id]} alt="" />}
             <div className="tlc__kfacts">
-              <button className="btn btn--sm btn--ghost" disabled={!kf.prompts[cur.id]}
-                      onClick={() => void navigator.clipboard?.writeText(kf.prompts[cur.id].prompt)}>
+              <button className="btn btn--sm btn--ghost" disabled={!curPrompt}
+                      onClick={() => void navigator.clipboard?.writeText(curPrompt!.prompt)}>
                 复制提示词
               </button>
-              <button className="btn btn--sm btn--ghost" onClick={() => setShowPrompt((v) => !v)}>
-                {showPrompt ? '收起' : '看提示词'}
+              <button className="btn btn--sm btn--ghost" disabled={!Object.keys(kf.prompts).length}
+                      title="全部镜头的关键帧出图提示词（含手改），拿去任意出图工具批量生成"
+                      onClick={() => downloadText(`${doc.meta?.title ?? 'storyboard'}-关键帧提示词.md`,
+                        promptSheet(doc.meta?.title ?? '', tl.shots.map((x) => kf.promptOf(x.id)!).filter(Boolean)))}>
+                下载全章提示词
               </button>
               {kf.canUpload && (
                 <>
@@ -610,11 +627,19 @@ export function TimelineCanvas({
               )}
             </div>
             {!kf.canUpload && <p className="tlc__kfnote">本地 JSON / 分批预览只有提示词；存进章节版本后才能上传关键帧图。</p>}
-            {showPrompt && kf.prompts[cur.id] && (
-              <pre className="tlc__prompt">{kf.prompts[cur.id].prompt}{
-                kf.prompts[cur.id].negative_prompt ? `\n\n负面：${kf.prompts[cur.id].negative_prompt}` : ''}{
-                kf.prompts[cur.id].reference_assets.length
-                  ? `\n垫图：${kf.prompts[cur.id].reference_assets.join('、')}` : ''}</pre>
+            {curPrompt && (
+              <>
+                <textarea className="tlc__prompt" value={curPrompt.prompt} rows={8}
+                          aria-label="本镜关键帧出图提示词"
+                          onChange={(e) => kf.editPrompt(cur.id, e.target.value)} />
+                <div className="tlc__promptmeta">
+                  {curPrompt.negative_prompt && <span>负面：{curPrompt.negative_prompt}</span>}
+                  {!!curPrompt.reference_assets.length && <span>垫图：{curPrompt.reference_assets.join('、')}</span>}
+                  {cur.id in kf.edited && (
+                    <button className="tlc__linkbtn" onClick={() => kf.editPrompt(cur.id, null)}>恢复生成的提示词</button>
+                  )}
+                </div>
+              </>
             )}
             {kf.error && <p className="tlc__kferr">{kf.error}</p>}
           </section>

@@ -2,6 +2,7 @@
  *
  *  出图模型暂不接：提示词拿去任意工具出图，再把图传回来挂到镜头上。
  *  图挂在版本上（不进 IR），所以只有存进后端的版本能上传；本地打开的 JSON / 分批预览只有提示词。
+ *  提示词可以手改（改的是拿去出图的那段文字，不动 IR），改动按版本记在本机浏览器里，复制 / 下载都用改后的。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { deleteKeyframe, keyframeUrl, listKeyframes, renderKeyframes, uploadKeyframe } from './api'
@@ -14,6 +15,31 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
   const [busy, setBusy] = useState<string | null>(null)
   const live = useRef<Record<string, string>>({})
   const { nid, cid, vid } = version ?? {}
+  const editKey = nid && cid && vid ? `kf-prompt-edits:${nid}/${cid}/${vid}` : null
+  const [edits, setEdits] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let saved: Record<string, string> = {}
+    try { if (editKey) saved = JSON.parse(localStorage.getItem(editKey) ?? '{}') } catch { /* 读不到就当没改过 */ }
+    setEdits(saved)
+  }, [editKey])
+
+  /** 改某镜的提示词；传 null 恢复成生成的原文 */
+  const editPrompt = useCallback((shotId: string, text: string | null) => {
+    setEdits((old) => {
+      const next = { ...old }
+      if (text === null) delete next[shotId]
+      else next[shotId] = text
+      try { if (editKey) localStorage.setItem(editKey, JSON.stringify(next)) } catch { /* 存不下只影响下次打开 */ }
+      return next
+    })
+  }, [editKey])
+
+  /** 生效的提示词：手改过的优先 */
+  const promptOf = useCallback((shotId: string): KeyframePrompt | undefined => {
+    const k = prompts[shotId]
+    return k && shotId in edits ? { ...k, prompt: edits[shotId] } : k
+  }, [prompts, edits])
 
   useEffect(() => {
     let gone = false
@@ -78,7 +104,8 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
     }
   }, [nid, cid, vid, put])
 
-  return { prompts, urls, error, busy, canUpload: !!(nid && cid && vid), upload, remove }
+  return { prompts, urls, error, busy, canUpload: !!(nid && cid && vid), upload, remove,
+           edited: edits, editPrompt, promptOf }
 }
 
 /** 全部关键帧提示词导出成一份文本，方便整批拿去出图工具 */

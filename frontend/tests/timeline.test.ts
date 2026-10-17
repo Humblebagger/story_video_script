@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import {
-  buildTimeline, fmtClock, litFraction, playableSeconds, shotIndexAt,
+  buildTimeline, fitText, fmtClock, litFraction, playableSeconds, shotIndexAt,
 } from '../src/timeline'
 import { applyOp } from '../src/timelineOps'
 import type { Storyboard } from '../src/types'
@@ -89,6 +89,15 @@ must(shotIndexAt(tl, -5) === 0 && shotIndexAt(tl, 1e9) === 3, '超出两端夹�
 must(litFraction(2, 4, 1) === 0 && litFraction(2, 4, 3) === 0.5 && litFraction(2, 4, 9) === 1, '点亮比例')
 must(fmtClock(75.9) === '1:15', '时钟格式')
 console.log('6. 播放头 → 当前镜头 / 连线逐段点亮 ✓')
+
+// 6b. 文字按像素宽度截断：SVG 不会自己裁切，放不下就截断或干脆不写，相邻标签才不会叠在一起
+must(fitText('华家茶馆', 100) === '华家茶馆', '放得下原样返回')
+must(fitText('S01 华家茶馆·店堂', 60) === 'S01 华家…', `截断后带省略号，实为 ${fitText('S01 华家茶馆·店堂', 60)}`)
+must(fitText('华家茶馆·店堂', 20) === '', '剩不到两个字就不写（「华…」这种残片没有信息）')
+must(fitText('S01 华家茶馆', 30, 11, 4) === '', '可以要求至少留几个字')
+must(fitText('SH012', 20, 10, Infinity) === '' && fitText('SH012', 40, 10, Infinity) === 'SH012',
+     '镜头号放不下就整个不写，不截成「SH…」')
+console.log('6b. 标签按宽度截断 → 不溢出 / 不留残片 ✓')
 
 // 7. 操作层：改时长（取 0.5s、夹 schema 范围）、改角色动作；锁死字段没有任何操作能碰
 let d = applyOp(DOC, { kind: 'setDuration', shotId: 'E02-SH001', sec: 7.3 })

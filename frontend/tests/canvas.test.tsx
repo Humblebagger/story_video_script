@@ -153,9 +153,18 @@ must(has('关键帧 1/133'), '应读出已上传的关键帧数')
 must(!!container.querySelector('.tlc__frame img'), '首镜有图：预演画面显示关键帧图')
 must(container.querySelectorAll('.tlc__kfdot').length === 1, '有图的镜头在轴上打点')
 await click(container.querySelector('button[title="下一镜"]')!)
-must(has('还没有关键帧图') && has(shots[1].action.slice(0, 8)), '没图的镜头显示提示词占位')
-await click(button('看提示词'))
-must(!!container.querySelector('.tlc__prompt') && has('负面：血腥'), '可以展开看完整提示词')
+must(has('还没有关键帧图') && !container.querySelector('.tlc__frame p'), '没图的镜头只给一条占位，画面框里不塞提示词')
+const pa = () => container.querySelector('textarea.tlc__prompt') as unknown as HTMLTextAreaElement
+must(!!pa() && pa().value.length > 0 && has('负面：血腥'), '提示词放在关键帧一节里，直接可见')
+must(!has('恢复生成的提示词'), '没改过不出现恢复按钮')
+await act(async () => {
+  Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!.call(pa(), '手改的出图提示词')
+  pa().dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+})
+await settle()
+must(pa().value === '手改的出图提示词' && has('恢复生成的提示词'), '提示词可以就地改')
+await click(button('恢复生成的提示词'))
+must(pa().value !== '手改的出图提示词' && !has('恢复生成的提示词'), '可以恢复成生成的原文')
 const file = new File([new Uint8Array([1, 2, 3, 4])], 'kf.webp', { type: 'image/webp' })
 const input = container.querySelector('.tlc__kf input[type="file"]') as unknown as HTMLInputElement
 must(!!input, '存进版本的产物可以上传关键帧')
@@ -169,10 +178,10 @@ must(puts.length === 1 && puts[0].shot === shots[1].id && puts[0].type === 'imag
 must(has('关键帧 2/133') && !!container.querySelector('.tlc__frame img'), '上传后预演立刻换成这张图')
 await click(button('删除'))
 must(has('关键帧 1/133') && has('还没有关键帧图'), '删除后回到占位')
-must(!(button('下载提示词') as HTMLButtonElement).disabled, '提示词清单可导出')
+must(!(button('下载全章提示词') as HTMLButtonElement).disabled, '提示词清单可导出')
 await click(button('预演'))
 must(!container.querySelector('.tlc__frame'), '预演画面可以收起')
-console.log('5. 静帧预演 → 显示已上传关键帧 / 无图给提示词占位 / 上传 / 删除 / 导出提示词 ✓')
+console.log('5. 静帧预演 → 显示已上传关键帧 / 无图只占一条 / 提示词就地改与恢复 / 上传 / 删除 / 导出 ✓')
 
 // 6. 画布上就地编辑：拖右缘改时长、双击角色节点改动作、右侧改本镜呈现字段；撤销重做；保存
 const ptr = (type: string, clientX: number) =>
@@ -185,10 +194,10 @@ must(editBtn().textContent === '完成编辑' && (button('撤销') as HTMLButton
 const s2 = shots[1]
 const start = buildTimeline(doc).shots[1].start
 const grip = container.querySelector(`.tlc__grip[data-shot="${s2.id}"]`)!
-// 画布宽度在 happy-dom 里是 0，适应后每秒 2px、无平移：横坐标 = 泳道名栏 92 + 秒 × 2
-await act(async () => { grip.dispatchEvent(ptr('pointerdown', 92 + (start + s2.duration_sec) * 2)) })
-await act(async () => { grip.dispatchEvent(ptr('pointermove', 92 + (start + 6.2) * 2)) })
-await act(async () => { grip.dispatchEvent(ptr('pointerup', 92 + (start + 6.2) * 2)) })
+// 画布宽度在 happy-dom 里是 0，适应时取下限每秒 0.3px、无平移：横坐标 = 泳道名栏 132 + 秒 × 0.3
+await act(async () => { grip.dispatchEvent(ptr('pointerdown', 132 + (start + s2.duration_sec) * 0.3)) })
+await act(async () => { grip.dispatchEvent(ptr('pointermove', 132 + (start + 6.2) * 0.3)) })
+await act(async () => { grip.dispatchEvent(ptr('pointerup', 132 + (start + 6.2) * 0.3)) })
 await settle()
 const dur = () => latest.episodes[0].shots[1].duration_sec
 must(dur() === 6, `拖右缘应把时长改成 6s（取 0.5s），实为 ${dur()}`)
@@ -239,7 +248,7 @@ must(JSON.stringify(latest.episodes[0].shots[0].source) === JSON.stringify(shots
 await click(button('保存修改'))
 must(saves === 1 && has('已保存'), '画布里直接保存，不必退回分镜页')
 await click(editBtn())
-must(!container.querySelector('.tlc__grip') && !container.querySelector('.tlc__panel textarea'),
+must(!container.querySelector('.tlc__grip') && !container.querySelector('.tlc__panel .ed__at textarea'),
      '完成编辑后回到只读')
 console.log('6. 画布上就地编辑 → 拖右缘改时长 / 双击节点改动作 / 右侧改本镜 / 撤销重做（含 ⌘Z）/ 直接保存 ✓')
 

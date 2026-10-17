@@ -201,3 +201,21 @@ export function fmtClock(sec: number): string {
   const s = Math.max(0, Math.floor(sec))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
+
+/** 按像素宽度截断文字（SVG 的 text 不会自动换行或裁切）。全角字按 1 个字号宽、半角按 0.6 估算；
+ *  截断后剩不到 minChars 个字就返回空串——「S…」这种残片不如不写，相邻标签也不会叠在一起。
+ *  minChars = Infinity 表示放不下就整个不写（镜头号这类截了就没意义的）。 */
+export function fitText(text: string, maxPx: number, fontPx = 11, minChars = 2): string {
+  const w = (ch: string) => (/[\u0000-\u00ff]/.test(ch) ? fontPx * 0.6 : fontPx)
+  let used = 0
+  const chars = [...text]
+  for (let i = 0; i < chars.length; i++) {
+    used += w(chars[i])
+    if (used > maxPx) {
+      if (i - 1 < minChars) return ''
+      // 退一个字给省略号
+      return chars.slice(0, i - 1).join('') + '…'
+    }
+  }
+  return text
+}
