@@ -24,7 +24,10 @@ def load_system_prompt() -> str:
 def build_user_message(params, novel_text: str,
                        existing_assets: str = "无",
                        continuation: str = "无",
-                       frozen_units=None) -> str:
+                       frozen_units=None, memory: str = "") -> str:
+    """memory 是小说长期记忆块（【人物状态】【主线剧情】【创作限制】），
+    为空时消息与归档件逐字一致。"""
+    memory_part = f"\n\n{memory}" if memory else ""
     units_block = (json.dumps(frozen_units, ensure_ascii=False, indent=2)
                    if frozen_units is not None else "无（兼容模式：由模型切分）")
     return f"""【制作参数】
@@ -37,7 +40,7 @@ def build_user_message(params, novel_text: str,
 旁白音色：{params.tts_voice}
 
 【已有资产库】
-{existing_assets}
+{existing_assets}{memory_part}
 
 【续批参数】
 {continuation}

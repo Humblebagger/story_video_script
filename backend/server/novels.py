@@ -1,7 +1,7 @@
 """小说级会话：小说（总会话，长期记忆）→ 章节（二级会话）→ 版本（每次转换，短期记忆）。
 
 对应 Agent 的会话模型：小说是「用户实体」，承载跨章不变的长期记忆（资产库、制作参数、
-编号接续，以及第 3 阶段的人物生命周期、主线剧情、创作限制）；章节是「一次提问」，
+编号接续、人物生命周期、主线剧情、创作限制）；章节是「一次提问」，
 它的每次转换是一个版本，版本记录就是此前 store.py 的 run 记录（日志/尝试/清单/产物）。
 
 只有章节的**采用版**进入长期记忆。存储沿用「一个 JSON 一个文件、按用户隔离」：
@@ -22,6 +22,7 @@ from typing import Optional
 
 from server.auth import user_dir
 from server.library import KINDS, _merge_card
+from pipeline.novel_memory import LIFECYCLE_TYPES, SYNOPSIS_MAX, NovelContext
 from server.store import now_iso
 
 # id 来自 URL 路径，必须限死字符集，避免 ../ 之类的路径穿越
@@ -93,6 +94,9 @@ def _empty_memory() -> dict:
         # 来源记在卡片之外：卡片要原样注入【已有资产库】，schema 不允许多余字段
         "asset_origin": {k: {} for k in KINDS},
         "numbering": {"next_unit": 1, "next_para": 1, "next_episode": 1},
+        "lifecycle": [],
+        "plot": {"outline": "", "chapters": []},
+        "constraints": [],
     }
 
 
@@ -102,7 +106,9 @@ def _load_novel(user_id: str, nid: str) -> dict:
     novel = _read(_novel_dir(user_id, nid) / "novel.json")
     if novel is None:
         raise NotFound("小说不存在")
-    novel.setdefault("memory", _empty_memory())
+    memory = novel.setdefault("memory", _empty_memory())
+    for key, value in _empty_memory().items():
+        memory.setdefault(key, value)     # 第 1、2 阶段建的小说没有后加的几项
     return novel
 
 
@@ -159,6 +165,7 @@ def _chapter_summary(user_id: str, nid: str, chapter: dict) -> dict:
         "chars": len(chapter.get("text") or ""),
         "versions": versions,
         "latest_status": versions[0]["status"] if versions else None,
+        "digest": chapter.get("digest"),
     }
 
 
@@ -272,6 +279,7 @@ def delete_chapter(user_id: str, nid: str, cid: str) -> None:
         novel = _load_novel(user_id, nid)
         if chapter.get("adopted_version"):
             _retract(novel, cid)
+        _retract_digest(novel, cid, chapter_deleted=True)
         shutil.rmtree(_chapter_dir(user_id, nid, cid))
         _recompute_numbering(user_id, novel)
         _save_novel(user_id, novel)
@@ -507,7 +515,7 @@ def adopt_version(user_id: str, nid: str, cid: str, vid: str) -> dict:
                              "（只有转换成功、且人工编辑后仍通过复验的版本可以）")
         if chapter.get("adopted_version") == vid:
             return {"chapter_id": cid, "adopted_version": vid, "added": 0, "merged": 0,
-                    "retracted": 0}
+                    "retracted": 0, "changed": False}
         later = [c for c in _chapters(user_id, nid)
                  if c["order"] > chapter["order"] and c.get("adopted_version")
                  and not c.get("legacy_numbering")]
@@ -515,13 +523,17 @@ def adopt_version(user_id: str, nid: str, cid: str, vid: str) -> dict:
             names = "、".join(c["title"] for c in later)
             raise NovelError(f"后面的章节（{names}）已经接着本章的编号转换过，"
                              "本章不能再换采用版；要换，先删掉或重转后面的章节")
-        retracted = _retract(novel, cid) if chapter.get("adopted_version") else 0
+        retracted = 0
+        if chapter.get("adopted_version"):
+            retracted = _retract(novel, cid)
+            _retract_digest(novel, cid)
         counts = _absorb(novel, cid, vid, v["result"])
         chapter["adopted_version"] = vid
         _save_chapter(user_id, nid, chapter)
         _recompute_numbering(user_id, novel)
         _save_novel(user_id, novel)
-    return {"chapter_id": cid, "adopted_version": vid, "retracted": retracted, **counts}
+    return {"chapter_id": cid, "adopted_version": vid, "retracted": retracted,
+            "changed": True, **counts}
 
 
 # ---------- 长期记忆：资产卡人工维护 ----------
@@ -575,6 +587,249 @@ def delete_asset(user_id: str, nid: str, kind: str, card_id: str) -> None:
         novel["memory"]["assets"][kind] = rest
         novel["memory"].setdefault("asset_origin", {}).get(kind, {}).pop(card_id, None)
         _save_novel(user_id, novel)
+
+
+# ---------- 长期记忆：人物生命周期、主线剧情、创作限制 ----------
+
+def _retract_digest(novel: dict, cid: str, chapter_deleted: bool = False) -> None:
+    """撤回某章章后整理写入的东西：模型提议的、还没被人确认的生命周期记录，
+    和模型写的本章摘要。人确认过的、人手写的保留——除非章节本身被删了。"""
+    memory = novel["memory"]
+
+    def keep(e):
+        if (e.get("since") or {}).get("chapter_id") != cid:
+            return True
+        if chapter_deleted:
+            return False
+        return e.get("origin") == "user" or e.get("status") == "confirmed"
+    memory["lifecycle"] = [e for e in memory["lifecycle"] if keep(e)]
+    memory["plot"]["chapters"] = [
+        s for s in memory["plot"]["chapters"]
+        if s.get("chapter_id") != cid or (not chapter_deleted and s.get("origin") == "user")]
+
+
+def _character_ids(novel: dict) -> set:
+    return {c.get("id") for c in novel["memory"]["assets"].get("characters") or []}
+
+
+def _check_lifecycle_fields(novel: dict, character_id, kind) -> None:
+    if character_id not in _character_ids(novel):
+        raise NovelError(f"资产库里没有角色 {character_id}")
+    if kind not in LIFECYCLE_TYPES:
+        raise NovelError(f"未知的状态类型：{kind}（可选 {'、'.join(LIFECYCLE_TYPES)}）")
+
+
+def add_lifecycle(user_id: str, nid: str, *, character_id: str, type: str,
+                  detail: str = "", chapter_id: Optional[str] = None,
+                  unit_ref: Optional[str] = None, evidence_quote: str = "") -> dict:
+    """人手动添加一条（origin=user，直接视为已确认）。"""
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        _check_lifecycle_fields(novel, character_id, type)
+        if chapter_id:
+            _load_chapter(user_id, nid, chapter_id)
+        entry = {"id": _new_id("l"), "character_id": character_id, "type": type,
+                 "detail": (detail or "").strip(),
+                 "since": {"chapter_id": chapter_id, "unit_ref": unit_ref},
+                 "evidence_quote": evidence_quote or "", "origin": "user",
+                 "status": "confirmed", "written_by": None}
+        novel["memory"]["lifecycle"].append(entry)
+        _save_novel(user_id, novel)
+    return entry
+
+
+def update_lifecycle(user_id: str, nid: str, lid: str, *, status: Optional[str] = None,
+                     type: Optional[str] = None, detail: Optional[str] = None) -> dict:
+    """确认 / 驳回 / 修改。"""
+    if status is not None and status not in ("proposed", "confirmed", "rejected"):
+        raise NovelError(f"未知的状态：{status}")
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        entry = next((e for e in novel["memory"]["lifecycle"] if e["id"] == lid), None)
+        if entry is None:
+            raise NotFound("生命周期记录不存在")
+        if type is not None:
+            _check_lifecycle_fields(novel, entry["character_id"], type)
+            entry["type"] = type
+        if detail is not None:
+            entry["detail"] = detail.strip()
+        if status is not None:
+            entry["status"] = status
+        _save_novel(user_id, novel)
+    return entry
+
+
+def delete_lifecycle(user_id: str, nid: str, lid: str) -> None:
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        rest = [e for e in novel["memory"]["lifecycle"] if e["id"] != lid]
+        if len(rest) == len(novel["memory"]["lifecycle"]):
+            raise NotFound("生命周期记录不存在")
+        novel["memory"]["lifecycle"] = rest
+        _save_novel(user_id, novel)
+
+
+def set_outline(user_id: str, nid: str, outline: str) -> dict:
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        novel["memory"]["plot"]["outline"] = (outline or "").strip()
+        _save_novel(user_id, novel)
+    return novel["memory"]["plot"]
+
+
+def set_synopsis(user_id: str, nid: str, cid: str, synopsis: str) -> dict:
+    """人改某章摘要：标 origin=user，之后不再被章后整理自动覆盖。"""
+    text = (synopsis or "").strip()
+    if len(text) > SYNOPSIS_MAX:
+        raise NovelError(f"每章摘要不超过 {SYNOPSIS_MAX} 字（现在 {len(text)} 字）")
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        _load_chapter(user_id, nid, cid)
+        chapters = [s for s in novel["memory"]["plot"]["chapters"]
+                    if s.get("chapter_id") != cid]
+        entry = {"chapter_id": cid, "synopsis": text, "origin": "user"}
+        if text:
+            chapters.append(entry)
+        novel["memory"]["plot"]["chapters"] = chapters
+        _save_novel(user_id, novel)
+    return entry
+
+
+def _clean_constraint(body: dict, base: Optional[dict] = None) -> dict:
+    c = dict(base or {})
+    for key in ("text", "negative_prompt", "keywords", "enabled"):
+        if body.get(key) is not None:
+            c[key] = body[key]
+    c["text"] = str(c.get("text") or "").strip()
+    if not c["text"]:
+        raise NovelError("限制必须写明规则（text）")
+    c["negative_prompt"] = str(c.get("negative_prompt") or "").strip()
+    keywords = c.get("keywords") or []
+    if isinstance(keywords, str):
+        keywords = keywords.replace("，", ",").split(",")
+    c["keywords"] = [k.strip() for k in keywords if str(k).strip()]
+    c["enabled"] = bool(c.get("enabled", True))
+    return c
+
+
+def add_constraint(user_id: str, nid: str, body: dict) -> dict:
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        entry = {"id": _new_id("k"), **_clean_constraint(body)}
+        novel["memory"]["constraints"].append(entry)
+        _save_novel(user_id, novel)
+    return entry
+
+
+def update_constraint(user_id: str, nid: str, kid: str, body: dict) -> dict:
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        lst = novel["memory"]["constraints"]
+        for i, c in enumerate(lst):
+            if c["id"] == kid:
+                lst[i] = {"id": kid, **_clean_constraint(body, c)}
+                _save_novel(user_id, novel)
+                return lst[i]
+    raise NotFound("限制不存在")
+
+
+def delete_constraint(user_id: str, nid: str, kid: str) -> None:
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        rest = [c for c in novel["memory"]["constraints"] if c["id"] != kid]
+        if len(rest) == len(novel["memory"]["constraints"]):
+            raise NotFound("限制不存在")
+        novel["memory"]["constraints"] = rest
+        _save_novel(user_id, novel)
+
+
+def novel_context(user_id: str, nid: str, cid: str) -> NovelContext:
+    """转换某章时注入的长期记忆：只取排在它前面的章节已确定的事（重转前面的章节时，
+    不能让它「知道」后面章节才发生的死亡），加上全书梗概与启用中的限制。"""
+    novel = _load_novel(user_id, nid)
+    memory = novel["memory"]
+    chapter = _load_chapter(user_id, nid, cid)
+    earlier = sorted((c for c in _chapters(user_id, nid)
+                      if c["id"] != cid and c["order"] < chapter["order"]),
+                     key=lambda c: c["order"])
+    titles = {c["id"]: c["title"] for c in earlier}
+    lifecycle = []
+    for e in memory["lifecycle"]:
+        since = (e.get("since") or {}).get("chapter_id")
+        if e.get("status") != "confirmed" or (since and since not in titles):
+            continue
+        lifecycle.append({**e, "since": {**(e.get("since") or {}),
+                                         "chapter_title": titles.get(since, "")}})
+    synopses = {s["chapter_id"]: s["synopsis"] for s in memory["plot"]["chapters"]}
+    return NovelContext(
+        lifecycle=lifecycle,
+        names={c.get("id"): c.get("name", "") for c in
+               memory["assets"].get("characters") or []},
+        outline=memory["plot"].get("outline") or "",
+        synopses=[(c["title"], synopses[c["id"]]) for c in earlier
+                  if synopses.get(c["id"])],
+        constraints=[c for c in memory["constraints"] if c.get("enabled", True)],
+    )
+
+
+def digest_input(user_id: str, nid: str, cid: str) -> tuple:
+    """章后整理的输入：(采用版 id, 本章句单元, 角色卡名单)。没有采用版时抛 NovelError。"""
+    chapter = _load_chapter(user_id, nid, cid)
+    vid = chapter.get("adopted_version")
+    if not vid:
+        raise NovelError("本章还没有采用版")
+    doc = get_version(user_id, nid, cid, vid).get("result") or {}
+    units = [{"id": u["id"], "text": u.get("text", "")}
+             for u in (doc.get("source") or {}).get("units") or []]
+    characters = _load_novel(user_id, nid)["memory"]["assets"].get("characters") or []
+    return vid, units, [{"id": c.get("id"), "name": c.get("name", "")} for c in characters]
+
+
+def set_digest_state(user_id: str, nid: str, cid: str, status: str, **fields) -> None:
+    """章节上记一下章后整理走到哪：running / done / failed / off。"""
+    with _lock:
+        chapter = _load_chapter(user_id, nid, cid)
+        chapter["digest"] = {"status": status, "at": now_iso(), **fields}
+        _save_chapter(user_id, nid, chapter)
+
+
+def record_digest(user_id: str, nid: str, cid: str, vid: str, proposals: list,
+                  synopsis: str, dropped: list) -> dict:
+    """章后整理的结果写进长期记忆。期间换了采用版就作废（结果属于旧版本）。"""
+    with _lock:
+        chapter = _load_chapter(user_id, nid, cid)
+        if chapter.get("adopted_version") != vid:
+            return {"stale": True}
+        novel = _load_novel(user_id, nid)
+        memory = novel["memory"]
+        _retract_digest(novel, cid)
+        # 人已经确认过的同一角色同一类型不再重复提议
+        settled = {(e["character_id"], e["type"]) for e in memory["lifecycle"]
+                   if e.get("status") in ("confirmed", "rejected")
+                   and (e.get("since") or {}).get("chapter_id") == cid}
+        added = 0
+        for p in proposals:
+            if (p["character_id"], p["type"]) in settled:
+                continue
+            memory["lifecycle"].append({
+                "id": _new_id("l"), "character_id": p["character_id"], "type": p["type"],
+                "detail": p.get("detail", ""),
+                "since": {"chapter_id": cid, "unit_ref": p["unit_ref"]},
+                "evidence_quote": p["evidence_quote"], "origin": "model",
+                "status": "proposed",
+                "written_by": {"chapter_id": cid, "version_id": vid}})
+            added += 1
+        user_written = any(s.get("chapter_id") == cid and s.get("origin") == "user"
+                           for s in memory["plot"]["chapters"])
+        if synopsis and not user_written:
+            memory["plot"]["chapters"].append(
+                {"chapter_id": cid, "synopsis": synopsis, "origin": "model"})
+        _save_novel(user_id, novel)
+        chapter["digest"] = {"status": "done", "at": now_iso(), "version_id": vid,
+                             "proposed": added, "dropped": dropped,
+                             "synopsis_kept_user": bool(synopsis and user_written)}
+        _save_chapter(user_id, nid, chapter)
+    return chapter["digest"]
 
 
 # ---------- 旧数据迁移 ----------

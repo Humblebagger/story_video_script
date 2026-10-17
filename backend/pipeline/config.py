@@ -57,6 +57,8 @@ class Settings:
     review_min_score: float = 3.0           # 评审总分低于此值回喂重试
     review_dimension_min: int = 3           # 任一评分维度不得低于此值
     semantic_fidelity_min: int = 4          # 语义忠实度单独设更高底线
+    # 采用版本后的「章后整理」小调用：人物生命周期提议 + 本章剧情摘要
+    chapter_digest: bool = True
 
 
 def load_settings() -> Settings:
@@ -93,4 +95,5 @@ def load_settings() -> Settings:
         review_min_score=float(env("STORYBOARD_REVIEW_MIN_SCORE", "3.0")),
         review_dimension_min=int(env("STORYBOARD_REVIEW_DIMENSION_MIN", "3")),
         semantic_fidelity_min=int(env("STORYBOARD_SEMANTIC_FIDELITY_MIN", "4")),
+        chapter_digest=env("STORYBOARD_CHAPTER_DIGEST", "1") not in ("0", "false", "no"),
     )

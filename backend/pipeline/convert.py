@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from . import validate, verification
+from . import novel_memory, validate, verification
 from .chat import ChatInvoker
 from .config import Settings, load_settings
 from .errors import ConversionError
@@ -75,7 +75,8 @@ def convert_text(text: str,
                  manifest_out: Optional[dict] = None,
                  progress_out: Optional[dict] = None,
                  on_partial: Optional[Callable[[dict, int, int], None]] = None,
-                 start_numbering: Optional[dict] = None) -> dict:
+                 start_numbering: Optional[dict] = None,
+                 novel_context: Optional[novel_memory.NovelContext] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何 BaseChatModel（测试用 FakeChat）。
@@ -91,6 +92,8 @@ def convert_text(text: str,
     doc 是已完成批次的合并结果，供界面在整章跑完之前先审阅。
     start_numbering = {"next_unit", "next_para", "next_episode"}：接续同一部小说
     此前章节的编号（句单元、段落、分集），缺省从 1 起。
+    novel_context：小说长期记忆（人物状态、主线剧情、创作限制），每批都注入；
+    限制的负面提示词确定性并进 meta，关键词与已故角色出场做软核查（MEDIUM，不打回）。
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
@@ -149,7 +152,9 @@ def convert_text(text: str,
     graph = build_batch_graph(chat=chat, review_chat=review_chat,
                               settings=settings, params=params, workdir=workdir,
                               attempt_records=attempt_records, log=log,
-                              progress=on_progress)
+                              progress=on_progress,
+                              negative_terms=novel_memory.negative_terms(novel_context))
+    memory = novel_memory.memory_blocks(novel_context)
 
     outputs: List[dict] = []
     batch_paths: List[Path] = []
@@ -172,7 +177,7 @@ def convert_text(text: str,
                           "（接续本书此前章节）\n首批 meta：无（按制作参数生成）")
         expected_units = prompt_units(frozen, i) if settings.freeze_source_units else None
         user = build_user_message(params, batch, assets_block, cont_block,
-                                  expected_units)
+                                  expected_units, memory)
         log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
         progress.update({"batch": i, "batch_chars": len(batch)})
         doc, batch_warnings = run_batch(graph, user=user, batch_text=batch,
@@ -223,6 +228,10 @@ def convert_text(text: str,
         run_manifest["state"] = "failed"
         run_manifest["verification"] = final_report.to_dict()
         raise ConversionError("合并后整章终检未通过", lint_out + "\n" + fid_out)
+    soft = novel_memory.soft_findings(merged_doc, novel_context)
+    if soft:
+        final_report.findings.extend(soft)
+        log(f"长期记忆软核查：{len(soft)} 条待人工审阅（创作限制关键词 / 已故角色出场）")
     finish_manifest(run_manifest, merged_doc, final_report, "verified")
     progress.update({"phase": "done"})
     return merged_doc

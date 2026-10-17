@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests" / "pipeline"))     # fakes.FakeChat
 
 _TMP = tempfile.TemporaryDirectory()
 os.environ["STORYBOARD_DATA_DIR"] = _TMP.name     # 必须在导入 server.* 之前
@@ -178,16 +179,43 @@ def main() -> int:
 
     def fake_convert(text, params, settings=None, log=print, warnings_out=None,
                      seed_assets=None, manifest_out=None, progress_out=None,
-                     on_partial=None, start_numbering=None):
+                     on_partial=None, start_numbering=None, novel_context=None):
         calls.append({"text": text, "params": params, "seed": seed_assets,
-                      "numbering": start_numbering})
+                      "numbering": start_numbering, "context": novel_context})
         log("（假转换）")
         if manifest_out is not None:
             manifest_out.update({"verification": {"status": "passed"}})
         return batch_doc(1)
 
-    real_convert = app_mod.convert_text
+    # 章后整理的模型替身：每次调用新给一个，提议「小栓」在其出场的第一句发生永久状态变化
+    b1units = batch_doc(1)["source"]["units"]
+    quote_unit = next(u for u in b1units if "小栓" in u["text"])
+    digests = []
+
+    def fake_digest_chat():
+        from fakes import FakeChat
+        from pipeline.chat import ChatInvoker
+        from pipeline.config import Settings
+        chat = FakeChat(responses=[json.dumps({"lifecycle": [
+            {"character_id": "C03", "type": "permanent_condition", "detail": "痨病",
+             "unit_ref": quote_unit["id"], "evidence_quote": "小栓"},
+            {"character_id": "C03", "type": "deceased", "unit_ref": quote_unit["id"],
+             "evidence_quote": "小栓死了"}],
+            "synopsis": f"第{len(digests) + 1}次整理的摘要。"}, ensure_ascii=False)])
+        digests.append(chat)
+        return ChatInvoker(Settings(), chat=chat)
+
+    def wait_digest(nid, cid):
+        for _ in range(200):
+            d = app_mod.chapters_get(nid, cid, A).get("digest") or {}
+            if d.get("status") != "running":
+                return d
+            time.sleep(0.02)
+        raise AssertionError("章后整理没跑完")
+
+    real_convert, real_digest = app_mod.convert_text, app_mod._digest_chat
     app_mod.convert_text = fake_convert
+    app_mod._digest_chat = fake_digest_chat
     try:
         A = {"id": "c" * 12}
         app_mod.novel_user(A)
@@ -222,6 +250,16 @@ def main() -> int:
         assert any("自动采用" in line for line in job["log"])
         chapter = app_mod.chapters_get(anid, ch["id"], A)
         assert chapter["adopted_version"] == va
+        d = wait_digest(anid, ch["id"])
+        assert d["status"] == "done" and d["proposed"] == 1 and len(d["dropped"]) == 1, \
+            "证据不是原文子串的提议要丢"
+        mem = app_mod.memory_get(anid, A)
+        (prop,) = mem["lifecycle"]
+        assert prop["status"] == "proposed" and prop["origin"] == "model"
+        assert prop["since"] == {"chapter_id": ch["id"], "unit_ref": quote_unit["id"]}
+        assert prop["written_by"] == {"chapter_id": ch["id"], "version_id": va}
+        assert mem["plot"]["chapters"] == [
+            {"chapter_id": ch["id"], "synopsis": "第1次整理的摘要。", "origin": "model"}]
 
         vb = run({"narration_mode": "original_text"})
         assert calls[1]["params"].narration_mode == "original_text", "本次覆写优先"
@@ -240,7 +278,36 @@ def main() -> int:
         assert e.status_code == 422
         r = app_mod.versions_update(anid, ch["id"], vb, stored["result"], A)
         assert r["status"] == "succeeded"
-        app_mod.versions_adopt(anid, ch["id"], vb, A)
+        # 换采用版：未确认的模型提议与模型摘要撤回，按新版本重新整理；人写的摘要不覆盖
+        app_mod.plot_synopsis(anid, ch["id"], app_mod.SynopsisBody(synopsis="人写的摘要。"), A)
+        r = app_mod.versions_adopt(anid, ch["id"], vb, A)
+        assert r["changed"] and r["digest"] == "running"
+        d = wait_digest(anid, ch["id"])
+        assert d["synopsis_kept_user"] and d["version_id"] == vb
+        mem = app_mod.memory_get(anid, A)
+        assert [e["written_by"]["version_id"] for e in mem["lifecycle"]] == [vb]
+        assert mem["plot"]["chapters"][0]["synopsis"] == "人写的摘要。"
+        assert app_mod.versions_adopt(anid, ch["id"], vb, A)["changed"] is False
+        assert len(digests) == 2, "重复采用同一版不重跑整理"
+        lid = mem["lifecycle"][0]["id"]
+        e = must_raise(HTTPException, app_mod.lifecycle_update, anid, lid,
+                       app_mod.LifecyclePatch(status="maybe"), A)
+        assert e.status_code == 422
+        app_mod.lifecycle_update(anid, lid, app_mod.LifecyclePatch(status="confirmed"), A)
+        e = must_raise(HTTPException, app_mod.lifecycle_add, anid,
+                       app_mod.LifecycleBody(character_id="C77", type="deceased"), A)
+        assert e.status_code == 422, "资产库里没有的角色不能记"
+        manual = app_mod.lifecycle_add(anid, app_mod.LifecycleBody(
+            character_id="C01", type="departed", detail="远走"), A)
+        assert manual["status"] == "confirmed" and manual["origin"] == "user"
+        app_mod.plot_outline(anid, app_mod.OutlineBody(outline="全书梗概。"), A)
+        k = app_mod.constraints_add(anid, app_mod.ConstraintBody(
+            text="不出现血腥画面", negative_prompt="血迹", keywords=["血"]), A)
+        e = must_raise(HTTPException, app_mod.constraints_add, anid,
+                       app_mod.ConstraintBody(text="  "), A)
+        assert e.status_code == 422
+        off = app_mod.constraints_add(anid, app_mod.ConstraintBody(text="不吸烟"), A)
+        app_mod.constraints_update(anid, off["id"], app_mod.ConstraintBody(enabled=False), A)
 
         assert calls[0]["numbering"] is None, "第一章前面没有采用章节，从 1 起编"
         # 第二章：接着第一章采用版的编号往下排；重转第一章不接在它自己后面
@@ -257,8 +324,35 @@ def main() -> int:
             "next_episode": max(int(e["id"][1:]) for e in batch_doc(1)["episodes"]) + 1}
         assert any("编号接续本书此前章节" in line
                    for line in app_mod._jobs[r2["job_id"]]["log"])
+        assert any("注入长期记忆" in line for line in app_mod._jobs[r2["job_id"]]["log"])
+        ctx = calls[-1]["context"]
+        assert {e["character_id"] for e in ctx.lifecycle} == {"C03", "C01"}, "只注入已确认的"
+        assert ctx.lifecycle[0]["since"]["chapter_title"] == "第一章"
+        assert ctx.outline == "全书梗概。" and ctx.synopses == [("第一章", "人写的摘要。")]
+        assert [c["text"] for c in ctx.constraints] == ["不出现血腥画面"], "停用的不注入"
         assert novels.start_numbering(A["id"], anid, ch["id"]) is None
+        # 重转第一章：看不到它自己与后面章节的生命周期和摘要
+        ctx1 = novels.novel_context(A["id"], anid, ch["id"])
+        assert [e["character_id"] for e in ctx1.lifecycle] == ["C01"] and not ctx1.synopses
+        # 人工编辑时软核查照跑：C01 已下线却出现在镜头里
+        v2 = app_mod._jobs[r2["job_id"]]["id"]
+        r = app_mod.versions_update(anid, ch2["id"], v2,
+                                    app_mod.versions_get(anid, ch2["id"], v2, A)["result"], A)
+        assert r["status"] == "succeeded"
+        assert any(f["rule_id"] == "NOVEL-LIFECYCLE-001"
+                   for f in r["verification"]["findings"])
+        wait_digest(anid, ch2["id"])
+        assert any(s["chapter_id"] == ch2["id"]
+                   for s in app_mod.memory_get(anid, A)["plot"]["chapters"])
         app_mod.chapters_delete(anid, ch2["id"], A)
+        mem = app_mod.memory_get(anid, A)
+        assert all(s["chapter_id"] != ch2["id"] for s in mem["plot"]["chapters"]) and all(
+            (e["since"] or {}).get("chapter_id") != ch2["id"] for e in mem["lifecycle"]), \
+            "删章节连带撤掉它的摘要与生命周期"
+        app_mod.constraints_delete(anid, k["id"], A)
+        app_mod.lifecycle_delete(anid, manual["id"], A)
+        e = must_raise(HTTPException, app_mod.lifecycle_delete, anid, manual["id"], A)
+        assert e.status_code == 404
 
         plan = app_mod.render_plan(app_mod.RenderPlanRequest(
             result=stored["result"], run_id=vb, include_markdown=False), A)
@@ -272,8 +366,10 @@ def main() -> int:
         e = must_raise(HTTPException, app_mod.novels_get, anid, {"id": "d" * 12})
         assert e.status_code == 404, "别人的小说看不到"
     finally:
-        app_mod.convert_text = real_convert
+        app_mod.convert_text, app_mod._digest_chat = real_convert, real_digest
     print("接口: 转换落成版本 / 首个成功版本自动采用 / 覆写优先 / 编号接续前章 / 复验 / 渲染按版本取证据 / 用户隔离 ✓")
+    print("长期记忆: 章后整理核证据 / 换采用版撤回重整 / 人写摘要不覆盖 / 确认后才注入 / "
+          "只注入前面章节 / 限制启停 / 编辑时软核查 / 删章节连带撤回 ✓")
 
     print("\nALL PASS")
     return 0

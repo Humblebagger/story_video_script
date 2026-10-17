@@ -35,6 +35,12 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   POST                /novels/{nid}/chapters/{cid}/versions/{vid}/adopt  采用 → 写入长期记忆
   GET                 /novels/{nid}/memory                      长期记忆
   PUT/DELETE          /novels/{nid}/memory/assets/{kind}/{id}   资产卡增改删
+  POST                /novels/{nid}/memory/lifecycle            手动添加人物生命周期（死亡/永久伤病/下线）
+  POST/DELETE         /novels/{nid}/memory/lifecycle/{lid}      确认 / 驳回 / 修改；删
+  PUT                 /novels/{nid}/memory/plot                 全书梗概
+  PUT                 /novels/{nid}/memory/plot/chapters/{cid}  改某章摘要
+  POST                /novels/{nid}/memory/constraints          新增创作限制；PATCH/DELETE …/{kid}
+  POST                /novels/{nid}/chapters/{cid}/digest       重跑章后整理（采用后自动跑一次）
 
 渲染任务包（下游消费入口，只读、不落盘、不改 IR）：
   POST /render/plan        → 分镜 IR → 机器可读渲染任务清单 + 人读版生产包 + 费用估算
@@ -61,7 +67,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline import __version__
 from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
-from pipeline import verification
+from pipeline import novel_memory, verification
+from pipeline.chat import ChatInvoker
 from render import plan as render_plan_mod
 from server import auth, library, novels, store
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
@@ -157,7 +164,8 @@ class ConvertRequest(BaseModel):
 
 def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
              seed: Optional[dict], persist, after_success,
-             numbering: Optional[dict] = None) -> None:
+             numbering: Optional[dict] = None,
+             context: Optional[novel_memory.NovelContext] = None) -> None:
     """跑一次转换并把状态/产物写回。persist(status, **fields) 决定落到哪
     （旧的转换记录，或小说章节的某个版本）；after_success(job, log) 做成功后的
     长期记忆动作（旧路径：资产入库；新路径：首个成功版本自动采用）。"""
@@ -186,7 +194,8 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
                                      seed_assets=seed, manifest_out=manifest,
                                      progress_out=job["progress"],
                                      on_partial=lambda d, k, n: _on_partial(job, d, k, n),
-                                     start_numbering=numbering)
+                                     start_numbering=numbering,
+                                     novel_context=context)
         job["manifest"] = manifest
         job["verification"] = manifest.get("verification")
         job["partial"] = None    # 整章已出，预览作废；失败时则保留，已通过的批次照样能看
@@ -363,13 +372,16 @@ def _frozen_of(record: dict) -> Optional[list]:
     return frozen or None
 
 
-def _reverify(existing: dict, result: dict):
-    """人工编辑后的整份复验。不合格标 draft_invalid 但照样保存（不丢人的工作）。"""
+def _reverify(existing: dict, result: dict,
+              context: Optional[novel_memory.NovelContext] = None):
+    """人工编辑后的整份复验。不合格标 draft_invalid 但照样保存（不丢人的工作）。
+    小说章节的版本另带长期记忆软核查（只记 MEDIUM，不影响状态）。"""
     doc = copy.deepcopy(result)
     frozen = _frozen_of(existing)
     probe = verification.verify_document(doc, frozen_units=frozen)
     verification.recompute_coverage_field(doc, probe.coverage)
     report = verification.verify_document(doc, frozen_units=frozen)
+    report.findings.extend(novel_memory.soft_findings(doc, context))
     previous_status = existing.get("status")
     status = ((previous_status if previous_status in
                ("succeeded", "completed_with_warnings") else "succeeded")
@@ -531,6 +543,12 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
     if numbering:
         job["log"].append(f"编号接续本书此前章节：句子从 u{numbering['next_unit']:04d}、"
                           f"分集从 E{numbering['next_episode']:02d} 起")
+    context = novels.novel_context(user_id, nid, cid)
+    if not context.empty():
+        job["log"].append(
+            f"注入长期记忆：人物状态 {len(context.lifecycle)} 条、此前章节摘要 "
+            f"{len(context.synopses)} 章{'、全书梗概' if context.outline else ''}、"
+            f"创作限制 {len(context.constraints)} 条")
 
     def after_success(job, log):
         chapter = novels.get_chapter(user_id, nid, cid)
@@ -540,11 +558,42 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
         r = novels.adopt_version(user_id, nid, cid, job["id"])
         log(f"已自动采用为本章首个成功版本：资产库新增 {r['added']} 张、"
             f"合并 {r['merged']} 张")
+        if _schedule_digest(user_id, nid, cid):
+            log("章后整理已排队：提取人物生命周期提议与本章摘要（待人工确认）")
 
     _execute(job, text, params, strict, seed,
              lambda status, **f: novels.update_version_state(
                  user_id, nid, cid, job["id"], status, **f),
-             after_success, numbering)
+             after_success, numbering, context)
+
+
+def _digest_chat():
+    """章后整理用的模型（测试替换成 FakeChat）。"""
+    return ChatInvoker(load_settings())
+
+
+def _run_digest(user_id: str, nid: str, cid: str) -> None:
+    """采用版本后的一次小调用：生命周期提议 + 本章摘要。失败只记在章节上，
+    不影响已经采用的版本——这是锦上添花，人可以手动补。"""
+    try:
+        vid, units, characters = novels.digest_input(user_id, nid, cid)
+        proposals, synopsis, dropped = novel_memory.run_digest(
+            _digest_chat(), units, characters)
+        novels.record_digest(user_id, nid, cid, vid, proposals, synopsis, dropped)
+    except Exception as e:  # 网络/解析/章节被删——都只是这一步没做成
+        try:
+            novels.set_digest_state(user_id, nid, cid, "failed", error=repr(e)[:300])
+        except (OSError, ValueError, LookupError):
+            pass
+
+
+def _schedule_digest(user_id: str, nid: str, cid: str) -> bool:
+    if not load_settings().chapter_digest:
+        novels.set_digest_state(user_id, nid, cid, "off")
+        return False
+    novels.set_digest_state(user_id, nid, cid, "running")
+    _executor.submit(_run_digest, user_id, nid, cid)
+    return True
 
 
 @app.post("/novels/{nid}/chapters/{cid}/versions")
@@ -585,7 +634,8 @@ def versions_update(nid: str, cid: str, vid: str,
                     user: dict = Depends(novel_user)):
     """人工编辑 + 整份复验。采用版被改了，长期记忆随之按改后的产物更新。"""
     existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
-    doc, report, status, frozen = _reverify(existing, result)
+    context = _novel_call(novels.novel_context, user["id"], nid, cid)
+    doc, report, status, frozen = _reverify(existing, result, context)
     v = _novel_call(novels.update_version_result, user["id"], nid, cid, vid, doc,
                     verification=report.to_dict(), status=status, frozen_units=frozen)
     return {"id": vid, "edited_at": v["edited_at"], "status": status,
@@ -600,7 +650,20 @@ def versions_delete(nid: str, cid: str, vid: str, user: dict = Depends(novel_use
 
 @app.post("/novels/{nid}/chapters/{cid}/versions/{vid}/adopt")
 def versions_adopt(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
-    return _novel_call(novels.adopt_version, user["id"], nid, cid, vid)
+    r = _novel_call(novels.adopt_version, user["id"], nid, cid, vid)
+    if r.get("changed"):
+        r["digest"] = "running" if _schedule_digest(user["id"], nid, cid) else "off"
+    return r
+
+
+@app.post("/novels/{nid}/chapters/{cid}/digest")
+def chapters_digest(nid: str, cid: str, user: dict = Depends(novel_user)):
+    """手动重跑章后整理（上次失败、或关着开关时采用的）。"""
+    _novel_call(novels.digest_input, user["id"], nid, cid)
+    if not load_settings().chapter_digest:
+        raise HTTPException(422, "章后整理已关闭（STORYBOARD_CHAPTER_DIGEST=0）")
+    _schedule_digest(user["id"], nid, cid)
+    return {"digest": "running"}
 
 
 @app.get("/novels/{nid}/memory")
@@ -754,6 +817,85 @@ def library_delete_work(work: str, user: dict = Depends(current_user)):
     return {"deleted": work}
 
 
+# ---------- 长期记忆：人物生命周期、主线剧情、创作限制 ----------
+
+class LifecycleBody(BaseModel):
+    character_id: str
+    type: str
+    detail: str = ""
+    chapter_id: Optional[str] = None
+    unit_ref: Optional[str] = None
+    evidence_quote: str = ""
+
+
+class LifecyclePatch(BaseModel):
+    status: Optional[str] = None
+    type: Optional[str] = None
+    detail: Optional[str] = None
+
+
+class OutlineBody(BaseModel):
+    outline: str = ""
+
+
+class SynopsisBody(BaseModel):
+    synopsis: str = ""
+
+
+class ConstraintBody(BaseModel):
+    text: Optional[str] = None
+    negative_prompt: Optional[str] = None
+    keywords: Optional[list] = None
+    enabled: Optional[bool] = None
+
+
+@app.post("/novels/{nid}/memory/lifecycle")
+def lifecycle_add(nid: str, body: LifecycleBody, user: dict = Depends(novel_user)):
+    return _novel_call(novels.add_lifecycle, user["id"], nid, **body.model_dump())
+
+
+@app.post("/novels/{nid}/memory/lifecycle/{lid}")
+def lifecycle_update(nid: str, lid: str, body: LifecyclePatch,
+                     user: dict = Depends(novel_user)):
+    return _novel_call(novels.update_lifecycle, user["id"], nid, lid, **body.model_dump())
+
+
+@app.delete("/novels/{nid}/memory/lifecycle/{lid}")
+def lifecycle_delete(nid: str, lid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_lifecycle, user["id"], nid, lid)
+    return {"deleted": lid}
+
+
+@app.put("/novels/{nid}/memory/plot")
+def plot_outline(nid: str, body: OutlineBody, user: dict = Depends(novel_user)):
+    return _novel_call(novels.set_outline, user["id"], nid, body.outline)
+
+
+@app.put("/novels/{nid}/memory/plot/chapters/{cid}")
+def plot_synopsis(nid: str, cid: str, body: SynopsisBody,
+                  user: dict = Depends(novel_user)):
+    return _novel_call(novels.set_synopsis, user["id"], nid, cid, body.synopsis)
+
+
+@app.post("/novels/{nid}/memory/constraints")
+def constraints_add(nid: str, body: ConstraintBody, user: dict = Depends(novel_user)):
+    return _novel_call(novels.add_constraint, user["id"], nid,
+                       body.model_dump(exclude_none=True))
+
+
+@app.patch("/novels/{nid}/memory/constraints/{kid}")
+def constraints_update(nid: str, kid: str, body: ConstraintBody,
+                       user: dict = Depends(novel_user)):
+    return _novel_call(novels.update_constraint, user["id"], nid, kid,
+                       body.model_dump(exclude_none=True))
+
+
+@app.delete("/novels/{nid}/memory/constraints/{kid}")
+def constraints_delete(nid: str, kid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_constraint, user["id"], nid, kid)
+    return {"deleted": kid}
+
+
 # ---------- 探针 ----------
 
 @app.get("/healthz")
@@ -762,3 +904,4 @@ def healthz():
     return {"status": "ok", "model": s.model,
             "api_key_configured": bool(s.api_key),
             "users": auth.user_count()}
+

@@ -15,7 +15,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES, add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolInvocationError
 
-from . import quality, repair, review, validate, verification
+from . import novel_memory, quality, repair, review, validate, verification
 from .chat import check_truncation, extract_json, is_truncated
 from .config import Settings
 from .errors import ConversionError
@@ -132,7 +132,7 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
 
 def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                       workdir: Path, attempt_records: list, log=print,
-                      progress=None):
+                      progress=None, negative_terms=()):
     """编译单批状态图。跨批不变的依赖由闭包持有，不进状态。
 
     progress(phase, attempt) 在每个节点开工时被调用，供界面显示「第几次尝试、
@@ -199,6 +199,8 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
 
         doc = state["doc"]
         quality.apply_meta_overrides(doc, params)
+        # 小说创作限制的负面提示词与制作参数同性质：程序确定性写入，不靠模型记得
+        novel_memory.merge_negative_prompt(doc, list(negative_terms))
         # 程序算得对的呈现层字段直接改，不为它们花一轮修复
         fixed = quality.normalize_curve_refs(doc)
         if fixed:
