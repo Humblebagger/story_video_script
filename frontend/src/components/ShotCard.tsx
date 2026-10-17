@@ -167,7 +167,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
     onChange({ camera: { ...shot.camera, [k]: v } })
 
   return (
-    <article className={`shot shot--${shot.source?.derivation ?? 'explicit'}${
+    <article id={`shot-${shot.id}`} className={`shot shot--${shot.source?.derivation ?? 'explicit'}${
       editing ? ' shot--editing' : ''}`}>
       <header className="shot__head">
         <span className="shot__id">{shot.id}</span>

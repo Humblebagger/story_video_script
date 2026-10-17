@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
@@ -8,6 +8,7 @@ import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
 import { RenderView } from './RenderView'
 import { SourceView } from './SourceView'
+import { TimelineCanvas } from './TimelineCanvas'
 
 type Tab = 'shots' | 'assets' | 'source' | 'render' | 'json'
 
@@ -48,6 +49,9 @@ export function StoryboardView({
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [canvas, setCanvas] = useState(false)
+  /** 从画布跳回来要定位的镜头 */
+  const [focusShot, setFocusShot] = useState<string | null>(null)
   const idx = useMemo(() => buildIndex(doc), [doc])
   const { meta, source } = doc
 
@@ -55,6 +59,22 @@ export function StoryboardView({
     setFocusUnit(unitId)
     setTab('source')
   }
+
+  const jumpShot = (shotId: string) => {
+    setCanvas(false)
+    setTab('shots')
+    setFocusShot(shotId)
+  }
+
+  useEffect(() => {
+    if (!focusShot || tab !== 'shots') return
+    const el = document.getElementById(`shot-${focusShot}`)
+    el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    el?.classList.add('is-flash')
+    const t = window.setTimeout(() => el?.classList.remove('is-flash'), 1600)
+    setFocusShot(null)
+    return () => clearTimeout(t)
+  }, [focusShot, tab])
 
   // stampVersion：一旦用上 beats/constraints，产物就不该再自称 0.4
   const changeShot = (episodeId: string, shotId: string, patch: Partial<Shot>) =>
@@ -92,6 +112,10 @@ export function StoryboardView({
                 {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
               </button>
             )}
+            <button className="btn btn--sm btn--ghost" onClick={() => setCanvas(true)}
+                    title="按视频时间铺开：集、场景、镜头、各角色的动作顺序、旁白台词、BGM 情绪">
+              时间轴画布
+            </button>
             <button className="btn btn--sm btn--ghost" onClick={() => download(doc)}>
               下载 JSON
             </button>
@@ -162,6 +186,10 @@ export function StoryboardView({
       {tab === 'source' && <SourceView doc={doc} idx={idx} focusUnit={focusUnit} />}
       {tab === 'render' && !preview && <RenderView doc={doc} runId={runId} />}
       {tab === 'json' && <pre className="json">{JSON.stringify(doc, null, 2)}</pre>}
+      {canvas && (
+        <TimelineCanvas doc={doc} onClose={() => setCanvas(false)} onJumpShot={jumpShot}
+                        onJumpUnit={(u) => { setCanvas(false); pickUnit(u) }} />
+      )}
     </div>
   )
 }

@@ -1251,3 +1251,85 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vchip:hover { border-color: var(--accent); }
 .vchip.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .vchip.is-adopted { font-weight: 650; }
+
+/* ---------- 时间轴画布：无边框、全屏 ---------- */
+
+.tlc { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow: hidden;
+       user-select: none; touch-action: none; }
+.tlc__svg { display: block; width: 100%; height: 100%; cursor: grab; }
+.tlc__svg:active { cursor: grabbing; }
+.tlc__svg text { font-size: 11px; fill: var(--muted); pointer-events: none; }
+
+.tlc__bar {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 2;
+  display: flex; gap: 8px; align-items: center; padding: 8px 12px;
+  background: var(--panel); border-radius: 999px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .14); white-space: nowrap;
+}
+.tlc__bar select { border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+                   padding: 3px 6px; font-size: 12.5px; }
+.tlc__clock { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums;
+              min-width: 92px; text-align: center; }
+.tlc__hint { font-size: 11px; color: var(--faint); }
+@media (max-width: 1100px) { .tlc__hint { display: none; } }
+
+.tlc__lane { fill: transparent; }
+.tlc__lane--alt { fill: var(--panel-2); }
+.tlc__ruler rect { fill: var(--bg); }
+.tlc__ruler line { stroke: var(--line); }
+.tlc__ruler text { font-family: var(--mono); font-size: 10.5px; fill: var(--faint); }
+.tlc__labels rect { fill: var(--bg); }
+.tlc__labels text { font-size: 11.5px; fill: var(--text); }
+
+.tlc__seg rect { fill: var(--panel); stroke: var(--line); }
+.tlc__seg--ep rect { fill: var(--accent-soft); stroke: none; }
+.tlc__seg--ep text { fill: var(--accent); font-weight: 600; }
+
+.tlc__link { stroke: var(--line); stroke-width: 2; fill: none; }
+.tlc__link--lit { stroke: var(--accent); stroke-width: 2.5; }
+
+.tlc__shot { cursor: pointer; }
+.tlc__shot rect { fill: var(--panel); stroke: var(--explicit); stroke-width: 1.2; }
+.tlc__shot--inferred rect { stroke: var(--inferred); }
+.tlc__shot--transition rect { stroke: var(--transition); }
+.tlc__shot.is-past rect { fill: var(--accent-soft); }
+.tlc__shot.is-cur rect { fill: var(--accent); stroke: var(--accent); }
+.tlc__shot.is-cur text { fill: var(--panel); }
+.tlc__shot text { font-family: var(--mono); font-size: 10px; }
+.tlc__shot rect.tlc__over { fill: var(--danger); stroke: none; opacity: .6; }
+
+.tlc__node { cursor: pointer; }
+.tlc__node circle { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; }
+.tlc__node.is-past circle { fill: var(--accent); stroke: var(--accent); }
+.tlc__node.is-cur circle { fill: var(--accent); stroke: var(--text); stroke-width: 2; }
+.tlc__node.is-cur text { fill: var(--text); font-weight: 600; }
+
+.tlc__speech { fill: var(--line); }
+.tlc__speech--narration.is-past { fill: var(--accent); opacity: .7; }
+.tlc__speech--dialogue { fill: var(--line-2); stroke: var(--line); }
+.tlc__speech--dialogue.is-past { fill: var(--transition); opacity: .7; }
+.tlc__music rect { fill: var(--line-2); }
+.tlc__music text { fill: var(--text); }
+
+.tlc__head { stroke: var(--danger); stroke-width: 1.5; fill: var(--danger); pointer-events: none; }
+
+.tlc__panel {
+  position: absolute; top: 44px; right: 16px; width: 300px; max-height: calc(100% - 130px);
+  overflow: auto; z-index: 2; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--panel); border-radius: 12px; box-shadow: 0 6px 24px rgb(0 0 0 / .14);
+  font-size: 13px; user-select: text;
+}
+.tlc__panel header { display: flex; flex-direction: column; gap: 1px; }
+.tlc__panel header b { font-family: var(--mono); }
+.tlc__panel header span { font-size: 11.5px; color: var(--faint); }
+.tlc__atmo { color: var(--muted); font-size: 12px; }
+.tlc__chars { margin: 0; padding-left: 16px; font-size: 12.5px; }
+.tlc__line em { font-style: normal; font-size: 11.5px; color: var(--faint); margin-left: 4px; }
+.tlc__narr { color: var(--accent); font-size: 12.5px; }
+.tlc__units { display: flex; flex-direction: column; gap: 3px; }
+.tlc__unit { border: none; background: var(--panel-2); border-radius: 6px; padding: 4px 7px;
+             text-align: left; cursor: pointer; font-size: 12px; color: var(--muted); }
+.tlc__unit:hover { color: var(--text); }
+.tlc__unit code { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+
+.shot.is-flash { outline: 2px solid var(--accent); outline-offset: 3px; transition: outline-color .3s; }

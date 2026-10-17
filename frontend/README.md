@@ -33,7 +33,7 @@ npm run preview
 npm test
 ```
 
-两个套件：
+五个套件：
 
 **`tests/flow.test.tsx`** — 在 happy-dom 里驱动整个 App 跑交互流程，用桩后端替代真实转换：
 建小说并按章节标记拆章 → 转换本章 → 放到后台 → 从侧栏点回来 → 无人附着时跑完并弹通知、自动采用 →
@@ -47,6 +47,15 @@ npm test
 （`lint_storyboard.py` + `check_fidelity.py`）复核。「改了不会破坏校验」这种话只有真跑校验器才算数——
 早期版本把 `appearance` 当自由键值表编辑，就是被真实校验器抓出来的 schema 违规。
 找不到 `../backend/.venv` 时自动跳过校验器那一段。
+
+**`tests/real-doc.test.tsx`** — 拿《药》的完整产物（133 个镜头）进编辑态跑一遍，守真实数据形状不白屏。
+
+**`tests/timeline.test.ts`** — 时间轴画布的布局计算（`timeline.ts`）与编辑操作层（`timelineOps.ts`）：
+可播时长口径、场景合并、角色泳道、旁白台词段、BGM 情绪段、播放头定位；操作层改时长（取 0.5s、夹 schema 范围）、
+改角色动作，锁死字段不受影响；《药》全章总时长与后端计价口径（`pipeline/quality.py`）逐一比对。
+
+**`tests/canvas.test.tsx`** — 画布界面：全部镜头上轴、播放头推进、逐镜前进与连线点亮、点镜头回分镜页定位、
+点原文句回溯源页、Esc 关闭。
 
 `dist/` 是纯静态产物，可挂任意静态服务器。此时前端与后端跨源，需二选一：
 
@@ -102,6 +111,14 @@ npm test
 | 原文溯源 | 逐句列出原文，标出被哪些镜头引用、是否念作旁白；**未被任何镜头覆盖的句子标红**，可一键筛选 |
 | JSON | 原始 IR，可下载 |
 
+**时间轴画布**（分镜页顶栏「时间轴画布」）— 无边框、全屏，拖动平移、滚轮缩放（以光标处为锚点）。
+横轴是视频时间，按**可播时长**累计（`max(duration_sec, 念完旁白台词所需)`，与渲染计价同一口径），
+念不完的镜头底部画一道红线标出超出部分。泳道：集 / 场景（连续同场合并）/ 镜头 / **每个角色一条**
+（出场节点标本镜动作，悬停看表情、位置、服装）/ 旁白台词 / BGM 情绪。播放（0.5× / 1× / 2×）或逐镜前进时，
+播放头经过的镜头顺序线与各角色的动作线逐段点亮，当前镜头高亮并在右侧浮层展开详情；
+点镜头回分镜页定位，点原文句回溯源页。第一版只读——画布上的改动将来表达成操作（`timelineOps.ts`：
+改时长、改角色动作），走 `edit.ts` 同一套不可变更新，锁死字段的规则自动沿用；镜头顺序不开放拖动（讲述不许回跳）。
+
 镜头卡左边框颜色即推导来源（绿＝原文明写、黄＝系统补充、紫＝过渡镜）。
 点镜头脚注的 `u0042` 之类溯源码，会跳到「原文溯源」页并高亮定位到那一句。
 
@@ -143,11 +160,13 @@ src/
   notify.ts       桌面通知（转换是分钟级任务，不该让人守着页面）
   resolve.ts      溯源索引：资产 ID → 名称、原文句 → 引用它的镜头、覆盖率/旁白占比统计
   edit.ts         分镜的不可变编辑 + 可编辑边界（锁死字段在此声明）
+  timeline.ts     时间轴画布的布局计算（时间 → 横坐标、泳道、连线、播放头），纯函数
+  timelineOps.ts  画布编辑操作层（setDuration / setCharacterAction），第一版只读不暴露手势
   api.ts          后端 HTTP 契约（小说 / 章节 / 版本 / 长期记忆 / 任务 / 渲染）
   useJob.ts       提交 + 轮询 + attach（重新接上后台仍在跑的任务）
   components/     NovelSidebar / NewNovelForm / NovelPage / NovelAssets / ChapterPage / ParamsForm
                   SelectOrCustom / JobPanel / StoryboardView / EpisodeView / ShotCard
-                  AssetsView / SourceView
+                  AssetsView / SourceView / TimelineCanvas
 ```
 
 `types.ts` 的可选性以 schema 的 `required` 为准：非必填一律 `?`，渲染层不假设其存在
