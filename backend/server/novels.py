@@ -469,6 +469,29 @@ def _recompute_numbering(user_id: str, novel: dict) -> None:
                                     "next_episode": ep + 1}
 
 
+def start_numbering(user_id: str, nid: str, cid: str) -> Optional[dict]:
+    """转换某章时的起始编号：排在它前面的各章采用版的最大编号 +1。
+
+    不能直接用 memory.numbering（那是全书末尾）：重转已采用的最后一章时，
+    它得从自己原来的起点编，而不是接在自己后面。前面没有采用章节则返回 None。
+    """
+    chapter = _load_chapter(user_id, nid, cid)
+    unit = para = ep = 0
+    found = False
+    for c in _chapters(user_id, nid):
+        if c["id"] == cid or c["order"] >= chapter["order"] or not c.get("adopted_version"):
+            continue
+        v = _read(_version_path(user_id, nid, c["id"], c["adopted_version"]))
+        if not v or not v.get("result"):
+            continue
+        found = True
+        u, p, e = _max_ids(v["result"])
+        unit, para, ep = max(unit, u), max(para, p), max(ep, e)
+    if not found:
+        return None
+    return {"next_unit": unit + 1, "next_para": para + 1, "next_episode": ep + 1}
+
+
 def adopt_version(user_id: str, nid: str, cid: str, vid: str) -> dict:
     """把某个版本设为本章采用版，写入长期记忆。
 

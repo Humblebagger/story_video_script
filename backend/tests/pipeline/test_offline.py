@@ -938,6 +938,31 @@ def main() -> int:
     assert "".join(u.text for u in frozen).replace("\n", "") == scope_text.replace("\n", "")
     assert build_frozen_units(scope_text, [scope_text]) == frozen, "同一输入必须产生相同范围"
     assert prompt_units(frozen, 1)[0] == {"id": "u0001", "text": "第一句。", "para": 1}
+    # 同一部小说的后续章节：句单元与段落编号接着前面章节往下排
+    later = build_frozen_units(scope_text, [scope_text], start_unit=133, start_para=72)
+    assert [(u.id, u.para) for u in later] == [("u0133", 72), ("u0134", 73)]
+    assert [u.text for u in later] == [u.text for u in frozen], "起始编号不影响切句"
+
+    # convert_text 带起始编号：冻结句单元与首批的【续批参数】都接着编
+    nb_chat = FakeChat(responses=["不是 JSON"])
+    try:
+        convert_text(scope_text, settings=Settings(max_retries=0), llm=nb_chat,
+                     batches=[scope_text], log=lambda m: None,
+                     start_numbering={"next_unit": 133, "next_para": 72, "next_episode": 5})
+        raise AssertionError("替身回的不是 JSON，应失败")
+    except ConversionError:
+        pass
+    sent = user_msg(nb_chat, 0)
+    assert '"id": "u0133"' in sent and '"para": 72' in sent, "冻结句单元要从起始编号起"
+    assert "起始句子编号：u0133；起始段落编号：72；起始分集编号：E05" in sent
+    plain = FakeChat(responses=["不是 JSON"])
+    try:
+        convert_text(scope_text, settings=Settings(max_retries=0), llm=plain,
+                     batches=[scope_text], log=lambda m: None)
+    except ConversionError:
+        pass
+    assert "【续批参数】\n无" in user_msg(plain, 0), "不接续时首批续批参数仍为「无」"
+    print("编号接续: 冻结句单元按起始编号切 / 首批续批参数接续前章 / 不接续时不变 ✓")
 
     evidence_doc = json.loads((ROOT / "tests" / "genre_stability" /
                                "output_romance.json").read_text(encoding="utf-8"))

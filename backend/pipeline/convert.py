@@ -74,7 +74,8 @@ def convert_text(text: str,
                  seed_assets: Optional[dict] = None,
                  manifest_out: Optional[dict] = None,
                  progress_out: Optional[dict] = None,
-                 on_partial: Optional[Callable[[dict, int, int], None]] = None) -> dict:
+                 on_partial: Optional[Callable[[dict, int, int], None]] = None,
+                 start_numbering: Optional[dict] = None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何 BaseChatModel（测试用 FakeChat）。
@@ -88,6 +89,8 @@ def convert_text(text: str,
     供界面在分钟级的转换里显示走到了哪一步、大约还要多久。
     on_partial(doc, 已完成批数, 总批数) 在每批（最后一批除外）通过后被调用，
     doc 是已完成批次的合并结果，供界面在整章跑完之前先审阅。
+    start_numbering = {"next_unit", "next_para", "next_episode"}：接续同一部小说
+    此前章节的编号（句单元、段落、分集），缺省从 1 起。
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
@@ -118,7 +121,10 @@ def convert_text(text: str,
     if settings.freeze_source_units and "".join(batches) != text:
         raise ConversionError("分批范围不确定：所有批次必须按顺序精确拼回归一化原文")
 
-    frozen = build_frozen_units(text, batches) if settings.freeze_source_units else []
+    start = {"next_unit": 1, "next_para": 1, "next_episode": 1, **(start_numbering or {})}
+    continuing = any(v > 1 for v in start.values())
+    frozen = (build_frozen_units(text, batches, start["next_unit"], start["next_para"])
+              if settings.freeze_source_units else [])
     frozen_manifest = manifest_units(frozen)
     run_manifest = build_manifest(raw_text, text, batches, frozen_manifest,
                                   params, settings)
@@ -157,6 +163,13 @@ def convert_text(text: str,
             cont_block = "无"
         else:
             assets_block = cont_block = "无"
+        if not outputs and continuing:
+            # 本书新章节的首批：编号接着前面章节往下排；meta 由制作参数确定性覆写，
+            # 不必沿用前章
+            cont_block = (f"起始句子编号：u{start['next_unit']:04d}；"
+                          f"起始段落编号：{start['next_para']}；"
+                          f"起始分集编号：E{start['next_episode']:02d}"
+                          "（接续本书此前章节）\n首批 meta：无（按制作参数生成）")
         expected_units = prompt_units(frozen, i) if settings.freeze_source_units else None
         user = build_user_message(params, batch, assets_block, cont_block,
                                   expected_units)

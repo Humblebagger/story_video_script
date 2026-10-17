@@ -156,7 +156,8 @@ class ConvertRequest(BaseModel):
 
 
 def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
-             seed: Optional[dict], persist, after_success) -> None:
+             seed: Optional[dict], persist, after_success,
+             numbering: Optional[dict] = None) -> None:
     """跑一次转换并把状态/产物写回。persist(status, **fields) 决定落到哪
     （旧的转换记录，或小说章节的某个版本）；after_success(job, log) 做成功后的
     长期记忆动作（旧路径：资产入库；新路径：首个成功版本自动采用）。"""
@@ -184,7 +185,8 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
                                      log=log, warnings_out=warnings,
                                      seed_assets=seed, manifest_out=manifest,
                                      progress_out=job["progress"],
-                                     on_partial=lambda d, k, n: _on_partial(job, d, k, n))
+                                     on_partial=lambda d, k, n: _on_partial(job, d, k, n),
+                                     start_numbering=numbering)
         job["manifest"] = manifest
         job["verification"] = manifest.get("verification")
         job["partial"] = None    # 整章已出，预览作废；失败时则保留，已通过的批次照样能看
@@ -525,6 +527,10 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
         n = sum(len(v) for v in seed.values())
         job["log"].append(f"沿用《{params.work_title}》的资产库共 {n} 张卡"
                           "（模型须复用其 ID 与描述）")
+    numbering = novels.start_numbering(user_id, nid, cid)
+    if numbering:
+        job["log"].append(f"编号接续本书此前章节：句子从 u{numbering['next_unit']:04d}、"
+                          f"分集从 E{numbering['next_episode']:02d} 起")
 
     def after_success(job, log):
         chapter = novels.get_chapter(user_id, nid, cid)
@@ -538,7 +544,7 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
     _execute(job, text, params, strict, seed,
              lambda status, **f: novels.update_version_state(
                  user_id, nid, cid, job["id"], status, **f),
-             after_success)
+             after_success, numbering)
 
 
 @app.post("/novels/{nid}/chapters/{cid}/versions")

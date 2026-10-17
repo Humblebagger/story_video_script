@@ -178,8 +178,9 @@ def main() -> int:
 
     def fake_convert(text, params, settings=None, log=print, warnings_out=None,
                      seed_assets=None, manifest_out=None, progress_out=None,
-                     on_partial=None):
-        calls.append({"text": text, "params": params, "seed": seed_assets})
+                     on_partial=None, start_numbering=None):
+        calls.append({"text": text, "params": params, "seed": seed_assets,
+                      "numbering": start_numbering})
         log("（假转换）")
         if manifest_out is not None:
             manifest_out.update({"verification": {"status": "passed"}})
@@ -241,6 +242,24 @@ def main() -> int:
         assert r["status"] == "succeeded"
         app_mod.versions_adopt(anid, ch["id"], vb, A)
 
+        assert calls[0]["numbering"] is None, "第一章前面没有采用章节，从 1 起编"
+        # 第二章：接着第一章采用版的编号往下排；重转第一章不接在它自己后面
+        ch2 = app_mod.chapters_create(anid, app_mod.ChapterBody(title="第二章", text="她走了。"), A)
+        r2 = app_mod.versions_create(anid, ch2["id"], app_mod.VersionRequest(), A)
+        for _ in range(200):
+            if app_mod._jobs[r2["job_id"]]["status"] not in ("queued", "running"):
+                break
+            time.sleep(0.02)
+        b1u = batch_doc(1)["source"]["units"]
+        assert calls[-1]["numbering"] == {
+            "next_unit": max(int(u["id"][1:]) for u in b1u) + 1,
+            "next_para": max(u["para"] for u in b1u) + 1,
+            "next_episode": max(int(e["id"][1:]) for e in batch_doc(1)["episodes"]) + 1}
+        assert any("编号接续本书此前章节" in line
+                   for line in app_mod._jobs[r2["job_id"]]["log"])
+        assert novels.start_numbering(A["id"], anid, ch["id"]) is None
+        app_mod.chapters_delete(anid, ch2["id"], A)
+
         plan = app_mod.render_plan(app_mod.RenderPlanRequest(
             result=stored["result"], run_id=vb, include_markdown=False), A)
         assert plan["plan"]["clips"], "渲染任务包要能按版本 id 取冻结证据"
@@ -254,7 +273,7 @@ def main() -> int:
         assert e.status_code == 404, "别人的小说看不到"
     finally:
         app_mod.convert_text = real_convert
-    print("接口: 转换落成版本 / 首个成功版本自动采用 / 覆写优先 / 复验 / 渲染按版本取证据 / 用户隔离 ✓")
+    print("接口: 转换落成版本 / 首个成功版本自动采用 / 覆写优先 / 编号接续前章 / 复验 / 渲染按版本取证据 / 用户隔离 ✓")
 
     print("\nALL PASS")
     return 0

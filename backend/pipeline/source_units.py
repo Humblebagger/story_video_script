@@ -69,14 +69,19 @@ def _sentence_ranges(line: str) -> Iterable[tuple[int, int]]:
         yield start, len(line)
 
 
-def build_frozen_units(text: str, batches: List[str]) -> List[FrozenUnit]:
-    """Build immutable units for batches whose exact concatenation is text."""
+def build_frozen_units(text: str, batches: List[str], start_unit: int = 1,
+                       start_para: int = 1) -> List[FrozenUnit]:
+    """Build immutable units for batches whose exact concatenation is text.
+
+    start_unit / start_para：同一部小说的后续章节接着前面章节的编号往下编，
+    全书的句单元 ID 才不重复。
+    """
     if "".join(batches) != text:
         raise ValueError("explicit batches must concatenate exactly to normalized source text")
 
     units: list[FrozenUnit] = []
     text_offset = 0
-    para = 0
+    para = start_para - 1
     for batch_index, batch in enumerate(batches, 1):
         for match in re.finditer(r"[^\r\n]+", batch):
             raw_line = match.group(0)
@@ -97,7 +102,7 @@ def build_frozen_units(text: str, batches: List[str]) -> List[FrozenUnit]:
                 start = line_start + local_start + leading
                 end = line_start + local_end - trailing
                 units.append(FrozenUnit(
-                    id=f"u{len(units) + 1:04d}",
+                    id=f"u{start_unit + len(units):04d}",
                     text=unit_text,
                     para=para,
                     start=start,
