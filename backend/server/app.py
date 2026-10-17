@@ -24,6 +24,18 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   POST   /library/{work}/import        → 把一次转换的 assets 并入库
   DELETE /library/{work}               → 删除整部作品的资产库
 
+小说级会话（总会话 = 小说，长期记忆；二级会话 = 章节；每次转换 = 一个版本，短期记忆）。
+首次访问时自动把上面的旧记录与资产库迁到这套结构下（旧文件保留）：
+  GET/POST            /novels                                   小说列表 / 新建
+  GET/PATCH/DELETE    /novels/{nid}                             详情（含章节摘要与长期记忆）/ 改 / 删
+  POST                /novels/{nid}/chapters                    新建章节
+  GET/PATCH/DELETE    /novels/{nid}/chapters/{cid}              详情（含版本列表）/ 改 / 删
+  POST                /novels/{nid}/chapters/{cid}/versions     转换本章 → {"job_id"}（进度照旧走 /jobs）
+  GET/PUT/DELETE      /novels/{nid}/chapters/{cid}/versions/{vid}        取 / 人工编辑并复验 / 删
+  POST                /novels/{nid}/chapters/{cid}/versions/{vid}/adopt  采用 → 写入长期记忆
+  GET                 /novels/{nid}/memory                      长期记忆
+  PUT/DELETE          /novels/{nid}/memory/assets/{kind}/{id}   资产卡增改删
+
 渲染任务包（下游消费入口，只读、不落盘、不改 IR）：
   POST /render/plan        → 分镜 IR → 机器可读渲染任务清单 + 人读版生产包 + 费用估算
 
@@ -51,7 +63,7 @@ from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
 from pipeline import verification
 from render import plan as render_plan_mod
-from server import auth, library, store
+from server import auth, library, novels, store
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -143,36 +155,32 @@ class ConvertRequest(BaseModel):
     import_assets: bool = True
 
 
-def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
+def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
+             seed: Optional[dict], persist, after_success) -> None:
+    """跑一次转换并把状态/产物写回。persist(status, **fields) 决定落到哪
+    （旧的转换记录，或小说章节的某个版本）；after_success(job, log) 做成功后的
+    长期记忆动作（旧路径：资产入库；新路径：首个成功版本自动采用）。"""
     job["status"] = "running"
-    try:
-        store.update_state(user_id, job["id"], "running")
-    except OSError:
-        pass
+
+    def save(status, **fields):
+        try:
+            persist(status, **fields)
+            return True
+        except OSError as e:
+            log(f"警告：记录落盘失败（产物仍可从本次响应取走）：{e!r}")
+            return False
 
     def log(msg):
         job["log"].append(str(msg))
 
-    params = ConvertParams(
-        work_title=req.work_title, chapter=req.chapter,
-        style_prefix=req.style_prefix, art_style=req.art_style,
-        color_tone=req.color_tone, aspect_ratio=req.aspect_ratio,
-        target_platform=req.target_platform, narration_mode=req.narration_mode,
-        tts_voice=req.tts_voice)
+    save("running")
     settings = load_settings()
-    settings.strict = settings.strict or req.strict
-
-    seed = req.seed_assets
-    if seed is None and req.use_library:
-        seed = library.seed_for(user_id, req.work_title)
-        if seed:
-            n = sum(len(v) for v in seed.values())
-            log(f"沿用资产库《{req.work_title}》共 {n} 张卡（模型须复用其 ID 与描述）")
+    settings.strict = settings.strict or strict
 
     warnings: list = []
     manifest: dict = {}
     try:
-        job["result"] = convert_text(req.text, params, settings=settings,
+        job["result"] = convert_text(text, params, settings=settings,
                                      log=log, warnings_out=warnings,
                                      seed_assets=seed, manifest_out=manifest,
                                      progress_out=job["progress"],
@@ -186,22 +194,13 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
         else:
             job["status"] = "succeeded"
         # 转换慢且花钱，产物必须落盘——内存任务表重启即清空
+        job["persisted"] = save(
+            job["status"], result=job["result"], quality_report=job["quality_report"],
+            manifest=manifest, verification=job["verification"], error=None)
         try:
-            store.update_state(
-                user_id, job["id"], job["status"], result=job["result"],
-                quality_report=job["quality_report"], manifest=manifest,
-                verification=job["verification"], error=None)
-            job["persisted"] = True
-        except OSError as e:
-            log(f"警告：历史记录落盘失败（产物仍可从本次响应取走）：{e!r}")
-        if req.import_assets:
-            try:
-                r = library.import_assets(user_id, req.work_title,
-                                          job["result"].get("assets") or {})
-                log(f"资产入库《{req.work_title}》：新增 {r['added']} 张，"
-                    f"合并 {r['merged']} 张（可在资产库页管理）")
-            except (OSError, ValueError) as e:
-                log(f"警告：资产入库失败：{e!r}")
+            after_success(job, log)
+        except (OSError, ValueError, LookupError) as e:
+            log(f"警告：写入长期记忆失败：{e!r}")
     except ConversionError as e:
         job["status"] = "failed"
         job["error"] = f"{e}\n{e.report}"
@@ -209,22 +208,42 @@ def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
         if manifest:
             manifest["state"] = "failed"
         job["verification"] = manifest.get("verification")
-        try:
-            store.update_state(user_id, job["id"], "failed", error=job["error"],
-                               manifest=manifest, verification=job["verification"])
-        except OSError:
-            pass
+        save("failed", error=job["error"], manifest=manifest,
+             verification=job["verification"])
     except Exception as e:  # LLM/网络等运行期错误
         job["status"] = "failed"
         job["error"] = repr(e)
         job["manifest"] = manifest
         if manifest:
             manifest["state"] = "failed"
-        try:
-            store.update_state(user_id, job["id"], "failed", error=job["error"],
-                               manifest=manifest)
-        except OSError:
-            pass
+        save("failed", error=job["error"], manifest=manifest)
+
+
+def _run_job(job: dict, req: ConvertRequest, user_id: str) -> None:
+    """旧接口 /convert：扁平转换记录 + 按作品名的资产库。"""
+    params = ConvertParams(
+        work_title=req.work_title, chapter=req.chapter,
+        style_prefix=req.style_prefix, art_style=req.art_style,
+        color_tone=req.color_tone, aspect_ratio=req.aspect_ratio,
+        target_platform=req.target_platform, narration_mode=req.narration_mode,
+        tts_voice=req.tts_voice)
+    seed = req.seed_assets
+    if seed is None and req.use_library:
+        seed = library.seed_for(user_id, req.work_title)
+        if seed:
+            n = sum(len(v) for v in seed.values())
+            job["log"].append(f"沿用资产库《{req.work_title}》共 {n} 张卡（模型须复用其 ID 与描述）")
+
+    def after_success(job, log):
+        if req.import_assets:
+            r = library.import_assets(user_id, req.work_title,
+                                      job["result"].get("assets") or {})
+            log(f"资产入库《{req.work_title}》：新增 {r['added']} 张，"
+                f"合并 {r['merged']} 张（可在资产库页管理）")
+
+    _execute(job, req.text, params, req.strict, seed,
+             lambda status, **f: store.update_state(user_id, job["id"], status, **f),
+             after_success)
 
 
 @app.post("/convert")
@@ -332,6 +351,30 @@ def history_get(run_id: str, user: dict = Depends(current_user)):
     return record
 
 
+def _frozen_of(record: dict) -> Optional[list]:
+    """一条记录的冻结证据：清单里的冻结句单元；旧记录没有清单，就用它当时产物里的句单元。"""
+    frozen = ((record.get("manifest") or {}).get("scope") or {}).get("units")
+    if not frozen:
+        frozen = [{k: unit.get(k) for k in ("id", "text", "para")}
+                  for unit in ((record.get("result") or {}).get("source") or {})
+                  .get("units") or []]
+    return frozen or None
+
+
+def _reverify(existing: dict, result: dict):
+    """人工编辑后的整份复验。不合格标 draft_invalid 但照样保存（不丢人的工作）。"""
+    doc = copy.deepcopy(result)
+    frozen = _frozen_of(existing)
+    probe = verification.verify_document(doc, frozen_units=frozen)
+    verification.recompute_coverage_field(doc, probe.coverage)
+    report = verification.verify_document(doc, frozen_units=frozen)
+    previous_status = existing.get("status")
+    status = ((previous_status if previous_status in
+               ("succeeded", "completed_with_warnings") else "succeeded")
+              if report.ok else "draft_invalid")
+    return doc, report, status, frozen
+
+
 @app.put("/history/{run_id}")
 def history_update(run_id: str, result: dict = Body(..., embed=False),
                    user: dict = Depends(current_user)):
@@ -346,19 +389,7 @@ def history_update(run_id: str, result: dict = Body(..., embed=False),
     if existing is None:
         raise HTTPException(404, "历史记录不存在")
 
-    doc = copy.deepcopy(result)
-    frozen = ((existing.get("manifest") or {}).get("scope") or {}).get("units")
-    if not frozen:
-        frozen = [{k: unit.get(k) for k in ("id", "text", "para")}
-                  for unit in ((existing.get("result") or {}).get("source") or {})
-                  .get("units") or []]
-    probe = verification.verify_document(doc, frozen_units=frozen or None)
-    verification.recompute_coverage_field(doc, probe.coverage)
-    report = verification.verify_document(doc, frozen_units=frozen or None)
-    previous_status = existing.get("status")
-    status = ((previous_status if previous_status in
-               ("succeeded", "completed_with_warnings") else "succeeded")
-              if report.ok else "draft_invalid")
+    doc, report, status, frozen = _reverify(existing, result)
     record = store.update_result(user["id"], run_id, doc,
                                  verification=report.to_dict(), status=status,
                                  frozen_units=frozen or None)
@@ -375,6 +406,216 @@ def history_delete(run_id: str, user: dict = Depends(current_user)):
     if not ok:
         raise HTTPException(404, "历史记录不存在")
     return {"deleted": run_id}
+
+
+# ---------- 小说级会话：小说 → 章节 → 版本 ----------
+
+_migrated_users: set = set()
+
+
+def novel_user(user: dict = Depends(current_user)) -> dict:
+    """小说接口的守门人：在 current_user 之上，首次访问时把旧数据迁到小说结构下。"""
+    if user["id"] not in _migrated_users:
+        try:
+            r = novels.migrate_legacy(user["id"])
+            if r.get("migrated") and (r.get("novels") or r.get("chapters")):
+                print(f"[novels] 旧数据已迁移：{r}", flush=True)
+        except OSError as e:
+            print(f"[novels] 旧数据迁移失败（旧接口仍可用）：{e!r}", flush=True)
+        _migrated_users.add(user["id"])
+    return user
+
+
+def _novel_call(fn, *args, **kwargs):
+    """把存储层的业务异常翻成 HTTP 状态码。"""
+    try:
+        return fn(*args, **kwargs)
+    except novels.NotFound as e:
+        raise HTTPException(404, str(e))
+    except novels.NovelError as e:
+        raise HTTPException(422, str(e))
+
+
+class NovelBody(BaseModel):
+    title: Optional[str] = None
+    # 小说级默认制作参数（ConvertParams 的字段，作品名/章节名除外）
+    params: Optional[dict] = None
+
+
+class ChapterBody(BaseModel):
+    title: Optional[str] = None
+    text: Optional[str] = None
+    order: Optional[int] = None
+
+
+class VersionRequest(BaseModel):
+    # 本次转换对小说默认参数的覆写（只存在本版本里）
+    overrides: dict = Field(default_factory=dict)
+    strict: bool = False
+
+
+_PARAM_FIELDS = set(ConvertParams.__dataclass_fields__) - {"work_title", "chapter"}
+
+
+def _clean_params(params: Optional[dict]) -> dict:
+    unknown = set(params or {}) - _PARAM_FIELDS
+    if unknown:
+        raise HTTPException(422, f"未知的制作参数：{sorted(unknown)}")
+    return dict(params or {})
+
+
+@app.get("/novels")
+def novels_list(user: dict = Depends(novel_user)):
+    return {"novels": novels.list_novels(user["id"])}
+
+
+@app.post("/novels")
+def novels_create(body: NovelBody, user: dict = Depends(novel_user)):
+    return _novel_call(novels.create_novel, user["id"], body.title or "",
+                       _clean_params(body.params))
+
+
+@app.get("/novels/{nid}")
+def novels_get(nid: str, user: dict = Depends(novel_user)):
+    return _novel_call(novels.get_novel, user["id"], nid)
+
+
+@app.patch("/novels/{nid}")
+def novels_update(nid: str, body: NovelBody, user: dict = Depends(novel_user)):
+    params = _clean_params(body.params) if body.params is not None else None
+    return _novel_call(novels.update_novel, user["id"], nid, title=body.title,
+                       params=params)
+
+
+@app.delete("/novels/{nid}")
+def novels_delete(nid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_novel, user["id"], nid)
+    return {"deleted": nid}
+
+
+@app.post("/novels/{nid}/chapters")
+def chapters_create(nid: str, body: ChapterBody, user: dict = Depends(novel_user)):
+    return _novel_call(novels.create_chapter, user["id"], nid, body.title or "",
+                       body.text or "", body.order)
+
+
+@app.get("/novels/{nid}/chapters/{cid}")
+def chapters_get(nid: str, cid: str, user: dict = Depends(novel_user)):
+    return _novel_call(novels.get_chapter, user["id"], nid, cid)
+
+
+@app.patch("/novels/{nid}/chapters/{cid}")
+def chapters_update(nid: str, cid: str, body: ChapterBody,
+                    user: dict = Depends(novel_user)):
+    return _novel_call(novels.update_chapter, user["id"], nid, cid,
+                       title=body.title, text=body.text, order=body.order)
+
+
+@app.delete("/novels/{nid}/chapters/{cid}")
+def chapters_delete(nid: str, cid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_chapter, user["id"], nid, cid)
+    return {"deleted": cid}
+
+
+def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
+                     params: ConvertParams, strict: bool) -> None:
+    """新接口：转换某章，产物落成该章的一个版本；本章还没有采用版时自动采用。"""
+    seed = novels.seed_assets(user_id, nid)
+    if seed:
+        n = sum(len(v) for v in seed.values())
+        job["log"].append(f"沿用《{params.work_title}》的资产库共 {n} 张卡"
+                          "（模型须复用其 ID 与描述）")
+
+    def after_success(job, log):
+        chapter = novels.get_chapter(user_id, nid, cid)
+        if chapter.get("adopted_version"):
+            log("本章已有采用版，这一版仅存档；要用它请在版本列表里点「采用」")
+            return
+        r = novels.adopt_version(user_id, nid, cid, job["id"])
+        log(f"已自动采用为本章首个成功版本：资产库新增 {r['added']} 张、"
+            f"合并 {r['merged']} 张")
+
+    _execute(job, text, params, strict, seed,
+             lambda status, **f: novels.update_version_state(
+                 user_id, nid, cid, job["id"], status, **f),
+             after_success)
+
+
+@app.post("/novels/{nid}/chapters/{cid}/versions")
+def versions_create(nid: str, cid: str, req: VersionRequest,
+                    user: dict = Depends(novel_user)):
+    """转换本章 → 新版本。返回 job_id（即版本 id），进度/分批预览照旧走 /jobs。"""
+    novel = _novel_call(novels.get_novel, user["id"], nid)
+    chapter = _novel_call(novels.get_chapter, user["id"], nid, cid)
+    text = chapter.get("text") or ""
+    if not text.strip():
+        raise HTTPException(422, "本章还没有原文")
+    merged = {**_clean_params(novel.get("params")), **_clean_params(req.overrides)}
+    params = ConvertParams(**{**merged, "work_title": novel["title"],
+                              "chapter": chapter["title"]})
+    job_id = uuid.uuid4().hex[:12]
+    _novel_call(novels.create_version, user["id"], nid, cid, job_id,
+                {**merged, "strict": req.strict}, text)
+    job = {"id": job_id, "user_id": user["id"], "status": "queued", "log": [],
+           "result": None, "quality_report": None, "error": None, "persisted": True,
+           "created_at": store.now_iso(), "work_title": novel["title"],
+           "chapter": chapter["title"], "chars": len(text), "progress": {},
+           "partial": None, "novel_id": nid, "chapter_id": cid, "version_id": job_id}
+    with _lock:
+        _jobs[job_id] = job
+    _executor.submit(_run_version_job, job, user["id"], nid, cid, text, params,
+                     req.strict)
+    return {"job_id": job_id, "version_id": job_id, "status_url": f"/jobs/{job_id}"}
+
+
+@app.get("/novels/{nid}/chapters/{cid}/versions/{vid}")
+def versions_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    return _novel_call(novels.get_version, user["id"], nid, cid, vid)
+
+
+@app.put("/novels/{nid}/chapters/{cid}/versions/{vid}")
+def versions_update(nid: str, cid: str, vid: str,
+                    result: dict = Body(..., embed=False),
+                    user: dict = Depends(novel_user)):
+    """人工编辑 + 整份复验。采用版被改了，长期记忆随之按改后的产物更新。"""
+    existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
+    doc, report, status, frozen = _reverify(existing, result)
+    v = _novel_call(novels.update_version_result, user["id"], nid, cid, vid, doc,
+                    verification=report.to_dict(), status=status, frozen_units=frozen)
+    return {"id": vid, "edited_at": v["edited_at"], "status": status,
+            "verification": report.to_dict()}
+
+
+@app.delete("/novels/{nid}/chapters/{cid}/versions/{vid}")
+def versions_delete(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_version, user["id"], nid, cid, vid)
+    return {"deleted": vid}
+
+
+@app.post("/novels/{nid}/chapters/{cid}/versions/{vid}/adopt")
+def versions_adopt(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    return _novel_call(novels.adopt_version, user["id"], nid, cid, vid)
+
+
+@app.get("/novels/{nid}/memory")
+def memory_get(nid: str, user: dict = Depends(novel_user)):
+    return _novel_call(novels.get_memory, user["id"], nid)
+
+
+@app.put("/novels/{nid}/memory/assets/{kind}/{card_id}")
+def memory_asset_upsert(nid: str, kind: str, card_id: str,
+                        card: dict = Body(..., embed=False),
+                        user: dict = Depends(novel_user)):
+    if card.get("id") != card_id:
+        raise HTTPException(422, f"卡片 id 与路径不一致：{card.get('id')!r} != {card_id!r}")
+    return _novel_call(novels.upsert_asset, user["id"], nid, kind, card)
+
+
+@app.delete("/novels/{nid}/memory/assets/{kind}/{card_id}")
+def memory_asset_delete(nid: str, kind: str, card_id: str,
+                        user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_asset, user["id"], nid, kind, card_id)
+    return {"deleted": card_id}
 
 
 # ---------- 渲染任务包 ----------
@@ -402,16 +643,13 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
     frozen = None
     if req.run_id:
         try:
-            record = store.get(user["id"], req.run_id)
+            record = (store.get(user["id"], req.run_id)
+                      or novels.find_version(user["id"], req.run_id))
         except ValueError as e:
             raise HTTPException(400, str(e))
         if record is None:
             raise HTTPException(404, "历史记录不存在")
-        frozen = ((record.get("manifest") or {}).get("scope") or {}).get("units")
-        if not frozen:
-            frozen = [{k: unit.get(k) for k in ("id", "text", "para")}
-                      for unit in ((record.get("result") or {}).get("source") or {})
-                      .get("units") or []]
+        frozen = _frozen_of(record)
     probe = verification.verify_document(doc, frozen_units=frozen or None)
     verification.recompute_coverage_field(doc, probe.coverage)
     report = verification.verify_document(doc, frozen_units=frozen or None)

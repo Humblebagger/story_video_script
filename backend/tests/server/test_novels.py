@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""小说级会话（小说 → 章节 → 版本）的测试。用法: python3 tests/server/test_novels.py
+
+全程使用临时数据目录，不碰真实 data/。
+"""
+import copy
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
+_TMP = tempfile.TemporaryDirectory()
+os.environ["STORYBOARD_DATA_DIR"] = _TMP.name     # 必须在导入 server.* 之前
+
+from server import library, novels, store  # noqa: E402
+
+YAO = ROOT / "tests" / "real_text_yao"
+U = "a" * 12          # 用户 ID 须为 12 位十六进制（auth.user_dir 的规则）
+
+
+def must_raise(exc, fn, *a, **kw):
+    try:
+        fn(*a, **kw)
+    except exc as e:
+        return e
+    raise AssertionError(f"应抛 {exc.__name__}")
+
+
+def batch_doc(n: int) -> dict:
+    return json.loads((YAO / f"output_batch{n}.json").read_text(encoding="utf-8"))
+
+
+def succeed(nid, cid, vid, doc, status="succeeded"):
+    novels.update_version_state(U, nid, cid, vid, status, result=doc)
+
+
+def main() -> int:
+    # 1. 小说：建、重名拦截、列表、改
+    n = novels.create_novel(U, "药", {"narration_mode": "selective"})
+    nid = n["id"]
+    must_raise(novels.NovelError, novels.create_novel, U, " 药 ")
+    must_raise(novels.NovelError, novels.create_novel, U, "")
+    assert [x["title"] for x in novels.list_novels(U)] == ["药"]
+    novels.update_novel(U, nid, params={"narration_mode": "original_text"})
+    assert novels.get_novel(U, nid)["params"] == {"narration_mode": "original_text"}
+    assert novels.get_novel(U, nid)["memory"]["numbering"] == {
+        "next_unit": 1, "next_para": 1, "next_episode": 1}
+    print("小说: 新建 / 同名拦截 / 列表 / 改参数 ✓")
+
+    # 2. 章节：顺序自动续、采用前原文可改
+    c1 = novels.create_chapter(U, nid, "一", "原文一")
+    c2 = novels.create_chapter(U, nid, "二", "原文二")
+    assert (c1["order"], c2["order"]) == (1, 2)
+    novels.update_chapter(U, nid, c1["id"], text="原文一（改）")
+    assert novels.get_chapter(U, nid, c1["id"])["text"] == "原文一（改）"
+    print("章节: 顺序自动续 / 采用前原文可改 ✓")
+
+    # 3. 版本与采用：资产进长期记忆、编号接续、原文锁定
+    v1_doc = batch_doc(1)
+    extra = copy.deepcopy(v1_doc["assets"]["characters"][0])
+    extra.update({"id": "C98", "name": "只在 v1 出现的人"})
+    edited = copy.deepcopy(extra)
+    edited.update({"id": "C97", "name": "v1 带来、后被人改过"})
+    v1_doc["assets"]["characters"] += [extra, edited]
+    novels.create_version(U, nid, c1["id"], "v1", {}, "原文一（改）")
+    must_raise(novels.NovelError, novels.adopt_version, U, nid, c1["id"], "v1")  # 还在 queued
+    succeed(nid, c1["id"], "v1", v1_doc)
+    r = novels.adopt_version(U, nid, c1["id"], "v1")
+    assert r["added"] == len(v1_doc["assets"]["characters"]) + sum(
+        len(v1_doc["assets"].get(k) or []) for k in ("locations", "props", "creatures"))
+    mem = novels.get_memory(U, nid)
+    assert "asset_origin" not in mem, "来源标记是内部账，不外露"
+    assert {"C97", "C98"} <= {c["id"] for c in mem["assets"]["characters"]}
+    units = v1_doc["source"]["units"]
+    assert mem["numbering"]["next_unit"] == max(int(u["id"][1:]) for u in units) + 1
+    assert mem["numbering"]["next_episode"] == max(
+        int(e["id"][1:]) for e in v1_doc["episodes"]) + 1
+    e = must_raise(novels.NovelError, novels.update_chapter, U, nid, c1["id"], text="再改")
+    assert "锁定" in str(e)
+    assert novels.seed_assets(U, nid)["characters"], "长期记忆的资产就是下一次转换的种子"
+    print("采用: 资产进长期记忆 / 编号接续 = 最大编号 +1 / 原文锁定 ✓")
+
+    # 4. 换采用版：撤回旧版新建且没被人改过的卡；人改过的留下
+    novels.upsert_asset(U, nid, "characters", {**edited, "name": "人工改名"})
+    novels.create_version(U, nid, c1["id"], "v2", {}, "原文一（改）")
+    succeed(nid, c1["id"], "v2", batch_doc(1))
+    r = novels.adopt_version(U, nid, c1["id"], "v2")
+    ids = {c["id"] for c in novels.get_memory(U, nid)["assets"]["characters"]}
+    assert "C98" not in ids, "v1 独有、没人改过的卡应随换采用版撤回"
+    assert "C97" in ids, "人改过的卡不能被撤回"
+    assert r["retracted"] >= 1
+    assert novels.get_chapter(U, nid, c1["id"])["adopted_version"] == "v2"
+    must_raise(novels.NovelError, novels.delete_version, U, nid, c1["id"], "v2")
+    novels.delete_version(U, nid, c1["id"], "v1")
+    print("换采用版: 撤回旧版独有卡 / 人工改过的保留 / 采用版不可删 ✓")
+
+    # 5. 后面的章节接着编号转过，前面的章节就不能再换采用版
+    novels.create_version(U, nid, c2["id"], "w1", {}, "原文二")
+    succeed(nid, c2["id"], "w1", batch_doc(2))
+    novels.adopt_version(U, nid, c2["id"], "w1")
+    novels.create_version(U, nid, c1["id"], "v3", {}, "原文一（改）")
+    succeed(nid, c1["id"], "v3", batch_doc(1))
+    e = must_raise(novels.NovelError, novels.adopt_version, U, nid, c1["id"], "v3")
+    assert "二" in str(e), "要点名是哪一章挡着"
+    b2_units = batch_doc(2)["source"]["units"]
+    assert novels.get_memory(U, nid)["numbering"]["next_unit"] == \
+        max(int(u["id"][1:]) for u in b2_units) + 1
+    print("采用限制: 后续章节已采用时，前面的章节不能换采用版 ✓")
+
+    # 6. 人工编辑：改坏了不能采用；改采用版会刷新长期记忆
+    novels.create_version(U, nid, c2["id"], "w2", {}, "原文二")
+    succeed(nid, c2["id"], "w2", batch_doc(2))
+    novels.update_version_result(U, nid, c2["id"], "w2", batch_doc(2),
+                                 verification={"status": "failed"}, status="draft_invalid")
+    must_raise(novels.NovelError, novels.adopt_version, U, nid, c2["id"], "w2")
+    trimmed = batch_doc(2)
+    trimmed["episodes"] = trimmed["episodes"][:1]
+    novels.update_version_result(U, nid, c2["id"], "w1", trimmed,
+                                 verification={"status": "passed"}, status="succeeded")
+    assert novels.get_memory(U, nid)["numbering"]["next_episode"] == \
+        int(trimmed["episodes"][0]["id"][1:]) + 1, "采用版改了，编号接续按改后的算"
+    print("编辑: 改坏的版本不能采用 / 改采用版刷新长期记忆 ✓")
+
+    # 7. 删章节：撤回它的资产、编号回退
+    novels.delete_chapter(U, nid, c2["id"])
+    assert novels.get_memory(U, nid)["numbering"]["next_unit"] == \
+        max(int(u["id"][1:]) for u in batch_doc(1)["source"]["units"]) + 1
+    must_raise(novels.NotFound, novels.get_chapter, U, nid, c2["id"])
+    must_raise(novels.NovelError, novels.get_chapter, U, nid, "../x")
+    print("删章节: 编号回退 / 非法 ID 拦截 ✓")
+
+    # 8. 旧数据迁移：按作品名归小说、按章节名归章节，每条记录成一个版本
+    L = "b" * 12
+    b1, b2 = batch_doc(1), batch_doc(2)
+    # 迁移按产物里记的章节名归章（与旧历史列表同口径），参数里的只作后备
+    b1["source"]["chapter"], b2["source"]["chapter"] = "上", "下"
+    store.save(L, "r1", "succeeded", {"work_title": "药", "chapter": "上"}, b1)
+    time.sleep(1.1)   # created_at 精确到秒，拉开先后
+    store.save(L, "r2", "draft_invalid", {"work_title": "药", "chapter": "上"}, b1)
+    store.save(L, "r3", "completed_with_warnings",
+               {"work_title": "药", "chapter": "下", "narration_mode": "selective"}, b2)
+    library.create_work(L, "只有资产库的作品")
+    library.upsert_card(L, "只有资产库的作品", "characters",
+                        {"id": "C01", "name": "甲"})
+    library.import_assets(L, "药", {"characters": [{"id": "C55", "name": "库里人工建的"}]})
+    r = novels.migrate_legacy(L)
+    assert r["migrated"] and r["novels"] == 2 and r["chapters"] == 2 and r["versions"] == 3, r
+    by_title = {x["title"]: x for x in novels.list_novels(L)}
+    yao = novels.get_novel(L, by_title["药"]["id"])
+    chs = {c["title"]: c for c in yao["chapters"]}
+    assert chs["上"]["adopted_version"] == "r1", "draft_invalid 不能当采用版"
+    assert chs["下"]["adopted_version"] == "r3"
+    assert all(c["legacy_numbering"] for c in yao["chapters"])
+    up = novels.get_chapter(L, yao["id"], chs["上"]["id"])
+    assert up["text"].replace("\n", "") == "".join(u["text"] for u in b1["source"]["units"]), \
+        "旧记录没存原文，要用句单元拼回"
+    assert yao["params"] == {"narration_mode": "selective"}
+    assert "C55" in {c["id"] for c in yao["memory"]["assets"]["characters"]}, \
+        "旧资产库是人维护过的，要整体迁进长期记忆"
+    only = novels.get_novel(L, by_title["只有资产库的作品"]["id"])
+    assert only["chapters"] == [] and only["memory"]["assets"]["characters"][0]["id"] == "C01"
+    assert novels.migrate_legacy(L) == {"migrated": False}, "迁移应幂等"
+    assert store.get(L, "r1") is not None and library.get_work(L, "药"), "旧文件原样保留"
+    # 迁移来的章节编号本不接续：前面的章节照样能换采用版
+    novels.adopt_version(L, yao["id"], chs["上"]["id"], "r1")
+    print("迁移: 按作品/章节归档 / 采用最近成功版 / 原文用句单元拼回 / 资产库整体迁入 / 幂等 ✓")
+
+    # 9. 接口：转换落成版本、首个成功版本自动采用、复验、渲染按版本 id 取证据
+    import server.app as app_mod
+    from fastapi import HTTPException
+
+    calls = []
+
+    def fake_convert(text, params, settings=None, log=print, warnings_out=None,
+                     seed_assets=None, manifest_out=None, progress_out=None,
+                     on_partial=None):
+        calls.append({"text": text, "params": params, "seed": seed_assets})
+        log("（假转换）")
+        if manifest_out is not None:
+            manifest_out.update({"verification": {"status": "passed"}})
+        return batch_doc(1)
+
+    real_convert = app_mod.convert_text
+    app_mod.convert_text = fake_convert
+    try:
+        A = {"id": "c" * 12}
+        app_mod.novel_user(A)
+        created = app_mod.novels_create(app_mod.NovelBody(
+            title="药", params={"narration_mode": "selective"}), A)
+        e = must_raise(HTTPException, app_mod.novels_create,
+                       app_mod.NovelBody(title="药", params={"bogus": 1}), A)
+        assert e.status_code == 422
+        e = must_raise(HTTPException, app_mod.novels_create, app_mod.NovelBody(title="药"), A)
+        assert e.status_code == 422 and "已存在" in e.detail
+        anid = created["id"]
+        ch = app_mod.chapters_create(anid, app_mod.ChapterBody(title="第一章", text="他推门。"), A)
+        e = must_raise(HTTPException, app_mod.versions_create, anid, "c_nope",
+                       app_mod.VersionRequest(), A)
+        assert e.status_code == 404
+
+        def run(overrides=None):
+            r = app_mod.versions_create(anid, ch["id"],
+                                        app_mod.VersionRequest(overrides=overrides or {}), A)
+            for _ in range(200):
+                if app_mod._jobs[r["job_id"]]["status"] not in ("queued", "running"):
+                    break
+                time.sleep(0.02)
+            return r["version_id"]
+
+        va = run()
+        job = app_mod.get_job(va, user=A)
+        assert job["status"] == "succeeded" and job["chapter_id"] == ch["id"]
+        assert calls[0]["params"].work_title == "药" and calls[0]["params"].chapter == "第一章"
+        assert calls[0]["params"].narration_mode == "selective", "小说默认参数要带进转换"
+        assert calls[0]["seed"] is None, "空库不注入"
+        assert any("自动采用" in line for line in job["log"])
+        chapter = app_mod.chapters_get(anid, ch["id"], A)
+        assert chapter["adopted_version"] == va
+
+        vb = run({"narration_mode": "original_text"})
+        assert calls[1]["params"].narration_mode == "original_text", "本次覆写优先"
+        assert calls[1]["seed"], "第二次转换要带上长期记忆里的资产库"
+        assert app_mod.chapters_get(anid, ch["id"], A)["adopted_version"] == va, \
+            "已有采用版时新版本只存档"
+        stored = app_mod.versions_get(anid, ch["id"], vb, A)
+        assert stored["input_text"] == "他推门。" and stored["params"]["narration_mode"] == \
+            "original_text"
+
+        bad = copy.deepcopy(stored["result"])
+        bad["source"]["units"][0]["text"] += "（篡改）"
+        r = app_mod.versions_update(anid, ch["id"], vb, bad, A)
+        assert r["status"] == "draft_invalid", "冻结证据被改，复验不过"
+        e = must_raise(HTTPException, app_mod.versions_adopt, anid, ch["id"], vb, A)
+        assert e.status_code == 422
+        r = app_mod.versions_update(anid, ch["id"], vb, stored["result"], A)
+        assert r["status"] == "succeeded"
+        app_mod.versions_adopt(anid, ch["id"], vb, A)
+
+        plan = app_mod.render_plan(app_mod.RenderPlanRequest(
+            result=stored["result"], run_id=vb, include_markdown=False), A)
+        assert plan["plan"]["clips"], "渲染任务包要能按版本 id 取冻结证据"
+        assert app_mod.memory_get(anid, A)["assets"]["characters"]
+        e = must_raise(HTTPException, app_mod.memory_asset_upsert, anid, "characters", "C01",
+                       {"id": "C02", "name": "x"}, A)
+        assert e.status_code == 422
+        app_mod.memory_asset_upsert(anid, "characters", "C99", {"id": "C99", "name": "新人"}, A)
+        assert "C99" in {c["id"] for c in app_mod.memory_get(anid, A)["assets"]["characters"]}
+        e = must_raise(HTTPException, app_mod.novels_get, anid, {"id": "d" * 12})
+        assert e.status_code == 404, "别人的小说看不到"
+    finally:
+        app_mod.convert_text = real_convert
+    print("接口: 转换落成版本 / 首个成功版本自动采用 / 覆写优先 / 复验 / 渲染按版本取证据 / 用户隔离 ✓")
+
+    print("\nALL PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        code = main()
+    finally:
+        _TMP.cleanup()
+    sys.exit(code)
