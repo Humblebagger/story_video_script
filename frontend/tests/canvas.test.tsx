@@ -25,6 +25,7 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 /* 桩后端：关键帧提示词 + 关键帧图（一开始只有首镜有图） */
 const kfImages = new Map<string, string>([['E01-SH001', 'image/png']])
 const puts: { shot: string; type: string }[] = []
+const outlines: string[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '')
   const method = init?.method ?? 'GET'
@@ -34,6 +35,10 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
     return json({ keyframes: d.episodes.flatMap((e) => e.shots).map((s) => ({
       shot_id: s.id, prompt: `写实，电影静帧\n画面：${s.action}\n场景：某处`, negative_prompt: '血腥',
       reference_assets: (s.characters ?? []).map((c) => c.ref), aspect_ratio: '9:16' })) })
+  }
+  if (path === '/novels/n1/memory/plot' && method === 'PUT') {
+    outlines.push(JSON.parse(String(init!.body)).outline)
+    return json({ outline: outlines[outlines.length - 1] })
   }
   const m = path.match(/^\/novels\/n1\/chapters\/c1\/versions\/v1\/keyframes(?:\/(.+))?$/)
   if (!m) throw new Error(`桩后端未实现的路径: ${method} ${path}`)
@@ -53,7 +58,8 @@ const { createRoot } = await import('react-dom/client')
 const { useState } = await import('react')
 const { StoryboardView } = await import('../src/components/StoryboardView')
 const { buildTimeline } = await import('../src/timeline')
-import type { Storyboard } from '../src/types'
+import type { Chapter, Novel, Storyboard } from '../src/types'
+import type { Workbench } from '../src/components/CanvasPanels'
 
 const doc: Storyboard = JSON.parse(
   readFileSync('../backend/tests/real_text_yao/output_merged.json', 'utf8'))
@@ -82,12 +88,34 @@ const click = async (el: Element) => {
 /** 有状态的宿主：画布里的改动经 onChange 回到这里，和 App 里一样 */
 let latest = doc
 let saves = 0
+/** 章节会话桩：画布「剧情」「任务」两页的上层动作只记下来 */
+const calls: string[] = []
+const novel = {
+  id: 'n1', title: '药', params: {}, created_at: '', updated_at: '',
+  chapters: [{ id: 'c1', title: '第一章', adopted_version: 'v0' }],
+  memory: { plot: { outline: '', chapters: [] }, constraints: [], lifecycle: [], assets: {},
+            numbering: { next_unit: 1, next_episode: 1 } },
+} as unknown as Novel
+const chapter = {
+  id: 'c1', title: '第一章', order: 1, text: '原文', adopted_version: 'v0',
+  versions: [{ id: 'v1', status: 'succeeded', shots: 133, created_at: '' },
+             { id: 'v0', status: 'succeeded', shots: 120, created_at: '' }],
+} as unknown as Chapter
+const bench: Workbench = {
+  novel, chapter, versionId: 'v1', job: null, converting: false, disabled: false,
+  onConvert: (o) => calls.push(`convert:${JSON.stringify(o)}`),
+  onOpenVersion: (v) => calls.push(`open:${v}`),
+  onAdopt: (v) => calls.push(`adopt:${v}`),
+  onDeleteVersion: (v) => calls.push(`delete:${v}`),
+  onNovelChanged: () => calls.push('novel'),
+  notice: '已采用：资产库新增 3 张',
+}
 function Host() {
   const [d, setD] = useState(doc)
   const [dirty, setDirty] = useState(false)
   latest = d
   return <StoryboardView doc={d} canSave dirty={dirty} saving={false}
-                         version={{ nid: 'n1', cid: 'c1', vid: 'v1' }}
+                         version={{ nid: 'n1', cid: 'c1', vid: 'v1' }} bench={bench}
                          onChange={(n) => { setD(n); setDirty(true) }}
                          onSave={() => { saves++; setDirty(false) }} />
 }
@@ -138,13 +166,25 @@ must(!!win.document.getElementById(`shot-${target}`), '分镜页应有该镜头�
 must(win.document.getElementById(`shot-${target}`)!.classList.contains('is-flash'), '定位的镜头要闪一下')
 console.log(`3. 点镜头 → 就地选中 / 按钮回分镜页定位 ${target} ✓`)
 
-// 4. 点浮层里的原文句：回原文溯源页
+// 4. 点浮层里的原文句：在侧栏「原文」页定位，不离开画布；点句子下的镜头号回到那一镜
 await click(button('时间轴画布'))
 const unit = container.querySelector('.tlc__unit') as unknown as HTMLElement
 must(!!unit, '浮层应列出本镜引用的原文句')
+const unitId = unit.querySelector('code')!.textContent
 await click(unit)
-must(!container.querySelector('.tlc') && !!container.querySelector('.src'), '点原文句应回到原文溯源页')
-console.log('4. 点原文句 → 原文溯源页 ✓')
+must(!!container.querySelector('.tlc') && !!container.querySelector('.tlc__panel .src'),
+     '点原文句在侧栏「原文」页打开，不离开画布')
+must(container.querySelector('.tlc__panel .unit--focus .unit__id')?.textContent === unitId, '定位到点的那一句')
+const uref = container.querySelector('.tlc__panel .unit--focus button.uref') as unknown as HTMLElement
+must(!!uref, '句子下的镜头号在画布里可点')
+const back = uref.textContent
+await click(uref)
+must(container.querySelector('.tlc__panel > header b')?.textContent === back, '点镜头号回到「本镜」并选中那一镜')
+await act(async () => {
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event)
+})
+await settle()
+console.log('4. 点原文句 → 画布侧栏「原文」页定位 / 点镜头号回本镜 ✓')
 
 // 5. 静帧预演：已上传的关键帧按播放头显示；没图的镜头给提示词占位；上传 / 删除；导出提示词
 await click(button('时间轴画布'))
@@ -254,6 +294,56 @@ await click(editBtn())
 must(!container.querySelector('.tlc__grip') && !container.querySelector('.tlc__panel .ed__at textarea'),
      '完成编辑后回到只读')
 console.log('6. 画布上就地编辑 → 拖右缘改时长 / 双击节点改动作 / 右侧改本镜 / 撤销重做（含 ⌘Z）/ 直接保存 ✓')
+
+// 6b. 侧栏其余页签：资产卡（编辑态可改，进同一套撤销）/ 剧情（小说长期记忆）/ 任务（重新转换、版本）
+const tab = (name: string) => [...container.querySelectorAll('.tlc__tabs button')]
+  .find((b) => b.textContent === name) as unknown as HTMLElement
+must(!!tab('资产') && !!tab('剧情') && !!tab('任务'), '有章节会话时侧栏有 资产 / 剧情 / 任务 页')
+await click(editBtn())
+await click(tab('资产'))
+const aliasInput = container.querySelector('.tlc__panel .assets input[placeholder="以顿号分隔"]') as unknown as HTMLInputElement
+must(!!aliasInput, '编辑态下资产卡可以直接改')
+await act(async () => {
+  Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!.call(aliasInput, '画布别名')
+  aliasInput.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+})
+await settle()
+const firstChar = () => Object.values(latest.assets?.characters ?? {})[0] as { aliases?: string[] } | undefined
+must(JSON.stringify(firstChar()?.aliases) === '["画布别名"]', `资产卡改动写回产物，实为 ${JSON.stringify(firstChar()?.aliases)}`)
+await click(button('撤销'))
+must(JSON.stringify(firstChar()?.aliases) !== '["画布别名"]', '资产卡改动和镜头改动共用撤销')
+await click(editBtn())
+
+await click(tab('剧情'))
+must(has('全书梗概') && !!container.querySelector('.tlc__panel .plot'), '剧情页复用小说页的主线剧情')
+const outline = container.querySelector('.tlc__panel .plot textarea') as unknown as HTMLTextAreaElement
+await act(async () => {
+  Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!.call(outline, '华家父子的结局')
+  outline.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+})
+await click(button('保存梗概'))
+must(outlines[0] === '华家父子的结局' && calls.includes('novel'), '在画布里改梗概直接存进小说长期记忆')
+await click(button('创作限制'))
+must(!!container.querySelector('.tlc__panel .cons'), '剧情页可切到创作限制')
+
+await click(tab('任务'))
+must(has('已采用：资产库新增 3 张'), '上层的提示在画布里也看得到')
+// 撤销过的资产改动让本版仍算「未保存」：转换前要确认（会被新版本换掉）
+const asked: string[] = []
+g.confirm = (q: string) => { asked.push(q); return true }
+await click(button('重新转换（新版本）'))
+must(asked.length === 1 && calls.some((c) => c.startsWith('convert:')), '有未保存修改时先确认，再在画布里发起重新转换')
+const chips = [...container.querySelectorAll('.tlc__vers .vchip')] as unknown as HTMLButtonElement[]
+must(chips.length === 2 && chips[1].disabled && chips[0].textContent!.includes('★'), '版本条：v1 采用版、v2 正在看')
+await click(chips[0])
+must(calls.includes('open:v0'), '在画布里切版本')
+must((button('采用此版') as HTMLButtonElement).disabled, '有未保存修改时不能采用（采用的是存下来的那份）')
+await click(button('保存修改'))
+await click(button('采用此版'))
+must(calls.includes('adopt:v1'), '保存后在画布里采用正在看的版本')
+await click(container.querySelectorAll('.tlc__shot')[2])
+must(!!container.querySelector('.tlc__panel > header'), '在别的页签时点镜头回到「本镜」')
+console.log('6b. 侧栏页签 → 资产卡就地改（共用撤销）/ 剧情与限制 / 重新转换、切版本、采用 ✓')
 
 // 7. Esc 关闭
 await act(async () => {

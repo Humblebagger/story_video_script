@@ -304,10 +304,11 @@ export default function App() {
     }
   }
 
-  const convert = (opts: { narration_mode?: NarrationMode; strict: boolean }) => {
+  /** keepDoc：从画布发起时画布不关，旧版本留在画布上，跑完由 onJobDone 换成新版本 */
+  const convert = (opts: { narration_mode?: NarrationMode; strict: boolean }, keepDoc = false) => {
     if (!novel || !chapter) return
     primeNotifications()
-    clearWork()
+    if (keepDoc) { reset(); setAlert(null); setVerification(null) } else clearWork()
     const { strict, ...overrides } = opts
     const [nid, cid] = [novel.id, chapter.id]
     void start(() => convertChapter(nid, cid, { overrides, strict }),
@@ -340,8 +341,14 @@ export default function App() {
     if (!novel || !chapter || !confirm('删除这个版本？该操作不可撤销。')) return
     try {
       await deleteVersion(novel.id, chapter.id, vid)
-      if (docVid === vid) { setDoc(null); setDocVid(null); setDirty(false) }
       await reloadOpen(novel.id, chapter.id)
+      if (docVid === vid) {
+        // 删的正是在看的这版：换到采用版（没有就最新一版），画布不必跟着关掉
+        const c = await getChapter(novel.id, chapter.id)
+        const next = c.adopted_version ?? c.versions[0]?.id
+        if (next) await openVersion(novel.id, chapter.id, next)
+        else { setDoc(null); setDocVid(null); setDirty(false) }
+      }
     } catch (e) {
       setAlert(`删除失败：${msg(e)}`)
     }
@@ -534,6 +541,16 @@ export default function App() {
               saving={saving}
               onChange={(next) => { setDoc(next); setDirty(true) }}
               onSave={save}
+              bench={novel && chapter ? {
+                novel, chapter, versionId: docVid, job, converting,
+                disabled: submitting || svcDown,
+                onConvert: (opts) => convert(opts, true),
+                onOpenVersion: (vid) => { if (confirmLeave()) void openVersion(novel.id, chapter.id, vid) },
+                onAdopt: (vid) => void adopt(vid),
+                onDeleteVersion: (vid) => void removeVersion(vid),
+                onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
+                notice: error ? `提交失败：${error}` : alert,
+              } : null}
             />
           )}
         </main>

@@ -1398,3 +1398,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* 节点动作标签压在连线上时加一圈底色描边，读得清 */
 .tlc__node text { paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 .tlc__panel--edit .tlc__frame { max-height: 24vh; }
+
+/* 画布侧栏页签：本镜 / 原文 / 资产 / 剧情 / 任务——外面能做的事在画布里都有一页 */
+.tlc__panel--wide { flex-basis: 520px; }
+.tlc__tabs { display: flex; gap: 2px; flex: none; position: sticky; top: -14px; z-index: 2;
+             margin: -14px -16px 4px; padding: 8px 12px 0; background: var(--panel);
+             border-bottom: 1px solid var(--line-2); }
+.tlc__tabs button { background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
+                    padding: 6px 10px 7px; font-size: 13px; color: var(--muted); }
+.tlc__tabs button:hover { color: var(--text); }
+.tlc__tabs button.is-on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+/* 复用的原文 / 资产卡页本来按整页宽排，放进侧栏收窄 */
+.tlc__panel .src, .tlc__panel .assets { padding: 0; }
+.tlc__panel .src__bar { flex-wrap: wrap; gap: 6px; }
+.tlc__panel .unit { grid-template-columns: 1fr; gap: 3px; }
+.tlc__panel .unit__refs { justify-content: flex-start; }
+.tlc__panel .form__grid { grid-template-columns: 1fr; }
+.tlc__seg2 { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; align-self: flex-start; }
+.tlc__seg2 button { background: none; border: 0; padding: 4px 12px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.tlc__seg2 button.is-on { background: var(--panel-2); color: var(--text); }
+.tlc__novel, .tlc__tasks { display: flex; flex-direction: column; gap: 10px; }
+.tlc__tasks section { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px;
+                      border-bottom: 1px solid var(--line-2); }
+.tlc__tasks h4 { margin: 0; font-size: 13px; }
+.tlc__job { display: flex; flex-direction: column; gap: 6px; }
+.tlc__jobline { font-size: 11px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tlc__vers { display: flex; flex-wrap: wrap; gap: 5px; }
+.tlc__notice { margin: 0; padding: 7px 10px; border-radius: 6px; font-size: 12.5px;
+               background: var(--panel-2); border-left: 3px solid var(--accent); }

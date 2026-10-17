@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
-import { stampVersion, updateShot } from '../edit'
+import { stampVersion, updateAsset, updateShot } from '../edit'
+import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
-import { buildTimeline, fitText, fmtClock, litFraction, shotIndexAt } from '../timeline'
+import { buildTimeline, fitText, fmtClock, textPx, litFraction, shotIndexAt } from '../timeline'
 import { applyOp } from '../timelineOps'
 import type { TimelineOp } from '../timelineOps'
+import { AssetsView } from './AssetsView'
+import { NovelPanel, TaskPanel } from './CanvasPanels'
+import type { Workbench } from './CanvasPanels'
 import { ShotCard } from './ShotCard'
+import { SourceView } from './SourceView'
 import type { CharLane, Timeline } from '../timeline'
 import type { Storyboard, VersionRef } from '../types'
 import { promptSheet, useKeyframes } from '../useKeyframes'
@@ -15,8 +20,8 @@ interface Props {
   onClose: () => void
   /** 点镜头：回分镜页定位到这一镜 */
   onJumpShot: (shotId: string) => void
-  /** 点原文句：回原文溯源页定位到这一句 */
-  onJumpUnit: (unitId: string) => void
+  /** 所在的章节会话：给了侧栏才有「剧情」「任务」两页 */
+  bench?: Workbench | null
   /** 产物所属的版本：有它才能上传关键帧图（本地 JSON / 分批预览只有提示词） */
   version?: VersionRef | null
   /** 给了就能在画布上直接编辑（分批预览不给）；改动与分镜页是同一份产物 */
@@ -34,6 +39,8 @@ const GUTTER = 132         // 左侧泳道名一栏：角色两行（名字 / ID
 const RULER = 30
 const ROW = { episode: 24, scene: 26, shot: 38, frame: 72, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
+
+type PanelTab = 'shot' | 'source' | 'assets' | 'novel' | 'tasks'
 
 interface Row { key: string; label: string; sub?: string; y: number; h: number }
 
@@ -85,13 +92,20 @@ function downloadText(name: string, text: string) {
 }
 
 export function TimelineCanvas({
-  doc, onClose, onJumpShot, onJumpUnit, version = null,
+  doc, onClose, onJumpShot, bench = null, version = null,
   onChange, canSave = false, dirty = false, saving = false, onSave,
 }: Props) {
   const kf = useKeyframes(doc, version)
   const idx = useMemo(() => buildIndex(doc), [doc])
   const editable = !!onChange
   const [editing, setEditing] = useState(false)
+  /** 侧栏页签：外面能做的事在画布里都有一页，不必退出去 */
+  const [panel, setPanel] = useState<PanelTab>('shot')
+  const [focusUnit, setFocusUnit] = useState<string | null>(null)
+  const onJumpUnit = (unitId: string) => {
+    setFocusUnit(unitId)
+    setPanel('source')
+  }
 
   /* ---- 编辑：每次改动都落成新文档交给上层（与分镜页同一份），画布自带撤销 / 重做 ---- */
   const docRef = useRef(doc)
@@ -307,6 +321,7 @@ export function TimelineCanvas({
     setPlaying(false)
     tRef.current = s.start
     setT(s.start)
+    setPanel('shot')
   }
 
   // 只画视野内的刻度
@@ -467,6 +482,9 @@ export function TimelineCanvas({
                   const gap = Math.min(ni ? n.t - c.nodes[ni - 1].t : Infinity,
                                        ni < c.nodes.length - 1 ? c.nodes[ni + 1].t - n.t : Infinity) * pps
                   const tag = fitText(n.action, on ? Math.max(gap, 160) : Math.min(gap, 200) - 6, 11, 3)
+                  // 居中放不下时往里挪：贴着泳道名一栏或画布右缘的标签不被挡住半截
+                  const half = textPx(tag) / 2
+                  const tx = Math.min(Math.max(x(n.t), GUTTER + 4 + half), Math.max(GUTTER + 4 + half, width - 4 - half))
                   return (
                     <g key={n.shotId} className={`tlc__node${n.t <= t ? ' is-past' : ''}${on ? ' is-cur' : ''}`}
                        data-node={`${c.ref}@${n.shotId}`}
@@ -478,7 +496,7 @@ export function TimelineCanvas({
                                        left: x(n.t), top: cy + ty })
                        }}>
                       <circle cx={x(n.t)} cy={cy} r={on ? 6 : 4} />
-                      {tag && <text x={x(n.t)} y={cy + 19} textAnchor="middle">{tag}</text>}
+                      {tag && <text x={tx} y={cy + 19} textAnchor="middle">{tag}</text>}
                       <title>{`${c.name} · ${n.shotId}\n动作：${n.action}${n.fromShotAction ? '（镜头描述）' : ''}${
                         n.expression ? `\n表情：${n.expression}` : ''}${n.position ? `\n位置：${n.position}` : ''}${
                         n.outfit ? `\n服装：${n.outfit}` : ''}`}</title>
@@ -559,9 +577,29 @@ export function TimelineCanvas({
 
       </div>
 
-      {cur && (
-        <aside className={`tlc__panel${editing ? ' tlc__panel--edit' : ''}`}
-               onPointerDown={(e) => e.stopPropagation()}>
+      <aside className={`tlc__panel${panel !== 'shot' ? ' tlc__panel--wide'
+               : editing ? ' tlc__panel--edit' : ''}`}
+             onPointerDown={(e) => e.stopPropagation()}>
+        <nav className="tlc__tabs">
+          {([['shot', '本镜'], ['source', '原文'], ['assets', '资产'],
+             ...(bench ? [['novel', '剧情'], ['tasks', bench.converting ? '任务 ●' : '任务']] : [])] as [PanelTab, string][])
+            .map(([id, name]) => (
+              <button key={id} className={panel === id ? 'is-on' : ''} onClick={() => setPanel(id)}>{name}</button>
+            ))}
+        </nav>
+        {panel === 'source' && (
+          <SourceView doc={doc} idx={idx} focusUnit={focusUnit} onPickShot={selectShot} />
+        )}
+        {panel === 'assets' && (
+          <AssetsView assets={doc.assets ?? {}} editing={editing}
+                      onChange={(kind: AssetKind, id, patch) => commit(updateAsset(docRef.current, kind, id, patch))} />
+        )}
+        {panel === 'assets' && editable && !editing && (
+          <p className="tlc__kfnote">点底部「编辑」后可直接改资产卡，和镜头改动共用撤销与保存。</p>
+        )}
+        {panel === 'novel' && bench && <NovelPanel bench={bench} />}
+        {panel === 'tasks' && bench && <TaskPanel bench={bench} dirty={dirty} />}
+        {panel === 'shot' && cur && <>
           {animatic && (
             kf.urls[cur.id]
               ? (
@@ -602,7 +640,7 @@ export function TimelineCanvas({
           {cur.shot.narration?.text && <p className="tlc__narr">旁白：{cur.shot.narration.text}</p>}
           <div className="tlc__units">
             {(cur.shot.source?.unit_refs ?? []).map((u) => (
-              <button key={u} className="tlc__unit" onClick={() => onJumpUnit(u)} title="到原文溯源页定位这一句">
+              <button key={u} className="tlc__unit" onClick={() => onJumpUnit(u)} title="在侧栏「原文」页定位这一句">
                 <code>{u}</code> {units[u] ?? ''}
               </button>
             ))}
@@ -660,8 +698,8 @@ export function TimelineCanvas({
             {kf.error && <p className="tlc__kferr">{kf.error}</p>}
           </section>
           <button className="btn btn--sm btn--ghost" onClick={() => onJumpShot(cur.id)}>在分镜页打开这一镜</button>
-        </aside>
-      )}
+        </>}
+      </aside>
     </div>
   )
 }

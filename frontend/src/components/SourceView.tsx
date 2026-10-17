@@ -9,6 +9,8 @@ interface Props {
   idx: Index
   /** 从分镜卡点过来的溯源目标，滚动定位并高亮 */
   focusUnit: string | null
+  /** 画布里用：点句子下的镜头号就在画布上选中那一镜 */
+  onPickShot?: (shotId: string) => void
 }
 
 /** 命中的关键词高亮，方便在长文里一眼定位 */
@@ -25,7 +27,7 @@ function highlight(text: string, q: string) {
   )
 }
 
-export function SourceView({ doc, idx, focusUnit }: Props) {
+export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
   const [onlyGaps, setOnlyGaps] = useState(false)
   const [query, setQuery] = useState('')
   const rowRef = useRef<HTMLLIElement | null>(null)
@@ -91,9 +93,12 @@ export function SourceView({ doc, idx, focusUnit }: Props) {
               <div className="unit__refs">
                 {refs.length === 0
                   ? <span className="unit__gap">⚠ 无镜头引用</span>
-                  : refs.map((r) => (
-                      <span className="uref uref--static" key={r.shot.id}>{r.shot.id}</span>
-                    ))}
+                  : refs.map((r) => onPickShot
+                    ? (
+                      <button className="uref" key={r.shot.id} title="在画布上选中这一镜"
+                              onClick={() => onPickShot(r.shot.id)}>{r.shot.id}</button>
+                    )
+                    : <span className="uref uref--static" key={r.shot.id}>{r.shot.id}</span>)}
               </div>
             </li>
           )

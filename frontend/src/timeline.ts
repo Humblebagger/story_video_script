@@ -205,8 +205,15 @@ export function fmtClock(sec: number): string {
 /** 按像素宽度截断文字（SVG 的 text 不会自动换行或裁切）。全角字按 1 个字号宽、半角按 0.6 估算；
  *  截断后剩不到 minChars 个字就返回空串——「S…」这种残片不如不写，相邻标签也不会叠在一起。
  *  minChars = Infinity 表示放不下就整个不写（镜头号这类截了就没意义的）。 */
+const charPx = (ch: string, fontPx: number) => (/[\u0000-\u00ff]/.test(ch) ? fontPx * 0.6 : fontPx)
+
+/** 估算文字像素宽度（与 fitText 同一套估法） */
+export function textPx(text: string, fontPx = 11): number {
+  return [...text].reduce((n, ch) => n + charPx(ch, fontPx), 0)
+}
+
 export function fitText(text: string, maxPx: number, fontPx = 11, minChars = 2): string {
-  const w = (ch: string) => (/[\u0000-\u00ff]/.test(ch) ? fontPx * 0.6 : fontPx)
+  const w = (ch: string) => charPx(ch, fontPx)
   let used = 0
   const chars = [...text]
   for (let i = 0; i < chars.length; i++) {

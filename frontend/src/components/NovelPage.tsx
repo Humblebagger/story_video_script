@@ -85,7 +85,7 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter }: Props)
   )
 }
 
-interface TabProps {
+export interface TabProps {
   novel: Novel
   busy: boolean
   run: (what: string, fn: () => Promise<unknown>) => Promise<void>
@@ -119,7 +119,7 @@ function ParamsTab({ novel, busy, run }: TabProps) {
   )
 }
 
-function PlotTab({ novel, busy, run }: TabProps) {
+export function PlotTab({ novel, busy, run }: TabProps) {
   const [outline, setOutlineText] = useState(novel.memory.plot.outline)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   useEffect(() => { setOutlineText(novel.memory.plot.outline) }, [novel.memory.plot.outline])
@@ -172,7 +172,7 @@ function PlotTab({ novel, busy, run }: TabProps) {
   )
 }
 
-function ConstraintsTab({ novel, busy, run }: TabProps) {
+export function ConstraintsTab({ novel, busy, run }: TabProps) {
   const [text, setText] = useState('')
   const [neg, setNeg] = useState('')
   const [keywords, setKeywords] = useState('')

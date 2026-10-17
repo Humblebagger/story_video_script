@@ -8,6 +8,7 @@ import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
 import { RenderView } from './RenderView'
 import { SourceView } from './SourceView'
+import type { Workbench } from './CanvasPanels'
 import { TimelineCanvas } from './TimelineCanvas'
 
 type Tab = 'shots' | 'assets' | 'source' | 'render' | 'json'
@@ -43,10 +44,13 @@ interface Props {
   preview?: { done: number; total: number } | null
   /** 产物所属的章节版本：画布上传关键帧图要用 */
   version?: VersionRef | null
+  /** 所在的章节会话：画布里的「剧情」「任务」页要用 */
+  bench?: Workbench | null
 }
 
 export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
+  bench = null,
 }: Props) {
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
@@ -189,11 +193,12 @@ export function StoryboardView({
       {tab === 'render' && !preview && <RenderView doc={doc} runId={runId} />}
       {tab === 'json' && <pre className="json">{JSON.stringify(doc, null, 2)}</pre>}
       {canvas && (
-        <TimelineCanvas doc={doc} version={preview ? null : version}
+        // 换版本（含画布里重新转换跑完）时撤销栈清零：上一版的改动不该能撤到新版上
+        <TimelineCanvas key={version?.vid ?? 'local'} doc={doc} version={preview ? null : version}
+                        bench={preview ? null : bench}
                         onChange={preview ? undefined : onChange}
                         canSave={canSave && !preview} dirty={dirty} saving={saving} onSave={onSave}
-                        onClose={() => setCanvas(false)} onJumpShot={jumpShot}
-                        onJumpUnit={(u) => { setCanvas(false); pickUnit(u) }} />
+                        onClose={() => setCanvas(false)} onJumpShot={jumpShot} />
       )}
     </div>
   )
