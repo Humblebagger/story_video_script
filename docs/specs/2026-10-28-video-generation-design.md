@@ -1,0 +1,317 @@
+# 视频生成（出片）设计
+
+日期：2026-10-28 · 分支：langchain · 子项目 A（总拆分：A 视频生成 → B 编辑器优化与融合 → C 三方登录）
+
+## 0. 决定与边界
+
+| 决定 | 内容 |
+|---|---|
+| 定位 | 个人项目：个人开发者、低量、按量付费、少运维 |
+| 视频厂商 | 首家 Seedance（火山方舟），先用 fast / mini 档；经统一接口兼容其他国内厂商（可灵、Wan、Vidu、MiniMax 等），**一章只用一家**，可切换 |
+| TTS 厂商 | 首家火山引擎豆包语音，同样走统一接口 |
+| 出片方式 | 先试 1–2 段，满意后确认费用再批量出剩余各段；不满意的段单独重做 |
+| 声音模式 | 四种可选，每章设置；默认「人声全走 TTS」 |
+| 架构 | 现有后端内加出片会话，状态存文件（不引数据库、不引队列） |
+| 不做 | 一章混用多家视频模型；自动生成 BGM；拆分/合并/插入镜头；剪辑器工程导出 |
+
+IR 仍是主交付物，出片是它的下游执行。分镜未通过独立校验禁止出片（沿用 `/render/plan` 的验证门）。
+
+---
+
+## 1. 后端结构
+
+### 1.1 模块（`backend/render/`）
+
+| 文件 | 职责 | 依赖 |
+|---|---|---|
+| `providers/base.py` | 视频统一接口、`Caps`、数据结构 | 无 |
+| `providers/seedance.py` | 方舟：提交、查询、下载、计费 | base |
+| `providers/tts_base.py` | TTS 统一接口 | 无 |
+| `providers/tts_volc.py` | 豆包语音合成 | tts_base |
+| `providers/fake.py` | 测试用的假视频、假 TTS 厂商 | base、tts_base |
+| `compose.py` | 分镜 → 按厂商能力切段 → 厂商无关提示词 → 厂商改写 | `plan.py` 的提示词函数 |
+| `session.py` | 一个版本的出片状态与状态迁移，读写 `session.json` | providers、compose |
+| `runner.py` | 后台线程：提交、轮询、下载；启动时恢复未完成的段 | session |
+| `voice.py` | 分镜 → 语音条 → 音色分配 → TTS（带缓存） | tts providers |
+| `mix.py` | ffmpeg：规整、补齐或裁剪、拼接、混音、响度、字幕 | ffmpeg |
+
+`plan.py` 原有的生产包导出与费用估算保留；它的提示词组装函数被 `compose.py` 复用，两边始终是同一句提示词。
+
+### 1.2 视频统一接口
+
+```python
+@dataclass
+class Caps:
+    max_clip_sec: float
+    min_clip_sec: float
+    max_refs: int
+    first_frame: bool
+    last_frame: bool              # 可指定结束帧
+    returns_last_frame: bool      # 能返回成片尾帧，用于接力
+    native_audio: bool
+    resolutions: list[str]
+    cny_per_sec: dict[str, float] # 按分辨率；环境变量可覆盖
+
+@dataclass
+class RefImage:
+    asset_id: str
+    role: Literal["character", "creature", "location", "prop"]
+    path: Path
+
+@dataclass
+class ClipRequest:
+    prompt: str                   # 已改写为该厂商语法
+    refs: list[RefImage]          # 已按 max_refs 裁剪
+    first_frame: Path | None
+    duration: float
+    resolution: str
+    aspect: str
+    audio: bool
+
+@dataclass
+class TaskState:
+    task_id: str
+    status: Literal["pending", "running", "succeeded", "failed"]
+    video_url: str | None
+    last_frame_url: str | None
+    error: str | None             # 厂商原文
+    usage: dict
+
+class VideoProvider(Protocol):
+    name: str
+    caps: Caps
+    def submit(self, req: ClipRequest) -> str: ...
+    def poll(self, task_id: str) -> TaskState: ...
+    def download(self, st: TaskState, dest: Path) -> Path: ...
+    def cost(self, st: TaskState, req: ClipRequest) -> float: ...  # 有 usage 按 usage，否则按时长估
+```
+
+主流程只调用这四个方法和 `caps`。新增厂商 = 新文件 + 注册一行。
+
+### 1.3 分镜 → 片段（`compose.py`）
+
+1. **切段**：按镜头顺序打包，每段总时长 ≤ `caps.max_clip_sec`，**时长一律用可播时长**（`max(duration_sec, 念完旁白台词所需)`，与 `timeline.ts`、`quality.speech_seconds` 同一口径）。现有 `pack_clips` 用名义时长，此处改正。单镜超上限的独立成段并标 `truncated`；不足 `min_clip_sec` 的段并入相邻段。
+2. **参考图裁剪**：超过 `max_refs` 时按优先级保留：本段主要角色 > 场景 > 次要角色和生物 > 道具。裁掉的写入 `dropped_refs`。参考图取资产卡 `reference_images`；没有图的资产只用文字描述，预览时提示。
+3. **两层提示词**：先生成厂商无关结构（画面、镜头时间轴、音效、禁止项，参考图用占位符 `{ref:C001}`），再由厂商模块改写（Seedance：`@图片n`）。`plan.py` 里写死的 `@图片n` 移到 Seedance 模块。
+4. **按声音模式改写**：
+
+| 模式 | 提示词处理 |
+|---|---|
+| `tts_all`（默认） | 去掉台词原文，写「人物交谈但不发声」；音效行「仅环境音效，无人声，无音乐」 |
+| `dialogue_native` | 台词保留并要求逐字念；旁白不进提示词 |
+| `all_native` | 台词和旁白都进提示词 |
+| `silent` | 音效行写「无声」 |
+
+5. **首帧**：段首镜头有用户上传的关键帧图 → 用作首帧；否则用上一段返回的尾帧接力（需 `returns_last_frame`）；都没有就只用参考图。
+6. **输入指纹**：`hash(镜头内容, 提示词, 参考图文件哈希, 首帧来源, 厂商, 档位, 分辨率, 声音模式)`，用于判断过期。
+
+### 1.4 状态文件
+
+位置：`versions/<vid>/render/session.json`，旁边是 `clips/`、`audio/`、`final/`。写入一律先写 tmp 再 rename。
+
+```json
+{
+  "provider": "seedance", "model": "seedance-2.0-fast",
+  "resolution": "720p", "audio_mode": "tts_all",
+  "budget_cny": 200, "spent_cny": 23.6,
+  "clips": [{
+    "id": "E01-C01", "episode": "E01", "shots": ["E01-SH001", "E01-SH002"],
+    "duration": 12.5, "fingerprint": "a3f9…",
+    "prompt": "…", "refs": ["C001", "L002"], "dropped_refs": [], "truncated": false,
+    "first_frame": "keyframe:E01-SH001",
+    "mute_native": false,
+    "state": "done",
+    "attempts": [{"task_id": "cgt-…", "state": "succeeded", "cost_cny": 10.0,
+                  "file": "clips/E01-C01.v1.mp4", "last_frame": "clips/E01-C01.v1.last.jpg",
+                  "error": null, "at": "2026-10-28T…"}],
+    "chosen": 0
+  }],
+  "voices": {"narration": "…", "C001": "…"},
+  "final": {"state": "done", "fingerprint": "…", "files": ["final/E01.mp4", "final/E01.srt"],
+            "report": "final/mix_report.json"}
+}
+```
+
+### 1.5 段状态
+
+| 状态 | 含义 | 迁移 |
+|---|---|---|
+| `planned` | 已切段未提交 | 提交 → `queued` |
+| `queued` | 已过预算检查，等提交 | 提交成功 → `running` |
+| `running` | 有厂商任务 id，轮询中 | 成功 → `downloading`；失败 → `failed` |
+| `downloading` | 下载中 | 完成 → `done` |
+| `done` | 有视频文件 | 重做 → `queued`（旧尝试保留） |
+| `failed` | 附厂商原因 | 重做 → `queued` |
+| `stale` | 指纹与当前分镜不符 | 用户决定是否重做；旧视频仍可播 |
+
+每段保留全部尝试，`chosen` 指向采用的那次。
+
+### 1.6 接口（前缀 `/novels/{nid}/chapters/{cid}/versions/{vid}/render`）
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| POST | `/session` | 过验证门、按设置切段，生成或重建会话（不花钱）；返回各段与预估 |
+| GET | `/session` | 查询；读取时按当前分镜重算指纹并标 `stale` |
+| PATCH | `/session` | 改设置（厂商、档位、分辨率、声音模式、上限、音色） |
+| POST | `/clips/{clip_id}/run` | 出这一段（试段或重做） |
+| POST | `/run` | 批量出剩余各段；请求体必须带用户确认的预估金额，服务端重算不一致即 409 |
+| PUT | `/clips/{clip_id}/chosen` | 采用某次尝试 |
+| PATCH | `/clips/{clip_id}` | 设置 `mute_native` |
+| POST | `/compose` | 合成（见第 3 节） |
+| GET | `/files/{path}` | 取本版本 render 目录下的文件，拒绝路径穿越 |
+
+出片使用**已保存**的版本内容，未保存的编辑不进入出片。
+
+### 1.7 费用、失败与恢复
+
+- **预算**：每次提交前检查「本段预估 + 已花 ≤ 上限」，不满足拒绝。完成后按厂商 usage 记实际花费；失败尝试按厂商规则记账。TTS 费用计入同一 `spent_cny`。
+- **瞬时错误**（断连、5xx、限流）：自动重试 3 次，不算新尝试。
+- **厂商明确失败**（审核、参数）：段转 `failed`，原因原样展示，不自动重试。
+- **重启恢复**：`runner` 启动时扫描 `running` / `downloading` 段，用已存的任务 id 续查续下，不重复提交。
+- **并发**：同时最多 2 段在跑（可配）；轮询间隔 10 秒。
+- **下载**：成功即下载（部分厂商结果 24 小时过期），校验可播放后才转 `done`。
+- **密钥**：`backend/.env`（方舟、豆包语音各自的密钥变量），`STORYBOARD_VIDEO_PROVIDER` / `STORYBOARD_TTS_PROVIDER` 选厂商；密钥不进日志、不进 `session.json`。
+
+---
+
+## 2. 画布交互
+
+出片只在时间轴画布里做，不新开页面。
+
+### 2.1 新增元素
+
+| 位置 | 内容 |
+|---|---|
+| 泳道 | 「成片」泳道，位于「镜头」下方、「画面」上方；有会话时才出现 |
+| 侧栏 | 「出片」页签，与本镜/原文/资产/剧情/任务并列 |
+| 预览窗 | 播到已出片的段时播视频，未出片的段显示关键帧 |
+| 底部工具条 | 「播关键帧 / 播成片」开关 |
+
+### 2.2 「成片」泳道
+
+每段一个横条，横跨所含镜头，宽度 = 时长，与镜头泳道对齐。
+
+| 状态 | 样式 | 文字 |
+|---|---|---|
+| 未出片 | 虚线框 | 段号 · 时长 · 约 ¥x |
+| 排队、生成中 | 实线框 + 进度动画 | 生成中 · 已等 m:ss |
+| 已完成 | 填色 + 视频缩略图 | 段号 · 第 n 次 · ¥x |
+| 失败 | 红框 | 原因（截短） |
+| 过期 | 黄框斜纹 | 已过期 · 仍可播放旧版 |
+
+点横条选中该段并切到「出片」页签。参考图被裁显示 ⚠（悬停列出），有截断显示 ✂。泳道内不可拖拽。
+
+### 2.3 「出片」页签
+
+1. **设置**（首次展开，出过片后折叠）：厂商与档位、分辨率、声音模式、单章上限（默认 200 元）、音色分配（缺音色的角色列在这里，从厂商音色表选，选完写回资产卡 `voice.tts_voice`）。前置检查：验证门结果、缺参考图的资产、被裁或截断的段。未过验证门时所有出片按钮禁用并说明原因。
+2. **总览**：段数与各状态计数；已花 / 剩余预估 / 上限 + 进度条。主按钮随进度变化：「先试这一段」→「出剩余 N 段（约 ¥x）」→「合成整章」。合成后在此播放、下载成片与字幕。
+3. **选中段详情**：段号、所含镜头（可点跳转）、时长；提示词只读可展开（要改就改镜头）；参考图缩略图（被裁的置灰）；首帧来源；尝试记录（时间、状态、费用、播放，★ 标采用，可切换）；「重做这一段（约 ¥x）」；「原声静音」开关；失败原因原文。
+
+### 2.4 确认
+
+- 只在「批量出剩余各段」和「单段预估超过 20 元」（可配）时弹确认。试段和重做的按钮上已写金额，直接执行。
+- 批量确认框列出：各段时长与费用、合计、已花、执行后累计与上限关系、费率依据（沿用 `RATE_SOURCE` 的如实说明）。
+- 有未保存改动时提示「先保存再出片」并禁止确认。
+
+### 2.5 播放
+
+- 「播成片」时，播放头所在段播其采用的视频并定位到对应时刻；现有空格预览与选区照常工作，可跨段连播；未出片段显示关键帧并标「未出片」。
+- TTS 模式下，合成前单段视频只有环境音，字幕照常显示；合成后播放整集有完整配音。
+
+### 2.6 与现有界面
+
+- 轮询：「出片」页签打开且有段在跑时每 5 秒，否则每 30 秒。
+- 「任务」页签（分镜转换）不变。
+- 列表视图的「渲染」页签（`RenderView.tsx`）保留，继续做生产包与提示词导出；出片入口只在画布。二者在子项目 B2 统一。
+- 部分产物预览（转换未完成）不显示任何出片元素。
+
+---
+
+## 3. 声音与合成
+
+### 3.1 配音（`voice.py`）
+
+- **语音条**：按镜头顺序拆，镜头内按 `narration.order` 排旁白与台词，与 `timeline.ts` 的 `speechOf` 同一算法。每条含文字、说话人、音色、情绪、计划起点。
+- **音色**：旁白用 `meta.narration.tts_voice`；台词用说话角色的 `voice.tts_voice`，`voice.tone` 与台词 `emotion` 在厂商支持时作为情绪参数；内心独白、画外音在所有模式下都走 TTS，用该角色音色。缺音色时合成前拦截，到「出片」页签选择。
+- **逐字**：送 TTS 的文字即分镜原文，不改写。
+- **缓存**：键 = `hash(文字, 音色, 情绪, 厂商, 参数)`；未变的语音条不重合成、不重复计费。
+
+### 3.2 TTS 统一接口
+
+```python
+@dataclass
+class TtsCaps:
+    voices: list[Voice]           # id、名称、性别、语言
+    emotions: bool
+    max_chars: int
+    cny_per_k_chars: float        # 环境变量可覆盖
+
+class TtsProvider(Protocol):
+    name: str
+    caps: TtsCaps
+    def synthesize(self, text: str, voice: str, emotion: str | None,
+                   speed: float, dest: Path) -> TtsResult: ...  # 文件、真实时长、费用
+```
+
+首家实现：火山引擎豆包语音合成。具体接口形态、鉴权方式（是否与方舟共用密钥）、价格、音色与情绪支持，在实现计划的第一步核实后写进 `tts_volc.py` 与 `TtsCaps`。
+
+### 3.3 声画对齐
+
+- 以 TTS 真实时长为准，在镜头内依次排列。
+- 超出镜头可播时长 ≤ 15%：语速提到最多 1.15 倍。
+- 超出更多：把该段视频尾帧定格延长到念完，报告中标出镜头。不截断语音。
+- 段内各镜头的切换时刻由模型决定、并不精确；台词按计划镜头起点放置，属近似对齐，报告中说明。
+
+### 3.4 四种模式的合成
+
+| 模式 | 视频原声 | TTS 负责 | 备注 |
+|---|---|---|---|
+| `tts_all`（默认） | 保留为环境音，−12 dB；`mute_native` 的段静音 | 旁白 + 全部台词 | 字一定对，无口型 |
+| `dialogue_native` | 原样 | 旁白、内心独白、画外音 | 有口型；报告提示「台词由模型生成，不保证逐字」 |
+| `all_native` | 原样 | 无 | 最省事，忠实度最低 |
+| `silent` | 去除 | 无 | 只有画面 + 字幕 |
+
+- **BGM**：不自动生成。每集可上传一段 BGM，有人声时自动压低（侧链压缩）；分镜 `music.curve` 显示在合成区供选曲参考。
+- **字幕**：所有模式都按原文和实际时间生成 `.srt`，可选烧录进画面。
+
+### 3.5 合成流程（`mix.py`，本地后台）
+
+1. **取素材**：每段取采用的那次。缺段时：拒绝，或「草稿合成」用该段镜头的关键帧定格补位（默认开）。
+2. **规整**：统一分辨率、画幅（按 `meta.video.aspect_ratio`，补边不拉伸）、30 fps。
+3. **对齐长度**：短于计划 → 尾帧定格补齐；长于计划 → 裁掉。
+4. **拼接**：按集输出 `final/E01.mp4`，可选再拼整章。
+5. **混音**：原声（按模式）+ TTS（按时刻放置）+ BGM（压低），响度标准化到 −16 LUFS。
+6. **输出**：`final/E0x.mp4`、`final/E0x.srt`、`final/mix_report.json`（定格延长、语速调整、补位、声音模式）。
+
+合成不花模型费用。成片也有指纹，分镜或采用的尝试变化后标「已过期」，需手动重新合成。
+
+### 3.6 失败
+
+- 未安装 ffmpeg：启动时检测，合成按钮禁用并提示 `brew install ffmpeg`。
+- TTS 单条失败：重试 3 次；仍失败则报告列出并禁止合成，避免成片漏句。
+- 合成中途失败：保留中间文件与 ffmpeg 错误输出并展示，修复后重跑，已完成的步骤不重做。
+
+---
+
+## 4. 测试
+
+| 层 | 内容 |
+|---|---|
+| 后端单测 | `compose`：可播时长切段、参考图优先级裁剪、四种模式的提示词改写、指纹变化；`session`：状态迁移、预算拦截、确认金额不一致 409、`stale` 判定、重启恢复（用 `fake` 厂商）；`voice`：语音条顺序与 `speechOf` 一致、音色分配、缓存命中；`mix`：语速与定格决策、ffmpeg 滤镜参数（纯函数，不需要 ffmpeg） |
+| 端到端（有 ffmpeg 时） | 用 ffmpeg 测试源生成假视频和假语音，跑完整合成，检查时长、音轨、字幕条数；无 ffmpeg 时跳过 |
+| 前端 | 在 `canvas.test.tsx` 中模拟出片接口：泳道按状态绘制、试段请求正确段、批量确认金额一致、未保存时禁止确认、过期标记、播成片时预览窗换成 `<video>` |
+| 真实厂商 | 不进自动测试；实现计划里单列「手动冒烟」步骤，花费上限 5 元 |
+
+---
+
+## 5. 实施顺序（供写实施计划）
+
+1. 核实方舟与豆包语音的接口、鉴权、价格（只读文档，必要时 5 元内冒烟）
+2. `providers/base.py`、`tts_base.py`、`fake.py`
+3. `compose.py`（含 `plan.py` 拆分，保持现有生产包输出不变）
+4. `session.py` + `runner.py` + 接口
+5. `providers/seedance.py`
+6. 前端「成片」泳道、「出片」页签、确认框、播成片
+7. `voice.py` + `providers/tts_volc.py`
+8. `mix.py` + 合成接口 + 前端合成区
+9. 文档（README、frontend/README）
