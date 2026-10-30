@@ -93,6 +93,9 @@ const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { Overview } = await import('../src/components/admin/Overview')
 const { Users } = await import('../src/components/admin/Users')
+const { UsageTab } = await import('../src/components/admin/UsageTab')
+const { JobsTab } = await import('../src/components/admin/JobsTab')
+const { AuditTab } = await import('../src/components/admin/AuditTab')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -187,6 +190,59 @@ await click(button('设上限'))
 must(patches() === before, '负数上限不应请求')
 must(text().includes(hint), '负数应提示')
 console.log('3b. 月上限非数字 / 负数拒绝 ✓')
+
+// 4. 用量：默认按用户；切分组与范围会重新请求；每千字成本；价格表保存
+await remount(<UsageTab />)
+must(calls.includes('GET /admin/usage?group=user&days=30'), '默认按用户、30 天')
+must(text().includes('bob') && text().includes('$0.7500') && text().includes('$3.0000'), '每千字成本')
+await click(button('按模型'))
+must(calls.includes('GET /admin/usage?group=model&days=30') && text().includes('claude-sonnet-5'), '切到按模型')
+await click(button('7 天'))
+must(calls.includes('GET /admin/usage?group=model&days=7'), '切到 7 天')
+await click(button('保存价格表'))
+must(calls.some((c) => c.startsWith('PUT /admin/pricing')) && text().includes('已保存'), '价格表保存')
+const area = container.querySelector('textarea')!
+await act(async () => {
+  const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
+  setter.call(area, '{not json')
+  area.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+})
+await settle()
+await click(button('保存价格表'))
+must(text().includes('不是合法的 JSON'), '非法 JSON 提示')
+console.log('4. 用量：分组 / 范围 / 每千字成本 / 价格表保存与校验 ✓')
+
+// 4b. 价格表：非有限或负数的单价不发请求，并给出提示
+const setPricing = async (value: string) => {
+  await act(async () => {
+    const el = container.querySelector('textarea')!
+    const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
+    setter.call(el, value)
+    el.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+  })
+  await settle()
+}
+const puts = () => calls.filter((c) => c.startsWith('PUT /admin/pricing')).length
+const putsBefore = puts()
+const priceHint = '单价必须是不小于 0 的有限数字'
+const badPrice = (n: string) => `{"models":{"m":{"input":${n},"output":1,"cache_read":0,"cache_write":0}}}`
+await setPricing(badPrice('-1'))
+await click(button('保存价格表'))
+must(puts() === putsBefore && text().includes(priceHint), '负数单价应拒绝并提示')
+await setPricing(badPrice('1e400'))
+await click(button('保存价格表'))
+must(puts() === putsBefore && text().includes(priceHint), '溢出为 Infinity 的单价应拒绝并提示')
+console.log('4b. 价格表：负数 / 溢出单价拒绝 ✓')
+
+// 5. 任务：运行中与失败两表，报错可展开
+await remount(<JobsTab />)
+must(text().includes('1:15') && text().includes('孔乙己') && text().includes('schema 校验失败'), '任务两表')
+console.log('5. 任务：运行中（已运行 1:15）/ 近期失败报错 ✓')
+
+// 6. 审计
+await remount(<AuditTab />)
+must(text().includes('停用') && text().includes('root') && text().includes('bob'), '审计列表')
+console.log('6. 审计 ✓')
 
 // @@NEXT@@
 
