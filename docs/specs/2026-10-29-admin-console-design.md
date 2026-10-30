@@ -40,7 +40,7 @@
 
 - `purpose`：`convert`（一次转换，含其中的修复与评审调用）、`digest`（采用版本后的章后整理）。以后出片加 `render`。
 - 落账时机：
-  - 转换：`_execute` 结束时，成功和失败都记。用量取 `manifest["usage"]`；为空时用 `manifest_mod.sum_usage(manifest["attempts"])` 现算。评审若用另一个模型，按模型拆成两行。
+  - 转换：`_execute` 结束时，成功和失败都记。用量取 `manifest["usage"]`；为空时用 `manifest_mod.sum_usage(manifest["attempts"])` 现算。评审与转换共用一个用量回调、分不出模型：评审换了模型时整笔记在转换模型名下，并加 `mixed_models: [转换模型, 评审模型]`，后台提示金额按转换模型估算。
   - 章后整理：`run_digest` 那次调用结束后记一行，`chars` 为 0。
 - 写入：进程内锁 + 以追加模式写一行并 `flush`；单行 JSON 不跨行。读取时跳过解析失败的行（容忍崩溃时写了半行）。
 - 删除版本、删除小说不影响流水账。
@@ -102,7 +102,7 @@
 | POST | `/admin/users/{id}/password` | `{ok: true}` |
 | GET | `/admin/usage?group=user\|day\|model&days=7\|30\|90` | 分组汇总：calls、四类 token、金额、字数；另附每千字成本均值与 P90（仅 `purpose=convert` 且成功的记录） |
 | GET | `/admin/usage.csv?days=` | 明细 CSV（每条流水一行，附金额） |
-| GET | `/admin/jobs` | 运行中任务（内存任务表）+ 近 7 天失败的版本（磁盘）：用户、小说与章节标题、开始时间、耗时、字数、尝试轮数、报错前 300 字 |
+| GET | `/admin/jobs` | 运行中任务（内存任务表）+ 近 7 天失败的版本（磁盘）：用户、小说与章节标题、开始时间、运行中任务的已运行时长（失败任务没有结束时间，只给开始时间）、字数、尝试轮数、报错前 300 字 |
 | GET | `/admin/audit?limit=200` | 审计记录，最新在前 |
 | GET / PUT | `/admin/pricing` | 价格表 |
 

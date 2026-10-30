@@ -50,7 +50,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -64,7 +64,9 @@ from pipeline import novel_memory, verification
 from pipeline.chat import ChatInvoker
 from render import keyframes as keyframes_mod
 from render import plan as render_plan_mod
-from server import auth, library, novels, store
+from pipeline.manifest import sum_usage
+from server import admin as admin_mod
+from server import audit, auth, library, novels, pricing, store, usage
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -95,6 +97,14 @@ def current_user(authorization: str = Header(default="")) -> dict:
     user = auth.verify_token(token)
     if user is None:
         raise HTTPException(401, "未登录或登录已过期")
+    auth.touch_seen(user["id"])
+    return user
+
+
+def admin_user(user: dict = Depends(current_user)) -> dict:
+    """管理接口的守门人：前端隐藏入口只是体验，权限以这里为准。"""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "需要管理员权限")
     return user
 
 
@@ -135,6 +145,45 @@ def me(user: dict = Depends(current_user)):
 
 
 # ---------- 转换 ----------
+
+def _record_usage(job: dict, manifest: dict, ok: bool, settings=None) -> None:
+    """一次转换落一行用量（成功、失败都记；一次模型调用都没有就不记）。
+
+    评审与转换共用一个用量回调，分不出模型：评审换了模型时整笔记在转换模型名下，
+    并标 mixed_models，后台据此提示「金额按转换模型估算」。
+    """
+    totals = sum_usage((manifest or {}).get("attempts") or [])
+    if not totals.get("calls"):
+        return
+    model = ((manifest or {}).get("contracts") or {}).get("model") \
+        or (settings.model if settings else load_settings().model)
+    mixed = None
+    if settings is not None and settings.review_enabled and settings.review_model \
+            and settings.review_model != model:
+        mixed = [model, settings.review_model]
+    try:
+        usage.record(user_id=job["user_id"], purpose="convert", model=model, usage=totals,
+                     ok=ok, chars=((manifest or {}).get("input") or {}).get("normalized_chars")
+                     or job.get("chars") or 0,
+                     novel_id=job.get("novel_id"), chapter_id=job.get("chapter_id"),
+                     version_id=job.get("version_id") or job.get("id"), mixed_models=mixed)
+    except Exception as e:  # 落账失败绝不能拖垮转换/整理本身
+        print(f"[usage] 落账失败：{e!r}", flush=True)
+
+
+def _record_chat_usage(user_id: str, nid: str, cid: str, chat, ok: bool) -> None:
+    totals_fn = getattr(chat, "usage_totals", None)
+    if totals_fn is None:
+        return
+    totals = totals_fn()
+    if not totals.get("calls"):
+        return
+    try:
+        usage.record(user_id=user_id, purpose="digest", model=load_settings().model,
+                     usage=totals, ok=ok, novel_id=nid, chapter_id=cid)
+    except Exception as e:  # 落账失败绝不能拖垮转换/整理本身
+        print(f"[usage] 落账失败：{e!r}", flush=True)
+
 
 def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
              seed: Optional[dict], persist, after_success,
@@ -181,6 +230,7 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
         job["persisted"] = save(
             job["status"], result=job["result"], quality_report=job["quality_report"],
             manifest=manifest, verification=job["verification"], error=None)
+        _record_usage(job, manifest, True, settings)
         try:
             after_success(job, log)
         except (OSError, ValueError, LookupError) as e:
@@ -194,6 +244,7 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
         job["verification"] = manifest.get("verification")
         save("failed", error=job["error"], manifest=manifest,
              verification=job["verification"])
+        _record_usage(job, manifest, False, settings)
     except Exception as e:  # LLM/网络等运行期错误
         job["status"] = "failed"
         job["error"] = repr(e)
@@ -201,6 +252,7 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
         if manifest:
             manifest["state"] = "failed"
         save("failed", error=job["error"], manifest=manifest)
+        _record_usage(job, manifest, False, settings)
 
 
 def _on_partial(job: dict, doc: dict, done: int, total: int) -> None:
@@ -450,16 +502,21 @@ def _digest_chat():
 def _run_digest(user_id: str, nid: str, cid: str) -> None:
     """采用版本后的一次小调用：生命周期提议 + 本章摘要。失败只记在章节上，
     不影响已经采用的版本——这是锦上添花，人可以手动补。"""
+    chat, ok = None, False
     try:
         vid, units, characters = novels.digest_input(user_id, nid, cid)
-        proposals, synopsis, dropped = novel_memory.run_digest(
-            _digest_chat(), units, characters)
+        chat = _digest_chat()
+        proposals, synopsis, dropped = novel_memory.run_digest(chat, units, characters)
         novels.record_digest(user_id, nid, cid, vid, proposals, synopsis, dropped)
+        ok = True
     except Exception as e:  # 网络/解析/章节被删——都只是这一步没做成
         try:
             novels.set_digest_state(user_id, nid, cid, "failed", error=repr(e)[:300])
         except (OSError, ValueError, LookupError):
             pass
+    finally:
+        if chat is not None:
+            _record_chat_usage(user_id, nid, cid, chat, ok)
 
 
 def _schedule_digest(user_id: str, nid: str, cid: str) -> bool:
@@ -480,6 +537,10 @@ def versions_create(nid: str, cid: str, req: VersionRequest,
     text = chapter.get("text") or ""
     if not text.strip():
         raise HTTPException(422, "本章还没有原文")
+    raw = auth.get_user_raw(user["id"])
+    cap = raw.get("monthly_cap_usd") if raw else None
+    if cap is not None and usage.month_spent(user["id"], pricing.load()) >= cap:
+        raise HTTPException(429, "本月用量已达上限，请联系管理员")
     merged = {**_clean_params(novel.get("params")), **_clean_params(req.overrides)}
     params = ConvertParams(**{**merged, "work_title": novel["title"],
                               "chapter": chapter["title"]})
@@ -740,6 +801,104 @@ def constraints_delete(nid: str, kid: str, user: dict = Depends(novel_user)):
 
 
 # ---------- 探针 ----------
+
+# ---------- 管理后台 ----------
+
+class AdminPatch(BaseModel):
+    disabled: Optional[bool] = None
+    role: Optional[str] = None
+    monthly_cap_usd: Optional[float] = None
+
+
+class AdminPassword(BaseModel):
+    password: str = Field(..., min_length=1)
+
+
+def _admin_call(fn, *args):
+    try:
+        return fn(*args)
+    except admin_mod.NotFound as e:
+        raise HTTPException(404, str(e))
+    except admin_mod.AdminError as e:
+        raise HTTPException(400, str(e))
+
+
+def _running_jobs() -> list:
+    with _lock:
+        return [dict(j) for j in _jobs.values()]
+
+
+@app.get("/admin/overview")
+def admin_overview(user: dict = Depends(admin_user)):
+    running = sum(1 for j in _running_jobs() if j.get("status") in ("queued", "running"))
+    return admin_mod.overview(pricing.load(), running)
+
+
+@app.get("/admin/users")
+def admin_users(user: dict = Depends(admin_user)):
+    return {"users": admin_mod.user_rows(pricing.load())}
+
+
+@app.get("/admin/users/{uid}")
+def admin_user_detail(uid: str, user: dict = Depends(admin_user)):
+    return _admin_call(admin_mod.user_detail, uid, pricing.load())
+
+
+@app.patch("/admin/users/{uid}")
+def admin_patch_user(uid: str, body: AdminPatch, user: dict = Depends(admin_user)):
+    # 只取请求里真正带了的字段：「设为不限」要传 null，不能和「没传」混为一谈
+    fields = body.model_dump(exclude_unset=True)
+    return _admin_call(admin_mod.patch_user, user, uid, fields)
+
+
+@app.post("/admin/users/{uid}/password")
+def admin_reset_password(uid: str, body: AdminPassword, user: dict = Depends(admin_user)):
+    _admin_call(admin_mod.reset_password, user, uid, body.password)
+    return {"ok": True}
+
+
+@app.get("/admin/usage")
+def admin_usage(group: str = "user", days: int = Query(30),
+                user: dict = Depends(admin_user)):
+    if days not in (7, 30, 90):
+        raise HTTPException(422, "days 只能是 7、30、90")
+    return _admin_call(admin_mod.usage_report, group, days, pricing.load())
+
+
+@app.get("/admin/usage.csv")
+def admin_usage_csv(days: int = Query(30), user: dict = Depends(admin_user)):
+    if days not in (7, 30, 90):
+        raise HTTPException(422, "days 只能是 7、30、90")
+    return Response(admin_mod.usage_csv(days, pricing.load()), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="usage-{days}d.csv"'})
+
+
+@app.get("/admin/jobs")
+def admin_jobs(user: dict = Depends(admin_user)):
+    return admin_mod.jobs_view(_running_jobs())
+
+
+@app.get("/admin/audit")
+def admin_audit(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(admin_user)):
+    return {"audit": audit.read(limit)}
+
+
+@app.get("/admin/pricing")
+def admin_pricing(user: dict = Depends(admin_user)):
+    return pricing.load()
+
+
+@app.put("/admin/pricing")
+def admin_pricing_put(table: dict = Body(...), user: dict = Depends(admin_user)):
+    before = pricing.load()
+    try:
+        saved = pricing.save(table)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    audit.write(user, "update_pricing", None, {"models": before.get("models")},
+                {"models": saved["models"]})
+    return saved
+
 
 @app.get("/healthz")
 def healthz():

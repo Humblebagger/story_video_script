@@ -178,11 +178,102 @@ def part_cli():
     print("4. 命令行 promote / demote / list ✓")
 
 
+def part_api():
+    from fastapi.testclient import TestClient
+    from server import app as app_mod
+
+    c = TestClient(app_mod.app)
+    users = {u["username"]: u for u in auth.list_users_safe()}
+    root_tok = auth.issue_token(users["root"]["id"])
+    carol_tok = auth.issue_token(users["carol"]["id"])
+    H = {"Authorization": f"Bearer {root_tok}"}
+
+    # 权限：普通用户 403，未登录 401
+    assert c.get("/admin/overview", headers={"Authorization": f"Bearer {carol_tok}"}).status_code == 403
+    assert c.get("/admin/overview").status_code == 401
+    assert c.get("/auth/me", headers=H).json()["role"] == "admin"
+
+    # 只读接口
+    assert c.get("/admin/overview", headers=H).json()["users"] == 3
+    rows = c.get("/admin/users", headers=H).json()["users"]
+    assert {r["username"] for r in rows} == {"root", "bob", "carol"}
+    assert "原文很长" not in json.dumps(rows, ensure_ascii=False)
+    bob_id = users["bob"]["id"]
+    assert c.get(f"/admin/users/{bob_id}", headers=H).json()["user"]["username"] == "bob"
+    assert c.get("/admin/users/ffffffffffff", headers=H).status_code == 404
+    assert c.get("/admin/usage?group=day&days=7", headers=H).json()["group"] == "day"
+    assert c.get("/admin/usage?group=bogus&days=7", headers=H).status_code == 400
+    assert c.get("/admin/usage?group=user&days=5", headers=H).status_code == 422
+    r = c.get("/admin/usage.csv?days=30", headers=H)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert "failed" in c.get("/admin/jobs", headers=H).json()
+    assert c.get("/admin/audit", headers=H).json()["audit"][0]["action"]
+
+    # 操作：停用后对方 token 立即 401、不能登录；启用恢复
+    carol_id = users["carol"]["id"]
+    assert c.patch(f"/admin/users/{carol_id}", json={"disabled": True}, headers=H).status_code == 200
+    assert c.get("/auth/me", headers={"Authorization": f"Bearer {carol_tok}"}).status_code == 401
+    r = c.post("/auth/login", json={"username": "carol", "password": "secret1"})
+    assert r.status_code == 401 and r.json()["detail"] == "账号已停用"
+    c.patch(f"/admin/users/{carol_id}", json={"disabled": False}, headers=H)
+    assert c.patch(f"/admin/users/{users['root']['id']}", json={"disabled": True},
+                   headers=H).status_code == 400
+    assert c.post(f"/admin/users/{carol_id}/password", json={"password": "freshpw1"},
+                  headers=H).json() == {"ok": True}
+    assert c.post("/auth/login", json={"username": "carol", "password": "freshpw1"}).status_code == 200
+
+    # 价格表
+    t = c.get("/admin/pricing", headers=H).json()
+    t["models"]["mystery"] = {"input": 1, "output": 1, "cache_read": 0, "cache_write": 0}
+    assert c.put("/admin/pricing", json=t, headers=H).status_code == 200
+    assert "mystery" in c.get("/admin/pricing", headers=H).json()["models"]
+    bad = {"models": {"m": {"input": -1}}}
+    assert c.put("/admin/pricing", json=bad, headers=H).status_code == 400
+    assert c.get("/admin/audit", headers=H).json()["audit"][0]["action"] == "update_pricing"
+
+    # 月上限：上限 0 时提交转换被拒 429（不会真的启动转换）
+    carol = auth.get_user_raw(carol_id)
+    nid = novels.create_novel(carol_id, "孔乙己")["id"]
+    cid = novels.create_chapter(carol_id, nid, "一", text="正文")["id"]
+    c.patch(f"/admin/users/{carol_id}", json={"monthly_cap_usd": 0}, headers=H)
+    carol_tok = auth.issue_token(carol_id)
+    r = c.post(f"/novels/{nid}/chapters/{cid}/versions", json={},
+               headers={"Authorization": f"Bearer {carol_tok}"})
+    assert r.status_code == 429 and "本月用量已达上限" in r.json()["detail"], r.text
+    assert carol["username"] == "carol"
+
+    # 落账：章后整理调用后写一条 digest 记录
+    from pipeline.chat import UsageCallback
+
+    class FakeDigestChat:
+        usage = UsageCallback()
+
+        def usage_totals(self):
+            return {"calls": 1, "input": 5, "output": 7, "cache_read": 0, "cache_write": 0}
+
+    app_mod._record_chat_usage(carol_id, nid, cid, FakeDigestChat(), ok=True)
+    last = usage.read(user_id=carol_id)[-1]
+    assert last["purpose"] == "digest" and last["output"] == 7 and last["chapter_id"] == cid
+
+    # 落账：转换结束（成功与失败都记；没有调用不记）
+    job = {"id": "vx", "user_id": carol_id, "novel_id": nid, "chapter_id": cid,
+           "version_id": "vx", "chars": 2}
+    manifest = {"attempts": [{"usage": {"calls": 1, "input": 3, "output": 4}}],
+                "contracts": {"model": "claude-sonnet-5"}, "input": {"normalized_chars": 2}}
+    before = len(usage.read())
+    app_mod._record_usage(job, manifest, ok=False)
+    app_mod._record_usage(job, {"attempts": []}, ok=True)
+    after = usage.read()
+    assert len(after) == before + 1 and after[-1]["ok"] is False and after[-1]["input"] == 3
+    print("5. 接口权限 / 只读接口 / 停用即时生效 / 重置密码 / 价格表 / 月上限 429 / 落账 ✓")
+
+
 def main() -> int:
     root, bob = part_auth()
     nid, cid = part_admin(root, bob)
     part_jobs_overview(root, bob, nid, cid)
     part_cli()
+    part_api()
     print("\nALL PASS")
     return 0
 
