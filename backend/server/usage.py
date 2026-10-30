@@ -71,10 +71,12 @@ def aggregate(rows: list, group: str, table: dict) -> list:
     buckets: dict = {}
     for r in rows:
         b = buckets.setdefault(key(r), {"key": key(r), **{k: 0 for k in TOKENS},
-                                        "chars": 0, "cost_usd": 0.0, "unpriced": 0})
+                                        "chars": 0, "cost_usd": 0.0, "unpriced": 0,
+                                        "records": 0})
         for k in TOKENS:
             b[k] += r.get(k) or 0
         b["chars"] += r.get("chars") or 0
+        b["records"] += 1
         c = pricing.cost(r, table)
         if c is None:
             b["unpriced"] += 1

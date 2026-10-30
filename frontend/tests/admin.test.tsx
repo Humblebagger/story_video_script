@@ -69,10 +69,13 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     return json({ group, days: 30, per_k_chars: { n: 2, mean: 0.75, p90: 3 }, unpriced_models: [],
       rows: [{ key: 'u-bob', label: group === 'user' ? 'bob' : group === 'model' ? 'claude-sonnet-5' : '2026-10-30',
                calls: 3, input: 1000, output: 2000, cache_read: 0, cache_write: 0, chars: 4000,
-               cost_usd: 4.5, unpriced: 0 },
+               cost_usd: 4.5, unpriced: 0, records: 1 },
              { key: 'u-amy', label: group === 'user' ? 'amy' : group === 'model' ? 'mystery' : '2026-10-29',
                calls: 2, input: 10, output: 20, cache_read: 0, cache_write: 0, chars: 100,
-               cost_usd: 0, unpriced: 2 }] })
+               cost_usd: 0, unpriced: 2, records: 2 },
+             { key: 'u-free', label: group === 'user' ? 'free' : group === 'model' ? 'free-model' : '2026-10-28',
+               calls: 1, input: 5, output: 5, cache_read: 0, cache_write: 0, chars: 50,
+               cost_usd: 0, unpriced: 0, records: 1 }] })
   }
   if (path === '/admin/jobs') return json({
     running: [{ id: 'j1', username: 'bob', status: 'running', work_title: '药', chapter: '第一章',
@@ -246,6 +249,9 @@ const mysteryRow = [...container.querySelectorAll('tbody tr')].find((tr) => (tr.
 must(!!mysteryRow && mysteryRow.textContent!.includes('未定价') && !mysteryRow.textContent!.includes('$0.00'),
      '整行未定价应显示「未定价」')
 must(text().includes('另有 2 条未定价') === false, '整行未定价不应再显示「另有」提示')
+const freeRow = [...container.querySelectorAll('tbody tr')].find((tr) => (tr.textContent ?? '').includes('free-model'))
+must(!!freeRow && freeRow.textContent!.includes('$0.00') && !freeRow.textContent!.includes('未定价'),
+     '已定价但金额为 $0.00 的行应显示 $0.00 而非「未定价」')
 console.log('4c. 用量：刷新重新请求 / 整行未定价显示「未定价」✓')
 
 // 5. 任务：运行中与失败两表，报错可展开

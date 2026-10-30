@@ -78,6 +78,7 @@ def main() -> int:
     assert by_user[U1]["calls"] == 2 and by_user[U1]["input"] == 1_000_000
     assert abs(by_user[U1]["cost_usd"] - (3.0 + 1.5)) < 1e-9
     assert by_user[U2]["unpriced"] == 1 and abs(by_user[U2]["cost_usd"] - 3.0) < 1e-9
+    assert by_user[U2]["records"] == 2 and by_user[U1]["records"] == 2, "records 按记录计数（含未定价）"
     days = [r["key"] for r in usage.aggregate(rows, "day", table)]
     assert days == sorted(days), "按天升序"
     by_model = {r["key"]: r for r in usage.aggregate(rows, "model", table)}

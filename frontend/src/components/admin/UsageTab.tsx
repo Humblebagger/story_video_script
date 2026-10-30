@@ -17,8 +17,8 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
-/** 整行都没有定价记录（后端 unpriced 是记录数，cost_usd 为 0）。 */
-const isUnpriced = (r: UsageGroupRow) => r.unpriced > 0 && r.cost_usd === 0
+/** 整行每条记录都未定价（unpriced 与 records 都是记录数）。 */
+const isUnpriced = (r: UsageGroupRow) => r.records > 0 && r.unpriced === r.records
 /** 部分记录未定价：金额是已定价部分的合计。 */
 const partUnpriced = (r: UsageGroupRow) => r.unpriced > 0 && !isUnpriced(r)
 

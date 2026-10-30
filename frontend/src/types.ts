@@ -629,6 +629,7 @@ export interface UsageGroupRow {
   chars: number
   cost_usd: number
   unpriced: number
+  records: number
 }
 
 export interface UsageReport {
