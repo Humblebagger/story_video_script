@@ -92,6 +92,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { Overview } = await import('../src/components/admin/Overview')
+const { Users } = await import('../src/components/admin/Users')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -137,6 +138,39 @@ must(text().includes('1,234,567') && text().includes('$13.50'), '数字与金额
 must(text().includes('mystery'), '应提示未定价模型')
 must(container.querySelectorAll('.adm__chart circle').length === 30, '折线图 30 个点')
 console.log('1. 概览：卡片 / 格式 / 未定价提示 / 折线图 ✓')
+
+// 2. 用户：默认按注册时间倒序；点表头按本月金额排序；搜索
+const me = { id: 'u-root', username: 'root', created_at: '', role: 'admin' as const }
+await remount(<Users me={me} />)
+const names = () => [...container.querySelectorAll('tbody tr.adm__row td:first-child')].map((td) => td.textContent)
+must(names().join(',') === 'amy,bob,root', `默认注册倒序，实为 ${names()}`)
+await click(button('本月金额'))
+must(names().join(',') === 'amy,bob,root', '本月金额降序')
+await click(button('本月金额'))
+must(names().join(',') === 'root,bob,amy', '再点升序')
+await type(container.querySelector('.adm__search')!, 'bo')
+must(names().join(',') === 'bob', '搜索过滤')
+must(text().includes('$5.00') && text().includes('$4.50'), '上限与本月金额')
+console.log('2. 用户：排序 / 搜索 / 金额 ✓')
+
+// 3. 详情与操作：停用带确认、改上限、重置密码（失败提示）、自己不能停用
+await click(container.querySelector('tbody tr.adm__row')!)
+must(text().includes('药 / 第一章') && text().includes('转换'), '详情显示最近用量与标题')
+await click(button('停用'))
+must(confirms.some((c) => c.includes('停用')), '停用应先确认')
+must(calls.some((c) => c === 'PATCH /admin/users/u-bob {"disabled":true}'), '应请求停用')
+must(text().includes('已停用'), '列表刷新为已停用')
+await type(container.querySelector('input[placeholder^="月上限"]')!, '')
+await click(button('设上限'))
+must(calls.some((c) => c === 'PATCH /admin/users/u-bob {"monthly_cap_usd":null}'), '空上限 = 不限')
+await type(container.querySelector('input[type=password]')!, 'goodpass1')
+await click(button('重置密码'))
+must(calls.some((c) => c.startsWith('POST /admin/users/u-bob/password')), '应请求重置密码')
+await type(container.querySelector('.adm__search')!, 'root')
+await click(container.querySelector('tbody tr.adm__row')!)
+must(button('停用').disabled && button('取消管理员').disabled, '自己不能停用、不能改自己的角色')
+must(text().includes('不能停用自己'), '应说明原因')
+console.log('3. 详情 / 停用确认 / 上限不限 / 重置密码 / 自己受限 ✓')
 
 // @@NEXT@@
 
