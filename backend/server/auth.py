@@ -41,6 +41,12 @@ MIN_PASSWORD = 6
 
 _lock = threading.RLock()
 
+# 最近活跃：同一用户 10 分钟内最多写一次 users.json
+SEEN_EVERY = 600
+_seen_at: dict = {}
+EDITABLE = ("role", "disabled", "monthly_cap_usd")
+ROLES = ("admin", "user")
+
 
 class AuthError(Exception):
     """凭据/注册相关的可预期错误，由 app.py 翻成 4xx。"""
@@ -85,13 +91,18 @@ def user_dir(user_id: str) -> Path:
     return DATA_DIR / "users" / user_id
 
 
+def _now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+
+
 def _hash(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac(
         "sha256", password.encode(), bytes.fromhex(salt), PBKDF2_ROUNDS).hex()
 
 
 def _public(u: dict) -> dict:
-    return {"id": u["id"], "username": u["username"], "created_at": u["created_at"]}
+    return {"id": u["id"], "username": u["username"], "created_at": u["created_at"],
+            "role": u.get("role") or "user", "disabled": bool(u.get("disabled"))}
 
 
 def user_count() -> int:
@@ -115,7 +126,7 @@ def register(username: str, password: str) -> dict:
             "username": username,
             "salt": salt,
             "password_hash": _hash(password, salt),
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+            "created_at": _now(),
         }
         first = not users
         users.append(user)
@@ -154,7 +165,10 @@ def authenticate(username: str, password: str) -> dict:
     for u in users:
         if u["username"].lower() == (username or "").strip().lower():
             # compare_digest 防时序侧信道
-            if hmac.compare_digest(_hash(password or "", u["salt"]), u["password_hash"]):
+            if u.get("password_hash") and hmac.compare_digest(
+                    _hash(password or "", u["salt"]), u["password_hash"]):
+                if u.get("disabled"):
+                    raise AuthError("账号已停用")
                 return _public(u)
             break
     raise AuthError("用户名或密码不正确")
@@ -165,6 +179,70 @@ def get_user(user_id: str) -> Optional[dict]:
         if u["id"] == user_id:
             return _public(u)
     return None
+
+
+def _safe(u: dict) -> dict:
+    """给管理后台用的用户信息：去掉密码字段，补上 has_password。"""
+    out = {k: v for k, v in u.items() if k not in ("salt", "password_hash")}
+    out["role"] = u.get("role") or "user"
+    out["disabled"] = bool(u.get("disabled"))
+    out.setdefault("monthly_cap_usd", None)
+    out.setdefault("last_seen_at", None)
+    out["has_password"] = bool(u.get("password_hash"))
+    return out
+
+
+def get_user_raw(user_id: str) -> Optional[dict]:
+    for u in _load_users():
+        if u["id"] == user_id:
+            return _safe(u)
+    return None
+
+
+def list_users_safe() -> list:
+    return [_safe(u) for u in _load_users()]
+
+
+def update_user(user_id: str, **fields) -> dict:
+    """管理后台改账号字段；只允许 EDITABLE 里的键，约束在 admin.py 里检查。"""
+    bad = set(fields) - set(EDITABLE)
+    if bad:
+        raise ValueError(f"不允许修改：{sorted(bad)}")
+    with _lock:
+        users = _load_users()
+        u = next((x for x in users if x["id"] == user_id), None)
+        if u is None:
+            raise AuthError("用户不存在")
+        u.update(fields)
+        _save_users(users)
+        return _safe(u)
+
+
+def set_password(user_id: str, password: str) -> None:
+    if len(password or "") < MIN_PASSWORD:
+        raise AuthError(f"密码至少 {MIN_PASSWORD} 位")
+    with _lock:
+        users = _load_users()
+        u = next((x for x in users if x["id"] == user_id), None)
+        if u is None:
+            raise AuthError("用户不存在")
+        u["salt"] = secrets.token_hex(16)
+        u["password_hash"] = _hash(password, u["salt"])
+        _save_users(users)
+
+
+def touch_seen(user_id: str) -> None:
+    now = time.time()
+    if now - _seen_at.get(user_id, 0) < SEEN_EVERY:
+        return
+    _seen_at[user_id] = now
+    with _lock:
+        users = _load_users()
+        for u in users:
+            if u["id"] == user_id:
+                u["last_seen_at"] = _now()
+                _save_users(users)
+                return
 
 
 def issue_token(user_id: str) -> str:
@@ -190,4 +268,7 @@ def verify_token(token: str) -> Optional[dict]:
         return None
     if int(exp) < time.time():
         return None
-    return get_user(user_id)
+    user = get_user(user_id)
+    if user is None or user["disabled"]:
+        return None      # 停用立即生效：token 自包含，但每次都回查用户
+    return user
