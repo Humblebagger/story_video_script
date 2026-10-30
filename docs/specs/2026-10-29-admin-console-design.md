@@ -49,6 +49,8 @@
 
 `python -m server.admin backfill-usage`：扫描 `data/users/*/novels/*/chapters/*/versions/*.json` 与旧 `runs/*.json`，有 `manifest.usage` 或 `manifest.attempts` 的生成 `purpose=convert` 记录，`at` 取版本 `created_at`。用 `(user_id, version_id, purpose)` 去重，重复执行安全。没有用量信息的老版本跳过并在输出里计数。
 
+实现上只扫描 `versions/`；旧 `runs/` 的记录在该用户首次登录迁移成版本后才会被覆盖，所以部署时跑一次、之后可重跑补漏。
+
 ### 2.3 `data/pricing.json`
 
 ```json

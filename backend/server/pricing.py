@@ -5,6 +5,7 @@
 """
 import copy
 import json
+import math
 from typing import Optional
 
 from server.auth import DATA_DIR
@@ -46,7 +47,8 @@ def _validate(table: dict) -> dict:
         row = {}
         for k in KEYS:
             v = price.get(k)
-            if not isinstance(v, (int, float)) or isinstance(v, bool) or v < 0:
+            if (not isinstance(v, (int, float)) or isinstance(v, bool)
+                    or not math.isfinite(v) or v < 0):
                 raise ValueError(f"模型 {name} 的 {k} 单价必须是非负数")
             row[k] = float(v)
         clean[name.strip()] = row

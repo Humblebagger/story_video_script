@@ -105,6 +105,24 @@ def main() -> int:
     assert usage.unpriced_models(rows, table) == ["mystery"]
     print("6. 未定价模型 ✓")
 
+    # 7. 半行恢复：崩溃留下无换行的残行，下一条不能被粘进去；时间戳异常的行跳过
+    with open(usage.USAGE_FILE, "a", encoding="utf-8") as f:
+        f.write('{"at": "2026-10-30T09:0')
+    usage.record(user_id=U1, purpose="convert", model="claude-sonnet-5",
+                 usage=tok(7), ok=True, at="2026-10-30T09:30:00+00:00")
+    assert usage.read(user_id=U1)[-1]["input"] == 7, "残行后的新记录不能丢"
+    with open(usage.USAGE_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"at": "2026-10-30T10:00:00", "user_id": U1}) + "\n")  # 无时区
+    got = usage.read(since=datetime(2026, 10, 1, tzinfo=timezone.utc))
+    assert got and all(r["at"] != "2026-10-30T10:00:00" for r in got), \
+        "无时区的行在带时区的 since 比较时被跳过而不是抛错"
+    from server import audit
+    with open(audit.AUDIT_FILE, "a", encoding="utf-8") as f:
+        f.write('{"at": "x')
+    audit.write({"id": "a", "username": "a"}, "probe")
+    assert audit.read()[0]["action"] == "probe", "审计残行后的新记录不能丢"
+    print("7. 半行恢复 / 异常时间戳跳过 ✓")
+
     print("\nALL PASS")
     return 0
 

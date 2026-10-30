@@ -17,6 +17,15 @@ TOKENS = ("calls", "input", "output", "cache_read", "cache_write")
 _lock = threading.Lock()
 
 
+def ensure_line_start(path, f) -> None:
+    """上次崩溃可能留下没换行的残行；先补一个换行，新记录才不会被粘进去。"""
+    if path.exists() and path.stat().st_size:
+        with open(path, "rb") as r:
+            r.seek(-1, 2)
+            if r.read(1) != b"\n":
+                f.write("\n")
+
+
 def record(*, user_id: str, purpose: str, model: str, usage: dict, ok: bool,
            chars: int = 0, novel_id: Optional[str] = None,
            chapter_id: Optional[str] = None, version_id: Optional[str] = None,
@@ -31,6 +40,7 @@ def record(*, user_id: str, purpose: str, model: str, usage: dict, ok: bool,
     with _lock:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(USAGE_FILE, "a", encoding="utf-8") as f:
+            ensure_line_start(USAGE_FILE, f)
             f.write(line)
             f.flush()
     return row
@@ -49,9 +59,9 @@ def read(since: Optional[datetime] = None, user_id: Optional[str] = None) -> lis
             try:
                 row = json.loads(line)
                 when = _when(row)
+                if since is not None and when < since:
+                    continue
             except (ValueError, KeyError, TypeError):
-                continue
-            if since is not None and when < since:
                 continue
             if user_id is not None and row.get("user_id") != user_id:
                 continue

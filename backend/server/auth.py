@@ -9,10 +9,12 @@
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
 import threading
+import tempfile
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from pathlib import Path
@@ -78,10 +80,16 @@ def _load_users() -> list:
 
 def _save_users(users: list) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = USERS_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(users, ensure_ascii=False, indent=2) + "\n",
-                   encoding="utf-8")
-    tmp.replace(USERS_FILE)
+    # 唯一临时文件：命令行与服务同时写时不会互相覆盖对方的临时文件
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=DATA_DIR,
+                                     delete=False, suffix=".tmp") as f:
+        tmp = Path(f.name)
+        f.write(json.dumps(users, ensure_ascii=False, indent=2) + "\n")
+    try:
+        os.replace(tmp, USERS_FILE)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def user_dir(user_id: str) -> Path:
@@ -232,16 +240,21 @@ def set_password(user_id: str, password: str) -> None:
 
 
 def touch_seen(user_id: str) -> None:
+    """记最近活跃。每个请求都会调，写盘失败只记警告，绝不能让请求 500。"""
     now = time.time()
-    if now - _seen_at.get(user_id, 0) < SEEN_EVERY:
-        return
-    _seen_at[user_id] = now
     with _lock:
+        if now - _seen_at.get(user_id, 0) < SEEN_EVERY:
+            return
         users = _load_users()
         for u in users:
             if u["id"] == user_id:
                 u["last_seen_at"] = _now()
-                _save_users(users)
+                try:
+                    _save_users(users)
+                except OSError as e:
+                    logging.getLogger(__name__).warning("记录最近活跃失败：%r", e)
+                    return
+                _seen_at[user_id] = now
                 return
 
 

@@ -66,7 +66,26 @@ def part_auth():
     time.sleep(1.1)
     auth.touch_seen(bob["id"])
     assert auth.get_user_raw(bob["id"])["last_seen_at"] == first, "节流期内不写"
-    print("1. 角色 / 上限 / 停用立即生效 / 重置密码 / 安全列表 / 最近活跃节流 ✓")
+
+    # 写盘失败不能让请求 500：touch_seen 吞掉 OSError，且下次还会重试
+    real_save = auth._save_users
+    calls = []
+
+    def boom(users):
+        calls.append(1)
+        raise OSError("disk full")
+
+    auth._seen_at.pop(bob["id"], None)
+    auth._save_users = boom
+    try:
+        auth.touch_seen(bob["id"])
+        auth.touch_seen(bob["id"])
+    finally:
+        auth._save_users = real_save
+    assert len(calls) == 2, "失败不记节流时间，下次继续重试"
+    auth.touch_seen(bob["id"])
+    assert auth.get_user_raw(bob["id"])["last_seen_at"] != first, "恢复后写入成功"
+    print("1. 角色 / 上限 / 停用立即生效 / 重置密码 / 安全列表 / 最近活跃节流与写盘失败 ✓")
     return root, bob
 
 
@@ -230,6 +249,21 @@ def part_api():
     bad = {"models": {"m": {"input": -1}}}
     assert c.put("/admin/pricing", json=bad, headers=H).status_code == 400
     assert c.get("/admin/audit", headers=H).json()["audit"][0]["action"] == "update_pricing"
+
+    # 非有限数 / disabled 非布尔：400，且列表接口不被毒化
+    jh = {**H, "Content-Type": "application/json"}
+    r = c.patch(f"/admin/users/{carol_id}", headers=jh,
+                content=json.dumps({"monthly_cap_usd": float("nan")}, allow_nan=True))
+    assert r.status_code == 400, r.text
+    r = c.patch(f"/admin/users/{carol_id}", headers=jh, content='{"monthly_cap_usd": 1e400}')
+    assert r.status_code == 400, r.text
+    assert c.patch(f"/admin/users/{carol_id}", json={"disabled": None}, headers=H).status_code == 400
+    t2 = c.get("/admin/pricing", headers=H).json()
+    t2["models"]["mystery"]["input"] = float("inf")
+    r = c.put("/admin/pricing", headers=jh, content=json.dumps(t2, allow_nan=True))
+    assert r.status_code == 400, r.text
+    assert c.get("/admin/users", headers=H).status_code == 200
+    assert c.get("/admin/pricing", headers=H).status_code == 200
 
     # 月上限：上限 0 时提交转换被拒 429（不会真的启动转换）
     carol = auth.get_user_raw(carol_id)

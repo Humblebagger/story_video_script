@@ -3,6 +3,7 @@ import json
 import threading
 from typing import Optional
 
+from server import usage
 from server.auth import DATA_DIR
 from server.store import now_iso
 
@@ -19,6 +20,7 @@ def write(admin: dict, action: str, target: Optional[dict] = None,
     with _lock:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(AUDIT_FILE, "a", encoding="utf-8") as f:
+            usage.ensure_line_start(AUDIT_FILE, f)
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     return row
 

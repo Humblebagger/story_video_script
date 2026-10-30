@@ -6,6 +6,7 @@
 import csv
 import io
 import json
+import math
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -92,7 +93,8 @@ def patch_user(admin_user: dict, user_id: str, body: dict) -> dict:
     target = _user(user_id)
     self_edit = user_id == admin_user["id"]
     if field == "disabled":
-        value = bool(value)
+        if not isinstance(value, bool):
+            raise AdminError("disabled 必须是 true 或 false")
         if value and self_edit:
             raise AdminError("不能停用自己")
         if value and target["role"] == "admin":
@@ -108,7 +110,8 @@ def patch_user(admin_user: dict, user_id: str, body: dict) -> dict:
         action = "grant_admin" if value == "admin" else "revoke_admin"
     elif field == "monthly_cap_usd":
         if value is not None:
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not math.isfinite(value) or value < 0:
                 raise AdminError("月上限必须是非负数，或留空表示不限")
             value = float(value)
         action = "set_cap"
@@ -129,7 +132,7 @@ def reset_password(admin_user: dict, user_id: str, password: str) -> None:
     audit.write(admin_user, "reset_password", target)
 
 
-def _version_files():
+def _version_files(min_mtime: Optional[float] = None):
     users_root = auth.DATA_DIR / "users"
     if not users_root.exists():
         return
@@ -138,6 +141,8 @@ def _version_files():
             continue
         for path in novels.novels_dir(udir.name).glob("*/chapters/*/versions/*.json"):
             try:
+                if min_mtime is not None and path.stat().st_mtime < min_mtime:
+                    continue
                 yield udir.name, json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
@@ -161,7 +166,7 @@ def jobs_view(memory_jobs: list) -> dict:
                         "elapsed_sec": elapsed})
     since = now - timedelta(days=FAILED_DAYS)
     failed = []
-    for uid, v in _version_files():
+    for uid, v in _version_files(min_mtime=since.timestamp()):
         if v.get("status") != "failed" or not v.get("created_at"):
             continue
         if datetime.fromisoformat(v["created_at"]) < since:

@@ -152,16 +152,16 @@ def _record_usage(job: dict, manifest: dict, ok: bool, settings=None) -> None:
     评审与转换共用一个用量回调，分不出模型：评审换了模型时整笔记在转换模型名下，
     并标 mixed_models，后台据此提示「金额按转换模型估算」。
     """
-    totals = sum_usage((manifest or {}).get("attempts") or [])
-    if not totals.get("calls"):
-        return
-    model = ((manifest or {}).get("contracts") or {}).get("model") \
-        or (settings.model if settings else load_settings().model)
-    mixed = None
-    if settings is not None and settings.review_enabled and settings.review_model \
-            and settings.review_model != model:
-        mixed = [model, settings.review_model]
     try:
+        totals = sum_usage((manifest or {}).get("attempts") or [])
+        if not totals.get("calls"):
+            return
+        model = ((manifest or {}).get("contracts") or {}).get("model") \
+            or (settings.model if settings else load_settings().model)
+        mixed = None
+        if settings is not None and settings.review_enabled and settings.review_model \
+                and settings.review_model != model:
+            mixed = [model, settings.review_model]
         usage.record(user_id=job["user_id"], purpose="convert", model=model, usage=totals,
                      ok=ok, chars=((manifest or {}).get("input") or {}).get("normalized_chars")
                      or job.get("chars") or 0,
