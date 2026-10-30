@@ -74,7 +74,8 @@ const shelf = (u: string) => {
   if (!novelsOf.has(u)) novelsOf.set(u, [])
   return novelsOf.get(u)!
 }
-const user = (name: string) => ({ id: name, username: name, created_at: '' })
+const user = (name: string) => ({ id: name, username: name, created_at: '',
+                                  ...(name === 'boss' ? { role: 'admin' } : {}) })
 const auth = (init?: { headers?: Record<string, string> }) => {
   const h = (init?.headers ?? {}).Authorization ?? ''
   return h.startsWith('Bearer tok-') && users.has(h.slice(11)) ? h.slice(11) : null
@@ -420,6 +421,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { default: App } = await import('../src/App')
+const { notifyUnauthorized } = await import('../src/auth')
 
 const doc = win.document as unknown as Document
 const container = doc.createElement('div')
@@ -709,6 +711,34 @@ must(has('bob') && !has('alice'), '顶栏应换成新用户')
 must(!has('药') && !has('华老栓'), 'bob 不该看到 alice 的小说')
 must(has('还没有小说'), 'bob 的书架应为空')
 console.log('12. 换账号 → 小说与长期记忆完全隔离 ✓')
+
+// 12b. 管理入口：管理员能进能出；401 / 退出后换成普通用户，不能落进后台
+users.set('boss', 'pw000000')
+const loginAs = async (name: string, pw: string) => {
+  const [uu, pp] = fields()
+  await type(uu, name, false)
+  await type(pp, pw, false)
+  await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
+  await settle(200)
+}
+const btn = (t: string) =>
+  [...container.querySelectorAll('button')].find((b) => b.textContent === t) as unknown as HTMLElement | undefined
+await click(findByText('button', '退出'))
+await loginAs('boss', 'pw000000')
+must(!!btn('管理'), '管理员应看到「管理」入口')
+await click(btn('管理')!)
+must(has('管理后台') && !!btn('返回书架'), '点「管理」应进入后台')
+await click(btn('返回书架')!)
+must(!has('管理后台') && !!btn('管理'), '「返回书架」应回到书架')
+await click(btn('管理')!)
+must(has('管理后台'), '再次进入后台')
+await act(async () => { notifyUnauthorized() })     // 后台开着时登录失效
+await settle(50)
+must(has('login__tab') && !has('管理后台'), '401 后应回到登录页')
+await loginAs('bob', 'pw654321')
+must(has('bob') && !has('管理后台') && !btn('管理') && !btn('返回书架'),
+     '401 后换普通用户登录，不能落进后台，也不该有「管理」入口')
+console.log('12b. 管理入口 → 管理员进出后台 / 401 后换普通用户不落进后台 ✓')
 
 // 13. 从零建小说再设定人物——「先设定人物场景再去转换」是常见用法
 await type(field('小说标题'), '鲍勃的新书', false)

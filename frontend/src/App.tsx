@@ -178,7 +178,7 @@ export default function App() {
   }, [announce, refreshNovels, reloadOpen])
 
   // 登录态失效（token 过期或被撤销）→ 退回登录页
-  useEffect(() => onUnauthorized(() => setUser(null)), [])
+  useEffect(() => onUnauthorized(() => { setAdminOpen(false); setUser(null) }), [])
 
   // 随登录态重取：否则注册后再退出，登录页仍显示「服务端还没有任何账号」
   useEffect(() => {
@@ -466,7 +466,7 @@ export default function App() {
               )}
           {user.role === 'admin' && (
             <button className="btn btn--sm btn--ghost" onClick={() => setAdminOpen((v) => !v)}>
-              {adminOpen ? '返回书架' : '管理'}
+              {adminOpen && user.role === 'admin' ? '返回书架' : '管理'}
             </button>
           )}
           <span className="who" title={`已登录：${user.username}`}>
@@ -476,7 +476,7 @@ export default function App() {
         </div>
       </header>
 
-      {adminOpen ? (
+      {adminOpen && user.role === 'admin' ? (
         <AdminView me={user} onBack={() => setAdminOpen(false)} />
       ) : (
         <div className="shell">
