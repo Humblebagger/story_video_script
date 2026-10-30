@@ -6,6 +6,7 @@ import {
 } from './api'
 import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
 import type { User } from './auth'
+import { AdminView } from './components/admin/AdminView'
 import { ChapterPage } from './components/ChapterPage'
 import { JobPanel } from './components/JobPanel'
 import { LoginView } from './components/LoginView'
@@ -27,6 +28,7 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export default function App() {
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
+  const [adminOpen, setAdminOpen] = useState(false)
   const [svc, setSvc] = useState<Health | null>(null)
   const [svcDown, setSvcDown] = useState(false)
 
@@ -418,6 +420,7 @@ export default function App() {
   const logout = () => {
     clearSession()
     clearWork()
+    setAdminOpen(false)
     setUser(null)
     setNovel(null)
     setChapter(null)
@@ -461,6 +464,11 @@ export default function App() {
                   {!svc.api_key_configured && <em> · 未配置密钥</em>}
                 </span>
               )}
+          {user.role === 'admin' && (
+            <button className="btn btn--sm btn--ghost" onClick={() => setAdminOpen((v) => !v)}>
+              {adminOpen ? '返回书架' : '管理'}
+            </button>
+          )}
           <span className="who" title={`已登录：${user.username}`}>
             {user.username}
             <button className="who__out" onClick={logout}>退出</button>
@@ -468,93 +476,97 @@ export default function App() {
         </div>
       </header>
 
-      <div className="shell">
-        <NovelSidebar
-          novels={novels}
-          novel={novel}
-          chapterId={chapter?.id ?? null}
-          running={running}
-          activeJobId={job?.id ?? null}
-          loading={novelsLoading}
-          onOpenNovel={(nid) => void openNovel(nid)}
-          onOpenChapter={(cid) => void openChapter(cid)}
-          onOpenJob={openJob}
-          onNewNovel={newNovel}
-          onNewChapter={() => void newChapter()}
-        />
+      {adminOpen ? (
+        <AdminView me={user} onBack={() => setAdminOpen(false)} />
+      ) : (
+        <div className="shell">
+          <NovelSidebar
+            novels={novels}
+            novel={novel}
+            chapterId={chapter?.id ?? null}
+            running={running}
+            activeJobId={job?.id ?? null}
+            loading={novelsLoading}
+            onOpenNovel={(nid) => void openNovel(nid)}
+            onOpenChapter={(cid) => void openChapter(cid)}
+            onOpenJob={openJob}
+            onNewNovel={newNovel}
+            onNewChapter={() => void newChapter()}
+          />
 
-        <main className="main">
-          {!novel && !doc && !job && (
-            <NewNovelForm disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
-          )}
-          {novel && !chapter && (
-            <NovelPage
-              key={novel.id}
-              novel={novel}
-              onChanged={() => { void reloadOpen(novel.id); void refreshNovels() }}
-              onDeleted={() => { setNovel(null); void refreshNovels() }}
-              onOpenChapter={(cid) => void openChapter(cid)}
-            />
-          )}
-          {novel && chapter && (
-            <ChapterPage
-              key={chapter.id}
-              novel={novel}
-              chapter={chapter}
-              versionId={docVid}
-              converting={converting}
-              disabled={submitting || svcDown}
-              onConvert={convert}
-              onOpenVersion={(vid) => {
-                if (confirmLeave()) void openVersion(novel.id, chapter.id, vid)
-              }}
-              onAdopt={(vid) => void adopt(vid)}
-              onDeleteVersion={(vid) => void removeVersion(vid)}
-              onSaveText={saveText}
-              onDelete={() => void removeChapter()}
-              onRerunDigest={() => void rerunDigest(novel.id, chapter.id)
-                .then(() => reloadOpen(novel.id, chapter.id))
-                .catch((e) => setAlert(msg(e)))}
-            />
-          )}
-          {error && <p className="alert">提交失败：{error}</p>}
-          {alert && <p className="alert">{alert}</p>}
-          {job && (
-            <JobPanel
-              job={job}
-              onReset={reset}
-              onBackground={background}
-              previewing={preview !== null}
-              onPreview={() => void loadPreview(job.id)}
-            />
-          )}
-          {verification && <VerificationPanel report={verification} doc={doc} />}
-          {doc && (
-            <StoryboardView
-              doc={doc}
-              canSave={docVid !== null}
-              preview={preview}
-              runId={docVid}
-              version={novel && chapter && docVid
-                ? { nid: novel.id, cid: chapter.id, vid: docVid } : null}
-              dirty={dirty}
-              saving={saving}
-              onChange={(next) => { setDoc(next); setDirty(true) }}
-              onSave={save}
-              bench={novel && chapter ? {
-                novel, chapter, versionId: docVid, job, converting,
-                disabled: submitting || svcDown,
-                onConvert: (opts) => convert(opts, true),
-                onOpenVersion: (vid) => { if (confirmLeave()) void openVersion(novel.id, chapter.id, vid) },
-                onAdopt: (vid) => void adopt(vid),
-                onDeleteVersion: (vid) => void removeVersion(vid),
-                onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
-                notice: error ? `提交失败：${error}` : alert,
-              } : null}
-            />
-          )}
-        </main>
-      </div>
+          <main className="main">
+            {!novel && !doc && !job && (
+              <NewNovelForm disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
+            )}
+            {novel && !chapter && (
+              <NovelPage
+                key={novel.id}
+                novel={novel}
+                onChanged={() => { void reloadOpen(novel.id); void refreshNovels() }}
+                onDeleted={() => { setNovel(null); void refreshNovels() }}
+                onOpenChapter={(cid) => void openChapter(cid)}
+              />
+            )}
+            {novel && chapter && (
+              <ChapterPage
+                key={chapter.id}
+                novel={novel}
+                chapter={chapter}
+                versionId={docVid}
+                converting={converting}
+                disabled={submitting || svcDown}
+                onConvert={convert}
+                onOpenVersion={(vid) => {
+                  if (confirmLeave()) void openVersion(novel.id, chapter.id, vid)
+                }}
+                onAdopt={(vid) => void adopt(vid)}
+                onDeleteVersion={(vid) => void removeVersion(vid)}
+                onSaveText={saveText}
+                onDelete={() => void removeChapter()}
+                onRerunDigest={() => void rerunDigest(novel.id, chapter.id)
+                  .then(() => reloadOpen(novel.id, chapter.id))
+                  .catch((e) => setAlert(msg(e)))}
+              />
+            )}
+            {error && <p className="alert">提交失败：{error}</p>}
+            {alert && <p className="alert">{alert}</p>}
+            {job && (
+              <JobPanel
+                job={job}
+                onReset={reset}
+                onBackground={background}
+                previewing={preview !== null}
+                onPreview={() => void loadPreview(job.id)}
+              />
+            )}
+            {verification && <VerificationPanel report={verification} doc={doc} />}
+            {doc && (
+              <StoryboardView
+                doc={doc}
+                canSave={docVid !== null}
+                preview={preview}
+                runId={docVid}
+                version={novel && chapter && docVid
+                  ? { nid: novel.id, cid: chapter.id, vid: docVid } : null}
+                dirty={dirty}
+                saving={saving}
+                onChange={(next) => { setDoc(next); setDirty(true) }}
+                onSave={save}
+                bench={novel && chapter ? {
+                  novel, chapter, versionId: docVid, job, converting,
+                  disabled: submitting || svcDown,
+                  onConvert: (opts) => convert(opts, true),
+                  onOpenVersion: (vid) => { if (confirmLeave()) void openVersion(novel.id, chapter.id, vid) },
+                  onAdopt: (vid) => void adopt(vid),
+                  onDeleteVersion: (vid) => void removeVersion(vid),
+                  onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
+                  notice: error ? `提交失败：${error}` : alert,
+                } : null}
+              />
+            )}
+          </main>
+        </div>
+      )}
     </div>
   )
 }

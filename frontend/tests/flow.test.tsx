@@ -490,6 +490,8 @@ must(!has('两次输入的密码不一致'), '改对后提示应消失')
 await click(findByText('button', '注册并进入'))
 must(has('新建小说'), '注册后应进入新建小说')
 must(has('alice'), '顶栏应显示当前用户')
+must(![...container.querySelectorAll('button')].some((b) => b.textContent === '管理'),
+     '普通用户不应看到「管理」入口')
 console.log('0. 未登录挡在门外 / 密码二次确认 → 注册后进入 ✓')
 
 // 1. 新建小说：导入原文按章节标记自动拆章

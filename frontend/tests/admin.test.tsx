@@ -102,6 +102,7 @@ const { Users } = await import('../src/components/admin/Users')
 const { UsageTab } = await import('../src/components/admin/UsageTab')
 const { JobsTab } = await import('../src/components/admin/JobsTab')
 const { AuditTab } = await import('../src/components/admin/AuditTab')
+const { AdminView } = await import('../src/components/admin/AdminView')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -267,6 +268,17 @@ const auditBefore = auditReqs()
 await click(button('刷新'))
 must(auditReqs() === auditBefore + 1, '审计刷新应重新请求')
 console.log('6. 审计 / 刷新 ✓')
+
+// 7. 页签框架：五个页签可切换，返回回调
+let back = 0
+await remount(<AdminView me={me} onBack={() => { back++ }} />)
+for (const t of ['概览', '用户', '用量', '任务', '审计']) button(t)
+must(text().includes('30 天金额'), '默认在概览')
+await click(button('审计'))
+must(text().includes('设为管理员') === false && text().includes('停用'), '切到审计')
+await click(button('返回'))
+must(back === 1, '返回回调')
+console.log('7. 页签框架 / 返回 ✓')
 
 // @@NEXT@@
 
