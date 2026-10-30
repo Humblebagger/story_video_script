@@ -159,7 +159,7 @@ must(text().includes('药 / 第一章') && text().includes('转换'), '详情显
 await click(button('停用'))
 must(confirms.some((c) => c.includes('停用')), '停用应先确认')
 must(calls.some((c) => c === 'PATCH /admin/users/u-bob {"disabled":true}'), '应请求停用')
-must(text().includes('已停用'), '列表刷新为已停用')
+must(!!container.querySelector('tbody tr.adm__row .adm__bad'), '列表刷新为已停用（该行显示已停用）')
 await type(container.querySelector('input[placeholder^="月上限"]')!, '')
 await click(button('设上限'))
 must(calls.some((c) => c === 'PATCH /admin/users/u-bob {"monthly_cap_usd":null}'), '空上限 = 不限')
@@ -171,6 +171,22 @@ await click(container.querySelector('tbody tr.adm__row')!)
 must(button('停用').disabled && button('取消管理员').disabled, '自己不能停用、不能改自己的角色')
 must(text().includes('不能停用自己'), '应说明原因')
 console.log('3. 详情 / 停用确认 / 上限不限 / 重置密码 / 自己受限 ✓')
+
+// 3b. 月上限输入校验：非数字、负数不发请求，并给出提示
+await type(container.querySelector('.adm__search')!, 'bob')
+await click(container.querySelector('tbody tr.adm__row')!)
+const patches = () => calls.filter((c) => c.startsWith('PATCH /admin/users/u-bob')).length
+const hint = '请输入不小于 0 的金额'
+const before = patches()
+await type(container.querySelector('input[placeholder^="月上限"]')!, 'abc')
+await click(button('设上限'))
+must(patches() === before, '非数字上限不应请求')
+must(text().includes(hint), '非数字应提示')
+await type(container.querySelector('input[placeholder^="月上限"]')!, '-5')
+await click(button('设上限'))
+must(patches() === before, '负数上限不应请求')
+must(text().includes(hint), '负数应提示')
+console.log('3b. 月上限非数字 / 负数拒绝 ✓')
 
 // @@NEXT@@
 

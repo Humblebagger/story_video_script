@@ -133,8 +133,15 @@ function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: ()
           <input placeholder="月上限（美元，空 = 不限）" value={cap}
                  onChange={(e) => setCap(e.target.value)} />
           <button className="btn btn--sm btn--ghost" disabled={busy}
-                  onClick={() => void act('修改月上限', () => adminPatchUser(u.id,
-                    { monthly_cap_usd: cap.trim() === '' ? null : Number(cap) }), false)}>
+                  onClick={() => {
+                    const t = cap.trim()
+                    const n = t === '' ? null : Number(t)
+                    if (n !== null && (!Number.isFinite(n) || n < 0)) {
+                      setMsg('请输入不小于 0 的金额，留空表示不限')
+                      return
+                    }
+                    void act('修改月上限', () => adminPatchUser(u.id, { monthly_cap_usd: n }), false)
+                  }}>
             设上限
           </button>
         </span>
