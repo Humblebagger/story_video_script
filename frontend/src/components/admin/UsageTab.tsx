@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { adminPricing, adminSavePricing, adminUsage, adminUsageCsv } from '../../api'
+import type { UsageGroupRow } from '../../types'
 import { errText, int, usd, usd4 } from './format'
 import { useLoad } from './useLoad'
 
@@ -16,11 +17,16 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
+/** 整行都没有定价记录（后端 unpriced 是记录数，cost_usd 为 0）。 */
+const isUnpriced = (r: UsageGroupRow) => r.unpriced > 0 && r.cost_usd === 0
+/** 部分记录未定价：金额是已定价部分的合计。 */
+const partUnpriced = (r: UsageGroupRow) => r.unpriced > 0 && !isUnpriced(r)
+
 /** 用量：分组汇总、每千字成本、导出 CSV；下面是价格表。 */
 export function UsageTab() {
   const [group, setGroup] = useState<Group>('user')
   const [days, setDays] = useState(30)
-  const { data, error } = useLoad(() => adminUsage(group, days), [group, days])
+  const { data, error, reload } = useLoad(() => adminUsage(group, days), [group, days])
   const [csvErr, setCsvErr] = useState<string | null>(null)
 
   const exportCsv = async () => {
@@ -46,6 +52,7 @@ export function UsageTab() {
           ))}
         </div>
         <button className="btn btn--sm btn--ghost" onClick={() => void exportCsv()}>导出 CSV</button>
+        <button className="btn btn--sm btn--ghost" onClick={reload}>刷新</button>
         {csvErr && <span className="adm__err">{csvErr}</span>}
       </div>
       {error && <p className="adm__err">{error}</p>}
@@ -73,7 +80,7 @@ export function UsageTab() {
                   <td>{r.label}</td><td>{int(r.calls)}</td><td>{int(r.input)}</td>
                   <td>{int(r.output)}</td><td>{int(r.cache_read)}</td><td>{int(r.cache_write)}</td>
                   <td>{int(r.chars)}</td>
-                  <td>{usd(r.cost_usd)}{r.unpriced ? `（另有 ${r.unpriced} 条未定价）` : ''}</td>
+                  <td>{isUnpriced(r) ? '未定价' : usd(r.cost_usd)}{partUnpriced(r) ? `（另有 ${r.unpriced} 条未定价）` : ''}</td>
                 </tr>
               ))}
             </tbody>

@@ -69,7 +69,10 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     return json({ group, days: 30, per_k_chars: { n: 2, mean: 0.75, p90: 3 }, unpriced_models: [],
       rows: [{ key: 'u-bob', label: group === 'user' ? 'bob' : group === 'model' ? 'claude-sonnet-5' : '2026-10-30',
                calls: 3, input: 1000, output: 2000, cache_read: 0, cache_write: 0, chars: 4000,
-               cost_usd: 4.5, unpriced: 0 }] })
+               cost_usd: 4.5, unpriced: 0 },
+             { key: 'u-amy', label: group === 'user' ? 'amy' : group === 'model' ? 'mystery' : '2026-10-29',
+               calls: 2, input: 10, output: 20, cache_read: 0, cache_write: 0, chars: 100,
+               cost_usd: 0, unpriced: 2 }] })
   }
   if (path === '/admin/jobs') return json({
     running: [{ id: 'j1', username: 'bob', status: 'running', work_title: '药', chapter: '第一章',
@@ -234,6 +237,17 @@ await click(button('保存价格表'))
 must(puts() === putsBefore && text().includes(priceHint), '溢出为 Infinity 的单价应拒绝并提示')
 console.log('4b. 价格表：负数 / 溢出单价拒绝 ✓')
 
+// 4c. 用量：刷新重新请求；整行未定价显示「未定价」而非 $0.00
+const usageReqs = () => calls.filter((c) => c.startsWith('GET /admin/usage?group=model&days=7')).length
+const reqsBefore = usageReqs()
+await click(button('刷新'))
+must(usageReqs() === reqsBefore + 1, '刷新应重新请求用量')
+const mysteryRow = [...container.querySelectorAll('tbody tr')].find((tr) => (tr.textContent ?? '').includes('mystery'))
+must(!!mysteryRow && mysteryRow.textContent!.includes('未定价') && !mysteryRow.textContent!.includes('$0.00'),
+     '整行未定价应显示「未定价」')
+must(text().includes('另有 2 条未定价') === false, '整行未定价不应再显示「另有」提示')
+console.log('4c. 用量：刷新重新请求 / 整行未定价显示「未定价」✓')
+
 // 5. 任务：运行中与失败两表，报错可展开
 await remount(<JobsTab />)
 must(text().includes('1:15') && text().includes('孔乙己') && text().includes('schema 校验失败'), '任务两表')
@@ -242,7 +256,11 @@ console.log('5. 任务：运行中（已运行 1:15）/ 近期失败报错 ✓')
 // 6. 审计
 await remount(<AuditTab />)
 must(text().includes('停用') && text().includes('root') && text().includes('bob'), '审计列表')
-console.log('6. 审计 ✓')
+const auditReqs = () => calls.filter((c) => c === 'GET /admin/audit').length
+const auditBefore = auditReqs()
+await click(button('刷新'))
+must(auditReqs() === auditBefore + 1, '审计刷新应重新请求')
+console.log('6. 审计 / 刷新 ✓')
 
 // @@NEXT@@
 
