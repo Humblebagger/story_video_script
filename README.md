@@ -63,6 +63,13 @@ docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 
 离线回归（不调 LLM，用《药》归档回放编排逻辑）：`for t in tests/pipeline/test_*.py tests/server/test_*.py; do .venv/bin/python $t || break; done`（各自应打印 `ALL PASS`）
 
+**管理后台**：先指定管理员 `cd backend && .venv/bin/python -m server.admin promote <用户名>`，
+该用户登录后右上角出现「管理」：概览、用户（停用/启用、月上限、重置密码、设为或取消管理员）、
+用量（按用户/天/模型汇总，每千字成本，导出 CSV，价格表）、任务（运行中与近 7 天失败）、审计。
+用量记在 `data/usage.jsonl`（转换与章后整理结束时落账，删版本不影响），金额按 `data/pricing.json`
+（美元，后台可改）现算。已有版本的历史用量补导一次：`.venv/bin/python -m server.admin backfill-usage`。
+管理员看不到小说原文与分镜内容。
+
 ### 方式二：配套前端界面
 
 ```bash

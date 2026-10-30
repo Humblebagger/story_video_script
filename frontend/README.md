@@ -193,3 +193,9 @@ src/
 
 `types.ts` 的可选性以 schema 的 `required` 为准：非必填一律 `?`，渲染层不假设其存在
 （弱模型产出的合法 IR 也常常字段稀疏）。
+
+### 管理后台
+
+`components/admin/`：`AdminView` 页签框架，`Overview`（每 30 秒刷新）、`Users`（搜索、排序、展开详情与操作）、
+`UsageTab`（分组汇总、每千字成本、CSV、价格表）、`JobsTab`、`AuditTab`；`LineChart` 是手写 SVG。
+只有 `/auth/me` 返回 `role: "admin"` 的用户看得到入口，权限以后端 `/admin/*` 的 403 为准。界面回归见 `tests/admin.test.tsx`。
