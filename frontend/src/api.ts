@@ -9,6 +9,7 @@ import type {
   Chapter, Constraint, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
   VerificationReport, VersionRecord,
+  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
 } from './types'
 
 /** 带结构化 detail 的接口错误。
@@ -313,4 +314,56 @@ export function uploadKeyframe(nid: string, cid: string, vid: string, shotId: st
 export function deleteKeyframe(nid: string, cid: string, vid: string, shotId: string) {
   return req<{ deleted: string }>(`${keyframePath(nid, cid, vid)}/${enc(shotId)}`,
                                   { method: 'DELETE' })
+}
+
+/* ---------- 管理后台 ---------- */
+
+export function adminOverview() {
+  return req<AdminOverview>('/admin/overview')
+}
+
+export async function adminUsers(): Promise<AdminUserRow[]> {
+  return (await req<{ users: AdminUserRow[] }>('/admin/users')).users
+}
+
+export function adminUser(id: string) {
+  return req<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`)
+}
+
+export function adminPatchUser(id: string,
+  patch: { disabled: boolean } | { role: 'admin' | 'user' } | { monthly_cap_usd: number | null }) {
+  return req<AdminUserRow>(`/admin/users/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  })
+}
+
+export function adminResetPassword(id: string, password: string) {
+  return req<{ ok: boolean }>(`/admin/users/${encodeURIComponent(id)}/password`,
+    jsonPost({ password }))
+}
+
+export function adminUsage(group: 'user' | 'day' | 'model', days: number) {
+  return req<UsageReport>(`/admin/usage?group=${group}&days=${days}`)
+}
+
+export async function adminUsageCsv(days: number): Promise<string> {
+  return (await send(`/admin/usage.csv?days=${days}`)).text()
+}
+
+export function adminJobs() {
+  return req<AdminJobs>('/admin/jobs')
+}
+
+export async function adminAudit(): Promise<AuditEntry[]> {
+  return (await req<{ audit: AuditEntry[] }>('/admin/audit')).audit
+}
+
+export function adminPricing() {
+  return req<PricingTable>('/admin/pricing')
+}
+
+export function adminSavePricing(table: unknown) {
+  return req<PricingTable>('/admin/pricing', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
+  })
 }

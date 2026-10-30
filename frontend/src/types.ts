@@ -559,3 +559,107 @@ export interface RenderPack {
   packs: { episode: string; title: string; markdown: string }[]
   verification?: VerificationReport
 }
+
+/* ---------- 管理后台 ---------- */
+
+export interface AdminUserRow {
+  id: string
+  username: string
+  role: 'admin' | 'user'
+  disabled: boolean
+  created_at: string | null
+  last_seen_at: string | null
+  has_password: boolean
+  monthly_cap_usd: number | null
+  novels: number
+  chapters: number
+  versions: number
+  month_cost_usd: number
+}
+
+export interface UsageEntry {
+  at: string
+  user_id: string
+  novel_id: string | null
+  chapter_id: string | null
+  version_id: string | null
+  purpose: string
+  model: string
+  ok: boolean
+  calls: number
+  input: number
+  output: number
+  cache_read: number
+  cache_write: number
+  chars: number
+  mixed_models?: string[]
+}
+
+export interface DailyCost {
+  day: string
+  cost_usd: number
+}
+
+export interface AdminUserDetail {
+  user: AdminUserRow
+  recent: (UsageEntry & { novel_title: string | null; chapter_title: string | null;
+                          cost_usd: number | null })[]
+  daily: DailyCost[]
+}
+
+export interface AdminOverview {
+  users: number
+  active_7d: number
+  tokens_30d: number
+  cost_30d: number
+  running: number
+  failed_7d: number
+  daily: DailyCost[]
+  unpriced_models: string[]
+}
+
+export interface UsageGroupRow {
+  key: string
+  label: string
+  calls: number
+  input: number
+  output: number
+  cache_read: number
+  cache_write: number
+  chars: number
+  cost_usd: number
+  unpriced: number
+}
+
+export interface UsageReport {
+  group: 'user' | 'day' | 'model'
+  days: number
+  rows: UsageGroupRow[]
+  per_k_chars: { n: number; mean: number | null; p90: number | null }
+  unpriced_models: string[]
+}
+
+export interface AdminJobs {
+  running: { id: string; username: string | null; status: string; work_title: string | null;
+             chapter: string | null; chars: number | null; created_at: string | null;
+             elapsed_sec: number | null }[]
+  failed: { id: string; username: string | null; novel_title: string | null;
+            chapter_title: string | null; created_at: string; chars: number;
+            attempts: number; error: string }[]
+}
+
+export interface AuditEntry {
+  at: string
+  admin: string
+  action: string
+  target: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+}
+
+export interface PricingTable {
+  currency: string
+  note?: string
+  updated_at: string | null
+  models: Record<string, { input: number; output: number; cache_read: number; cache_write: number }>
+}

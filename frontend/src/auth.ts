@@ -30,6 +30,8 @@ export interface User {
   id: string
   username: string
   created_at: string
+  /** 管理员才显示「管理」入口；权限以后端为准 */
+  role?: 'admin' | 'user'
 }
 
 let listeners: (() => void)[] = []
