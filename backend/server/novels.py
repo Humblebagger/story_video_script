@@ -987,3 +987,27 @@ def migrate_legacy(user_id: str) -> dict:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(now_iso() + "\n", encoding="utf-8")
     return {"migrated": True, **stats}
+
+
+# ---------- 管理后台用的只读元数据（不读原文、不读产物） ----------
+
+def counts(user_id: str) -> dict:
+    root = novels_dir(user_id)
+    if not root.exists():
+        return {"novels": 0, "chapters": 0, "versions": 0}
+    return {"novels": sum(1 for _ in root.glob("*/novel.json")),
+            "chapters": sum(1 for _ in root.glob("*/chapters/*/chapter.json")),
+            "versions": sum(1 for _ in root.glob("*/chapters/*/versions/*.json"))}
+
+
+def titles(user_id: str, nid: Optional[str], cid: Optional[str]) -> tuple:
+    """(小说标题, 章节标题)；已删除或 id 非法返回 None。"""
+    def title(path):
+        data = _read(path)
+        return data.get("title") if data else None
+    try:
+        novel = title(_novel_dir(user_id, nid) / "novel.json") if nid else None
+        chapter = title(_chapter_dir(user_id, nid, cid) / "chapter.json") if nid and cid else None
+    except (NovelError, ValueError):
+        return None, None
+    return novel, chapter
