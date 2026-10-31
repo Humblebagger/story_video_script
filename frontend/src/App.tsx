@@ -10,7 +10,10 @@ import { AppShell } from './components/shell/AppShell'
 import { AdminView } from './components/admin/AdminView'
 import { ChapterPage } from './components/ChapterPage'
 import { JobPanel } from './components/JobPanel'
-import { LoginView } from './components/LoginView'
+import { AuthDialog } from './components/auth/AuthDialog'
+import type { AuthMode } from './components/auth/AuthDialog'
+import { Landing } from './components/landing/Landing'
+import { useI18n } from './i18n/core'
 import type { NewNovel } from './components/NewNovelForm'
 import { NewNovelForm } from './components/NewNovelForm'
 import { NovelPage } from './components/NovelPage'
@@ -28,8 +31,12 @@ const RUNNING = ['queued', 'running']
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export default function App() {
+  const { t } = useI18n()
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
   const [adminOpen, setAdminOpen] = useState(false)
+  /** 没登录时的登录注册对话框；expired 为登录失效后自动打开时的提示 */
+  const [auth, setAuth] = useState<{ open: boolean; mode: AuthMode; expired: boolean }>(
+    { open: false, mode: 'login', expired: false })
   const [svc, setSvc] = useState<Health | null>(null)
   const [svcDown, setSvcDown] = useState(false)
 
@@ -178,8 +185,18 @@ export default function App() {
     }
   }, [announce, refreshNovels, reloadOpen])
 
-  // 登录态失效（token 过期或被撤销）→ 退回登录页
-  useEffect(() => onUnauthorized(() => { setAdminOpen(false); setUser(null) }), [])
+  // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
+  useEffect(() => onUnauthorized(() => {
+    setAdminOpen(false)
+    setUser(null)
+    setAuth({ open: true, mode: 'login', expired: true })
+  }), [])
+
+  // 全新部署（服务端还没有任何账号）：首页直接打开注册
+  const firstRun = !!svc && (svc.users ?? 0) === 0
+  useEffect(() => {
+    if (!user && firstRun) setAuth((a) => (a.open ? a : { open: true, mode: 'register', expired: false }))
+  }, [user, firstRun])
 
   // 随登录态重取：否则注册后再退出，登录页仍显示「服务端还没有任何账号」
   useEffect(() => {
@@ -422,6 +439,7 @@ export default function App() {
     clearSession()
     clearWork()
     setAdminOpen(false)
+    setAuth({ open: false, mode: 'login', expired: false })
     setUser(null)
     setNovel(null)
     setChapter(null)
@@ -430,7 +448,17 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginView firstRun={(svc?.users ?? 0) === 0} onDone={setUser} />
+    return (
+      <>
+        <Landing onSignIn={() => setAuth({ open: true, mode: 'login', expired: false })}
+                 onSignUp={() => setAuth({ open: true, mode: 'register', expired: false })} />
+        <AuthDialog open={auth.open} mode={auth.mode} firstRun={firstRun}
+                    notice={auth.expired ? t('auth.expired') : null}
+                    onMode={(mode) => setAuth((a) => ({ ...a, mode }))}
+                    onClose={() => setAuth((a) => ({ ...a, open: false }))}
+                    onDone={(u) => { setAuth({ open: false, mode: 'login', expired: false }); setUser(u) }} />
+      </>
+    )
   }
 
   const converting = !!chapter && (running.some((j) => j.chapter_id === chapter.id)

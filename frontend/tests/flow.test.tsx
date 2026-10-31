@@ -14,13 +14,18 @@ const g = globalThis as Record<string, unknown>
 // navigator 等在 Node 里是只读访问器，直接赋值会抛，统一用 defineProperty 覆盖
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement',
                  'Element', 'Node', 'Event', 'CustomEvent', 'getComputedStyle',
-                 'localStorage', 'sessionStorage']) {
+                 'localStorage', 'sessionStorage', 'KeyboardEvent', 'MouseEvent', 'matchMedia',
+                 'ResizeObserver', 'MutationObserver']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k],
     writable: true, configurable: true,
   })
 }
 g.IS_REACT_ACT_ENVIRONMENT = true
+// 首页的进场动效（motion whileInView）要用这两个浏览器接口，happy-dom 没有全局版本：补最小桩
+g.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} takeRecords() { return [] } }
+g.requestAnimationFrame ??= (cb: (t: number) => void) => setTimeout(() => cb(Date.now()), 16)
+g.cancelAnimationFrame ??= (id: number) => clearTimeout(id)
 
 const notifications: { title: string; body: string }[] = []
 class FakeNotification {
@@ -447,6 +452,11 @@ const click = async (el: HTMLElement) => {
   await settle()
 }
 
+/** 退出后回到首页：先点右上角「登录」打开对话框 */
+const openLogin = async () => {
+  await click(container.querySelector('[data-testid="landing-login"]') as unknown as HTMLElement)
+}
+
 /** 选卡浮层用的是 mousedown（click 之前 textarea 已 blur，浮层会先被收掉），
  *  所以测试也必须发 mousedown，发 click 是测不到的 */
 const mouseDown = async (el: HTMLElement) => {
@@ -694,6 +704,7 @@ console.log('11b. 创作限制（负面提示词/关键词/停用）/ 主线剧�
 
 // 12. 换个账号：看不到 alice 的任何东西
 await click(findByText('button', '退出'))
+await openLogin()
 must(has('login__tab') && !has('新建小说'), '退出后应回到登录页')
 must(!has('第一个注册的账号'), '已有账号时不该再显示首次注册引导')
 must(fields().length === 2, '登录模式下不该出现确认密码框')
@@ -724,6 +735,7 @@ const loginAs = async (name: string, pw: string) => {
 const btn = (t: string) =>
   [...container.querySelectorAll('button')].find((b) => b.textContent === t) as unknown as HTMLElement | undefined
 await click(findByText('button', '退出'))
+await openLogin()
 await loginAs('boss', 'pw000000')
 must(!!btn('管理'), '管理员应看到「管理」入口')
 await click(btn('管理')!)
@@ -767,6 +779,7 @@ console.log('14. 资产库搜索 → 按名称跨类别过滤 ✓')
 
 // 15. 分镜里 @ 挂卡：形象锁定落到结构化引用，正文只留自然语句
 await click(findByText('button', '退出'))
+await openLogin()
 const loginTab = [...container.querySelectorAll('.login__tab')]
   .find((b) => (b.textContent ?? '').trim() === '登录') as unknown as HTMLElement
 await click(loginTab)
