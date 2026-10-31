@@ -87,7 +87,8 @@ def main() -> int:
     real_tools, real_compose = mix.tools, mix.compose
     mix.tools = lambda: None
     r = c.post(R + "/compose", headers=H, json={})
-    assert r.status_code == 422 and "brew install ffmpeg" in r.json()["detail"]
+    assert r.status_code == 422 and "brew install ffmpeg" in r.json()["detail"] \
+        and "apt install ffmpeg" in r.json()["detail"], "没装 ffmpeg 的提示写 macOS 与 Linux 两种装法"
     mix.tools = lambda: ("ffmpeg", "ffprobe")
     if v["missing"]:
         r = c.post(R + "/compose", headers=H, json={})
@@ -231,12 +232,26 @@ def main() -> int:
         assert c.post(R + "/compose", headers=H, json={}).status_code == 200
         wait(root)
         assert render_session.load(root)["final"]["state"] == "done"
-        assert c.get(R + "/voices", headers=H).status_code == 422, "音色表仍要配音厂商"
+        v = c.get(R + "/voices", headers=H)
+        assert v.status_code == 200 and v.json()["speakers"] == [] and v.json()["voices"] == [], \
+            "没有要配音的语音条：音色表为空，不要配音密钥"
     finally:
         with render_session.mutate(root) as s_:
             s_["audio_mode"] = mode
         providers.register_tts("fake", lambda: TTS)
-    print("9. 无声模式不需要配音密钥 ✓")
+    print("9. 无声模式不需要配音密钥（预览、合成、音色表） ✓")
+
+    # 10. 合成报告随预览返回；读不到或坏了为 None
+    assert c.get(R + "/compose", headers=H).json()["report"] is None, "第 9 步的成片没写报告文件"
+    (root / "final").mkdir(exist_ok=True)
+    (root / "final" / "mix_report.json").write_text(json.dumps({"episodes": [], "size": "720x1280"}),
+                                                    encoding="utf-8")
+    with render_session.mutate(root) as s_:
+        s_["final"].update(state="done", files=["final/E01.mp4"], report="final/mix_report.json")
+    assert c.get(R + "/compose", headers=H).json()["report"]["size"] == "720x1280"
+    (root / "final" / "mix_report.json").write_text("{坏", encoding="utf-8")
+    assert c.get(R + "/compose", headers=H).json()["report"] is None
+    print("10. 合成报告随预览返回 ✓")
 
     mix.tools, mix.compose = real_tools, real_compose
     print("\nALL PASS")

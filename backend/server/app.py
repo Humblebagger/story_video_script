@@ -48,6 +48,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
 """
 import os
 import copy
+import json
 import sys
 import threading
 import time
@@ -976,8 +977,10 @@ def render_voices(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)
     """配音厂商的音色表、各说话人当前用的音色（选的或默认）、缺音色的说话人。"""
     root, doc, _kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
     s = _session_or_404(root)
-    tts = _tts()
     lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
+    if not lines:       # 这个声音模式不配音：不取配音厂商，没配密钥也能看
+        return {"provider": None, "rate_note": "", "voices": [], "speakers": [], "missing": []}
+    tts = _tts()
     voices, missing = render_voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
     info = render_voice.speakers(doc)
     chosen = s.get("voices") or {}
@@ -1018,6 +1021,11 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
         p["final"] = dict(f, stale=stale)
     else:
         p["final"] = None
+    rep = Path(root) / f["report"] if f and f.get("files") and f.get("report") else None
+    try:
+        p["report"] = json.loads(rep.read_text(encoding="utf-8")) if rep and rep.is_file() else None
+    except (OSError, ValueError):
+        p["report"] = None      # 报告坏了不影响预览
     p["bgm"] = sorted(bgm)
     p["tools"] = render_mix.tools() is not None
     p["music"] = {ep["id"]: ep.get("music") or {} for ep in doc.get("episodes") or []}
@@ -1026,7 +1034,7 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
 
 @app.get(_R + "/compose")
 def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: dict = Depends(novel_user)):
-    """合成预览（配音条数、未缓存字数与费用、缺音色、缺视频的段、BGM、选曲参考）与当前成片状态。"""
+    """合成预览（配音条数、未缓存字数与费用、缺音色、缺视频的段、BGM、选曲参考）、当前成片状态与合成报告。"""
     return _compose_preview(user, nid, cid, vid, draft)[4]
 
 
@@ -1067,7 +1075,8 @@ def render_compose_post(nid: str, cid: str, vid: str, body: RenderComposeBody,
     root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, body.draft)
     tools = render_mix.tools()
     if tools is None:
-        raise HTTPException(422, "没有装 ffmpeg：先在终端执行 brew install ffmpeg，再重启后端")
+        raise HTTPException(422, "服务器没有装 ffmpeg：macOS 执行 brew install ffmpeg，"
+                                 "Ubuntu / Debian 执行 apt install ffmpeg，装好后重启后端")
     if p["missing_voices"]:
         raise HTTPException(422, "还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in p["missing_voices"]))
     if p["no_video"] and not body.draft:
