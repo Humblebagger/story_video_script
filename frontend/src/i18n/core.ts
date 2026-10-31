@@ -16,9 +16,13 @@ const PACKS: Record<Locale, Messages> = { zh, en }
 export const KEY = 'inkreel.locale'
 
 export function translate(locale: Locale, key: MsgKey, vars?: Record<string, string | number>): string {
-  let node: unknown = PACKS[locale]
-  for (const part of key.split('.')) node = (node as Record<string, unknown> | undefined)?.[part]
-  const text = typeof node === 'string' ? node : key
+  const lookup = (l: Locale) => {
+    let node: unknown = PACKS[l]
+    for (const part of key.split('.')) node = (node as Record<string, unknown> | undefined)?.[part]
+    return typeof node === 'string' ? node : undefined
+  }
+  // 缺译：先回落中文（中文为准），再回落键名
+  const text = lookup(locale) ?? lookup('zh') ?? key
   return vars ? text.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : text
 }
 

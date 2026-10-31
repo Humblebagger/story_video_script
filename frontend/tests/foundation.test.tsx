@@ -1,5 +1,6 @@
 /** 改版底座：语言包键一致与插值、主题偏好与 dark class、外壳（语言切换后文字变英文、收起侧边栏、管理入口与退出回调）、
  *  花钱确认（合计、累计、超上限禁用、金额变了提示）、动效预设在减少动态效果时不位移。跑法：npm test */
+import { readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
 
 const win = new Window({ url: 'http://localhost:5173' })
@@ -28,7 +29,24 @@ must(JSON.stringify(keys(zh).sort()) === JSON.stringify(keys(en).sort()), '中�
 must(translate('en', 'shell.signedInAs', { name: 'amy' }) === 'Signed in as amy', '英文插值')
 must(translate('zh', 'shell.signedInAs', { name: 'amy' }) === '已登录：amy', '中文插值')
 must(translate('zh', 'brand.name') === '墨卷' && translate('en', 'brand.name') === 'Inkreel', '品牌名')
+must(translate('en', 'nope.missing' as never) === 'nope.missing', '缺键回落为键名')
+must(translate('en', 'money.confirm', { action: 'Go', amount: '¥1.00' }) === 'Go (¥1.00)', '确认按钮文案（英文）')
 console.log('1. 语言包 ✓')
+
+// 1b. 新旧设计变量不重名：app.css 与 index.css 在 :root / .dark 里定义的自定义属性不能有交集（否则互相覆盖）
+const cssVars = (file: string) => {
+  const css = readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const names = new Set<string>()
+  for (const b of css.matchAll(/(?:^|\n)\s*(?::root(?:\.dark)?|\.dark)\s*\{([^}]*)\}/g))
+    for (const d of b[1].matchAll(/(--[\w-]+)\s*:/g)) names.add(d[1])
+  return names
+}
+const uiVars = cssVars('../src/styles/app.css')
+const legacyVars = cssVars('../src/index.css')
+must(uiVars.size > 20 && legacyVars.size > 10, `读到两边的变量（${uiVars.size} / ${legacyVars.size}）`)
+const clash = [...uiVars].filter((n) => legacyVars.has(n))
+must(clash.length === 0, `新旧设计变量重名：${clash.join(', ')}`)
+console.log('1b. 设计变量不重名 ✓')
 
 // 2. 主题：偏好存本机，实际深浅写到 <html class="dark">
 theme.setPref('dark')
@@ -96,19 +114,28 @@ await click(button('退出'))
 must(log.join(',') === 'admin,new,logout', `外壳按钮回调：${log}`)
 await click(win.document.querySelector('button[aria-label="收起侧边栏"]')!)
 must(!!win.document.querySelector('button[aria-label="展开侧边栏"]'), '收起侧边栏')
+const aside = win.document.querySelector('[data-testid="app-shell"] aside')!
+must(!(aside.textContent ?? '').includes('amy'), '收起后不显示用户名文字')
+must(win.document.querySelector('button[aria-label="展开侧边栏"]')!.getAttribute('aria-expanded') === 'false', '收起按钮 aria-expanded')
+await click(win.document.querySelector('button[aria-label="退出"]')!)
+must(log.join(',') === 'admin,new,logout,logout', '收起后退出仍可用（按 aria-label 找到）')
+must(win.document.documentElement.lang === 'zh-CN', 'html lang 为中文')
+must(win.document.querySelector('nav[aria-label="位置"] [aria-current="page"]')?.textContent === '第一章', '面包屑最后一节 aria-current')
 await act(async () => { setLoc('en') })
 await settle()
 must(body().includes('Inkreel') && body().includes('Sign out') && body().includes('API key not set'),
   '切到英文后外壳文字变英文')
+must(win.document.documentElement.lang === 'en', 'html lang 跟着切到英文')
 console.log('4. 应用外壳 ✓')
 
 // 5. 花钱确认：合计、执行后累计、超上限时确认禁用、金额变了提示
 let confirmed = 0
+let cancelled = 0
 function Money({ cny, changed }: { cny: number; changed?: boolean }) {
   return (
     <I18nProvider initial="zh">
       <MoneyConfirm open title="出剩余 3 段" cny={cny} spent={10} reserved={5} budget={100} changed={changed}
-                    rateNote="假厂商" action="确认出片" onConfirm={() => { confirmed += 1 }} onCancel={() => {}} />
+                    rateNote="假厂商" action="确认出片" onConfirm={() => { confirmed += 1 }} onCancel={() => { cancelled += 1 }} />
     </I18nProvider>
   )
 }
@@ -118,6 +145,13 @@ must(body().includes('¥20.00') && body().includes('执行后累计 ¥35.00') &&
   '合计与累计')
 await click(button('确认出片（¥20.00）'))
 must(confirmed === 1, '确认回调')
+await click(button('取消'))
+must(cancelled === 1, '取消 → onCancel')
+await act(async () => {
+  win.document.activeElement?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event)
+})
+await settle()
+must(cancelled === 2, `Esc → onCancel（${cancelled}）`)
 await act(async () => { root.render(<Money cny={90} changed />) })
 await settle()
 must(body().includes('金额已变为 ¥90.00') && body().includes('会超过上限') && button('确认出片（¥90.00）').disabled,

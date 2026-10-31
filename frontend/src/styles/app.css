@@ -1,12 +1,16 @@
 /* Inkreel 设计变量：深浅两套。Tailwind 主题映射到这些变量，shadcn 组件直接用。
+ * 与旧样式 index.css 的 :root 重名的变量（muted / accent / radius）一律加 ui- 前缀，避免互相覆盖。
  * 品牌：墨色底 + 琥珀到品红的一道渐变；每屏最多一种强调。 */
+/* 层序：旧样式（index.css）放在 legacy 层——压过 Tailwind 的重置（base），又让位给组件与工具类。 */
+@layer theme, base, legacy, components, utilities;
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../index.css" layer(legacy);
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --radius: 0.75rem;
+  --ui-radius: 0.75rem;
   --background: oklch(0.985 0.003 80);
   --foreground: oklch(0.2 0.012 270);
   --card: oklch(1 0 0);
@@ -17,10 +21,10 @@
   --primary-foreground: oklch(0.985 0.003 80);
   --secondary: oklch(0.955 0.006 80);
   --secondary-foreground: oklch(0.24 0.02 270);
-  --muted: oklch(0.955 0.006 80);
-  --muted-foreground: oklch(0.5 0.012 270);
-  --accent: oklch(0.95 0.02 60);
-  --accent-foreground: oklch(0.3 0.06 50);
+  --ui-muted: oklch(0.955 0.006 80);
+  --ui-muted-foreground: oklch(0.5 0.012 270);
+  --ui-accent: oklch(0.95 0.02 60);
+  --ui-accent-foreground: oklch(0.3 0.06 50);
   --destructive: oklch(0.58 0.2 27);
   --success: oklch(0.6 0.13 155);
   --warning: oklch(0.72 0.15 75);
@@ -47,10 +51,10 @@
   --primary-foreground: oklch(0.18 0.014 275);
   --secondary: oklch(0.25 0.014 275);
   --secondary-foreground: oklch(0.95 0.006 80);
-  --muted: oklch(0.24 0.012 275);
-  --muted-foreground: oklch(0.7 0.012 275);
-  --accent: oklch(0.3 0.04 40);
-  --accent-foreground: oklch(0.92 0.06 70);
+  --ui-muted: oklch(0.24 0.012 275);
+  --ui-muted-foreground: oklch(0.7 0.012 275);
+  --ui-accent: oklch(0.3 0.04 40);
+  --ui-accent-foreground: oklch(0.92 0.06 70);
   --destructive: oklch(0.66 0.19 25);
   --success: oklch(0.72 0.13 155);
   --warning: oklch(0.8 0.14 80);
@@ -69,10 +73,10 @@
 @theme inline {
   --font-sans: "Inter Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: calc(var(--ui-radius) - 4px);
+  --radius-md: calc(var(--ui-radius) - 2px);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: calc(var(--ui-radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -83,10 +87,10 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--ui-muted);
+  --color-muted-foreground: var(--ui-muted-foreground);
+  --color-accent: var(--ui-accent);
+  --color-accent-foreground: var(--ui-accent-foreground);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);

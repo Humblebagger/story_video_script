@@ -67,7 +67,7 @@ export function MoneyConfirm(p: MoneyConfirmProps) {
           <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
           <AlertDialogAction disabled={p.busy || over || p.blocked}
                              onClick={(e) => { e.preventDefault(); p.onConfirm() }}>
-            {p.action}（{yuan(p.cny)}）
+            {t('money.confirm', { action: p.action, amount: yuan(p.cny) })}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

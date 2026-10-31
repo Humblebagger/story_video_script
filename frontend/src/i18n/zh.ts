@@ -24,6 +24,7 @@ export const zh = {
     serviceDown: '服务未连通',
     noKey: '未配置密钥',
     signedInAs: '已登录：{name}',
+    breadcrumb: '位置',
   },
   money: {
     total: '合计',
@@ -35,5 +36,6 @@ export const zh = {
     changed: '金额已变为 {amount}，请重新确认。',
     rateNote: '费率依据：{note}。实际以厂商控制台账单为准。',
     rateUnknown: '厂商未注明',
+    confirm: '{action}（{amount}）',
   },
 }

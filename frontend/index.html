@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      /* 首屏前就定深浅，避免闪一下浅色（与 src/theme.ts 同一个键；之后的切换与跟随系统由 initTheme 接管） */
+      (function () {
+        try {
+          var p = localStorage.getItem('inkreel.theme');
+          var dark = p === 'dark' || (p !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var el = document.documentElement;
+          if (dark) el.classList.add('dark');
+          el.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) { /* 读不到就按浅色，initTheme 稍后再定 */ }
+      })();
+    </script>
     <title>Inkreel — From ink to reel</title>
   </head>
   <body>

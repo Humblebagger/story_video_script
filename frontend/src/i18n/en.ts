@@ -26,6 +26,7 @@ export const en: Messages = {
     serviceDown: 'Service unreachable',
     noKey: 'API key not set',
     signedInAs: 'Signed in as {name}',
+    breadcrumb: 'Breadcrumb',
   },
   money: {
     total: 'Total',
@@ -37,5 +38,6 @@ export const en: Messages = {
     changed: 'The amount is now {amount}. Please confirm again.',
     rateNote: 'Pricing basis: {note}. Your provider console bill is authoritative.',
     rateUnknown: 'not stated by the provider',
+    confirm: '{action} ({amount})',
   },
 }
