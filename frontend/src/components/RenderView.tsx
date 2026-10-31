@@ -1,4 +1,6 @@
+import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { ApiError, renderPlan } from '../api'
 import type { RenderPack, Storyboard, VerificationReport } from '../types'
 import { VerificationPanel } from './VerificationPanel'
@@ -31,13 +33,15 @@ export function RenderView({ doc, runId }: Props) {
   const [pack, setPack] = useState<RenderPack | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  /** 被验证门拦下时服务端附的报告——光说「422」用户没法据此修改 */
+  /** 被完整性检查拦下时服务端附的报告——光说「422」用户没法据此修改 */
   const [blocked, setBlocked] = useState<VerificationReport | null>(null)
   const [maxClip, setMaxClip] = useState(15)
   const [model, setModel] = useState('seedance-2.0')
   /** 拿真实账单标定过就填这里；空表示用推算值 */
   const [rate, setRate] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  /** 「费用怎么算」折叠 */
+  const [basisOpen, setBasisOpen] = useState(false)
   /** 只渲染选中的 clip。这是唯一真能把钱包住的手段——不动 IR，先渲一集看效果 */
   const [picked, setPicked] = useState<Set<string> | null>(null)
 
@@ -118,9 +122,9 @@ export function RenderView({ doc, runId }: Props) {
                    onChange={(e) => setRate(e.target.value)}
                    onBlur={() => plan && void build()} />
           </label>
-          <button className="btn" disabled={busy} onClick={() => void build()}>
+          <Button size="sm" disabled={busy} onClick={() => void build()}>
             {busy ? '组装中…' : plan ? '重新组装' : '生成任务包'}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -161,23 +165,30 @@ export function RenderView({ doc, runId }: Props) {
               </span>
             </div>
           </div>
-          <details className="rend__basis">
-            <summary>
-              {plan.estimate.calibrated
-                ? `按你指定的 ${plan.estimate.cny_per_second} 元/秒 计算`
-                : `按 ${plan.estimate.model_label} 推算 ${plan.estimate.cny_per_second} 元/秒`}
-              —— 这是估算，点开看依据与不确定性
-            </summary>
-            <p className="rend__note">{plan.estimate.note}</p>
-            <ul className="rend__caveats">
-              {plan.estimate.caveats.map((c) => <li key={c}>{c}</li>)}
-            </ul>
-            <p className="rend__note">
-              档位适用分辨率：{plan.estimate.resolutions}；
-              费率 {plan.estimate.rate.cny_per_million_tokens} 元/百万 token ×
-              {plan.estimate.rate.tokens_per_second} token/秒。
-            </p>
-          </details>
+          <div className="rend__basis">
+            <button type="button" className="rend__basis-head" aria-expanded={basisOpen}
+                    onClick={() => setBasisOpen(!basisOpen)}>
+              <ChevronRight size={14} aria-hidden />
+              <b>费用怎么算</b>
+              <span>
+                {plan.estimate.calibrated
+                  ? `按你指定的 ${plan.estimate.cny_per_second} 元/秒 计算`
+                  : `按 ${plan.estimate.model_label} 推算 ${plan.estimate.cny_per_second} 元/秒`}
+                —— 这是估算，点开看依据与不确定性
+              </span>
+            </button>
+            <div className="rend__basis-body" hidden={!basisOpen}>
+              <p className="rend__note">{plan.estimate.note}</p>
+              <ul className="rend__caveats">
+                {plan.estimate.caveats.map((c) => <li key={c}>{c}</li>)}
+              </ul>
+              <p className="rend__note">
+                档位适用分辨率：{plan.estimate.resolutions}；
+                费率 {plan.estimate.rate.cny_per_million_tokens} 元/百万 token ×
+                {plan.estimate.rate.tokens_per_second} token/秒。
+              </p>
+            </div>
+          </div>
 
           {plan.estimate.asset_images_missing > 0 && (
             <p className="rend__warn">
@@ -189,17 +200,17 @@ export function RenderView({ doc, runId }: Props) {
           )}
 
           <div className="rend__dl">
-            <button className="btn btn--sm" onClick={() => saveFile(
+            <Button size="sm" variant="outline" onClick={() => saveFile(
               `${stem}_渲染任务清单${partial ? `_选中${chosen.length}条` : ''}.json`,
               JSON.stringify(partial ? { ...plan, clips: chosen } : plan, null, 2),
               'application/json;charset=utf-8')}>
               下载任务清单 JSON
-            </button>
+            </Button>
             {pack!.packs.map((p) => (
-              <button className="btn btn--sm btn--ghost" key={p.episode}
+              <Button size="sm" variant="ghost" key={p.episode}
                       onClick={() => saveFile(`${stem}_${p.episode}_生产包.md`, p.markdown)}>
                 下载 {p.episode} 生产包
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -210,7 +221,7 @@ export function RenderView({ doc, runId }: Props) {
                 <div className="rasset__top">
                   <span className="rasset__id">{a.id}</span>
                   <b>{a.name}</b>
-                  <span className="tag">{a.kind_zh}</span>
+                  <span className="chip">{a.kind_zh}</span>
                   <span className={`rasset__imgs${
                     a.have_images >= a.need_images ? ' is-ok' : ''}`}>
                     {a.have_images}/{a.need_images} 张图
@@ -237,11 +248,11 @@ export function RenderView({ doc, runId }: Props) {
             <span className="rend__eps">
               只渲染：
               {[...new Set(plan.clips.map((c) => c.episode))].map((ep) => (
-                <button className="btn btn--sm btn--ghost" key={ep}
-                        onClick={() => onlyEpisode(ep)}>{ep}</button>
+                <Button size="xs" variant="outline" key={ep}
+                        onClick={() => onlyEpisode(ep)}>{ep}</Button>
               ))}
-              <button className="btn btn--sm btn--ghost"
-                      onClick={() => setPicked(null)}>全选</button>
+              <Button size="xs" variant="ghost"
+                      onClick={() => setPicked(null)}>全选</Button>
             </span>
           </div>
           <ul className="rend__clips">

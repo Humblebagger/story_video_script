@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import type { Finding, Storyboard, VerificationReport } from '../types'
 
 interface Props {
   report: VerificationReport
   doc?: Storyboard | null
-  /** 报告从哪来的，用于文案：保存复验 or 渲染前拦截 */
+  /** 报告从哪来的，用于文案：保存后的检查 or 渲染前拦截 */
   origin?: 'save' | 'render'
 }
 
@@ -39,8 +41,11 @@ function FindingRow({ f, doc }: { f: Finding; doc?: Storyboard | null }) {
   return (
     <li className={`vf vf--${f.severity}`}>
       <div className="vf__head">
-        <span className="tag tag--ver">{f.rule_id}</span>
-        <span className={`vf__sev vf__sev--${f.severity}`}>{SEVERITY_ZH[f.severity] ?? f.severity}</span>
+        <Badge variant={HARD.includes(f.severity) ? 'destructive' : 'secondary'}
+               className={`vf__sev vf__sev--${f.severity}`}>
+          {HARD.includes(f.severity) ? '硬性' : '提示'} · {SEVERITY_ZH[f.severity] ?? f.severity}
+        </Badge>
+        <span className="vf__rule">{f.rule_id}</span>
         <code className="vf__at">{locate(f.object_path, doc)}</code>
       </div>
       <p className="vf__msg">{f.message}</p>
@@ -58,9 +63,9 @@ function FindingRow({ f, doc }: { f: Finding; doc?: Storyboard | null }) {
   )
 }
 
-/** 服务端验证报告。
+/** 完整性检查结果。
  *
- *  这份报告后端一直在算（每次保存、每次渲染前都整份复验），但界面上一直没透出来——
+ *  这份报告后端一直在算（每次保存、每次渲染前都整份检查），但界面上一直没透出来——
  *  用户改出一份不合法的 IR，屏幕照样显示保存成功，要到点渲染才被 422 打回。 */
 export function VerificationPanel({ report, doc, origin = 'save' }: Props) {
   const [showSoft, setShowSoft] = useState(false)
@@ -72,7 +77,7 @@ export function VerificationPanel({ report, doc, origin = 'save' }: Props) {
   if (ok && !soft.length) {
     return (
       <p className="vpanel vpanel--ok">
-        服务端复验通过{cov?.selected?.length
+        <span className="vpanel__dot" aria-hidden />完整性检查通过{cov?.selected?.length
           ? `：${cov.selected.length} 句原文全部有着落`
           : ''}
         {cov?.waived?.length ? `（${cov.waived.length} 句已注明理由略过）` : ''}
@@ -83,9 +88,9 @@ export function VerificationPanel({ report, doc, origin = 'save' }: Props) {
   return (
     <section className={`vpanel ${ok ? 'vpanel--warn' : 'vpanel--bad'}`}>
       <h3 className="vpanel__title">
-        {ok ? '复验通过，但有提醒' : (origin === 'render'
-          ? '未通过验证，已拦在付费渲染之前'
-          : '已保存，但没通过服务端复验')}
+        {ok ? '完整性检查通过，但有提示' : (origin === 'render'
+          ? '完整性检查没通过，已拦在付费渲染之前'
+          : '已保存，但没通过完整性检查')}
       </h3>
       {!ok && (
         <p className="vpanel__note">
@@ -106,10 +111,10 @@ export function VerificationPanel({ report, doc, origin = 'save' }: Props) {
       )}
       {!!soft.length && (
         <>
-          <button type="button" className="btn btn--ghost btn--sm"
+          <Button type="button" variant="ghost" size="sm"
             onClick={() => setShowSoft(!showSoft)}>
-            {showSoft ? '收起' : `另有 ${soft.length} 条提醒（不拦渲染）`}
-          </button>
+            {showSoft ? '收起' : `显示 ${soft.length} 条提示（不拦渲染）`}
+          </Button>
           {showSoft && (
             <ul className="vf__list">
               {soft.map((f, i) => <FindingRow key={`${f.rule_id}-${i}`} f={f} doc={doc} />)}

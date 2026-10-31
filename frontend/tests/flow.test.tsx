@@ -625,7 +625,7 @@ await click(findByText('button', 'v1'))
 await click(findByText('button', '编辑分镜'))
 await click(findByText('button', '资产卡'))
 
-must(has('🔒'), '编辑态下应标出锁死的 ID')
+must(!!container.querySelector('.acard .lock, .acard .acard__id svg'), '编辑态下应标出锁死的 ID')
 const idCell = findByText('span', 'C01')
 must(idCell.querySelector('input') === null, '资产 ID 不可编辑')
 must(findByText('div', 'default').querySelector('input') === null
@@ -981,7 +981,7 @@ await typeAt(area17, '推门，康大叔（再改）')
 nextSaveVerdict = { status: 'draft_invalid', verification: INVALID }
 await click(findByText('button', '保存修改'))
 await settle(60)
-must(has('没通过服务端复验'), '复验不通过必须当场说，不能显示保存成功')
+must(has('没通过完整性检查'), '完整性检查不通过必须当场说，不能显示保存成功')
 must(has('改动已经存下来了'), '要讲清楚编辑没丢——否则用户不敢改')
 must(has('SOURCE-FROZEN-002'), '规则号要露出，便于定位与追问')
 must(has('E01 / E01-SH001 · dialogue.0.text'),
@@ -1001,7 +1001,7 @@ console.log('17. 验证结果透出 → 保存复验不通过当场可见 / 渲�
 // 17b. 工作流的主按钮也拦在完整性检查：说原因，「去修复」回到 ③ 并定位到检查结果
 await goStep('render')
 const reason = container.querySelector('[data-testid="primary-reason"]')
-must((reason?.textContent ?? '').includes('完整性检查没通过'), '复验不通过时 ④ 的主按钮要说明被完整性检查拦住')
+must((reason?.textContent ?? '').includes('完整性检查没通过'), '完整性检查不通过时 ④ 的主按钮要说明被完整性检查拦住')
 must(primary().disabled, '被拦住时主按钮不能点')
 await click(container.querySelector('[data-testid="primary-fix"]') as unknown as HTMLElement)
 must(onStep('review'), '「去修复」应回到 ③ 检查修改')

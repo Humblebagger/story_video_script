@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { label, UNIT_KIND } from '../labels'
 import type { Index } from '../resolve'
@@ -80,19 +81,19 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
               className={[
                 'unit',
                 isFocus ? 'unit--focus' : '',
-                unmapped.has(u.id) ? 'unit--gap' : '',
+                unmapped.has(u.id) ? 'unit--gap' : refs.length ? 'unit--ref' : '',
               ].filter(Boolean).join(' ')}
             >
               <div className="unit__meta">
                 <span className="unit__id">{u.id}</span>
-                {u.kind && <span className="tag tag--kind">{label(UNIT_KIND, u.kind)}</span>}
+                {u.kind && <span className="chip">{label(UNIT_KIND, u.kind)}</span>}
                 {u.para !== undefined && <span className="unit__para">§{u.para}</span>}
-                {idx.narratedUnits.has(u.id) && <span className="tag tag--nar">旁白</span>}
+                {idx.narratedUnits.has(u.id) && <span className="chip chip--nar">旁白</span>}
               </div>
               <p className="unit__text">{highlight(u.text, q)}</p>
               <div className="unit__refs">
                 {refs.length === 0
-                  ? <span className="unit__gap">⚠ 无镜头引用</span>
+                  ? <span className="unit__gap"><TriangleAlert size={12} aria-hidden />无镜头引用</span>
                   : refs.map((r) => onPickShot
                     ? (
                       <button className="uref" key={r.shot.id} title="在画布上选中这一镜"

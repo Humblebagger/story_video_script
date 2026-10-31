@@ -1,3 +1,5 @@
+import { Lock, MapPin, Package, PawPrint, User } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { splitAliases } from '../edit'
 import { APPEARANCE_FIELDS, VOICE_FIELDS } from '../labels'
 import type { AssetKind } from '../edit'
@@ -13,6 +15,10 @@ const KIND_TITLE: Record<AssetKind, string> = {
 const KIND_HINT: Partial<Record<AssetKind, string>> = {
   characters: '外貌只存在于资产卡，镜头层只写引用——从根上防角色漂移',
 }
+
+const KIND_ICON = {
+  characters: User, locations: MapPin, props: Package, creatures: PawPrint,
+} as const
 
 const IE_LABEL: Record<string, string> = {
   interior: '内景', exterior: '外景', both: '内外兼有',
@@ -134,8 +140,8 @@ function RefImages({ list, variants, tagKey, onChange }: {
                     ? items.filter((_, j) => j !== i) : undefined)}>×</button>
         </div>
       ))}
-      <button type="button" className="btn btn--sm btn--ghost"
-              onClick={() => onChange([...items, {}])}>＋ 设定图</button>
+      <Button type="button" size="sm" variant="outline"
+              onClick={() => onChange([...items, {}])}>＋ 设定图</Button>
     </div>
   )
 }
@@ -167,8 +173,13 @@ function CharacterCard({ c, editing, patch }: {
           <p className="acard__row" key={k}><span>{label}</span>{c.appearance![k]}</p>
         ))}
         {!!c.outfits?.length && (
-          <p className="acard__row"><span>服装</span>
-            {c.outfits.map((o) => `${o.id}：${o.description}`).join('；')}</p>
+          <div className="acard__row"><span>服装</span>
+            <div className="chips">
+              {c.outfits.map((o) => (
+                <span className="chip chip--var" key={o.id}><b>{o.id}</b>{o.description}</span>
+              ))}
+            </div>
+          </div>
         )}
         {VOICE_FIELDS.filter(([k]) => c.voice?.[k]).map(([k, label]) => (
           <p className="acard__row" key={k}><span>{label}</span>{c.voice![k]}</p>
@@ -192,7 +203,7 @@ function CharacterCard({ c, editing, patch }: {
           {c.outfits.map((o, i) => (
             <div className="asub" key={o.id}>
               <span className="asub__id" title="服装 ID 被镜头的 characters[].outfit 引用，不可改">
-                🔒 {o.id}
+                <Lock size={12} aria-hidden />{o.id}
               </span>
               <Text value={o.description} area
                     placeholder="这套装束的完整外观描述（服装+鞋+配饰）"
@@ -291,8 +302,13 @@ function PropCard({ p, editing, patch }: {
 }) {
   if (!editing) {
     return p.states?.length ? (
-      <p className="acard__row"><span>状态机</span>
-        {p.states.map((s) => `${s.id}：${s.description}`).join(' → ')}</p>
+      <div className="acard__row"><span>状态机</span>
+        <div className="chips">
+          {p.states.map((s) => (
+            <span className="chip chip--var" key={s.id}><b>{s.id}</b>{s.description}</span>
+          ))}
+        </div>
+      </div>
     ) : null
   }
   return (
@@ -302,7 +318,7 @@ function PropCard({ p, editing, patch }: {
           {p.states.map((s, i) => (
             <div className="asub" key={s.id}>
               <span className="asub__id" title="状态 ID 被镜头的 prop_refs[].state 引用，不可改">
-                🔒 {s.id}
+                <Lock size={12} aria-hidden />{s.id}
               </span>
               <Text value={s.description} area
                     placeholder="该形态的完整外观描述"
@@ -369,7 +385,7 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
       {editing && !hideEditNote && (
         <p className="assets__editnote">
           资产卡整个属于「呈现」侧，名称 / 别名 / 外貌 / 描述都可以改。
-          只有 🔒 标出的 ID 锁死——它们被镜头层跨引用（场景、道具及其状态、角色及其服装），
+          只有带锁图标的 ID 锁死——它们被镜头层跨引用（场景、道具及其状态、角色及其服装），
           改了 lint 立刻报「引用不存在的资产」。
         </p>
       )}
@@ -382,16 +398,18 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
           <div className="assets__grid">
             {(assets[kind] ?? []).map((card) => {
               const patch = (p: Record<string, unknown>) => onChange(kind, card.id, p)
+              const Icon = KIND_ICON[kind]
               return (
                 <article className={`acard${editing ? ' acard--ed' : ''}`} key={card.id}>
                   <header>
-                    <span className="acard__id" title="资产 ID 被镜头层引用，不可改">
-                      {editing && '🔒 '}{card.id}
-                    </span>
+                    <Icon className="acard__icon" size={16} aria-hidden />
                     {editing
                       ? <Text value={card.name} placeholder="名称"
                               onChange={(v) => patch({ name: v ?? '' })} />
-                      : <b>{card.name}</b>}
+                      : <b className="acard__name">{card.name}</b>}
+                    <span className="acard__id" title="资产 ID 被镜头层引用，不可改">
+                      {editing && <Lock size={12} aria-hidden />}{card.id}
+                    </span>
                     {!editing && 'aliases' in card && !!card.aliases?.length && (
                       <span className="acard__alias">别称：{card.aliases.join('、')}</span>
                     )}
