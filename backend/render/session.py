@@ -1,0 +1,380 @@
+"""出片会话：一个版本的出片状态（chapters/<cid>/render/<vid>/session.json）与全部状态迁移。
+
+接口线程与出片线程都只通过这里改状态：同一会话的读改写用进程内锁串行，写入先写临时文件再改名。
+段状态（设计文档 1.5）：planned → queued → running → downloading → done；failed；stale（指纹与
+当前分镜不符，旧视频仍可播）。每段保留全部尝试，chosen 指向采用的那次。
+"""
+import json
+import os
+import tempfile
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from render import compose
+from render.providers import base, default_video_name, get_video, names
+
+SESSION_FILE = "session.json"
+IN_FLIGHT = ("queued", "running", "downloading")
+REMAINING = ("planned", "failed")
+DEFAULT_BUDGET_CNY = 200.0
+DEFAULT_CONFIRM_OVER_CNY = 20.0
+SETTING_KEYS = ("provider", "model", "resolution", "audio_mode", "budget_cny", "confirm_over_cny")
+
+
+class SessionError(ValueError):
+    """请求本身不成立（422）。"""
+
+
+class NotFound(SessionError):
+    """会话或段不存在（404）。"""
+
+
+class Conflict(SessionError):
+    """与当前状态冲突（409），可附带服务端重算的金额。"""
+
+    def __init__(self, message: str, expected_cny: Optional[float] = None):
+        super().__init__(message)
+        self.expected_cny = expected_cny
+
+
+class BudgetExceeded(SessionError):
+    """超出单章上限（422）。"""
+
+
+_locks: dict = {}
+_locks_guard = threading.Lock()
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _lock(root) -> threading.RLock:
+    key = str(Path(root).resolve())
+    with _locks_guard:
+        return _locks.setdefault(key, threading.RLock())
+
+
+def load(root) -> Optional[dict]:
+    try:
+        return json.loads((Path(root) / SESSION_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _save(root, s: dict) -> None:
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    s["updated_at"] = _now()
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=root, delete=False,
+                                     suffix=".tmp") as f:
+        f.write(json.dumps(s, ensure_ascii=False, indent=2) + "\n")
+    os.replace(f.name, root / SESSION_FILE)
+
+
+@contextmanager
+def mutate(root):
+    """读改写一个已有会话；块内抛异常则不写回。"""
+    with _lock(root):
+        s = load(root)
+        if s is None:
+            raise NotFound("还没有出片会话")
+        yield s
+        _save(root, s)
+
+
+def _clip(s: dict, clip_id: str) -> dict:
+    for c in s["clips"]:
+        if c["id"] == clip_id:
+            return c
+    raise NotFound(f"没有这一段：{clip_id}")
+
+
+def _provider(name: str):
+    try:
+        return get_video(name)
+    except KeyError as e:
+        raise SessionError(e.args[0])
+    except base.ProviderError as e:
+        raise SessionError(str(e))
+
+
+# ---------- 设置与建立 ----------
+
+def resolve_settings(old: Optional[dict], patch: dict) -> tuple:
+    """合并旧设置与本次修改，校验后返回 (settings, provider, caps)。"""
+    patch = {k: v for k, v in (patch or {}).items() if v is not None}
+    unknown = set(patch) - set(SETTING_KEYS)
+    if unknown:
+        raise SessionError(f"未知的出片设置：{sorted(unknown)}")
+    cur = {k: (old or {}).get(k) for k in SETTING_KEYS}
+    cur.update(patch)
+    provider = _provider(cur["provider"] or default_video_name())
+    cur["provider"] = provider.name
+    if cur["model"] not in provider.models:
+        if "model" in patch:
+            raise SessionError(f"{provider.name} 没有档位 {cur['model']}")
+        cur["model"] = provider.default_model
+    caps = provider.caps(cur["model"])
+    if cur["resolution"] not in caps.resolutions:
+        if "resolution" in patch:
+            raise SessionError(f"这个档位不支持 {cur['resolution']}，可选：{'、'.join(caps.resolutions)}")
+        cur["resolution"] = "720p" if "720p" in caps.resolutions else caps.resolutions[0]
+    cur["audio_mode"] = cur["audio_mode"] or "tts_all"
+    if cur["audio_mode"] not in compose.AUDIO_MODES:
+        raise SessionError(f"未知的声音模式：{cur['audio_mode']}")
+    cur["budget_cny"] = float(cur["budget_cny"] or DEFAULT_BUDGET_CNY)
+    cur["confirm_over_cny"] = float(DEFAULT_CONFIRM_OVER_CNY if cur["confirm_over_cny"] is None
+                                    else cur["confirm_over_cny"])
+    return cur, provider, caps
+
+
+def _carry(row: dict, old: Optional[dict]) -> dict:
+    """沿用同一段（同 id、同镜头）的尝试记录，并按采用那次的指纹判定 done / stale。"""
+    same = old is not None and old["shots"] == row["shots"]
+    row["attempts"] = old["attempts"] if same else []
+    row["chosen"] = old.get("chosen") if same else None
+    row["mute_native"] = bool(old.get("mute_native")) if same else False
+    row["error"] = None
+    if row["chosen"] is not None:
+        chosen = row["attempts"][row["chosen"]]
+        row["state"] = "done" if chosen.get("fingerprint") == row["fingerprint"] else "stale"
+    elif same and old["state"] == "failed" and old["fingerprint"] == row["fingerprint"]:
+        row["state"], row["error"] = "failed", old.get("error")
+    else:
+        row["state"] = "planned"
+    return row
+
+
+def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
+          allow_in_flight: bool = False) -> dict:
+    """按已保存的分镜切段、组装提示词，生成或重建会话。不花钱。
+
+    改设置时（allow_in_flight=False）有段在排队或生成中就拒绝；读取时的刷新传 True，
+    在跑的段原样保留（切段变了也保留到跑完）。已花金额与尝试记录跨重建保留。
+    """
+    root = Path(root)
+    with _lock(root):
+        old = load(root)
+        settings, provider, caps = resolve_settings(old, patch)
+        olds = {c["id"]: c for c in (old or {}).get("clips", [])}
+        flying = {cid: c for cid, c in olds.items() if c["state"] in IN_FLIGHT}
+        if flying and not allow_in_flight:
+            raise Conflict("有段在排队或生成中，等它们结束再改设置")
+        try:
+            built = compose.build_clips(doc, caps, provider=settings["provider"],
+                                        model=settings["model"], resolution=settings["resolution"],
+                                        audio_mode=settings["audio_mode"], keyframes=keyframes,
+                                        rewrite=provider.rewrite_prompt)
+        except (KeyError, TypeError, ValueError) as e:
+            raise SessionError(f"分镜结构不完整，无法切段：{e}")
+        clips = []
+        for b in built:
+            if b["id"] in flying:
+                clips.append(flying.pop(b["id"]))
+                continue
+            row = {k: v for k, v in b.items() if not k.startswith("_")}
+            row["estimate_cny"] = base.estimate_cny(row["duration"], caps, settings["resolution"])
+            clips.append(_carry(row, olds.get(b["id"])))
+        clips.extend(flying.values())
+        s = {"version": 1, "owner": owner, **settings,
+             "spent_cny": (old or {}).get("spent_cny", 0.0), "clips": clips,
+             "voices": (old or {}).get("voices", {}), "final": (old or {}).get("final"),
+             "created_at": (old or {}).get("created_at") or _now()}
+        _save(root, s)
+        return s
+
+
+def view(s: dict) -> dict:
+    """给界面的会话：去掉归属，附状态计数、剩余与在跑预估、可选项。"""
+    provider = _provider(s["provider"])
+    caps = provider.caps(s["model"])
+    counts = {}
+    for c in s["clips"]:
+        counts[c["state"]] = counts.get(c["state"], 0) + 1
+    out = {k: v for k, v in s.items() if k != "owner"}
+    out["counts"] = counts
+    out["remaining_cny"] = round(sum(c["estimate_cny"] for c in s["clips"]
+                                     if c["state"] in REMAINING), 2)
+    out["reserved_cny"] = round(sum(c["estimate_cny"] for c in s["clips"]
+                                    if c["state"] in IN_FLIGHT), 2)
+    out["options"] = {"providers": names(), "models": provider.models,
+                      "resolutions": caps.resolutions, "cny_per_sec": caps.cny_per_sec,
+                      "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
+                      "audio_modes": list(compose.AUDIO_MODES)}
+    return out
+
+
+# ---------- 接口侧操作 ----------
+
+def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[float] = None) -> dict:
+    """排队出片。clip_ids=None 为批量出剩余各段（planned / failed），必须带确认金额；
+    单段超过确认线也要带。金额与服务端重算不一致 → Conflict（附重算金额）。"""
+    with mutate(root) as s:
+        if clip_ids is None:
+            targets = [c for c in s["clips"] if c["state"] in REMAINING]
+        else:
+            targets = [_clip(s, cid) for cid in clip_ids]
+            for c in targets:
+                if c["state"] in IN_FLIGHT:
+                    raise Conflict(f"{c['id']} 已在排队或生成中")
+        if not targets:
+            raise SessionError("没有要出的段")
+        total = round(sum(c["estimate_cny"] for c in targets), 2)
+        if (clip_ids is None or total > s["confirm_over_cny"]) and expected_cny is None:
+            raise Conflict(f"本次约 ¥{total:.2f}，请确认金额后再出片", total)
+        if expected_cny is not None and abs(expected_cny - total) > 0.005:
+            raise Conflict(f"预估金额已变为 ¥{total:.2f}，请重新确认", total)
+        reserved = sum(c["estimate_cny"] for c in s["clips"] if c["state"] in IN_FLIGHT)
+        if s["spent_cny"] + reserved + total > s["budget_cny"] + 1e-9:
+            raise BudgetExceeded(f"超出单章上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"
+                                 f"在跑预留 ¥{reserved:.2f}，本次约 ¥{total:.2f}")
+        for c in targets:
+            c["state"], c["error"], c["queued_at"] = "queued", None, _now()
+        return s
+
+
+def set_chosen(root, clip_id: str, index: int) -> dict:
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        if c["state"] in IN_FLIGHT:
+            raise Conflict("这一段正在生成，等它结束再换")
+        if not (0 <= index < len(c["attempts"])) or c["attempts"][index].get("state") != "succeeded":
+            raise SessionError("只能采用成功的那几次")
+        c["chosen"] = index
+        c["state"] = "done" if c["attempts"][index].get("fingerprint") == c["fingerprint"] else "stale"
+        return s
+
+
+def set_mute(root, clip_id: str, mute: bool) -> dict:
+    with mutate(root) as s:
+        _clip(s, clip_id)["mute_native"] = bool(mute)
+        return s
+
+
+# ---------- 出片线程侧迁移 ----------
+
+def begin_submit(root, clip_id: str) -> Optional[dict]:
+    """提交前：再查一次上限（实际花费可能超过预估），追加一次「提交中」的尝试，返回段的快照。
+    不该提交（不在排队、超上限）返回 None；超上限的段转 failed。"""
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        if c["state"] != "queued":
+            return None
+        running = sum(x["estimate_cny"] for x in s["clips"] if x["state"] in ("running", "downloading"))
+        if s["spent_cny"] + running + c["estimate_cny"] > s["budget_cny"] + 1e-9:
+            c["state"], c["error"] = "failed", "超出单章上限，没有提交"
+            return None
+        c["attempts"].append({"task_id": None, "state": "submitting", "cost_cny": 0.0,
+                              "file": None, "last_frame": None, "error": None, "at": _now(),
+                              "fingerprint": c["fingerprint"], "first_frame_used": None})
+        return json.loads(json.dumps(c))
+
+
+def submitted(root, clip_id: str, task_id: str, first_frame_used: Optional[str]) -> None:
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        c["attempts"][-1].update(task_id=task_id, state="running", first_frame_used=first_frame_used)
+        c["state"] = "running"
+
+
+def submit_failed(root, clip_id: str, error: str, *, stale: bool = False) -> None:
+    """提交没成：stale=True（分镜已改）撤回这次尝试、退回待确认；否则记失败。"""
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        pending = c["attempts"] and c["attempts"][-1]["state"] == "submitting"
+        if stale:
+            if pending:
+                c["attempts"].pop()
+            c["state"] = "stale" if c.get("chosen") is not None else "planned"
+        else:
+            if pending:
+                c["attempts"][-1].update(state="failed", error=error)
+            c["state"] = "failed"
+        c["error"] = error
+
+
+def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0) -> None:
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        a = c["attempts"][-1] if c["attempts"] else {}
+        if c["state"] != "running" or a.get("task_id") != st.task_id:
+            return
+        if st.status == "succeeded":
+            a.update(video_url=st.video_url, last_frame_url=st.last_frame_url, usage=st.usage)
+            c["state"] = "downloading"
+        elif st.status == "failed":
+            a.update(state="failed", error=st.error or "厂商返回失败", cost_cny=cost)
+            s["spent_cny"] = round(s["spent_cny"] + cost, 2)
+            c["state"], c["error"] = "failed", a["error"]
+
+
+def _rel(root, p) -> Optional[str]:
+    return Path(p).resolve().relative_to(Path(root).resolve()).as_posix() if p else None
+
+
+def downloaded(root, clip_id: str, files: dict, cost: float) -> None:
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        if c["state"] != "downloading":
+            return
+        a = c["attempts"][-1]
+        a.update(state="succeeded", file=_rel(root, files["video"]),
+                 last_frame=_rel(root, files.get("last_frame")), cost_cny=cost)
+        s["spent_cny"] = round(s["spent_cny"] + cost, 2)
+        c["chosen"] = len(c["attempts"]) - 1
+        c["state"] = "done" if a["fingerprint"] == c["fingerprint"] else "stale"
+        c["error"] = None
+
+
+def download_failed(root, clip_id: str, error: str, cost: float) -> None:
+    """已经生成、但下载或校验失败：生成费用照记。"""
+    with mutate(root) as s:
+        c = _clip(s, clip_id)
+        c["attempts"][-1].update(state="failed", error=error, cost_cny=cost)
+        s["spent_cny"] = round(s["spent_cny"] + cost, 2)
+        c["state"], c["error"] = "failed", error
+
+
+def _prev(s: dict, clip: dict) -> Optional[dict]:
+    ff = clip.get("first_frame") or ""
+    if not ff.startswith("relay:"):
+        return None
+    return next((c for c in s["clips"] if c["id"] == ff[len("relay:"):]), None)
+
+
+def waiting_on_relay(s: dict, clip: dict) -> bool:
+    """接力的段要等上一段跑完（成功就带尾帧，失败就不带）。"""
+    prev = _prev(s, clip)
+    return clip.get("frame_mode") == "frame" and prev is not None and prev["state"] in IN_FLIGHT
+
+
+def relay_frame(root, s: dict, clip: dict) -> Optional[Path]:
+    """上一段采用那次的尾帧文件；没有返回 None。"""
+    prev = _prev(s, clip)
+    if prev is None or prev.get("chosen") is None:
+        return None
+    rel = prev["attempts"][prev["chosen"]].get("last_frame")
+    return Path(root) / rel if rel else None
+
+
+def recover(root) -> bool:
+    """进程重启后：提交中断（没拿到任务 id）的尝试标失败，不重复提交。返回是否还有在跑的段。"""
+    with _lock(root):
+        s = load(root)
+        if s is None:
+            return False
+        changed = False
+        for c in s["clips"]:
+            a = c["attempts"][-1] if c["attempts"] else None
+            if a and a["state"] == "submitting":
+                a.update(state="failed",
+                         error="提交时服务中断，不确定厂商是否已受理；请到厂商控制台核对后再重做")
+                c["state"], c["error"] = "failed", a["error"]
+                changed = True
+        if changed:
+            _save(root, s)
+        return any(c["state"] in IN_FLIGHT for c in s["clips"])
