@@ -383,6 +383,8 @@ def _novel_call(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except novels.NotFound as e:
         raise HTTPException(404, str(e))
+    except novels.Busy as e:
+        raise HTTPException(409, str(e))
     except novels.NovelError as e:
         raise HTTPException(422, str(e))
 

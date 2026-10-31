@@ -44,7 +44,7 @@ def finish(root, fake, clip_id):
     sess.submitted(root, clip_id, tid, None)
     st = fake.poll(tid)
     sess.poll_update(root, clip_id, st)
-    files = fake.download(st, Path(root) / "clips" / f"{clip_id}.v{len(snap['attempts'])}.mp4")
+    files = fake.download(st, sess.clip_dest(root, clip_id, tid))
     sess.downloaded(root, clip_id, files, fake.cost(st, req))
 
 
@@ -90,9 +90,10 @@ def main() -> int:
     finish(root, fake, first)
     s = sess.load(root)
     c = clip(s, first)
+    t1 = c["attempts"][0]["task_id"]
     assert c["state"] == "done" and c["chosen"] == 0
-    assert c["attempts"][0]["file"] == f"clips/{first}.v1.mp4"
-    assert c["attempts"][0]["last_frame"] == f"clips/{first}.v1.last.jpg"
+    assert c["attempts"][0]["file"] == f"clips/{first}.{t1}.mp4", "文件按任务 id 命名"
+    assert c["attempts"][0]["last_frame"] == f"clips/{first}.{t1}.last.jpg"
     assert s["spent_cny"] == c["attempts"][0]["cost_cny"] > 0
     print("3. 走完一段 ✓")
 
@@ -114,7 +115,7 @@ def main() -> int:
     # 5. 接力：上一段完成后给出尾帧路径；上一段在跑时等待
     c2 = clip(s, second)
     assert c2["first_frame"] == f"relay:{first}" and not sess.waiting_on_relay(s, c2)
-    assert sess.relay_frame(root, s, c2) == root / f"clips/{first}.v1.last.jpg"
+    assert sess.relay_frame(root, s, c2) == root / f"clips/{first}.{t1}.last.jpg"
     s = sess.queue_run(root, [second])
     third = next(c for c in s["clips"] if c["first_frame"] == f"relay:{second}")
     assert sess.waiting_on_relay(s, third)
@@ -161,7 +162,7 @@ def main() -> int:
     assert sess.recover(root) is True
     c = clip(sess.load(root), second)
     assert c["state"] == "failed" and "不确定厂商是否已受理" in c["error"]
-    assert c["attempts"][-1]["state"] == "failed"
+    assert c["attempts"][-1]["state"] == "failed" and c["uncertain"] is True
     print("9. 重启恢复 ✓")
 
     # 10. 不丢已付费的尝试：切段变了 → stale 保留；段消失 → orphaned；再重建不重复
@@ -197,10 +198,9 @@ def main() -> int:
         if cid in now:
             assert len(clip(s3, cid)["attempts"]) == kept[cid]
             assert len(clip(s3, cid)["attempts"]) == kept[cid]
-    s3 = b3(doc)
-    assert [o["id"] for o in s3["orphaned"]] == gone
-    s3 = b3(doc)
-    assert [o["id"] for o in s3["orphaned"]] == gone
+    s3 = b3(cut)
+    assert [o["id"] for o in s3["orphaned"]] == gone, "再重建不重复"
+    assert all(len(o["attempts"]) == kept[o["id"]] for o in s3["orphaned"])
     print("10. 保留尝试与 orphaned ✓")
 
     # 11. 文件损坏不当作没有会话
@@ -224,6 +224,87 @@ def main() -> int:
     s5 = sess.queue_run(root5, [a["id"], a["id"]], e.expected_cny)
     assert clip(s5, a["id"])["state"] == "queued"
     print("12. 在跑拒改设置与去重 ✓")
+
+    # ---------- 终审修复 ----------
+    # 13. 段 id 重新出现：orphaned 的尝试接回来；再出一次不覆盖已付费的旧文件，两次都列出
+    s3 = b3(doc)
+    assert s3["orphaned"] == [], "接回后不再留在 orphaned"
+    for cid in gone:
+        c = clip(s3, cid)
+        assert len(c["attempts"]) == kept[cid] and c["chosen"] == 0 and c["state"] == "done"
+    g = gone[0]
+    old_file = root3 / clip(s3, g)["attempts"][0]["file"]
+    with sess.mutate(root3) as x:
+        clip(x, g)["state"] = "queued"
+    finish(root3, fake, g)
+    c = clip(sess.load(root3), g)
+    new_file = root3 / c["attempts"][-1]["file"]
+    assert len(c["attempts"]) == kept[g] + 1 and c["chosen"] == kept[g]
+    assert old_file.exists() and new_file.exists() and old_file != new_file
+    assert c["attempts"][0]["file"] != c["attempts"][-1]["file"]
+    print("13. 接回 orphaned、按尝试命名文件 ✓")
+
+    # 14. 反复 orphan 不丢尝试：同 id 已有 orphaned 记录（旧数据）时合并而不是跳过；接回时 chosen 仍有效
+    with sess.mutate(root3) as x:                   # 模拟旧版本留下的同 id 记录
+        x["orphaned"].append({"id": g, "shots": clip(x, g)["shots"], "chosen": None,
+                              "attempts": [{"task_id": "legacy-1", "state": "failed", "cost_cny": 0.0,
+                                            "file": None, "last_frame": None, "error": "旧的",
+                                            "fingerprint": "x"}]})
+    total_g = kept[g] + 2
+    s3 = b3(cut)
+    o = [x for x in s3["orphaned"] if x["id"] == g]
+    assert len(o) == 1 and len(o[0]["attempts"]) == total_g, o
+    assert o[0]["attempts"][o[0]["chosen"]]["file"] == c["attempts"][-1]["file"]
+    s3 = b3(cut)
+    o = [x for x in s3["orphaned"] if x["id"] == g]
+    assert len(o) == 1 and len(o[0]["attempts"]) == total_g, "第二次 orphan 不丢"
+    s3 = b3(doc)
+    c = clip(s3, g)
+    assert len(c["attempts"]) == total_g and c["attempts"][c["chosen"]]["file"] == o[0]["attempts"][o[0]["chosen"]]["file"]
+    assert c["state"] == "done" and not s3["orphaned"]
+    print("14. 反复 orphan 不丢 ✓")
+
+    # 15. 分镜被清空：不据此重建（否则段全挤进 orphaned），原样返回已存的会话；带设置改动则拒绝
+    before = sess.load(root3)
+    for empty in ({}, {"episodes": []}, {"episodes": [{"id": "E01", "shots": []}]}):
+        got = b3(empty)
+        assert [x["id"] for x in got["clips"]] == [x["id"] for x in before["clips"]]
+    assert sess.load(root3)["clips"] == before["clips"]
+    must_raise(sess.SessionError, b3, {"episodes": []}, patch={"resolution": "480p"})
+    print("15. 分镜清空不清段 ✓")
+
+    # 16. 待核对（uncertain）：批量的范围与金额都跳过它；单段点名重做清掉标记
+    root6 = Path(tmp.name) / "render" / "v6"
+    s6 = sess.build(root6, doc, owner=OWNER, patch={"budget_cny": 100000.0}, keyframes={})
+    u = s6["clips"][0]["id"]
+    sess.queue_run(root6, [u])
+    sess.begin_submit(root6, u)
+    sess.submit_failed(root6, u, "不确定", uncertain=True)
+    v6 = sess.view(sess.load(root6))
+    assert clip(v6, u)["uncertain"] is True and v6["uncertain_count"] == 1
+    assert all(x["uncertain"] is False for x in v6["clips"] if x["id"] != u)
+    rest = round(sum(x["estimate_cny"] for x in v6["clips"] if x["id"] != u), 2)
+    assert v6["remaining_cny"] == rest
+    assert must_raise(sess.Conflict, sess.queue_run, root6, None).expected_cny == rest
+    s6 = sess.queue_run(root6, None, rest)
+    assert clip(s6, u)["state"] == "failed" and clip(s6, u)["uncertain"] is True
+    s6 = sess.build(root6, doc, owner=OWNER, patch={}, keyframes={}, allow_in_flight=True)
+    assert clip(s6, u)["uncertain"] is True, "重建保留标记"
+    s6 = sess.queue_run(root6, [u])
+    assert clip(s6, u)["state"] == "queued" and clip(s6, u)["uncertain"] is False
+    print("16. 待核对段批量跳过、单段重做清除 ✓")
+
+    # 17. 上次提交没写回任务 id（仍是「提交中」）：不再提交，转失败并标待核对
+    root7 = Path(tmp.name) / "render" / "v7"
+    s7 = sess.build(root7, doc, owner=OWNER, patch={}, keyframes={})
+    w = s7["clips"][0]["id"]
+    sess.queue_run(root7, [w])
+    assert sess.begin_submit(root7, w) is not None
+    assert sess.begin_submit(root7, w) is None
+    c = clip(sess.load(root7), w)
+    assert len(c["attempts"]) == 1 and c["attempts"][0]["state"] == "failed"
+    assert c["state"] == "failed" and c["uncertain"] is True and c["error"] == sess.INTERRUPTED_SUBMIT
+    print("17. 提交中未写回不重复提交 ✓")
 
     print("\nALL PASS")
     return 0

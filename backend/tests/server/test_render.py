@@ -20,7 +20,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"     # 不起后台线程，测试里手动 tick
 
 from fastapi.testclient import TestClient  # noqa: E402
-from render import providers  # noqa: E402
+from render import providers, session as render_session  # noqa: E402
 from render.providers.fake import FAKE_MP4, FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
 from server import auth, novels  # noqa: E402
@@ -150,6 +150,64 @@ def main() -> int:
     novels.delete_version(uid, nid, cid, "v1")
     assert not root.exists()
     print("7. 删版本连带删除 ✓")
+
+    # ---------- 终审修复 ----------
+    novels.create_version(uid, nid, cid, "v3", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "v3", "succeeded", result=copy.deepcopy(DOC))
+    R3 = f"/novels/{nid}/chapters/{cid}/versions/v3/render"
+    V3 = f"/novels/{nid}/chapters/{cid}/versions/v3"
+    s = c.post(R3 + "/session", headers=H, json={}).json()
+    n_clips = len(s["clips"])
+    one = s["clips"][0]["id"]
+    root3 = novels.render_dir(uid, nid, cid, "v3")
+
+    # 8. 分镜被清空后读取：不重建、不把段挤进 orphaned
+    novels.update_version_state(uid, nid, cid, "v3", "succeeded", result={"episodes": []})
+    r = c.get(R3 + "/session", headers=H)
+    assert r.status_code == 200, r.text
+    assert len(r.json()["clips"]) == n_clips and not r.json()["orphaned"]
+    assert len(render_session.load(root3)["clips"]) == n_clips
+    novels.update_version_state(uid, nid, cid, "v3", "succeeded", result=copy.deepcopy(DOC))
+    print("8. 分镜清空读取不清段 ✓")
+
+    # 9. 待核对的段：界面能看到标记；单段点名重做清掉
+    render_session.queue_run(root3, [one])
+    render_session.begin_submit(root3, one)
+    render_session.submit_failed(root3, one, "不确定", uncertain=True)
+    s = c.get(R3 + "/session", headers=H).json()
+    assert pick(s, one)["uncertain"] is True and s["uncertain_count"] == 1
+    r = c.post(R3 + f"/clips/{one}/run", headers=H, json={})
+    assert r.status_code == 200 and pick(r.json(), one)["uncertain"] is False, r.text
+    print("9. 待核对标记与单段重做 ✓")
+
+    # 10. 有片段在出时删版本 409，目录与版本都还在；出完后可删
+    app_mod._render_runner.tick()
+    assert pick(c.get(R3 + "/session", headers=H).json(), one)["state"] == "running"
+    r = c.delete(V3, headers=H)
+    assert r.status_code == 409 and "还有片段在出" in r.json()["detail"], r.text
+    assert (root3 / "session.json").exists() and novels.get_version(uid, nid, cid, "v3")
+    drain()
+    assert pick(c.get(R3 + "/session", headers=H).json(), one)["state"] == "done"
+    r = c.delete(V3, headers=H)
+    assert r.status_code == 200, r.text
+    assert not root3.exists()
+    print("10. 在出时不能删版本 ✓")
+
+    # 11. 会话目录已删：写回抛 NotFound，且不把目录重新建出来（出片线程据此不再盯）
+    s_old = {"version": 1, "clips": []}
+    try:
+        render_session._save(root3, s_old)
+        raise AssertionError("应抛 NotFound")
+    except render_session.NotFound:
+        pass
+    assert not root3.exists()
+    try:
+        render_session.clip_dest(root3, one, "t-1")
+        raise AssertionError("应抛 NotFound")
+    except render_session.NotFound:
+        pass
+    assert not root3.exists()
+    print("11. 删掉的目录不被重建 ✓")
 
     print("\nALL PASS")
     return 0

@@ -73,7 +73,6 @@ def main() -> int:
         return ark(lambda r: httpx.Response(code, json=payload or {}))
 
     must_raise(base.TransientError, status(429).submit, req)
-    must_raise(base.TransientError, status(503).submit, req)
     e = must_raise(base.ProviderError, status(400, {"error": {"code": "InvalidParameter",
                                                               "message": "duration 不合法"}}).submit, req)
     assert "InvalidParameter" in str(e) and "duration 不合法" in str(e) and "k-secret" not in str(e)
@@ -84,6 +83,28 @@ def main() -> int:
     e = must_raise(base.TransientError, ark(refused).submit, req)
     assert "k-secret" not in str(e)
     print("2. 错误分级 ✓")
+
+    # 2b. 提交只在请求没发出去（连不上、连接/连接池超时）或 429 时可重试；请求发出后断连、超时、
+    #     5xx、2xx 却没有任务 id 都可能已建了付费任务 → AmbiguousSubmit（不重试）。查询照旧
+    def raising(exc_type):
+        def handler(request):
+            raise exc_type("boom", request=request)
+        return ark(handler)
+
+    for exc_type in (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+        e = must_raise(base.TransientError, raising(exc_type).submit, req)
+        assert not isinstance(e, base.AmbiguousSubmit)
+    for exc_type in (httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.WriteTimeout, httpx.ReadError):
+        e = must_raise(base.AmbiguousSubmit, raising(exc_type).submit, req)
+        assert "k-secret" not in str(e)
+    for code in (500, 502, 503):
+        must_raise(base.AmbiguousSubmit, status(code).submit, req)
+    must_raise(base.AmbiguousSubmit, ark(lambda r: httpx.Response(200, content=b"<html>")).submit, req)
+    must_raise(base.AmbiguousSubmit, status(200, {"status": "queued"}).submit, req)
+    must_raise(base.TransientError, raising(httpx.ReadTimeout).poll, "cgt-1")
+    must_raise(base.TransientError, status(502).poll, "cgt-1")
+    must_raise(base.TransientError, status(429).poll, "cgt-1")
+    print("2b. 提交结果不明不重试 ✓")
 
     # 3. 查询：状态映射、产物地址、用量
     def task(payload):

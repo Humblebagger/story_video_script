@@ -16,8 +16,8 @@ import httpx
 
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
-from render.providers.base import (Caps, ClipRequest, ProviderError, TaskState, TransientError,
-                                   estimate_cny, last_frame_path, request_seconds)
+from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
+                                   TransientError, estimate_cny, last_frame_path, request_seconds)
 
 BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 # 2026-10 刊例价（元/百万 token，输入不含视频）；资源包与折扣不建模。
@@ -36,6 +36,8 @@ PIXELS = {"480p": 480 * 864, "720p": 720 * 1280, "1080p": 1080 * 1920}
 _STATUS = {"queued": "pending", "running": "running", "succeeded": "succeeded",
            "failed": "failed", "expired": "failed", "cancelled": "failed"}
 _REF = re.compile(r"\{ref:([^{}]+)\}")
+# 这几种错误发生时请求还没发出去，提交可以放心重试；其它传输错误下方舟可能已建了任务
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
 def rewrite_refs(text: str) -> str:
@@ -100,18 +102,30 @@ class Seedance:
     def rewrite_prompt(self, text: str) -> str:
         return rewrite_refs(text)
 
-    def _call(self, method: str, url: str, **kw) -> dict:
+    def _call(self, method: str, url: str, *, submit: bool = False, **kw) -> dict:
+        """submit=True（提交任务）时，请求可能已被受理的情况抛 AmbiguousSubmit 而不是瞬时错误：
+        只有请求没发出去（连不上、连接超时、连接池超时）或 429 才允许重试。"""
         try:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
-        except httpx.TransportError as e:
+        except _NOT_SENT as e:
             raise TransientError(f"连接方舟失败：{type(e).__name__}")
-        if r.status_code == 429 or r.status_code >= 500:
+        except httpx.TransportError as e:
+            if submit:
+                raise AmbiguousSubmit(f"提交时连接中断：{type(e).__name__}")
+            raise TransientError(f"连接方舟失败：{type(e).__name__}")
+        if r.status_code == 429:
+            raise TransientError("方舟限流（HTTP 429）")
+        if r.status_code >= 500:
+            if submit:
+                raise AmbiguousSubmit(f"方舟返回 HTTP {r.status_code}")
             raise TransientError(f"方舟暂时不可用（HTTP {r.status_code}）")
         if r.status_code >= 400:
             raise ProviderError(_error_text(r))
         try:
             return r.json()
         except ValueError:
+            if submit:
+                raise AmbiguousSubmit("方舟返回的不是 JSON")
             raise TransientError("方舟返回的不是 JSON")
 
     def submit(self, req: ClipRequest) -> str:
@@ -126,9 +140,10 @@ class Seedance:
         body = {"model": m["id"], "content": content, "resolution": req.resolution,
                 "ratio": req.aspect, "duration": request_seconds(req.duration, self.caps(req.model)),
                 "generate_audio": req.audio, "watermark": False, "return_last_frame": True}
-        tid = self._call("POST", "/contents/generations/tasks", json=body).get("id")
+        j = self._call("POST", "/contents/generations/tasks", submit=True, json=body)
+        tid = j.get("id") if isinstance(j, dict) else None
         if not tid:
-            raise ProviderError("方舟没有返回任务 id")
+            raise AmbiguousSubmit("方舟受理了请求却没有返回任务 id")
         return tid
 
     def poll(self, task_id: str) -> TaskState:
@@ -150,7 +165,7 @@ class Seedance:
         """结果地址是对象存储的签名直链：不带方舟密钥，24 小时有效。"""
         if not url:
             raise ProviderError("方舟没有返回结果地址")
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.parent.mkdir(exist_ok=True)              # 不建上级目录：版本删了不能被下载重新建出来
         part = dest.with_name(dest.name + ".part")
         try:
             with self._http.stream("GET", url) as r:

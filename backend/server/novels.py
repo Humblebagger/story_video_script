@@ -42,6 +42,10 @@ class NotFound(LookupError):
     pass
 
 
+class Busy(NovelError):
+    """与进行中的操作冲突（409），如版本还有片段在出。"""
+
+
 # ---------- 路径与读写 ----------
 
 def novels_dir(user_id: str) -> Path:
@@ -398,9 +402,20 @@ def delete_version(user_id: str, nid: str, cid: str, vid: str) -> None:
         path = _version_path(user_id, nid, cid, vid)
         if not path.exists():
             raise NotFound("版本不存在")
-        path.unlink()
+        rdir = _chapter_dir(user_id, nid, cid) / "render" / vid
+        if (rdir / "session.json").exists():
+            # 出片会话：持会话锁检查并删除，出片线程写回时就会发现目录已没（不会重建）
+            from render import session as render_session        # 延迟导入，避免循环
+            with render_session._lock(rdir):
+                s = render_session.load(rdir)
+                if s and any(c.get("state") in render_session.IN_FLIGHT for c in s.get("clips", [])):
+                    raise Busy("这个版本还有片段在出，等出完或失败后再删")
+                path.unlink()
+                shutil.rmtree(rdir, ignore_errors=True)
+        else:
+            path.unlink()
+            shutil.rmtree(rdir, ignore_errors=True)
         shutil.rmtree(_chapter_dir(user_id, nid, cid) / "keyframes" / vid, ignore_errors=True)
-        shutil.rmtree(_chapter_dir(user_id, nid, cid) / "render" / vid, ignore_errors=True)
 
 
 # ---------- 采用：版本 → 长期记忆 ----------

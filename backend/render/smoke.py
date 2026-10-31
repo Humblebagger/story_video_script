@@ -48,6 +48,7 @@ def main(argv=None) -> int:
     if not a.yes and input("提交？[y/N] ").strip().lower() != "y":
         return 1
 
+    Path(a.out).mkdir(parents=True, exist_ok=True)  # 下载不建上级目录，先建好再花钱
     tid = sd.submit(req)
     print("任务：", tid)
     while True:

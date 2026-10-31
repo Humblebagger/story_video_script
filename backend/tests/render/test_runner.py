@@ -307,6 +307,83 @@ def main() -> int:
     fake.download = real_download
     print("12. 重试期限 ✓")
 
+    # ---------- 终审修复 ----------
+    # 13. 提交结果不明（AmbiguousSubmit）：只调一次、不重试，记失败并标待核对
+    r8, i8 = fresh("ambiguous")
+    sess.queue_run(r8, [i8[0]])
+    calls = []
+
+    def submit_ambiguous(req):
+        calls.append(req)
+        raise base.AmbiguousSubmit("提交时连接中断：ReadTimeout")
+
+    fake.submit = submit_ambiguous
+    rn = quick()
+    rn.watch(r8)
+    rn.tick()
+    rn.tick()
+    c = clip(r8, i8[0])
+    assert len(calls) == 1, calls
+    assert c["state"] == "failed" and c["uncertain"] is True and len(c["attempts"]) == 1
+    assert c["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到方舟控制台核对") and "ReadTimeout" in c["error"]
+    fake.submit = real_submit
+    print("13. 提交结果不明不重试 ✓")
+
+    # 14. 已提交但写回任务 id 失败：下一轮不再提交，转失败并标待核对
+    r9, i9 = fresh("lostid")
+    sess.queue_run(r9, [i9[0]])
+    real_submitted = sess.submitted
+    boom = [1]
+
+    def submitted_once(*a, **kw):
+        if boom:
+            boom.pop()
+            raise OSError("磁盘满了")
+        return real_submitted(*a, **kw)
+
+    sess.submitted = submitted_once
+    before = len(fake.submitted)
+    rn = quick()
+    rn.watch(r9)
+    try:
+        rn.tick()
+        rn.tick()
+    finally:
+        sess.submitted = real_submitted
+    c = clip(r9, i9[0])
+    assert len(fake.submitted) == before + 1, "只提交了一次"
+    assert c["state"] == "failed" and c["uncertain"] is True and len(c["attempts"]) == 1
+    assert c["error"] == sess.INTERRUPTED_SUBMIT
+    print("14. 写回失败不重复提交 ✓")
+
+    # 15. 查询抛 ProviderError 不等于任务失败：保持 running 到期限，之后失败并标待核对
+    now[0] = 0
+    r10, i10 = fresh("pollerr")
+    sess.queue_run(r10, [i10[0]])
+    rn = Runner(builder, sleep=lambda s: None, clock=lambda: now[0],
+                poll_give_up_sec=100, download_give_up_sec=100)
+    rn.watch(r10)
+    rn.tick()
+    assert clip(r10, i10[0])["state"] == "running"
+
+    def provider_err_poll(tid):
+        raise base.ProviderError("任务查询失败：InternalServiceError")
+
+    fake.poll = provider_err_poll
+    for t_ in (1, 50, 100):
+        now[0] = t_
+        rn.tick()
+        c = clip(r10, i10[0])
+        assert c["state"] == "running" and not c.get("uncertain") and "InternalServiceError" in c["error"]
+    assert r10 in rn.watching()
+    now[0] = 101
+    rn.tick()
+    c = clip(r10, i10[0])
+    assert c["state"] == "failed" and c["uncertain"] is True and "多次查询都失败" in c["error"]
+    assert sess.load(r10)["spent_cny"] == 0.0
+    fake.poll = real_poll
+    print("15. 查询出错不算失败、到期标待核对 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -187,14 +187,14 @@ class Runner:
         a = c["attempts"][-1]
         try:
             st = self._retry(lambda: provider.poll(a["task_id"]))
-        except base.TransientError as e:
+        except (base.TransientError, base.ProviderError) as e:
+            # 查询本身出错不等于任务失败：厂商那边可能还在跑、还在计费。只有厂商报的终态
+            # （TaskState 里的 failed）才算结束；查询一直出错到期限才放弃，并标待核对
             if self._transient("poll", root, c, a["task_id"], e, self.poll_give_up_sec):
                 st = base.TaskState(a["task_id"], "failed",
                                     error="多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + str(e))
-                sess.poll_update(root, c["id"], st, 0.0)
+                sess.poll_update(root, c["id"], st, 0.0, uncertain=True)
             return                                  # 下一轮再查
-        except base.ProviderError as e:
-            st = base.TaskState(a["task_id"], "failed", error=str(e))
         self._clear("poll", root, c, a["task_id"])
         cost = provider.cost(st, self._stub(s, c)) if st.status == "failed" else 0.0
         sess.poll_update(root, c["id"], st, cost)
@@ -203,7 +203,7 @@ class Runner:
         a = c["attempts"][-1]
         st = base.TaskState(a["task_id"], "succeeded", video_url=a.get("video_url"),
                             last_frame_url=a.get("last_frame_url"), usage=a.get("usage") or {})
-        dest = Path(root) / "clips" / f"{c['id']}.v{len(c['attempts'])}.mp4"
+        dest = sess.clip_dest(root, c["id"], a["task_id"])
         cost = provider.cost(st, self._stub(s, c))
         try:
             files = self._retry(lambda: provider.download(st, dest))
@@ -236,6 +236,10 @@ class Runner:
             return False
         try:
             tid = self._retry(lambda: provider.submit(req))
+        except base.AmbiguousSubmit as e:          # 厂商可能已建了付费任务：不重试
+            sess.submit_failed(root, c["id"], "提交时连接中断，不确定厂商是否已受理：请到方舟控制台核对，"
+                               "确认没有生成再重做（" + str(e) + "）", uncertain=True)
+            return False
         except base.TransientError as e:
             sess.submit_failed(root, c["id"], f"厂商暂时不可用（已重试 {self.retries} 次）：{e}")
             return False

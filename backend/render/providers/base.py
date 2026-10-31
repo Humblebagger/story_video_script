@@ -19,6 +19,11 @@ class TransientError(Exception):
     """断连、5xx、限流：调用方自动重试，不算新尝试。"""
 
 
+class AmbiguousSubmit(Exception):
+    """提交请求可能已被厂商受理（请求发出后断连、超时、5xx、2xx 却没拿到任务 id）：
+    不能重试（重试可能再建一个付费任务），记失败并提示用户到厂商控制台核对。"""
+
+
 @dataclass
 class Caps:
     max_clip_sec: float

@@ -58,7 +58,7 @@ class FakeVideo:
                          usage={"seconds": request_seconds(t["req"].duration, self._caps)})
 
     def download(self, st, dest):
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.parent.mkdir(exist_ok=True)
         dest.write_bytes(FAKE_MP4)
         last = None
         if st.last_frame_url:
