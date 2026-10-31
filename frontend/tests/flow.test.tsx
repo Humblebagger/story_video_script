@@ -398,6 +398,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                    novel_id: n.id, chapter_id: c.id })
     return json({ job_id: id, version_id: id, status_url: `/jobs/${id}` })
   }
+  // 出片会话与合成（…/versions/{vid}/render/…）：本测试不出片，章节级只读查询一律得到「还没有出片会话」
+  if (seg[4] === 'versions' && seg[6] === 'render') return err(404, '还没有出片会话')
   const v = c.versions.find((x) => x.id === seg[5])
   if (!v) return err(404, '版本不存在')
   if (seg[6] === 'adopt') {
@@ -451,6 +453,10 @@ const click = async (el: HTMLElement) => {
   await act(async () => { el.click() })
   await settle()
 }
+/** 章节工作流：点步骤条上的某一步；右下角的主按钮 */
+const goStep = (id: string) => click(container.querySelector(`[data-step="${id}"]`) as unknown as HTMLElement)
+const primary = () => container.querySelector('[data-testid="primary-action"]') as unknown as HTMLButtonElement
+const onStep = (id: string) => !!container.querySelector(`[data-step="${id}"][aria-current="step"]`)
 
 /** 退出后回到首页：先点右上角「登录」打开对话框 */
 const openLogin = async () => {
@@ -516,12 +522,13 @@ must(has('识别出 2 章'), '应按「一 二」识别出两章')
 await click(findByText('button', '建小说并导入 2 章'))
 await settle(150)
 must(shelf('alice')[0]?.chapters.length === 2, '应建出小说与两个章节')
-must(has('本章原文') && has('开始转换'), '建完应直接打开第一章')
+must(has('本章原文') && (primary()?.textContent ?? '').includes('生成分镜'), '建完应直接打开第一章')
+must(onStep('storyboard'), '新章节有原文、还没有版本：应停在 ② 生成分镜')
 must(!!container.querySelector('.hnovel.is-open') && has('未转换'), '侧栏应展开小说并列出章节')
 console.log('1. 新建小说 → 导入原文自动拆章 / 打开第一章 ✓')
 
 // 2. 转换本章 → 任务面板
-await click(findByText('button', '开始转换'))
+await click(primary())
 must(has('放到后台'), '提交后应显示任务面板')
 must(jobs.size === 1 && jobs.get('job1')!.chapter_id === shelf('alice')[0].chapters[0].id,
      '桩后端应收到本章的转换任务')
@@ -532,7 +539,8 @@ await click(findByText('button', '放到后台'))
 must(!has('放到后台'), '放到后台后不应还停在任务面板')
 must(has('本章原文'), '放到后台后应回到章节页')
 must(has('批 1/1（8 字符）：调用 LLM…'), '侧栏必须留着在跑的任务及其最新日志')
-must(has('转换中…'), '章节上要标出正在转换')
+must(has('生成中…'), '章节上要标出正在转换')
+must(primary().disabled && (primary().textContent ?? '').includes('生成中…'), '生成中主按钮显示「生成中…」且不能再点')
 console.log('3. 放到后台 → 回到章节页，任务留在侧栏 ✓')
 
 // 4. 点侧栏的在跑任务：必须能回到任务面板
@@ -587,6 +595,7 @@ const chapterItem = (i: number) =>
   container.querySelectorAll('.hchap__item')[i] as unknown as HTMLElement
 await click(chapterItem(0))
 must(has('E01-SH001') && has('推门'), '打开章节应摆出采用版的分镜')
+must(onStep('render'), '有采用版、还没有出片会话：进章节应停在 ④ 出片')
 must(has('编辑分镜') && has('下载 JSON'), '产物应带编辑与下载入口')
 must(has('v1 ★') && has('采用版：资产卡'), '版本条要标出采用版')
 must(has('1 条人物状态待确认'), '章后整理的结果要在章节页说出来')
@@ -595,7 +604,9 @@ must(has('华老栓') && has('C01'), '资产卡页签应展示角色卡')
 console.log('6. 章节 → 采用版产物 + 页签切换 ✓')
 
 // 7. 重转出一个失败版本：原因要摊在面板上
-await click(findByText('button', '重新转换（新版本）'))
+await goStep('storyboard')
+must((primary().textContent ?? '').includes('重新生成（新版本）'), '已有版本时主按钮是「重新生成（新版本）」')
+await click(primary())
 finishJob('job2', 'failed')
 await settle(1800)          // 附着轮询 1.5s 一轮
 must(has('转换失败，未通过的原因如下'), '失败应高亮原因区块')
@@ -649,7 +660,9 @@ must(JSON.stringify(out.source.units) === JSON.stringify(DOC.source.units), '原
 console.log('9. 保存 → 内容已改 / ID 与跨引用逐字未变 ✓')
 
 // 9b. 再转一版并改采用它
-await click(findByText('button', '重新转换（新版本）'))
+await goStep('storyboard')
+must((primary().textContent ?? '').includes('重新生成（新版本）'), '主按钮应是「重新生成（新版本）」')
+await click(primary())
 finishJob('job3')
 await settle(1800)
 must(has('E01-SH001') && has('采用此版'), '新版本跑完应摆出来，可以改采用')
@@ -917,7 +930,9 @@ console.log('16. 渲染任务包 → 按可播时长计价 / 可选范围渲染 
 // 17. 服务端验证结果必须在界面上看得见
 //     后端每次保存、每次渲染前都整份复验，但界面一直没透出来——用户改出一份
 //     不合法的 IR，屏幕照样显示保存成功，要到点渲染才被 422 打回。
-await click(findByText('button', '分镜'))
+// 步骤条上「生成分镜」也含「分镜」二字：按分镜视图的页签精确取
+await click([...container.querySelectorAll('.tabs__btn')]
+  .find((b) => b.textContent === '分镜') as unknown as HTMLElement)
 const area17 = container.querySelector('.ed__at textarea') as unknown as HTMLTextAreaElement
 must(!!area17, '切回分镜页应仍在编辑态')
 await typeAt(area17, '推门，康大叔（再改）')
@@ -941,9 +956,20 @@ must(!has('[object Object]'), '结构化 detail 不能退化成 [object Object]'
 must(has('台词不是所引原文句的逐字摘录'), '拦截原因要逐条列出')
 console.log('17. 验证结果透出 → 保存复验不通过当场可见 / 渲染门给出可执行原因 ✓')
 
+// 17b. 工作流的主按钮也拦在完整性检查：说原因，「去修复」回到 ③ 并定位到检查结果
+await goStep('render')
+const reason = container.querySelector('[data-testid="primary-reason"]')
+must((reason?.textContent ?? '').includes('完整性检查没通过'), '复验不通过时 ④ 的主按钮要说明被完整性检查拦住')
+must(primary().disabled, '被拦住时主按钮不能点')
+await click(container.querySelector('[data-testid="primary-fix"]') as unknown as HTMLElement)
+must(onStep('review'), '「去修复」应回到 ③ 检查修改')
+must(!!doc.getElementById('verification'), '③ 里要看得到检查结果（修复定位的目标）')
+console.log('17b. 主按钮被完整性检查拦住 → 说明原因 / 去修复回到 ③ ✓')
+
 // 18. 分批先看的两个收尾：预览开着时整章跑完 → 自动换成完整产物（不能被
 //     晚到的预览盖回去）；转换失败 → 已通过的批次照样能看
-await click(findByText('button', '重新转换（新版本）'))
+await goStep('storyboard')
+await click(primary())
 jobs.get('job4')!.partial_batches = 1
 await settle(1600)
 await click(findByText('button', '先审阅已完成的 1 批'))
@@ -953,7 +979,8 @@ await settle(1800)
 must(!has('预览：只含'), '整章跑完后预览标记应消失')
 must(has('编辑分镜'), '完整产物可以编辑')
 
-await click(findByText('button', '重新转换（新版本）'))
+await goStep('storyboard')
+await click(primary())
 jobs.get('job5')!.partial_batches = 2
 finishJob('job5', 'failed')
 await settle(1800)

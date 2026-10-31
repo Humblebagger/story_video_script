@@ -9,7 +9,7 @@ import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
 import type { User } from './auth'
 import { AppShell } from './components/shell/AppShell'
 import { AdminView } from './components/admin/AdminView'
-import { ChapterPage } from './components/ChapterPage'
+import { ChapterWorkflow } from './components/workflow/ChapterWorkflow'
 import { JobPanel } from './components/JobPanel'
 import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
@@ -26,6 +26,7 @@ import type {
   Chapter, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
   VerificationReport,
 } from './types'
+import { useChapterFlow } from './useChapterFlow'
 import { useJob } from './useJob'
 import { DUR, EASE_OUT } from './motion'
 
@@ -68,6 +69,11 @@ export default function App() {
   /** 异步回来时用户可能已经切走：只认仍然打开着的那一章 */
   const openChapterId = useRef<string | null>(null)
   openChapterId.current = chapter?.id ?? null
+  /** 章节级只读出片状态（步骤条与主按钮用）；画布关闭、保存后重读 */
+  const flow = useChapterFlow(novel && chapter && docVid ? { nid: novel.id, cid: chapter.id, vid: docVid } : null)
+  const reloadFlow = flow.reload
+  /** 递增一次 = 打开画布并切到「出片」页 */
+  const [openFilmN, setOpenFilmN] = useState(0)
 
   const refreshNovels = useCallback(async () => {
     try {
@@ -419,6 +425,7 @@ export default function App() {
       }
       setDirty(false)
       await reloadOpen(novel.id, chapter.id)
+      void reloadFlow()
     } catch (e) {
       setAlert(`保存失败：${msg(e)}`)
     } finally {
@@ -483,6 +490,39 @@ export default function App() {
 
   const converting = !!chapter && (running.some((j) => j.chapter_id === chapter.id)
     || (!!job && RUNNING.includes(job.status)))
+  /** 章节打开时复验报告与分镜视图进工作流的 ③④⑤；本地 JSON 与分批预览（属于 ② 的进度）留在原位 */
+  const inWorkflow = !!(novel && chapter && !preview)
+  const board = (
+    <>
+      {verification && <div id="verification"><VerificationPanel report={verification} doc={doc} /></div>}
+      {doc && (
+        <StoryboardView
+          doc={doc}
+          canSave={docVid !== null}
+          preview={preview}
+          runId={docVid}
+          version={novel && chapter && docVid
+            ? { nid: novel.id, cid: chapter.id, vid: docVid } : null}
+          dirty={dirty}
+          saving={saving}
+          onChange={(next) => { setDoc(next); setDirty(true) }}
+          onSave={save}
+          openFilm={openFilmN}
+          onCanvasClose={() => void reloadFlow()}
+          bench={novel && chapter ? {
+            novel, chapter, versionId: docVid, job, converting,
+            disabled: submitting || svcDown,
+            onConvert: (opts) => convert(opts, true),
+            onOpenVersion: (vid) => { if (confirmLeave()) void openVersion(novel.id, chapter.id, vid) },
+            onAdopt: (vid) => void adopt(vid),
+            onDeleteVersion: (vid) => void removeVersion(vid),
+            onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
+            notice: error ? `提交失败：${error}` : alert,
+          } : null}
+        />
+      )}
+    </>
+  )
 
   return (
     <>
@@ -542,13 +582,19 @@ export default function App() {
               />
             )}
             {novel && chapter && (
-              <ChapterPage
+              <ChapterWorkflow
                 key={chapter.id}
                 novel={novel}
                 chapter={chapter}
-                versionId={docVid}
+                docVid={docVid}
+                doc={doc}
+                dirty={dirty}
+                saving={saving}
+                verificationFailed={verification?.status === 'failed'}
                 converting={converting}
                 disabled={submitting || svcDown}
+                running={running}
+                onOpenJob={openJob}
                 onConvert={convert}
                 onOpenVersion={(vid) => {
                   if (confirmLeave()) void openVersion(novel.id, chapter.id, vid)
@@ -556,10 +602,14 @@ export default function App() {
                 onAdopt={(vid) => void adopt(vid)}
                 onDeleteVersion={(vid) => void removeVersion(vid)}
                 onSaveText={saveText}
+                onSave={() => void save()}
                 onDelete={() => void removeChapter()}
                 onRerunDigest={() => void rerunDigest(novel.id, chapter.id)
                   .then(() => reloadOpen(novel.id, chapter.id))
                   .catch((e) => setAlert(msg(e)))}
+                storyboard={inWorkflow ? board : null}
+                openFilm={() => setOpenFilmN((n) => n + 1)}
+                flow={flow}
               />
             )}
             {error && <p className="alert">提交失败：{error}</p>}
@@ -573,31 +623,7 @@ export default function App() {
                 onPreview={() => void loadPreview(job.id)}
               />
             )}
-            {verification && <VerificationPanel report={verification} doc={doc} />}
-            {doc && (
-              <StoryboardView
-                doc={doc}
-                canSave={docVid !== null}
-                preview={preview}
-                runId={docVid}
-                version={novel && chapter && docVid
-                  ? { nid: novel.id, cid: chapter.id, vid: docVid } : null}
-                dirty={dirty}
-                saving={saving}
-                onChange={(next) => { setDoc(next); setDirty(true) }}
-                onSave={save}
-                bench={novel && chapter ? {
-                  novel, chapter, versionId: docVid, job, converting,
-                  disabled: submitting || svcDown,
-                  onConvert: (opts) => convert(opts, true),
-                  onOpenVersion: (vid) => { if (confirmLeave()) void openVersion(novel.id, chapter.id, vid) },
-                  onAdopt: (vid) => void adopt(vid),
-                  onDeleteVersion: (vid) => void removeVersion(vid),
-                  onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
-                  notice: error ? `提交失败：${error}` : alert,
-                } : null}
-              />
-            )}
+            {!inWorkflow && board}
           </div>
         )}
       </AppShell>
