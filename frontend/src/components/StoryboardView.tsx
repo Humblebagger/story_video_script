@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
@@ -61,8 +61,11 @@ export function StoryboardView({
   const [editing, setEditing] = useState(false)
   const [canvas, setCanvas] = useState(false)
   const [canvasPanel, setCanvasPanel] = useState<'film' | undefined>(undefined)
+  // 只认挂载之后的新信号：计数在挂载前就大于 0（比如换步骤后重新挂载）不能自己打开画布
+  const seenOpenFilm = useRef(openFilm)
   useEffect(() => {
-    if (!openFilm) return
+    if (!openFilm || openFilm === seenOpenFilm.current) return
+    seenOpenFilm.current = openFilm
     setCanvasPanel('film')
     setCanvas(true)
   }, [openFilm])

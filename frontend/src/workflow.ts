@@ -7,6 +7,12 @@ export const STEPS = ['import', 'storyboard', 'review', 'render', 'compose', 'do
 export type StepId = (typeof STEPS)[number]
 
 const OK = ['succeeded', 'completed_with_warnings']
+/** 生成成功过的版本：draft_invalid 是生成成功后人工改坏了（分镜还在），归 ③ 去修，不是回 ② 重新生成 */
+const GENERATED = [...OK, 'draft_invalid']
+
+/** 完整性检查没过：保存后的复验、版本摘要里的复验结果、或版本已被标成改坏的草稿 */
+const verifyFailed = (f: FlowInput) => f.verificationFailed || f.version?.verification_status === 'failed'
+  || f.version?.status === 'draft_invalid'
 
 export interface FlowInput {
   /** 本章原文非空（按已保存的算） */
@@ -32,9 +38,8 @@ export interface FlowInput {
 export function stepDone(id: StepId, f: FlowInput): boolean {
   switch (id) {
     case 'import': return f.hasText
-    case 'storyboard': return !!f.version && OK.includes(f.version.status) && !f.converting
-    case 'review': return stepDone('storyboard', f) && !f.dirty && !f.verificationFailed
-      && f.version?.verification_status !== 'failed'
+    case 'storyboard': return !!f.version && GENERATED.includes(f.version.status) && !f.converting
+    case 'review': return stepDone('storyboard', f) && !f.dirty && !verifyFailed(f)
     case 'render': return !!f.film && f.film.clips.length > 0 && f.film.clips.every((c) => c.state === 'done')
     case 'compose': return f.film?.final?.state === 'done' && !f.finalStale
     case 'download': return false
@@ -96,7 +101,7 @@ export function primaryFor(id: StepId, f: FlowInput): Primary {
       if (f.dirty) return { action: 'save', label: 'flow.primary.save' }
       const p: Primary = { action: 'goto', goto: 'render', label: 'flow.primary.next' }
       if (!stepDone('storyboard', f)) return block(p, 'flow.block.noVersion', { step: 'storyboard' })
-      if (f.verificationFailed || f.version?.verification_status === 'failed') {
+      if (verifyFailed(f)) {
         return block(p, 'flow.block.verify', { step: 'review', target: 'verification' })
       }
       return p
@@ -111,7 +116,7 @@ export function primaryFor(id: StepId, f: FlowInput): Primary {
         : { action: 'openFilm', label: 'flow.primary.tryOne', cny: rest[0].estimate_cny }
       if (!stepDone('storyboard', f)) return block(p, 'flow.block.noVersion', { step: 'storyboard' })
       if (f.dirty) return block(p, 'flow.block.dirty', { step: 'review', target: 'storyboard-save' })
-      if (f.verificationFailed || f.version?.verification_status === 'failed') {
+      if (verifyFailed(f)) {
         return block(p, 'flow.block.verify', { step: 'review', target: 'verification' })
       }
       return p

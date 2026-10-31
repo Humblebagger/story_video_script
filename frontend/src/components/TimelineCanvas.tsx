@@ -109,8 +109,10 @@ export function TimelineCanvas({
   /** 侧栏页签：外面能做的事在画布里都有一页，不必退出去 */
   const [panel, setPanel] = useState<PanelTab>(initialPanel ?? 'shot')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
+  /** 实际显示的页签：没有可出片的版本时「出片」页签不存在，停在「本镜」而不是空白（与 film.enabled 同一判断） */
+  const shown: PanelTab = panel === 'film' && !(version?.nid && version.cid && version.vid) ? 'shot' : panel
   /** 出片会话（只有存进后端的版本才有）；「出片」页签开着时轮询更勤 */
-  const film = useFilm(version, { active: panel === 'film' })
+  const film = useFilm(version, { active: shown === 'film' })
   /** 「成片」泳道上选中的段 */
   const [clipSel, setClipSel] = useState<string | null>(null)
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
@@ -778,7 +780,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
 
       </div>
 
-      <aside className={`tlc__panel${panel !== 'shot' ? ' tlc__panel--wide'
+      <aside className={`tlc__panel${shown !== 'shot' ? ' tlc__panel--wide'
                : editing ? ' tlc__panel--edit' : ''}`}
              onPointerDown={(e) => e.stopPropagation()}>
         <nav className="tlc__tabs">
@@ -786,25 +788,25 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
              ...(film.enabled ? [['film', '出片']] : []),
              ...(bench ? [['novel', '剧情'], ['tasks', bench.converting ? '任务 ●' : '任务']] : [])] as [PanelTab, string][])
             .map(([id, name]) => (
-              <button key={id} className={panel === id ? 'is-on' : ''} onClick={() => setPanel(id)}>{name}</button>
+              <button key={id} className={shown === id ? 'is-on' : ''} onClick={() => setPanel(id)}>{name}</button>
             ))}
         </nav>
-        {panel === 'source' && (
+        {shown === 'source' && (
           <SourceView doc={doc} idx={idx} focusUnit={focusUnit} onPickShot={selectShot} />
         )}
-        {panel === 'assets' && (
+        {shown === 'assets' && (
           <AssetsView assets={doc.assets ?? {}} editing={editing}
                       onChange={(kind: AssetKind, id, patch) => commit(updateAsset(docRef.current, kind, id, patch))} />
         )}
-        {panel === 'assets' && editable && !editing && (
+        {shown === 'assets' && editable && !editing && (
           <p className="tlc__kfnote">点底部「编辑」后可直接改资产卡，和镜头改动共用撤销与保存。</p>
         )}
-        {panel === 'novel' && bench && <NovelPanel bench={bench} />}
-        {panel === 'film' && film.enabled && (
+        {shown === 'novel' && bench && <NovelPanel bench={bench} />}
+        {shown === 'film' && film.enabled && (
           <FilmPanel film={film} selected={clipSel} onPickShot={selectShot} dirty={dirty} />
         )}
-        {panel === 'tasks' && bench && <TaskPanel bench={bench} dirty={dirty} />}
-        {panel === 'shot' && cur && <>
+        {shown === 'tasks' && bench && <TaskPanel bench={bench} dirty={dirty} />}
+        {shown === 'shot' && cur && <>
           {animatic && (
             kf.urls[cur.id]
               ? (
