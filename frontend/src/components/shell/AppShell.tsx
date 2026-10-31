@@ -58,7 +58,7 @@ export function AppShell(p: AppShellProps) {
         <div className={cn('min-h-0 flex-1 overflow-y-auto px-2', collapsed && 'invisible')}>{p.sidebar}</div>
         <div className="space-y-1 border-t border-sidebar-border p-3">
           {p.isAdmin && (
-            <Button variant="ghost" className="w-full justify-start gap-2" onClick={p.onToggleAdmin}>
+            <Button variant="ghost" className="w-full justify-start gap-2" aria-label={p.adminOpen ? t('shell.backToShelf') : t('shell.admin')} onClick={p.onToggleAdmin}>
               <Shield className="size-4" />{collapsed ? null : (p.adminOpen ? t('shell.backToShelf') : t('shell.admin'))}
             </Button>
           )}
@@ -67,7 +67,7 @@ export function AppShell(p: AppShellProps) {
               {p.username.slice(0, 1).toUpperCase()}
             </span>
             {!collapsed && <span className="min-w-0 flex-1 truncate text-sm">{p.username}</span>}
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={p.onLogout}>
+            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" aria-label={t('shell.logout')} onClick={p.onLogout}>
               <LogOut className="size-3.5" />{!collapsed && t('shell.logout')}
             </Button>
           </div>

@@ -24,7 +24,7 @@ export function LogoMark({ size = 24, className }: { size?: number; className?: 
 export function Logo({ className, compact }: { className?: string; compact?: boolean }) {
   const { t } = useI18n()
   return (
-    <span className={cn('inline-flex items-center gap-2 font-semibold tracking-tight', className)}>
+    <span className={cn('inline-flex items-center gap-2 font-semibold tracking-tight', className)} title={t('brand.name')}>
       <LogoMark />
       {!compact && <span>{t('brand.name')}</span>}
     </span>
