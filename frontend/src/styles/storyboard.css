@@ -183,6 +183,7 @@
   100% { box-shadow: 0 0 0 2px transparent; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .ep__caret { transition: none; }
   .shot.is-flash { animation: none; box-shadow: 0 0 0 2px var(--brand-to); }
 }
 

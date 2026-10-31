@@ -3,7 +3,7 @@ import { CircleHelp, ImageOff, Maximize2, Pause, Play, Redo2, SkipBack, SkipForw
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { MOOD, SHOT_SIZE, label } from '../labels'
+import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
@@ -262,6 +262,8 @@ export function TimelineCanvas({
       // 正在输入框里打字：空格、Esc、⌘Z 都归输入框自己
       const el = e.target as HTMLElement | null
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
+      // 确认框开着：Esc 只关框（Radix 已处理），空格、⌘Z 不穿透到框后面的画布
+      if (e.defaultPrevented || el?.closest?.('[role="alertdialog"],[role="dialog"]')) return
       if (e.key === 'Escape') { if (rangeRef.current) setRange(null); else onClose() }
       if (e.key === ' ') { e.preventDefault(); previewRef.current() }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
@@ -523,7 +525,7 @@ export function TimelineCanvas({
                     onClick={() => setRange(null)}><X size={12} aria-hidden /></button>
           </span>
         )}
-        <span className="tlc__help" title={`空格 预览：播选区，没选区就播当前这一镜，播到段尾停 · ▶ 播放 从播放头播到片尾
+        <span className="tlc__help" role="img" aria-label="快捷键与操作说明" tabIndex={0} title={`空格 预览：播选区，没选区就播当前这一镜，播到段尾停 · ▶ 播放 从播放头播到片尾
 在时间刻度上拖 = 圈选区 · 拖播放头 = 拖着看 · Shift+点镜头 = 从当前镜圈到这一镜
 ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · Esc 清选区 / 关闭${
           editing ? '\n编辑：双击角色节点改动作 · 右侧改本镜全部呈现字段' : ''}`}><CircleHelp size={16} aria-hidden /></span>
@@ -736,7 +738,8 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           {/* BGM 情绪段 */}
           {tl.music.map((m) => (
             <g key={m.key} className={cn('tlc__music', m.mood && 'tlc__music--mood',
-                                         m.mood && m.intensity && `tlc__music--${m.intensity}`)}>
+                                         m.mood && m.intensity && `tlc__music--${m.intensity}`)}
+             style={m.mood ? ({ '--mood': `hsl(${MOOD_HUE[m.mood] ?? 210} 62% 52%)` } as React.CSSProperties) : undefined}>
               <rect x={x(m.start)} y={rowOf.music.y + 4} width={Math.max(1, (m.end - m.start) * pps - 2)}
                     height={ROW.music - 8} rx={8} />
               {(m.end - m.start) * pps > 40 && m.mood && (

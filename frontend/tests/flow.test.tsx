@@ -625,7 +625,7 @@ await click(findByText('button', 'v1'))
 await click(findByText('button', '编辑分镜'))
 await click(findByText('button', '资产卡'))
 
-must(!!container.querySelector('.acard .lock, .acard .acard__id svg'), '编辑态下应标出锁死的 ID')
+must(!!container.querySelector('.acard .acard__id svg'), '编辑态下应标出锁死的 ID')
 const idCell = findByText('span', 'C01')
 must(idCell.querySelector('input') === null, '资产 ID 不可编辑')
 must(findByText('div', 'default').querySelector('input') === null

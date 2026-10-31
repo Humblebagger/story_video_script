@@ -2,7 +2,7 @@
  *
  *  花钱的按钮上都写着金额；批量和超过确认线的单段先弹确认（useFilm 决定发不发请求）。
  *  有未保存的改动或完整性检查没过时，所有出片按钮禁用并写明原因。 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, label } from '../labels'
 import { Button } from '@/components/ui/button'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
@@ -282,16 +282,20 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
 /** 花钱前的确认（全站统一的 MoneyConfirm）：批量列出各段；金额变了、结果不明的提示放在明细里。
  *  一直挂着、靠 open 开合，关闭时才有退出动画；没有确认时用占位值。 */
 function FilmConfirm({ s, film, blocked }: { s: FilmSession; film: Film; blocked: string | null }) {
-  const cf = film.confirm
+  // 关闭动画期间沿用最后一次的内容，免得标题、金额跳成占位值
+  const last = useRef(film.confirm)
+  if (film.confirm) last.current = film.confirm
+  const cf = film.confirm ?? last.current
   const rows = cf?.kind === 'rest' ? batchSummary(s).rows : []
   return (
     <MoneyConfirm
-      open={!!cf}
+      open={!!film.confirm}
       title={cf?.kind === 'rest' ? `出剩余 ${rows.length} 段` : cf ? `出 ${cf.clipId}` : ''}
       cny={cf?.cny ?? 0} spent={s.spent_cny} reserved={s.reserved_cny} budget={s.budget_cny}
       changed={cf?.changed} rateNote={s.options.rate_note} action="确认出片"
       blocked={!!blocked} busy={film.busy}
       onConfirm={() => void film.confirmNow()} onCancel={film.cancelConfirm}>
+      {blocked && <p className="text-destructive">{blocked}</p>}
       {cf?.kind === 'clip' && cf.uncertain && (
         <p className="text-destructive">这一段结果不明：厂商那边可能还有任务在跑或已扣费，请到厂商控制台核对，确认没有生成再重做。</p>
       )}

@@ -4,7 +4,7 @@
  *  配音花钱：金额写在按钮上，大于 0 时先弹确认（useCompose 决定发不发请求）。
  *  不能合成时按钮禁用，原因逐条写出（composeBlockers）。确认框开着时，会改金额的操作（没出好的段先用图片代替、音色、BGM）
  *  一律锁住，免得确认的金额与实际不符。 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { AUDIO_MODE, MOOD, label } from '../labels'
@@ -50,7 +50,7 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
       {c.error && <p className="tlc__kferr">{c.error}</p>}
       <Voices c={c} />
       <Music c={c} />
-      <ComposeConfirm s={s} c={c} blocked={blockers.length > 0} />
+      <ComposeConfirm s={s} c={c} blockers={blockers} />
       <div className="compose__run">
         <p>
           配音 {p.lines} 条{p.lines ? ` · 未缓存 ${p.tts_chars} 字 · 约 ${yuan(p.tts_cny)}` : ''}
@@ -232,13 +232,17 @@ function EpisodeFiles({ c, e }: { c: Compose; e: FinalEpisode }) {
 }
 
 /** 配音花钱前的确认（全站统一的 MoneyConfirm）；一直挂着、靠 open 开合，关闭时才有退出动画 */
-function ComposeConfirm({ s, c, blocked }: { s: FilmSession; c: Compose; blocked: boolean }) {
-  const cf = c.confirm
+function ComposeConfirm({ s, c, blockers }: { s: FilmSession; c: Compose; blockers: string[] }) {
+  // 关闭动画期间沿用最后一次的内容，免得标题、金额跳成占位值
+  const last = useRef(c.confirm)
+  if (c.confirm) last.current = c.confirm
+  const cf = c.confirm ?? last.current
   return (
     <MoneyConfirm
-      open={!!cf} title="合成整章" cny={cf?.cny ?? 0} spent={s.spent_cny} budget={s.budget_cny}
+      open={!!c.confirm} title="合成整章" cny={cf?.cny ?? 0} spent={s.spent_cny} budget={s.budget_cny}
       changed={cf?.changed} rateNote={c.voices?.rate_note} action="确认合成"
-      blocked={blocked} busy={c.busy} onConfirm={() => void c.confirmNow()} onCancel={c.cancelConfirm}>
+      blocked={blockers.length > 0} busy={c.busy} onConfirm={() => void c.confirmNow()} onCancel={c.cancelConfirm}>
+      {blockers.map((b) => <p key={b} className="text-destructive">{b}</p>)}
       <p>配音费用对应未缓存的 {c.preview?.tts_chars ?? 0} 字；合成本身不花钱。</p>
     </MoneyConfirm>
   )

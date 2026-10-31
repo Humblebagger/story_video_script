@@ -258,11 +258,11 @@ must(calls.includes(`GET /files/clips/${first}.t1.last.jpg`) && !!bar(first).que
      '缩略图用采用那次的尾帧')
 console.log('3. 出完 → 填色与缩略图 ✓')
 
+const dlg = () => win.document.body.querySelector('[data-testid="money-confirm"]')
 // 4. 批量：主按钮变「出剩余 N 段」；点了先弹确认（列各段、费率依据），不发请求
 const n = film!.clips.length - 1
 await click(button(`出剩余 ${n} 段`))
 must(has('确认出片') && has('费率依据：假厂商'), '弹出确认框、写费率依据')
-const dlg = () => win.document.body.querySelector('[data-testid="money-confirm"]')
 must(!!dlg() && dlg()!.querySelectorAll('.film__rows tr').length === n, '确认框列出各段')
 must(!calls.some((c) => c.startsWith('POST /run')), '确认前不发批量请求')
 console.log('4. 批量先确认 ✓')
@@ -314,8 +314,16 @@ await click(bar(third))
 must(has('请到厂商控制台核对'), '段详情提示到控制台核对')
 before = calls.length
 await click(button('出这一段'))
+must(dlg()!.textContent!.includes('结果不明'), '确认框里写明结果不明')
 must(calls.length === before && !!win.document.body.querySelector('[data-testid="money-confirm"]'), '重做待核对的段先弹确认、不发请求')
-await click(button('取消'))
+// Esc 只关确认框，不连带关掉画布
+await act(async () => {
+  button('取消').dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+})
+await settle()
+await act(async () => { await new Promise((r) => setTimeout(r, 400)) })
+must(!dlg(), 'Esc 关掉确认框')
+must(!!container.querySelector('.tlc'), 'Esc 关确认框时画布还在')
 console.log('8. 待核对标记 ✓')
 
 // 9. 未保存的改动：出片按钮禁用并提示先保存

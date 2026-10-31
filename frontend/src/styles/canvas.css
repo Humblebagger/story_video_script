@@ -1,6 +1,6 @@
 /* 时间轴画布：泳道、侧栏、静帧、就地编辑、选区、预览窗。只用新设计变量。
  * 每类元素一个色相：集 --secondary、场景 --ui-muted、镜头 --card（左边 3px 语义色条）、旁白 / 台词 --tone-transition、
- * BGM 情绪 --brand-from；有色相的填充 18%、描边 50%。品牌色（--brand-to / 渐变）只给播放头、选中与选区。
+ * BGM 按情绪色相（与分镜页情绪曲线一致）；有色相的填充 18%、描边 50%。品牌色（--brand-to / 渐变）只给播放头、选中与选区。
  * 成片泳道（.tlc__clip）、预览窗里的视频与「出片」页在 film.css（Task 5）。 */
 
 /* ---------- 画布底 ---------- */
@@ -147,12 +147,12 @@
 
 .tlc__music rect { fill: var(--ui-muted); stroke: var(--border); }
 .tlc__music--mood rect {
-  fill: color-mix(in oklab, var(--brand-from) 18%, transparent);
-  stroke: color-mix(in oklab, var(--brand-from) 50%, transparent);
+  fill: color-mix(in oklab, var(--mood) 18%, transparent);
+  stroke: color-mix(in oklab, var(--mood) 50%, transparent);
 }
 /* 强度只改深浅 */
-.tlc__music--low rect { fill: color-mix(in oklab, var(--brand-from) 10%, transparent); }
-.tlc__music--high rect { fill: color-mix(in oklab, var(--brand-from) 32%, transparent); }
+.tlc__music--low rect { fill: color-mix(in oklab, var(--mood) 10%, transparent); }
+.tlc__music--high rect { fill: color-mix(in oklab, var(--mood) 32%, transparent); }
 .tlc__music text { fill: var(--foreground); }
 
 /* ---------- 选区：刻度上拖出来 / Shift+点镜头；空格只播这一段 ---------- */

@@ -74,7 +74,7 @@
 .film__dot--queued, .film__dot--running, .film__dot--downloading {
   background: var(--warning); animation: film-pulse 2s ease-in-out infinite;
 }
-.film__dot--done, .film__dot--succeeded { background: var(--success); }
+.film__dot--done { background: var(--success); }
 .film__dot--failed { background: var(--destructive); }
 .film__dot--stale { background: var(--tone-inferred); }
 @keyframes film-pulse { 50% { opacity: 0.4; } }
@@ -116,7 +116,7 @@
   color: var(--foreground); font-size: 13px; font-weight: 500; line-height: 1; cursor: pointer; text-decoration: none;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); transition: background-color 150ms ease-out;
 }
-.compose__upload:hover, .compose__dl:hover { background: var(--accent); color: var(--accent-foreground); }
+.compose__upload:hover, .compose__dl:hover { background: var(--ui-accent); color: var(--ui-accent-foreground); }
 .compose__upload:has(input:disabled) { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 /* 下载视频是主动作，下载字幕是次要 */
 .compose__dl:not(.compose__dl--ghost) {

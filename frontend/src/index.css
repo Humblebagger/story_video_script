@@ -145,7 +145,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.tag--edit { color: var(--transition); border-color: var(--transition); }
 
 .empty { color: var(--faint); padding: 32px 0; text-align: center; }
 
@@ -158,6 +157,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 /* ---------- 通用控件 ---------- */
+
+/* 小说页、管理页的顶部页签（分镜页的分段控件不在 .tabs 里，只借 .tabs__btn 当测试钩子） */
+.tabs { display: flex; gap: 2px; padding: 0 18px; border-bottom: 1px solid var(--line-2); }
+.tabs .tabs__btn {
+  padding: 10px 16px; border: none; border-bottom: 2px solid transparent;
+  background: none; color: var(--muted); cursor: pointer;
+}
+.tabs .tabs__btn:hover { color: var(--text); }
+.tabs .tabs__btn.is-on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
 .btn {
   padding: 9px 18px;
@@ -188,11 +196,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--muted);
   white-space: nowrap;
 }
-.tag--size { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
 .tag--ghost { border-style: dashed; }
-.tag--ver { font-family: var(--mono); }
 .tag--warn { color: var(--danger); border-color: var(--danger); }
-.tag--kind { font-size: 11px; }
 .tag--nar { color: var(--accent); border-color: var(--accent); }
 
 /* ---------- 转换表单 ---------- */
@@ -472,7 +477,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .job__warn--err > b { color: var(--danger); }
 .job__warn--err pre { background: color-mix(in srgb, var(--danger) 8%, var(--panel-2)); }
 
-/* ---------- 分镜视图已搬到 styles/storyboard.css；下面两条留给别处 ---------- */
+/* ---------- 分镜视图已搬到 styles/storyboard.css；下面是 .cons 与 .main 的窄屏规则，留给别处 ---------- */
 
 /* 小说页约束清单 .cons 原先从分镜那条规则继承字号与颜色，留着保持原样（镜头卡里的 .cons 在 storyboard.css 里另写） */
 .cons { font-size: 12px; color: var(--muted); display: flex; gap: 7px; align-items: baseline; }
@@ -480,10 +485,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (max-width: 720px) {
   .main { padding: 14px; }
 }
-
-/* ---------- 顶栏导航与当前用户 ---------- */
-
-
 
 /* ---------- 资产库管理页 ---------- */
 
@@ -507,16 +508,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .lib__acts { display: flex; gap: 7px; }
 .alib__pick { font-size: 11.5px; color: var(--faint); align-self: center; }
 
-.acard__del {
-  margin-left: auto; border: none; background: none; color: var(--faint);
-  cursor: pointer; font-size: 16px; line-height: 1; padding: 0 3px;
-}
-.acard__del:hover { color: var(--danger); }
 .lib__emptytip { font-size: 12.5px; color: var(--faint); margin: 6px 0 14px; }
 
 /* ---------- 搜索 ---------- */
 
-.hist__search, .lib__search, .src__search {
+.hist__search, .lib__search {
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -525,8 +521,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .hist__search { width: 100%; margin-bottom: 10px; }
 .lib__search { flex: 1 1 220px; min-width: 0; }
-.src__search { flex: 0 1 240px; }
-.hist__search:focus, .lib__search:focus, .src__search:focus {
+.hist__search:focus, .lib__search:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: -1px;
 }
@@ -538,7 +533,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: 7px; background: var(--panel); font-size: 12.5px;
 }
 .lib__emptyacts { display: flex; gap: 8px; justify-content: center; }
-.hl { background: color-mix(in srgb, var(--accent) 35%, transparent); color: inherit; border-radius: 2px; }
 
 /* ---------- 小说 → 章节导航 ---------- */
 
