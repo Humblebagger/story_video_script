@@ -1077,9 +1077,6 @@ async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Re
     ext = BGM_TYPES.get(request.headers.get("content-type", "").split(";")[0].strip().lower())
     if ext is None:
         raise HTTPException(422, "BGM 只支持 mp3、wav、m4a、aac")
-    data = await request.body()
-    if not data or len(data) > BGM_MAX_BYTES:
-        raise HTTPException(422, "BGM 文件为空或超过 30MB")
     cl = request.headers.get("content-length")
     if cl and cl.isdigit() and int(cl) > BGM_MAX_BYTES:
         raise HTTPException(422, "BGM 文件为空或超过 30MB")
