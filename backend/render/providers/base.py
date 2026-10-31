@@ -71,6 +71,7 @@ class VideoProvider(Protocol):
     name: str
     default_model: str
     models: dict                    # 档位 id → {"label": ...}
+    rate_note: str      # 费率依据：如实写出处、是否经账单核对；出片确认框照抄
 
     def caps(self, model: str) -> Caps: ...
     def rewrite_prompt(self, text: str) -> str: ...

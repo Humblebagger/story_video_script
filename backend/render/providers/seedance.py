@@ -62,6 +62,8 @@ def _error_text(r: httpx.Response) -> str:
 class Seedance:
     name = "seedance"
     default_model = DEFAULT_MODEL
+    rate_note = ("2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，"
+                 "token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对")
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
         self._key = api_key

@@ -20,6 +20,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"     # 不起后台线程，测试里手动 tick
 
 from fastapi.testclient import TestClient  # noqa: E402
+from fastapi import HTTPException  # noqa: E402
 from render import providers, session as render_session  # noqa: E402
 from render.providers.fake import FAKE_MP4, FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
@@ -208,6 +209,32 @@ def main() -> int:
         pass
     assert not root3.exists()
     print("11. 删掉的目录不被重建 ✓")
+
+    # ---------- 画布出片（A2）接口补充 ----------
+
+    # 12. 读取时报告验证门结果（只报告不拦）；可选项带费率依据
+    novels.create_version(uid, nid, cid, "v9", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "v9", "succeeded", result=copy.deepcopy(DOC))
+    R9 = f"/novels/{nid}/chapters/{cid}/versions/v9/render"
+    assert c.post(R9 + "/session", headers=H, json={}).status_code == 200
+    s = c.get(R9 + "/session", headers=H).json()
+    assert s["gate"] == {"ok": True, "message": None}, s["gate"]
+    assert "假厂商" in s["options"]["rate_note"], s["options"]
+    real_gate = app_mod._render_gate
+
+    def failing_gate(doc, record):
+        raise HTTPException(422, detail={"message": "分镜未通过独立验证，禁止进入付费渲染",
+                                         "verification": {"ok": False}})
+
+    app_mod._render_gate = failing_gate
+    try:
+        r = c.get(R9 + "/session", headers=H)
+        assert r.status_code == 200, "读取不被验证门拦下"
+        assert r.json()["gate"] == {"ok": False, "message": "分镜未通过独立验证，禁止进入付费渲染"}
+        assert c.post(R9 + "/run", headers=H, json={"expected_cny": 1}).status_code == 422
+    finally:
+        app_mod._render_gate = real_gate
+    print("12. 读取报告验证门、费率依据 ✓")
 
     print("\nALL PASS")
     return 0

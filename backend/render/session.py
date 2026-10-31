@@ -273,7 +273,8 @@ def view(s: dict) -> dict:
     out["options"] = {"providers": names(), "models": provider.models,
                       "resolutions": caps.resolutions, "cny_per_sec": caps.cny_per_sec,
                       "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
-                      "audio_modes": list(compose.AUDIO_MODES)}
+                      "audio_modes": list(compose.AUDIO_MODES),
+                      "rate_note": getattr(provider, "rate_note", "")}
     return out
 
 

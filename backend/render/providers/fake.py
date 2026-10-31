@@ -13,6 +13,7 @@ _REF = re.compile(r"\{ref:([^{}]+)\}")
 class FakeVideo:
     name = "fake"
     default_model = "fake-1"
+    rate_note = "假厂商：不联网、不花钱，金额只用于演示"
 
     def __init__(self, *, polls_to_finish: int = 1, fail_with: Optional[str] = None,
                  transient_submits: int = 0, max_refs: int = 3, frame_with_refs: bool = False):

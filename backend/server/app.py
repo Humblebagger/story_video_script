@@ -837,15 +837,31 @@ def render_session_post(nid: str, cid: str, vid: str, body: Optional[RenderSetti
     return _render_call(render_session.view, s)
 
 
+def _gate_status(user: dict, nid: str, cid: str, vid: str) -> dict:
+    """出片页签的前置检查：验证门结果。读取时只报告不拦（建会话、出片照旧过门）。"""
+    record = _novel_call(novels.get_version, user["id"], nid, cid, vid)
+    doc = record.get("result") or {}
+    if not doc.get("episodes"):
+        return {"ok": False, "message": "这个版本还没有分镜产物"}
+    try:
+        _render_gate(copy.deepcopy(doc), record)
+    except HTTPException as e:
+        d = e.detail
+        return {"ok": False, "message": d.get("message") if isinstance(d, dict) else str(d)}
+    return {"ok": True, "message": None}
+
+
 @app.get(_R + "/session")
 def render_session_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
-    """查询；按当前已保存的分镜重算指纹并标过期（在跑的段不动）。"""
+    """查询；按当前已保存的分镜重算指纹并标过期（在跑的段不动），附验证门结果（只报告）。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid, gate=False)
     if render_session.load(root) is None:
         raise HTTPException(404, "还没有出片会话")
     s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                      allow_in_flight=True)
-    return _render_call(render_session.view, s)
+    out = _render_call(render_session.view, s)
+    out["gate"] = _gate_status(user, nid, cid, vid)
+    return out
 
 
 @app.patch(_R + "/session")
