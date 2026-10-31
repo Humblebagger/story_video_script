@@ -3,6 +3,9 @@ import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
+import { chosenAttempt, clipOffset, clipSpans, laneKind, laneText, laneTitle, spanAt } from '../film'
+import { useFilm } from '../useFilm'
+import { FilmPanel } from './FilmPanel'
 import { buildTimeline, fitText, fmtClock, previewFrom, shotSpan, speechAt, textPx, litFraction, shotIndexAt } from '../timeline'
 import { applyOp } from '../timelineOps'
 import type { TimelineOp } from '../timelineOps'
@@ -37,14 +40,14 @@ const UNDO_MERGE_MS = 800
 
 const GUTTER = 132         // 左侧泳道名一栏：角色两行（名字 / ID），不再挤成一行截断
 const RULER = 30
-const ROW = { episode: 24, scene: 26, shot: 38, frame: 72, char: 44, speech: 30, music: 26 }
+const ROW = { episode: 24, scene: 26, shot: 38, clip: 34, frame: 72, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
 
-type PanelTab = 'shot' | 'source' | 'assets' | 'novel' | 'tasks'
+type PanelTab = 'shot' | 'source' | 'assets' | 'film' | 'novel' | 'tasks'
 
 interface Row { key: string; label: string; sub?: string; y: number; h: number }
 
-function layoutRows(tl: Timeline, withFrames: boolean): { rows: Row[]; height: number } {
+function layoutRows(tl: Timeline, withFrames: boolean, withClips: boolean): { rows: Row[]; height: number } {
   const rows: Row[] = []
   let y = RULER
   const push = (key: string, lbl: string, h: number, sub?: string) => {
@@ -54,6 +57,8 @@ function layoutRows(tl: Timeline, withFrames: boolean): { rows: Row[]; height: n
   push('episode', '集', ROW.episode)
   push('scene', '场景', ROW.scene)
   push('shot', '镜头', ROW.shot)
+  // 有出片会话才出这条泳道：每段一条横条，横跨所含镜头
+  if (withClips) push('clip', '成片', ROW.clip)
   // 有关键帧图才出这条泳道：图直接铺在画布上，不必盯着侧栏
   if (withFrames) push('frame', '画面', ROW.frame)
   for (const c of tl.characters) push(`c:${c.ref}`, c.name, ROW.char, c.ref)
@@ -102,6 +107,15 @@ export function TimelineCanvas({
   /** 侧栏页签：外面能做的事在画布里都有一页，不必退出去 */
   const [panel, setPanel] = useState<PanelTab>('shot')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
+  /** 出片会话（只有存进后端的版本才有）；「出片」页签开着时轮询更勤 */
+  const film = useFilm(version, { active: panel === 'film' })
+  /** 「成片」泳道上选中的段 */
+  const [clipSel, setClipSel] = useState<string | null>(null)
+  /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
+  const [filmMode, setFilmMode] = useState(false)
+  /** 「生成中 · 已等 m:ss」每秒走一次 */
+  const [now, setNow] = useState(() => Date.now())
+  const videoRef = useRef<HTMLVideoElement>(null)
   const onJumpUnit = (unitId: string) => {
     setFocusUnit(unitId)
     setPanel('source')
@@ -162,7 +176,19 @@ export function TimelineCanvas({
   const fileRef = useRef<HTMLInputElement>(null)
   const tl = useMemo(() => buildTimeline(doc), [doc])
   const withFrames = Object.keys(kf.urls).length > 0
-  const { rows, height } = useMemo(() => layoutRows(tl, withFrames), [tl, withFrames])
+  const spans = useMemo(() => (film.session ? clipSpans(tl, film.session) : []), [tl, film.session])
+  const withClips = spans.length > 0
+  const { rows, height } = useMemo(() => layoutRows(tl, withFrames, withClips), [tl, withFrames, withClips])
+  const { ensure } = film
+  // 成片泳道的缩略图：各段采用那次的尾帧
+  useEffect(() => {
+    for (const sp of spans) ensure(chosenAttempt(sp.clip)?.last_frame)
+  }, [spans, ensure])
+  useEffect(() => {
+    if (!spans.some((sp) => laneKind(sp.clip) === 'busy')) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [spans])
   const rowOf = Object.fromEntries(rows.map((r) => [r.key, r]))
   const units = useMemo(() => Object.fromEntries(
     (doc.source?.units ?? []).map((u) => [u.id, u.text])), [doc])
@@ -269,6 +295,23 @@ export function TimelineCanvas({
   const current = shotIndexAt(tl, t)
   const cur = tl.shots[current]
   const curPrompt = cur ? kf.promptOf(cur.id) : undefined
+  /** 播成片：播放头所在段采用的视频（没有就退回关键帧，标「未出片」） */
+  const curSpan = filmMode ? spanAt(spans, t) : undefined
+  const curVideo = curSpan ? (chosenAttempt(curSpan.clip)?.file ?? undefined) : undefined
+  useEffect(() => { ensure(curVideo) }, [curVideo, ensure])
+  // 视频跟着播放头走：偏差超过 0.3 秒才拖，免得每帧都打断解码
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !curSpan) return
+    const want = clipOffset(curSpan, t)
+    if (Math.abs(v.currentTime - want) > 0.3) v.currentTime = want
+    v.playbackRate = speed
+    if (playing) {
+      if (v.paused) void v.play()?.catch(() => {})
+    } else if (!v.paused) {
+      v.pause()
+    }
+  })
 
   /** 空格：播选区（没有选区就播当前这一镜），播到段尾停；正在播就暂停 */
   const preview = () => {
@@ -380,6 +423,18 @@ export function TimelineCanvas({
     setPanel('shot')
   }
   const shotIndexAtStart = (sec: number) => tl.shots[shotIndexAt(tl, sec)]?.id
+  /** 点成片横条：选中该段、播放头跳到段首、侧栏切到「出片」 */
+  const selectClip = (clipId: string) => {
+    if (suppressClick.current) { suppressClick.current = false; return }
+    const sp = spans.find((x) => x.clip.id === clipId)
+    setClipSel(clipId)
+    setPanel('film')
+    if (sp) {
+      setPlaying(false)
+      setRange(null)
+      seek(sp.start)
+    }
+  }
 
   // 只画视野内的刻度
   const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * pps >= 70) ?? 600
@@ -429,6 +484,13 @@ export function TimelineCanvas({
                 title="静帧预演：按播放头显示当前镜头的关键帧图" onClick={() => setAnimatic((v) => !v)}>
           预演
         </button>
+        {spans.some((sp) => chosenAttempt(sp.clip)) && (
+          <button className={`btn btn--sm${filmMode ? '' : ' btn--ghost'}`}
+                  title="预览窗播已出的成片（采用的那一次）；未出片的段显示关键帧"
+                  onClick={() => setFilmMode((v) => !v)}>
+            {filmMode ? '播成片' : '播关键帧'}
+          </button>
+        )}
         <span className="tlc__kfcount" title="已上传关键帧图的镜头数">
           关键帧 {Object.keys(kf.urls).length}/{tl.shots.length}
         </span>
@@ -517,6 +579,33 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
               )}
             </g>
           ))}
+
+          {/* 成片：每段一条横条，横跨所含镜头；点一下选中该段、切到「出片」页 */}
+          {rowOf.clip && spans.map((sp) => {
+            const c = sp.clip
+            const kind = laneKind(c)
+            const w = Math.max(2, (sp.end - sp.start) * pps - 2)
+            const thumb = kind === 'done' || kind === 'stale'
+              ? film.files[chosenAttempt(c)?.last_frame ?? ''] : undefined
+            const marks = `${c.dropped_refs.length ? '⚠' : ''}${c.truncated ? '✂' : ''}`
+            return (
+              <g key={`clip-${c.id}`} data-clip={c.id}
+                 className={`tlc__clip tlc__clip--${kind}${c.id === clipSel ? ' is-sel' : ''}`}
+                 onClick={() => selectClip(c.id)}>
+                <rect x={x(sp.start) + 1} y={rowOf.clip.y + 4} width={w} height={ROW.clip - 8} rx={3} />
+                {thumb && (
+                  <image href={thumb} x={x(sp.start) + 2} y={rowOf.clip.y + 5}
+                         width={Math.max(1, Math.min(w - 2, 40))}
+                         height={ROW.clip - 10} preserveAspectRatio="xMidYMid slice" />
+                )}
+                <text x={x(sp.start) + (thumb ? 46 : 6)} y={rowOf.clip.y + ROW.clip / 2 + 4}>
+                  {fitText(`${marks}${laneText(c, now)}`, w - (thumb ? 50 : 10), 10, 3)}
+                </text>
+                {/* 横条窄到写不下字时，悬停照样看得到状态 */}
+                <title>{`${laneText(c, now)}\n${laneTitle(c)}`}</title>
+              </g>
+            )
+          })}
 
           {/* 画面：已上传的关键帧按镜头宽度整张放进去（不裁切），点一下选中该镜 */}
           {rowOf.frame && tl.shots.map((s, i) => kf.urls[s.id] && (
@@ -646,11 +735,14 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
       {/* 播放时的预览窗：当前镜的关键帧（没图给镜头描述占位）+ 此刻在念的旁白 / 台词字幕 */}
       {playing && animatic && cur && (
         <div className="tlc__pip" onPointerDown={(e) => e.stopPropagation()}>
-          {kf.urls[cur.id]
-            ? <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
-            : (
-              <div className="tlc__pipph"><p>{cur.shot.action}</p></div>
-            )}
+          {curVideo && film.files[curVideo]
+            ? <video ref={videoRef} src={film.files[curVideo]} muted={curSpan?.clip.mute_native} playsInline />
+            : kf.urls[cur.id]
+              ? <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
+              : (
+                <div className="tlc__pipph"><p>{cur.shot.action}</p></div>
+              )}
+          {filmMode && !curVideo && <span className="tlc__pipnote">未出片</span>}
           <div className="tlc__subs">
             {speechAt(tl, t).map((sp, i) => (
               <p key={i} className={`tlc__sub tlc__sub--${sp.kind}`}>
@@ -682,6 +774,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
              onPointerDown={(e) => e.stopPropagation()}>
         <nav className="tlc__tabs">
           {([['shot', '本镜'], ['source', '原文'], ['assets', '资产'],
+             ...(film.enabled ? [['film', '出片']] : []),
              ...(bench ? [['novel', '剧情'], ['tasks', bench.converting ? '任务 ●' : '任务']] : [])] as [PanelTab, string][])
             .map(([id, name]) => (
               <button key={id} className={panel === id ? 'is-on' : ''} onClick={() => setPanel(id)}>{name}</button>
@@ -698,6 +791,9 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           <p className="tlc__kfnote">点底部「编辑」后可直接改资产卡，和镜头改动共用撤销与保存。</p>
         )}
         {panel === 'novel' && bench && <NovelPanel bench={bench} />}
+        {panel === 'film' && film.enabled && (
+          <FilmPanel film={film} selected={clipSel} onPickShot={selectShot} dirty={dirty} />
+        )}
         {panel === 'tasks' && bench && <TaskPanel bench={bench} dirty={dirty} />}
         {panel === 'shot' && cur && <>
           {animatic && (

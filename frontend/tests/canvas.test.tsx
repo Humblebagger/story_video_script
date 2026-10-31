@@ -40,6 +40,10 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
     outlines.push(JSON.parse(String(init!.body)).outline)
     return json({ outline: outlines[outlines.length - 1] })
   }
+  // 出片会话：这个版本还没建（画布出片的交互在 film.test.tsx）
+  if (path === '/novels/n1/chapters/c1/versions/v1/render/session') {
+    return { ok: false, status: 404, statusText: 'Not Found', text: async () => '{"detail":"还没有出片会话"}' }
+  }
   const m = path.match(/^\/novels\/n1\/chapters\/c1\/versions\/v1\/keyframes(?:\/(.+))?$/)
   if (!m) throw new Error(`桩后端未实现的路径: ${method} ${path}`)
   if (!m[1]) return json({ shots: [...kfImages.keys()] })
