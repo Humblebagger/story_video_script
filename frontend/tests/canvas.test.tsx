@@ -82,6 +82,10 @@ const button = (text: string) => {
   if (!b) throw new Error(`✗ 找不到按钮「${text}」`)
   return b as unknown as HTMLElement
 }
+/** 播放 / 暂停按钮（图标 + 文字，文字随状态变） */
+const play = () => container.querySelector('.tlc__play') as unknown as HTMLElement
+const playing = () => play()?.textContent === '暂停'
+const paused = () => play()?.textContent === '播放'
 const click = async (el: Element) => {
   await act(async () => {
     el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event)
@@ -139,14 +143,12 @@ must(has('E01-SH001') && !!container.querySelector('.tlc__shot.is-cur'), '播放
 console.log(`1. 打开画布 → ${shots.length} 镜上轴 / ${lanes.length} 条泳道 / BGM 情绪段 ✓`)
 
 // 2. 播放：播放头推进，经过的镜头与角色节点点亮
-const speed = container.querySelector('.tlc__bar select') as unknown as HTMLSelectElement
-await act(async () => {
-  Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, 'value')!.set!.call(speed, '2')
-  speed.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-})
-await click(button('▶ 播放'))
+const speed = [...container.querySelectorAll('.tlc__speed button')].find((b) => b.textContent === '2×')
+must(!!speed, '倍速分段控件里有 2×')
+await click(speed!)
+await click(play())
 await settle(3000)
-await click(button('❚❚ 暂停'))
+await click(play())
 const clock = container.querySelector('.tlc__clock')!.textContent ?? ''
 must(/^0:0[5-7] /.test(clock), `2× 播放约 3 秒，播放头应走到 0:05 左右，实为 ${clock}`)
 must(container.querySelectorAll('.tlc__link--lit').length > 0, '经过的连线应点亮')
@@ -290,7 +292,7 @@ await act(async () => {
 })
 await settle()
 must(latest.episodes[0].shots[0].action === '画布上改的画面', '右侧表单的改动应写回产物')
-must(has('▶ 播放'), '在输入框里敲空格不能触发播放')
+must(paused(), '在输入框里敲空格不能触发播放')
 must(JSON.stringify(latest.episodes[0].shots[0].source) === JSON.stringify(shots[0].source),
      '溯源锚点不受画布编辑影响')
 await click(button('保存修改'))
@@ -299,7 +301,7 @@ await click(editBtn())
 must(!container.querySelector('.tlc__panel .ed__at textarea'), '完成编辑后右侧回到只读详情')
 console.log('6. 画布上就地编辑 → 拖右缘改时长 / 双击节点改动作 / 右侧改本镜 / 撤销重做（含 ⌘Z）/ 直接保存 ✓')
 
-// 6b. 侧栏其余页签：资产卡（编辑态可改，进同一套撤销）/ 剧情（小说长期记忆）/ 任务（重新转换、版本）
+// 6b. 侧栏其余页签：资产卡（编辑态可改，进同一套撤销）/ 剧情（小说长期记忆）/ 任务（重新生成、版本）
 const tab = (name: string) => [...container.querySelectorAll('.tlc__tabs button')]
   .find((b) => b.textContent === name) as unknown as HTMLElement
 must(!!tab('资产') && !!tab('剧情') && !!tab('任务'), '有章节会话时侧栏有 资产 / 剧情 / 任务 页')
@@ -335,8 +337,8 @@ must(has('已采用：资产库新增 3 张'), '上层的提示在画布里也�
 // 撤销过的资产改动让本版仍算「未保存」：转换前要确认（会被新版本换掉）
 const asked: string[] = []
 g.confirm = (q: string) => { asked.push(q); return true }
-await click(button('重新转换（新版本）'))
-must(asked.length === 1 && calls.some((c) => c.startsWith('convert:')), '有未保存修改时先确认，再在画布里发起重新转换')
+await click(button('重新生成（新版本）'))
+must(asked.length === 1 && calls.some((c) => c.startsWith('convert:')), '有未保存修改时先确认，再在画布里发起重新生成')
 const chips = [...container.querySelectorAll('.tlc__vers .vchip')] as unknown as HTMLButtonElement[]
 must(chips.length === 2 && chips[1].disabled && chips[0].textContent!.includes('★'), '版本条：v1 采用版、v2 正在看')
 await click(chips[0])
@@ -347,7 +349,7 @@ await click(button('采用此版'))
 must(calls.includes('adopt:v1'), '保存后在画布里采用正在看的版本')
 await click(container.querySelectorAll('.tlc__shot')[2])
 must(!!container.querySelector('.tlc__panel > header'), '在别的页签时点镜头回到「本镜」')
-console.log('6b. 侧栏页签 → 资产卡就地改（共用撤销）/ 剧情与限制 / 重新转换、切版本、采用 ✓')
+console.log('6b. 侧栏页签 → 资产卡就地改（共用撤销）/ 剧情与限制 / 重新生成、切版本、采用 ✓')
 
 // 6c. 选区与空格预览：Shift+点镜头圈选区，Esc 先清选区；空格只播当前这一镜，播到镜尾停，再按从镜首重播
 const tlNow = () => buildTimeline(latest)
@@ -389,9 +391,9 @@ const space = async () => {
 }
 await space()
 await settle(60)
-must(has('❚❚ 暂停') && !!container.querySelector('.tlc__pip'), '空格开始预览，出现预览窗')
+must(playing() && !!container.querySelector('.tlc__pip'), '空格开始预览，出现预览窗')
 await settle(shortest.playable * 1000 + 400)   // 画布重开过，速度回到 1×
-must(has('▶ 播放') && !container.querySelector('.tlc__pip'), `只播这一镜（${shortest.playable.toFixed(1)}s），播到镜尾自己停`)
+must(paused() && !container.querySelector('.tlc__pip'), `只播这一镜（${shortest.playable.toFixed(1)}s），播到镜尾自己停`)
 must(container.querySelector('.tlc__panel > header b')?.textContent === shortest.id, '停下后仍停在这一镜，不跳到下一镜')
 await space()
 await settle(60)

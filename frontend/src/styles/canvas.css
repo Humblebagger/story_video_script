@@ -1,5 +1,351 @@
-/* 时间轴画布：泳道、侧栏、静帧、就地编辑、选区、预览窗。只用新设计变量。 */
+/* 时间轴画布：泳道、侧栏、静帧、就地编辑、选区、预览窗。只用新设计变量。
+ * 每类元素一个色相：集 --secondary、场景 --ui-muted、镜头 --card（左边 3px 语义色条）、旁白 / 台词 --tone-transition、
+ * BGM 情绪 --brand-from；有色相的填充 18%、描边 50%。品牌色（--brand-to / 渐变）只给播放头、选中与选区。
+ * 成片泳道（.tlc__clip）、预览窗里的视频与「出片」页在 film.css（Task 5）。 */
+
+/* ---------- 画布底 ---------- */
+
+.tlc {
+  position: fixed; inset: 0; z-index: 50; display: flex; overflow: hidden;
+  background: var(--background); color: var(--foreground);
+  user-select: none; touch-action: none;
+}
+/* 画布区与右侧栏并排：侧栏不再浮在泳道上 */
+.tlc__main { position: relative; flex: 1; min-width: 0; height: 100%; overflow: hidden; }
+.tlc__svg { display: block; width: 100%; height: 100%; cursor: grab; }
+.tlc__svg:active { cursor: grabbing; }
+/* 成片泳道的字色还在旧样式里（film.css 接手前），组件层压得过旧层，所以这里绕开它 */
+.tlc__svg text:not(.tlc__clip text) { font-size: 11px; fill: var(--ui-muted-foreground); pointer-events: none; }
+
+/* ---------- 底部悬浮胶囊工具条（外观的圆角、底色、模糊、阴影在组件上用工具类） ---------- */
+
+.tlc__bar {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
+  display: flex; gap: 4px; align-items: center;
+  white-space: nowrap; max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none;
+}
+.tlc__bar::-webkit-scrollbar { display: none; }
+/* 编辑按钮组与播放组之间 1px 竖分隔线 */
+.tlc__editbar {
+  display: inline-flex; gap: 4px; align-items: center; align-self: stretch;
+  padding-right: 6px; margin-right: 2px; border-right: 1px solid var(--border);
+}
+/* 倍速：小分段控件 */
+.tlc__speed {
+  display: inline-flex; flex: none; gap: 2px; padding: 2px;
+  border-radius: calc(var(--ui-radius) - 2px); background: var(--ui-muted);
+}
+.tlc__speed button {
+  height: 24px; padding: 0 7px; border: 0; border-radius: calc(var(--ui-radius) - 4px);
+  background: transparent; color: var(--ui-muted-foreground); cursor: pointer;
+  font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums;
+  transition: color 150ms ease-out, background-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.tlc__speed button:hover { color: var(--foreground); }
+.tlc__speed button.is-on {
+  background: var(--background); color: var(--foreground); font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.dark .tlc__speed button.is-on { background: color-mix(in oklab, var(--foreground) 10%, transparent); }
+.tlc__clock {
+  font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums;
+  min-width: 92px; text-align: center; color: var(--foreground);
+}
+.tlc__kfcount { font-size: 12px; color: var(--ui-muted-foreground); font-variant-numeric: tabular-nums; padding: 0 4px; }
+.tlc__help {
+  flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ui-muted-foreground); cursor: help;
+}
+.tlc__help:hover { color: var(--foreground); }
+.tlc__hint { font-size: 12px; color: var(--ui-muted-foreground); }
+@media (max-width: 1100px) { .tlc__hint { display: none; } }
+
+/* ---------- 泳道、刻度、泳道名 ---------- */
+
+.tlc__lane { fill: transparent; }
+.tlc__lane--alt { fill: color-mix(in oklab, var(--foreground) 2.5%, transparent); }
+.tlc__ruler { cursor: text; }
+.tlc__ruler rect { fill: var(--background); }
+.tlc__ruler line { stroke: var(--border); }
+.tlc__ruler text { font-family: var(--font-mono); font-size: 11px; fill: var(--ui-muted-foreground); }
+.tlc__labels rect { fill: var(--card); }
+.tlc__gutterline { stroke: var(--border); }
+/* 泳道名：角色两行（名字 / ID），固定泳道一行 */
+.tlc__labels text { font-size: 12px; fill: var(--foreground); }
+.tlc__labels .tlc__lname { font-size: 12px; fill: var(--foreground); font-weight: 600; }
+.tlc__labels .tlc__lsub { font-size: 11px; fill: var(--ui-muted-foreground); font-family: var(--font-mono); }
+.tlc__labels .tlc__lfixed { font-size: 12px; fill: var(--ui-muted-foreground); }
+
+/* ---------- 集 / 场景 ---------- */
+
+.tlc__seg rect { fill: var(--ui-muted); stroke: var(--border); }
+.tlc__seg text { fill: var(--ui-muted-foreground); }
+.tlc__seg--ep rect { fill: var(--secondary); stroke: color-mix(in oklab, var(--foreground) 10%, var(--border)); }
+.tlc__seg--ep text { fill: var(--foreground); font-weight: 600; }
+
+/* ---------- 镜头 ---------- */
+
+.tlc__link { stroke: var(--border); stroke-width: 2; fill: none; }
+.tlc__link--lit { stroke: var(--brand-to); stroke-width: 2.5; }
+
+.tlc__shot { cursor: pointer; }
+.tlc__shot .tlc__box {
+  fill: var(--card); stroke: var(--border); stroke-width: 1;
+  transition: stroke 150ms ease-out, fill 150ms ease-out;
+}
+.tlc__shot .tlc__tone { fill: var(--tone-explicit); pointer-events: none; }
+.tlc__shot--inferred .tlc__tone { fill: var(--tone-inferred); }
+.tlc__shot--transition .tlc__tone { fill: var(--tone-transition); }
+.tlc__shot text { font-family: var(--font-mono); font-size: 10px; fill: var(--foreground); }
+.tlc__shot.is-past .tlc__box { fill: var(--ui-muted); }
+.tlc__shot.is-past text { fill: var(--ui-muted-foreground); }
+.tlc__shot:hover .tlc__box { stroke: color-mix(in oklab, var(--foreground) 45%, var(--border)); }
+/* 选中（当前）镜头：品牌色发光描边 */
+.tlc__shot.is-cur .tlc__box,
+.tlc__shot.is-cur:hover .tlc__box {
+  fill: var(--card);
+  stroke: var(--brand-to); stroke-width: 2;
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--brand-to) 55%, transparent));
+}
+.tlc__shot.is-cur text { fill: var(--foreground); font-weight: 600; }
+/* 念完旁白台词超出标称时长的那一截 */
+.tlc__shot rect.tlc__over { fill: var(--destructive); stroke: none; opacity: 0.6; }
+/* 有关键帧图的镜头打一个点 */
+.tlc__kfdot { fill: color-mix(in oklab, var(--foreground) 55%, transparent); pointer-events: none; }
+
+/* 拖右缘改时长：平时藏着，鼠标移到镜头上才露出把手 */
+.tlc__grip { fill: var(--brand-to); opacity: 0; cursor: ew-resize; }
+.tlc__shot:hover .tlc__grip, .tlc__grip:hover { opacity: 0.7; }
+.tlc__resizing { fill: var(--brand-to) !important; font-weight: 600; font-family: var(--font-mono); }
+
+/* ---------- 画面泳道（关键帧缩略图） ---------- */
+
+.tlc__thumb { cursor: pointer; }
+.tlc__thumb rect { fill: #111; stroke: var(--border); transition: stroke 150ms ease-out; }
+.tlc__thumb:hover rect { stroke: color-mix(in oklab, var(--foreground) 45%, var(--border)); }
+.tlc__thumb.is-cur rect { stroke: var(--brand-to); stroke-width: 2; }
+
+/* ---------- 角色泳道 ---------- */
+
+.tlc__node { cursor: pointer; }
+.tlc__node circle { fill: var(--card); stroke: var(--ui-muted-foreground); stroke-width: 1.5; transition: stroke 150ms ease-out; }
+.tlc__node:hover circle { stroke: var(--foreground); }
+.tlc__node.is-past circle { fill: var(--brand-to); stroke: var(--brand-to); }
+.tlc__node.is-cur circle {
+  fill: var(--brand-to); stroke: var(--background); stroke-width: 2;
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--brand-to) 55%, transparent));
+}
+.tlc__node.is-cur text { fill: var(--foreground); font-weight: 600; }
+/* 节点动作标签压在连线上时加一圈底色描边，读得清 */
+.tlc__node text { paint-order: stroke; stroke: var(--background); stroke-width: 3px; stroke-linejoin: round; }
+
+/* ---------- 旁白 / 台词、BGM ---------- */
+
+.tlc__speech { fill: color-mix(in oklab, var(--tone-transition) 18%, transparent); }
+.tlc__speech--dialogue { stroke: color-mix(in oklab, var(--tone-transition) 50%, transparent); stroke-width: 1; }
+.tlc__speech.is-past { fill: color-mix(in oklab, var(--tone-transition) 50%, transparent); }
+
+.tlc__music rect { fill: var(--ui-muted); stroke: var(--border); }
+.tlc__music--mood rect {
+  fill: color-mix(in oklab, var(--brand-from) 18%, transparent);
+  stroke: color-mix(in oklab, var(--brand-from) 50%, transparent);
+}
+/* 强度只改深浅 */
+.tlc__music--low rect { fill: color-mix(in oklab, var(--brand-from) 10%, transparent); }
+.tlc__music--high rect { fill: color-mix(in oklab, var(--brand-from) 32%, transparent); }
+.tlc__music text { fill: var(--foreground); }
+
+/* ---------- 选区：刻度上拖出来 / Shift+点镜头；空格只播这一段 ---------- */
+
+.tlc__rangeband { fill: url(#tlc-range); pointer-events: none; }
+.tlc__rangeedge { stroke-width: 1; pointer-events: none; }
+.tlc__rangeedge--from { stroke: var(--brand-from); }
+.tlc__rangeedge--to { stroke: var(--brand-to); }
+.tlc__rangeruler { fill: color-mix(in oklab, var(--brand-to) 22%, transparent); pointer-events: none; }
+.tlc__range {
+  display: inline-flex; gap: 4px; align-items: center; padding: 0 4px;
+  font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--brand-to);
+}
+
+/* ---------- 播放头：2px 品牌渐变竖线 + 顶部 10px 圆头 ---------- */
+
+.tlc__stop--from { stop-color: var(--brand-from); }
+.tlc__stop--to { stop-color: var(--brand-to); }
+.tlc__stop--faint { stop-opacity: 0.12; }
+.tlc__head { stroke: url(#tlc-head); stroke-width: 2; pointer-events: none; }
+.tlc__headdot {
+  fill: url(#tlc-headdot); stroke: var(--background); stroke-width: 2; pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+}
+
+/* ---------- 画布上就地编辑 ---------- */
+
+.tlc__nodeedit {
+  position: absolute; z-index: 4; transform: translate(-50%, -50%); width: 220px;
+  padding: 5px 8px; font-size: 14px;
+  color: var(--foreground); background: var(--popover);
+  border: 1px solid var(--brand-to); border-radius: calc(var(--ui-radius) - 2px);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-to) 18%, transparent), 0 8px 24px rgb(0 0 0 / 0.18);
+  outline: none;
+}
+
+/* ---------- 侧栏 ---------- */
+
+.tlc__panel {
+  flex: 0 0 340px; height: 100%; overflow: auto; padding: 14px 16px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--card); color: var(--card-foreground); border-left: 1px solid var(--border);
+  font-size: 14px; line-height: 1.6; user-select: text;
+}
+.tlc__panel--edit { flex-basis: 460px; }
+.tlc__panel--wide { flex-basis: 520px; }
+.tlc__panel .form__grid { grid-template-columns: 1fr; }
+
+/* 页签：本镜 / 原文 / 资产 / 出片 / 剧情 / 任务——分段控件外观（按钮外观在组件上用工具类），吸在侧栏顶上 */
+.tlc__tabs {
+  flex: none; position: sticky; top: -14px; z-index: 2;
+  margin: -14px -16px 2px; padding: 12px 16px 10px;
+  background: var(--card); border-bottom: 1px solid var(--border);
+}
+.tlc__tabs button { cursor: pointer; }
+
+/* 剧情页「主线剧情 / 创作限制」分段控件（外观在组件上） */
+.tlc__seg2 button { cursor: pointer; }
+
+/* 本镜详情 */
+.tlc__panel > header { display: flex; flex-direction: column; gap: 2px; }
+.tlc__panel > header b { font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
+.tlc__panel > header span { font-size: 12px; color: var(--ui-muted-foreground); }
+.tlc__action { margin: 0; }
+.tlc__atmo { margin: 0; color: var(--ui-muted-foreground); font-size: 12px; }
+.tlc__chars { margin: 0; padding-left: 16px; list-style: disc; }
+.tlc__chars b { font-weight: 600; }
+.tlc__line { margin: 0; }
+.tlc__line em { font-style: normal; font-size: 12px; color: var(--ui-muted-foreground); margin-left: 4px; }
+.tlc__narr { margin: 0; padding-left: 8px; border-left: 2px solid var(--tone-transition); }
+.tlc__units { display: flex; flex-direction: column; gap: 4px; }
+.tlc__unit {
+  border: 1px solid transparent; border-radius: calc(var(--ui-radius) - 4px);
+  background: var(--ui-muted); padding: 4px 8px; text-align: left; cursor: pointer;
+  font-size: 12px; line-height: 1.6; color: var(--ui-muted-foreground);
+  transition: color 150ms ease-out, border-color 150ms ease-out;
+}
+.tlc__unit:hover { color: var(--foreground); border-color: color-mix(in oklab, var(--foreground) 18%, var(--border)); }
+.tlc__unit code { font-family: var(--font-mono); font-size: 12px; color: var(--tone-explicit); margin-right: 2px; }
+
+/* 静帧预演 */
+.tlc__frame {
+  position: relative; margin: 0 auto; flex: 0 0 auto;
+  max-height: 42vh; max-width: 100%;
+  background: #111; border-radius: 6px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.tlc__frame img { width: 100%; height: auto; max-height: 42vh; object-fit: contain; display: block; }
+.tlc__panel--edit .tlc__frame { max-height: 24vh; }
+.tlc__panel--edit .tlc__frame img { max-height: 24vh; }
+.tlc__frame figcaption {
+  position: absolute; left: 8px; bottom: 6px; font-family: var(--font-mono); font-size: 12px;
+  color: #fff; background: rgb(0 0 0 / 0.5); padding: 1px 6px; border-radius: 4px;
+}
+.tlc__noframe {
+  width: 100%; height: 64px; gap: 6px;
+  color: var(--ui-muted-foreground); font-family: var(--font-mono); font-size: 12px;
+  border: 1px dashed color-mix(in oklab, var(--foreground) 22%, var(--border)); background: transparent;
+}
+
+/* 关键帧一节 */
+.tlc__kf { border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tlc__kfhead { display: flex; gap: 6px; align-items: center; }
+.tlc__kfhead b { font-size: 15px; font-weight: 600; }
+.tlc__kfacts { display: flex; gap: 6px; flex-wrap: wrap; }
+.tlc__kfnote { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ui-muted-foreground); }
+.tlc__kferr { margin: 0; font-size: 12px; color: var(--destructive); }
+.tlc__prompt {
+  width: 100%; box-sizing: border-box; margin: 0; padding: 8px 10px; min-height: 120px; resize: vertical;
+  font: inherit; font-size: 12px; line-height: 1.7; color: var(--foreground);
+  background: color-mix(in oklab, var(--ui-muted) 55%, transparent);
+  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) - 2px);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.tlc__prompt:focus {
+  outline: none; border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 30%, transparent);
+}
+.tlc__promptmeta { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ui-muted-foreground); }
+.tlc__linkbtn {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 2px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--foreground); font-size: 12px; text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklab, var(--foreground) 30%, transparent);
+}
+.tlc__linkbtn:hover { text-decoration-color: currentColor; }
+.tlc__rangeclear {
+  width: 18px; height: 18px; justify-content: center; border-radius: 999px;
+  color: var(--ui-muted-foreground); text-decoration: none;
+}
+.tlc__rangeclear:hover { color: var(--foreground); background: var(--ui-muted); }
 
 /* 画布侧栏的编辑页复用分镜页的镜头卡，去掉卡片外框（随 Task 2 从 index.css 搬来，组件层才压得过 storyboard.css） */
 .tlc__panel--edit .shot,
 .tlc__panel--edit .shot:hover { border: none; box-shadow: none; padding: 0; margin: 0; background: transparent; }
+
+/* ---------- 剧情 / 任务页 ---------- */
+
+.tlc__novel, .tlc__tasks { display: flex; flex-direction: column; gap: 12px; }
+.tlc__tasks section {
+  display: flex; flex-direction: column; gap: 8px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.tlc__tasks section:last-child { border-bottom: 0; }
+.tlc__tasks h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.tlc__job { display: flex; flex-direction: column; gap: 6px; }
+.tlc__jobline {
+  font-family: var(--font-mono); font-size: 12px; color: var(--ui-muted-foreground);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tlc__vers { display: flex; flex-wrap: wrap; gap: 6px; }
+.tlc__notice {
+  margin: 0; padding: 8px 12px; font-size: 12px; line-height: 1.7;
+  border-left: 3px solid color-mix(in oklab, var(--foreground) 18%, var(--border));
+  border-radius: 0 calc(var(--ui-radius) - 4px) calc(var(--ui-radius) - 4px) 0;
+  background: color-mix(in oklab, var(--ui-muted) 55%, transparent);
+}
+
+/* ---------- 播放时的预览窗：关键帧 + 字幕，像在看一段粗剪 ---------- */
+
+.tlc__pip {
+  position: absolute; right: 16px; bottom: 76px; z-index: 3;
+  width: min(46%, 520px); aspect-ratio: 16 / 10; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: #0b0b0d; border: 1px solid color-mix(in oklab, var(--foreground) 12%, var(--border));
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
+}
+.tlc__pip img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tlc__pipph {
+  align-self: stretch; display: flex; flex-direction: column; gap: 6px;
+  padding: 40px 22px 64px; color: #cfcfd4; font-size: 14px; line-height: 1.7;
+}
+.tlc__pipph p {
+  margin: 0; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tlc__subs {
+  position: absolute; left: 0; right: 0; bottom: 12px; padding: 0 18px; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.tlc__sub {
+  margin: 0; padding: 2px 10px; max-width: 100%; border-radius: 4px;
+  background: rgb(0 0 0 / 0.45); color: #fff; font-size: 14px; line-height: 1.5; text-align: center;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.9), 0 0 8px rgb(0 0 0 / 0.6);
+}
+.tlc__sub--narration { color: #f3d9a8; }
+.tlc__pipclock {
+  position: absolute; left: 8px; top: 6px; padding: 1px 6px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums;
+  color: #fff; background: rgb(0 0 0 / 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tlc__speed button, .tlc__shot .tlc__box, .tlc__thumb rect, .tlc__node circle,
+  .tlc__unit, .tlc__prompt { transition: none; }
+}

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
+import { CircleHelp, ImageOff, Maximize2, Pause, Play, Redo2, SkipBack, SkipForward, Undo2, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { MOOD, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
@@ -459,48 +463,55 @@ export function TimelineCanvas({
   return (
     <div className="tlc">
       <div className="tlc__main" ref={box}>
-      <div className="tlc__bar" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="tlc__bar rounded-full border bg-card/80 px-2 py-1.5 shadow-xl backdrop-blur-md"
+           onPointerDown={(e) => e.stopPropagation()}>
         {editable && (
           <span className="tlc__editbar">
-            <button className={`btn btn--sm${editing ? '' : ' btn--ghost'}`} onClick={() => setEditing((v) => !v)}>
+            <Button variant={editing ? 'secondary' : 'ghost'} size="sm" aria-pressed={editing}
+                    onClick={() => setEditing((v) => !v)}>
               {editing ? '完成编辑' : '编辑'}
-            </button>
+            </Button>
             {(editing || past.current.length > 0 || future.current.length > 0) && (
               <>
-                <button className="btn btn--sm btn--ghost" disabled={!past.current.length} title="撤销（⌘Z）"
-                        onClick={undo}>↶ 撤销</button>
-                <button className="btn btn--sm btn--ghost" disabled={!future.current.length} title="重做（⌘⇧Z）"
-                        onClick={redo}>↷ 重做</button>
+                <Button variant="ghost" size="sm" disabled={!past.current.length} title="撤销（⌘Z）"
+                        onClick={undo}><Undo2 aria-hidden />撤销</Button>
+                <Button variant="ghost" size="sm" disabled={!future.current.length} title="重做（⌘⇧Z）"
+                        onClick={redo}><Redo2 aria-hidden />重做</Button>
               </>
             )}
             {canSave && onSave && (
-              <button className="btn btn--sm" disabled={!dirty || saving} onClick={onSave}>
+              <Button variant={dirty ? 'default' : 'ghost'} size="sm" disabled={!dirty || saving} onClick={onSave}>
                 {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
-              </button>
+              </Button>
             )}
           </span>
         )}
-        <button className="btn btn--sm" title="从播放头播到片尾（空格只播选区或当前这一镜）"
-                onClick={playAll}>{playing ? '❚❚ 暂停' : '▶ 播放'}</button>
-        <button className="btn btn--sm btn--ghost" title="上一镜" disabled={current <= 0}
-                onClick={() => seek(tl.shots[Math.max(0, current - 1)].start)}>⏮</button>
-        <button className="btn btn--sm btn--ghost" title="下一镜" disabled={current >= tl.shots.length - 1}
-                onClick={() => seek(tl.shots[Math.min(tl.shots.length - 1, current + 1)].start)}>⏭</button>
-        <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
-          {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
-        </select>
+        <Button variant="ghost" size="sm" className="tlc__play" title="从播放头播到片尾（空格只播选区或当前这一镜）"
+                onClick={playAll}>
+          {playing ? <><Pause aria-hidden />暂停</> : <><Play aria-hidden />播放</>}
+        </Button>
+        <Button variant="ghost" size="icon-sm" title="上一镜" aria-label="上一镜" disabled={current <= 0}
+                onClick={() => seek(tl.shots[Math.max(0, current - 1)].start)}><SkipBack aria-hidden /></Button>
+        <Button variant="ghost" size="icon-sm" title="下一镜" aria-label="下一镜" disabled={current >= tl.shots.length - 1}
+                onClick={() => seek(tl.shots[Math.min(tl.shots.length - 1, current + 1)].start)}><SkipForward aria-hidden /></Button>
+        <span className="tlc__speed" role="group" aria-label="倍速">
+          {SPEEDS.map((s) => (
+            <button key={s} type="button" aria-pressed={speed === s} className={speed === s ? 'is-on' : ''}
+                    onClick={() => setSpeed(s)}>{s}×</button>
+          ))}
+        </span>
         <span className="tlc__clock">{fmtClock(t)} / {fmtClock(tl.total)}</span>
-        <button className="btn btn--sm btn--ghost" title="整章铺满一屏" onClick={fit}>适应</button>
-        <button className={`btn btn--sm${animatic ? '' : ' btn--ghost'}`}
+        <Button variant="ghost" size="sm" title="整章铺满一屏" onClick={fit}><Maximize2 aria-hidden />适应</Button>
+        <Button variant={animatic ? 'secondary' : 'ghost'} size="sm" aria-pressed={animatic}
                 title="静帧预演：按播放头显示当前镜头的关键帧图" onClick={() => setAnimatic((v) => !v)}>
           预演
-        </button>
+        </Button>
         {animatic && spans.some((sp) => chosenAttempt(sp.clip)) && (
-          <button className={`btn btn--sm${filmMode ? '' : ' btn--ghost'}`}
+          <Button variant={filmMode ? 'secondary' : 'ghost'} size="sm" aria-pressed={filmMode}
                   title="预览窗播已出的成片（采用的那一次）；未出片的段显示关键帧"
                   onClick={() => setFilmMode((v) => !v)}>
             {filmMode ? '播成片' : '播关键帧'}
-          </button>
+          </Button>
         )}
         <span className="tlc__kfcount" title="已上传关键帧图的镜头数">
           关键帧 {Object.keys(kf.urls).length}/{tl.shots.length}
@@ -508,19 +519,36 @@ export function TimelineCanvas({
         {range && (
           <span className="tlc__range">
             选区 {fmtClock(range.start)}–{fmtClock(range.end)}（{(range.end - range.start).toFixed(1)}s）
-            <button className="tlc__linkbtn" title="清除选区（Esc）" onClick={() => setRange(null)}>✕</button>
+            <button className="tlc__linkbtn tlc__rangeclear" title="清除选区（Esc）" aria-label="清除选区（Esc）"
+                    onClick={() => setRange(null)}><X size={12} aria-hidden /></button>
           </span>
         )}
         <span className="tlc__help" title={`空格 预览：播选区，没选区就播当前这一镜，播到段尾停 · ▶ 播放 从播放头播到片尾
 在时间刻度上拖 = 圈选区 · 拖播放头 = 拖着看 · Shift+点镜头 = 从当前镜圈到这一镜
 ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · Esc 清选区 / 关闭${
-          editing ? '\n编辑：双击角色节点改动作 · 右侧改本镜全部呈现字段' : ''}`}>?</span>
-        <button className="btn btn--sm btn--ghost tlc__close" title="关闭画布（Esc）" onClick={onClose}>✕</button>
+          editing ? '\n编辑：双击角色节点改动作 · 右侧改本镜全部呈现字段' : ''}`}><CircleHelp size={16} aria-hidden /></span>
+        <Button variant="ghost" size="icon-sm" className="tlc__close" title="关闭画布（Esc）" aria-label="关闭画布（Esc）"
+                onClick={onClose}><X aria-hidden /></Button>
       </div>
 
       <svg className="tlc__svg" width={width} height="100%"
            onWheel={onWheel} onPointerDown={onPointerDown}
            onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
+        <defs>
+          {/* 播放头竖线与圆头、选区底色：品牌渐变（色值在 canvas.css 里由 stop-color 给） */}
+          <linearGradient id="tlc-head" gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={0} y2="100%">
+            <stop className="tlc__stop--from" offset="0" />
+            <stop className="tlc__stop--to" offset="1" />
+          </linearGradient>
+          <linearGradient id="tlc-headdot" x1="0" y1="0" x2="1" y2="1">
+            <stop className="tlc__stop--from" offset="0" />
+            <stop className="tlc__stop--to" offset="1" />
+          </linearGradient>
+          <linearGradient id="tlc-range" x1="0" y1="0" x2="1" y2="0">
+            <stop className="tlc__stop--from tlc__stop--faint" offset="0" />
+            <stop className="tlc__stop--to tlc__stop--faint" offset="1" />
+          </linearGradient>
+        </defs>
         <g transform={`translate(0, ${ty})`}>
           {/* 泳道底纹 */}
           {rows.map((r, i) => (
@@ -531,6 +559,15 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           {range && (
             <rect className="tlc__rangeband" x={x(range.start)} y={RULER}
                   width={Math.max(1, (range.end - range.start) * pps)} height={height - RULER} />
+          )}
+          {range && (
+            <>
+              <line className="tlc__rangeedge tlc__rangeedge--from" x1={x(range.start)} x2={x(range.start)}
+                    y1={RULER} y2={height} />
+              <line className="tlc__rangeedge tlc__rangeedge--to"
+                    x1={x(range.start) + Math.max(1, (range.end - range.start) * pps)}
+                    x2={x(range.start) + Math.max(1, (range.end - range.start) * pps)} y1={RULER} y2={height} />
+            </>
           )}
 
           {/* 集 / 场景 */}
@@ -561,8 +598,11 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
             <g key={s.id} className={`tlc__shot tlc__shot--${s.shot.source?.derivation ?? 'explicit'}${
                  i === current ? ' is-cur' : ''}${s.end <= t ? ' is-past' : ''}`}
                onClick={(e) => selectShot(s.id, e.shiftKey)} onDoubleClick={() => onJumpShot(s.id)}>
-              <rect x={x(s.start) + 1} y={shotRow.y + 6} width={Math.max(2, s.playable * pps - 2)}
+              <rect className="tlc__box" x={x(s.start) + 1} y={shotRow.y + 6} width={Math.max(2, s.playable * pps - 2)}
                     height={ROW.shot - 12} rx={3} />
+              {/* 左边 3px 语义色条：原文出处 / 系统补充 / 转场 */}
+              <rect className="tlc__tone" x={x(s.start) + 1} y={shotRow.y + 6}
+                    width={Math.min(3, Math.max(2, s.playable * pps - 2))} height={ROW.shot - 12} rx={1.5} />
               {s.playable > s.nominal + 0.05 && (
                 <rect className="tlc__over" x={x(s.start + s.nominal)} y={shotRow.y + ROW.shot - 9}
                       width={(s.playable - s.nominal) * pps} height={3} />
@@ -695,11 +735,10 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
 
           {/* BGM 情绪段 */}
           {tl.music.map((m) => (
-            <g key={m.key} className="tlc__music">
+            <g key={m.key} className={cn('tlc__music', m.mood && 'tlc__music--mood',
+                                         m.mood && m.intensity && `tlc__music--${m.intensity}`)}>
               <rect x={x(m.start)} y={rowOf.music.y + 4} width={Math.max(1, (m.end - m.start) * pps - 2)}
-                    height={ROW.music - 8} rx={8}
-                    style={{ fill: m.mood ? `hsl(${MOOD_HUE[m.mood]} 55% 55% / ${
-                      m.intensity === 'high' ? 0.75 : m.intensity === 'low' ? 0.3 : 0.5})` : undefined }} />
+                    height={ROW.music - 8} rx={8} />
               {(m.end - m.start) * pps > 40 && m.mood && (
                 <text x={x(m.start) + 8} y={rowOf.music.y + 17}>{fitText(label(MOOD, m.mood), (m.end - m.start) * pps - 14)}</text>
               )}
@@ -740,7 +779,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
 
         {/* 播放头 */}
         <line className="tlc__head" x1={playX} x2={playX} y1={0} y2="100%" />
-        <polygon className="tlc__head" points={`${playX - 6},0 ${playX + 6},0 ${playX},8`} />
+        <circle className="tlc__headdot" cx={playX} cy={7} r={5} />
       </svg>
 
       {/* 播放时的预览窗：当前镜的关键帧（没图给镜头描述占位）+ 此刻在念的旁白 / 台词字幕 */}
@@ -783,13 +822,21 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
       <aside className={`tlc__panel${shown !== 'shot' ? ' tlc__panel--wide'
                : editing ? ' tlc__panel--edit' : ''}`}
              onPointerDown={(e) => e.stopPropagation()}>
-        <nav className="tlc__tabs">
-          {([['shot', '本镜'], ['source', '原文'], ['assets', '资产'],
-             ...(film.enabled ? [['film', '出片']] : []),
-             ...(bench ? [['novel', '剧情'], ['tasks', bench.converting ? '任务 ●' : '任务']] : [])] as [PanelTab, string][])
-            .map(([id, name]) => (
-              <button key={id} className={shown === id ? 'is-on' : ''} onClick={() => setPanel(id)}>{name}</button>
-            ))}
+        <nav className="tlc__tabs" aria-label="侧栏页签">
+          <div className="flex w-full rounded-lg bg-muted p-1">
+            {([['shot', '本镜'], ['source', '原文'], ['assets', '资产'],
+               ...(film.enabled ? [['film', '出片']] : []),
+               ...(bench ? [['novel', '剧情'], ['tasks', bench.converting ? '任务 ●' : '任务']] : [])] as [PanelTab, string][])
+              .map(([id, name]) => (
+                <button key={id} type="button" aria-pressed={shown === id}
+                        className={cn(
+                          'min-w-0 flex-1 whitespace-nowrap rounded-md border-0 px-2 py-1.5 text-sm text-muted-foreground',
+                          'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
+                          shown === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
+                        )}
+                        onClick={() => setPanel(id)}>{name}</button>
+              ))}
+          </div>
         </nav>
         {shown === 'source' && (
           <SourceView doc={doc} idx={idx} focusUnit={focusUnit} onPickShot={selectShot} />
@@ -817,7 +864,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
                 </figure>
               )
               // 没图只占一条：画面里不塞文字，提示词在下面关键帧一节里看和改
-              : <div className="tlc__frame tlc__noframe">{cur.id} · 还没有关键帧图</div>
+              : <div className="tlc__frame tlc__noframe"><ImageOff size={16} aria-hidden />{cur.id} · 还没有关键帧图</div>
           )}
           {editing && (
             <ShotCard key={cur.id} shot={cur.shot} idx={idx} editing onPickUnit={onJumpUnit}
@@ -856,27 +903,29 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           <section className="tlc__kf">
             <div className="tlc__kfhead">
               <b>关键帧</b>
-              {kf.urls[cur.id] ? <span className="tag">已上传</span> : <span className="tag tag--ghost">未出图</span>}
+              {kf.urls[cur.id]
+                ? <Badge variant="secondary" className="font-normal">已上传</Badge>
+                : <Badge variant="outline" className="border-dashed font-normal text-muted-foreground">未出图</Badge>}
             </div>
             <div className="tlc__kfacts">
-              <button className="btn btn--sm btn--ghost" disabled={!curPrompt}
+              <Button variant="outline" size="sm" disabled={!curPrompt}
                       onClick={() => void navigator.clipboard?.writeText(curPrompt!.prompt)}>
                 复制提示词
-              </button>
-              <button className="btn btn--sm btn--ghost" disabled={!Object.keys(kf.prompts).length}
+              </Button>
+              <Button variant="outline" size="sm" disabled={!Object.keys(kf.prompts).length}
                       title="全部镜头的关键帧出图提示词（含手改），拿去任意出图工具批量生成"
                       onClick={() => downloadText(`${doc.meta?.title ?? 'storyboard'}-关键帧提示词.md`,
                         promptSheet(doc.meta?.title ?? '', tl.shots.map((x) => kf.promptOf(x.id)!).filter(Boolean)))}>
                 下载全章提示词
-              </button>
+              </Button>
               {kf.canUpload && (
                 <>
-                  <button className="btn btn--sm" disabled={kf.busy === cur.id}
+                  <Button size="sm" disabled={kf.busy === cur.id}
                           onClick={() => fileRef.current?.click()}>
                     {kf.busy === cur.id ? '上传中…' : kf.urls[cur.id] ? '换图' : '上传图'}
-                  </button>
+                  </Button>
                   {kf.urls[cur.id] && (
-                    <button className="btn btn--sm btn--ghost" onClick={() => void kf.remove(cur.id)}>删除</button>
+                    <Button variant="ghost" size="sm" onClick={() => void kf.remove(cur.id)}>删除</Button>
                   )}
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
                          onChange={(e) => {
@@ -904,7 +953,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
             )}
             {kf.error && <p className="tlc__kferr">{kf.error}</p>}
           </section>
-          <button className="btn btn--sm btn--ghost" onClick={() => onJumpShot(cur.id)}>在分镜页打开这一镜</button>
+          <Button variant="ghost" size="sm" className="self-start" onClick={() => onJumpShot(cur.id)}>在分镜页打开这一镜</Button>
         </>}
       </aside>
     </div>

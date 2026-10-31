@@ -1,9 +1,11 @@
 /** 画布侧栏里的「剧情」「任务」两页：把小说页、章节页上的操作搬进画布，不必退出去再进来。
  *
  *  剧情页直接复用小说页的主线剧情与创作限制（同一套接口与说明），
- *  任务页是章节页的转换 + 版本条：重新转换时画布不关，跑完自动换成新版本。
+ *  任务页是章节页的生成 + 版本条：重新生成时画布不关，跑完自动换成新版本。
  */
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { JOB_STATUS, NARRATION_MODE, label } from '../labels'
 import type { Chapter, Job, NarrationMode, Novel } from '../types'
 import { JobProgress } from './JobProgress'
@@ -51,16 +53,22 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
   }
   return (
     <div className="tlc__novel">
-      <div className="tlc__seg2">
-        <button className={part === 'plot' ? 'is-on' : ''} onClick={() => setPart('plot')}>主线剧情</button>
-        <button className={part === 'constraints' ? 'is-on' : ''}
-                onClick={() => setPart('constraints')}>创作限制</button>
+      <div className="tlc__seg2 inline-flex self-start rounded-lg bg-muted p-1" role="group" aria-label="剧情页内容">
+        {([['plot', '主线剧情'], ['constraints', '创作限制']] as const).map(([id, name]) => (
+          <button key={id} type="button" aria-pressed={part === id}
+                  className={cn(
+                    'rounded-md border-0 px-3 py-1 text-sm text-muted-foreground',
+                    'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
+                    part === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
+                  )}
+                  onClick={() => setPart(id)}>{name}</button>
+        ))}
       </div>
       {alert && <p className="tlc__kferr">{alert}</p>}
       {part === 'plot'
         ? <PlotTab novel={bench.novel} busy={busy} run={run} />
         : <ConstraintsTab novel={bench.novel} busy={busy} run={run} />}
-      <p className="tlc__kfnote">改的是整本小说的长期记忆，从下一次转换起生效；本版分镜不会自动变，要用新设定就去「任务」重新转换。</p>
+      <p className="tlc__kfnote">改的是整本小说的长期记忆，从下一次生成起生效；本版分镜不会自动变，要用新设定就去「任务」重新生成。</p>
     </div>
   )
 }
@@ -78,7 +86,7 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
     <div className="tlc__tasks">
       {bench.notice && <p className="tlc__notice">{bench.notice}</p>}
       <section>
-        <h4>转换</h4>
+        <h4>生成</h4>
         {live ? (
           <div className="tlc__job">
             <b>{label(JOB_STATUS, live.status)}</b>
@@ -87,7 +95,7 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
             <p className="tlc__kfnote">画布不用关，跑完自动换成新版本；也可以关掉画布去做别的，侧栏能点回来。</p>
           </div>
         ) : converting ? (
-          <p className="tlc__kfnote">本章有转换在后台跑，跑完会出现在下面的版本里。</p>
+          <p className="tlc__kfnote">本章有生成任务在后台跑，跑完会出现在下面的版本里。</p>
         ) : (
           <>
             <label className="field">
@@ -102,13 +110,13 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
               <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
               严格模式
             </label>
-            <button className="btn btn--sm" disabled={bench.disabled || !chapter.text.trim()}
+            <Button size="sm" className="self-start" disabled={bench.disabled || !chapter.text.trim()}
                     onClick={() => {
-                      if (dirty && !confirm('本版有未保存的修改，转换完成后画布会换成新版本。先不保存直接转换？')) return
+                      if (dirty && !confirm('本版有未保存的修改，生成完成后画布会换成新版本。先不保存直接生成？')) return
                       bench.onConvert({ ...(mode ? { narration_mode: mode } : {}), strict })
                     }}>
-              重新转换（新版本）
-            </button>
+              重新生成（新版本）
+            </Button>
             <p className="tlc__kfnote">按本章原文 + 小说当前的长期记忆（剧情、限制、资产库）重跑一遍，结果存成新版本，旧版本不动。</p>
           </>
         )}
@@ -131,16 +139,16 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
         </div>
         {current && current.id !== chapter.adopted_version && (
           <div className="tlc__kfacts">
-            <button className="btn btn--sm" disabled={!ADOPTABLE.includes(current.status) || dirty}
+            <Button size="sm" disabled={!ADOPTABLE.includes(current.status) || dirty}
                     title={dirty ? '先保存修改再采用'
                       : ADOPTABLE.includes(current.status) ? '把这一版写入小说的长期记忆'
-                        : '只有转换成功、且编辑后仍通过复验的版本可以采用'}
+                        : '只有生成成功、且编辑后仍通过完整性检查的版本可以采用'}
                     onClick={() => bench.onAdopt(current.id)}>
               采用此版
-            </button>
-            <button className="btn btn--sm btn--ghost" onClick={() => bench.onDeleteVersion(current.id)}>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => bench.onDeleteVersion(current.id)}>
               删除此版
-            </button>
+            </Button>
           </div>
         )}
         {current && current.id === chapter.adopted_version && (
