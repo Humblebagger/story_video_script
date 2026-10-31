@@ -230,9 +230,12 @@ console.log(`1. 建会话 → 成片泳道 ${film!.clips.length} 段 ✓`)
 
 // 2. 先试一段（¥5，不超过确认线）：不弹确认直接排队，横条变「生成中」
 await click(button('先试这一段'))
-must(calls.includes(`POST /clips/${first}/run {}`), '试段直接发请求、不带金额')
+must(calls.includes(`POST /clips/${first}/run {"expected_cny":5}`), '试段不弹确认，但带着界面显示的金额')
 must(bar(first).classList.contains('tlc__clip--busy') && (bar(first).textContent ?? '').includes('生成中'),
      '横条变生成中')
+const queuedBtns = [...container.querySelectorAll('button')].map((b) => b.textContent ?? '')
+must(!queuedBtns.some((t) => t.includes('先试这一段') || t.includes('出剩余')), '试段排队中不再提供第二次试段或批量')
+must(has('试段生成中，出完再出剩余各段'), '排队中的提示')
 console.log('2. 先试一段 ✓')
 
 // 3. 出片线程跑完 → 刷新：横条填色、第 1 次，缩略图取了尾帧
@@ -298,6 +301,10 @@ await refresh()
 must(has('1 段结果不明'), '总览提示待核对的段数')
 await click(bar(third))
 must(has('请到厂商控制台核对'), '段详情提示到控制台核对')
+before = calls.length
+await click(button('出这一段'))
+must(calls.length === before && !!container.querySelector('.film__confirm'), '重做待核对的段先弹确认、不发请求')
+await click(button('取消'))
 console.log('8. 待核对标记 ✓')
 
 // 9. 未保存的改动：出片按钮禁用并提示先保存
@@ -316,6 +323,18 @@ gateFail = false
 await refresh()
 must(!has(GATE) && !button('出这一段').disabled, '验证门通过后恢复')
 console.log('10. 验证门拦截 ✓')
+
+// 9b. 保存完（未保存 → 已保存）重读出片会话
+{
+  const gets = () => calls.filter((c) => c === 'GET /session').length
+  const n0 = gets()
+  await act(async () => { setDirty(true) })
+  await settle()
+  await act(async () => { setDirty(false) })
+  await settle()
+  must(gets() > n0, '保存后重读出片会话')
+  console.log('9b. 保存后重读 ✓')
+}
 
 // 10b. 确认框开着时：未保存 / 验证门没过都要禁用确认；总览主按钮在未保存时也禁用
 Object.assign(clipOf(second), { state: 'failed', error: null, uncertain: false, estimate_cny: 25 })

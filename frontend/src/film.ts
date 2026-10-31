@@ -88,11 +88,13 @@ export type MainAction =
   | { kind: 'rest'; count: number; cny: number }
   | { kind: 'none' }
 
-/** 总览主按钮：一段都还没出过 → 先试一段（选中的段能出就试它）；否则出剩余各段 */
+/** 总览主按钮：还没有任何一段出成功过 → 先试一段（试段在跑时什么都不提供）（选中的段能出就试它）；否则出剩余各段 */
 export function mainAction(s: FilmSession, selected: string | null): MainAction {
   const rest = remainingClips(s)
   if (!rest.length) return { kind: 'none' }
-  if (!s.clips.some((c) => c.attempts.length > 0)) {
+  if (!s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))) {
+    // 试段已排队但还没出结果：不能再提供第二次付费试段
+    if (s.clips.some(inFlight)) return { kind: 'none' }
     return { kind: 'try', clip: rest.find((c) => c.id === selected) ?? rest[0] }
   }
   return { kind: 'rest', count: rest.length, cny: s.remaining_cny }

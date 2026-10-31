@@ -116,6 +116,13 @@ export function TimelineCanvas({
   /** 「生成中 · 已等 m:ss」每秒走一次 */
   const [now, setNow] = useState(() => Date.now())
   const videoRef = useRef<HTMLVideoElement>(null)
+  // 保存完（未保存 → 已保存）重读出片会话：分镜变了，段与金额要跟着服务端的最新值走
+  const wasDirty = useRef(dirty)
+  const reloadFilm = film.load
+  useEffect(() => {
+    if (wasDirty.current && !dirty) void reloadFilm()
+    wasDirty.current = dirty
+  }, [dirty, reloadFilm])
   const onJumpUnit = (unitId: string) => {
     setFocusUnit(unitId)
     setPanel('source')
@@ -484,7 +491,7 @@ export function TimelineCanvas({
                 title="静帧预演：按播放头显示当前镜头的关键帧图" onClick={() => setAnimatic((v) => !v)}>
           预演
         </button>
-        {spans.some((sp) => chosenAttempt(sp.clip)) && (
+        {animatic && spans.some((sp) => chosenAttempt(sp.clip)) && (
           <button className={`btn btn--sm${filmMode ? '' : ' btn--ghost'}`}
                   title="预览窗播已出的成片（采用的那一次）；未出片的段显示关键帧"
                   onClick={() => setFilmMode((v) => !v)}>

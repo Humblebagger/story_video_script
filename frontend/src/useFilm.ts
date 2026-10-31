@@ -12,7 +12,7 @@ import { needsConfirm, pollDelay } from './film'
 import type { FilmClip, FilmSession, FilmSettings, VersionRef } from './types'
 
 export type FilmConfirm =
-  | { kind: 'clip'; clipId: string; cny: number; changed: boolean }
+  | { kind: 'clip'; clipId: string; cny: number; changed: boolean; uncertain?: boolean }
   | { kind: 'rest'; cny: number; changed: boolean }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -38,10 +38,12 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   /** 换版本 / 卸载时加一：之前没取回来的文件取回后直接回收 */
   const gen = useRef(0)
 
-  const accept = useCallback((s: FilmSession) => {
+  /** 读取会话带 gate；写操作的响应不带：通过了门的操作（建、改设置、出片）清掉旧提示，采用 / 静音保持原样 */
+  const accept = useCallback((s: FilmSession, passedGate = false) => {
     setSession(s)
     setStatus('ready')
-    setGate(s.gate && !s.gate.ok ? (s.gate.message ?? '分镜未通过独立验证') : null)
+    if (s.gate) setGate(s.gate.ok ? null : (s.gate.message ?? '分镜未通过独立验证'))
+    else if (passedGate) setGate(null)
   }, [])
 
   /** 验证门拦截记到 gate（按钮据此禁用），其余显示原因 */
@@ -89,14 +91,14 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   }, [status, session, opts.active, load, tick])
 
   /** 不花钱的操作：忙标记、清错误、成功后收下新会话 */
-  const apply = useCallback(async (fn: () => Promise<FilmSession>) => {
+  const apply = useCallback(async (fn: () => Promise<FilmSession>, passedGate = false) => {
     const mine = gen.current
     setBusy(true)
     setError(null)
     try {
       const got = await fn()
       if (gen.current !== mine) return
-      accept(got)
+      accept(got, passedGate)
     } catch (e) {
       if (gen.current !== mine) return
       fail(e)
@@ -113,13 +115,14 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     try {
       const got = await fn()
       if (gen.current !== mine) return
-      accept(got)
+      accept(got, true)
       setConfirm(null)
     } catch (e) {
       if (gen.current !== mine) return
       const fresh = conflictCny(e)
       if (fresh !== null) {
         setConfirm(again(fresh))
+        void load()
       } else {
         setConfirm(null)
         fail(e)
@@ -158,15 +161,17 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
 
   return {
     enabled, session, status, error, gate, busy, confirm, files, load, ensure,
-    create: () => apply(() => createFilm(nid!, cid!, vid!)),
-    saveSettings: (patch: FilmSettings) => apply(() => patchFilm(nid!, cid!, vid!, patch)),
+    create: () => apply(() => createFilm(nid!, cid!, vid!), true),
+    saveSettings: (patch: FilmSettings) => apply(() => patchFilm(nid!, cid!, vid!, patch), true),
     /** 出这一段：超过确认线先弹确认，确认后才发请求 */
     runClip: (c: FilmClip) => {
-      if (session && needsConfirm(c, session)) {
-        setConfirm({ kind: 'clip', clipId: c.id, cny: c.estimate_cny, changed: false })
+      // 待核对的段重做一律先确认（可能已扣费）；其余超过确认线才确认
+      if (c.uncertain || (session && needsConfirm(c, session))) {
+        setConfirm({ kind: 'clip', clipId: c.id, cny: c.estimate_cny, changed: false, uncertain: c.uncertain })
         return Promise.resolve()
       }
-      return sendClip(c.id)
+      // 带上界面显示的金额：保存后服务端重算对不上就 409 重新确认
+      return sendClip(c.id, c.estimate_cny)
     },
     /** 批量出剩余各段：一律先弹确认 */
     runRest: () => {

@@ -77,6 +77,11 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
   must(m3.kind === 'rest' && m3.count === 1 && m3.cny === 8, '出过之后：出剩余各段，跳过待核对')
   must(mainAction(session([clip('C1', [], { state: 'done', attempts: [ok], chosen: 0 })]), null).kind === 'none',
        '没有要出的段')
+  const queued = session([clip('C1', [], { state: 'queued' }), clip('C2', [])])
+  must(mainAction(queued, null).kind === 'none', '试段已排队、还没有尝试：不再提供第二次试段')
+  const failedOnly = session([clip('C1', [], { state: 'failed', attempts: [{ ...ok, state: 'failed', file: null }] }),
+                              clip('C2', [])])
+  must(mainAction(failedOnly, null).kind === 'try', '试段只失败过：仍是先试一段')
   console.log('3. 主按钮 ✓')
 }
 

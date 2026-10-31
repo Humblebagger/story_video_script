@@ -49,7 +49,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
         <>
           <Settings key={[s.provider, s.model, s.resolution, s.audio_mode, s.budget_cny, s.confirm_over_cny].join('|')}
                     s={s} film={film} />
-          <Precheck s={s} />
+          <Precheck s={s} gateOk={!film.gate} />
           <Overview s={s} film={film} selected={selected} blocked={blocked} />
           {clip
             ? <ClipDetail key={clip.id} c={clip} film={film} blocked={blocked} onPickShot={onPickShot} />
@@ -65,7 +65,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const [draft, setDraft] = useState<FilmSettings>({})
   const val = <K extends keyof FilmSettings>(k: K) => draft[k] ?? s[k]
   const flying = s.clips.some(inFlight)
-  const tried = s.clips.some((c) => c.attempts.length > 0)
+  const tried = s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))
   const otherProvider = !!draft.provider && draft.provider !== s.provider
   return (
     <details className="film__settings" open={!tried}>
@@ -132,11 +132,13 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
 }
 
 /** 前置检查：待核对的段、缺参考图的资产、被裁 / 截断的段 */
-function Precheck({ s }: { s: FilmSession }) {
+function Precheck({ s, gateOk }: { s: FilmSession; gateOk: boolean }) {
   const p = precheck(s)
-  if (!s.uncertain_count && !p.missing.length && !p.trimmed.length && !p.truncated.length) return null
+  const passed = gateOk ? <p className="tlc__kfnote">验证门：已通过</p> : null
+  if (!s.uncertain_count && !p.missing.length && !p.trimmed.length && !p.truncated.length) return passed
   return (
     <section className="film__check">
+      {passed}
       {!!s.uncertain_count && (
         <p className="tlc__kferr">
           {s.uncertain_count} 段结果不明：厂商那边可能还有任务在跑或已扣费，请到厂商控制台核对；
@@ -184,7 +186,9 @@ function Overview({ s, film, selected, blocked }: {
       )}
       {next.kind === 'none' && (
         <p className="tlc__kfnote">
-          {s.clips.some(inFlight) ? '各段在生成中，出完会自动刷新。' : '没有要出的段了；配音与合成整章在下一步。'}
+          {!s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded')) && s.clips.some(inFlight)
+            ? '试段生成中，出完再出剩余各段'
+            : s.clips.some(inFlight) ? '各段在生成中，出完会自动刷新。' : '没有要出的段了；配音与合成整章在下一步。'}
         </p>
       )}
     </section>
@@ -279,6 +283,9 @@ function ConfirmBox({ s, film, blocked }: { s: FilmSession; film: Film; blocked:
   return (
     <section className="film__confirm" role="dialog" aria-label="确认出片金额">
       <h4>{cf.kind === 'rest' ? `出剩余 ${rows.length} 段` : `出 ${cf.clipId}`}</h4>
+      {cf.kind === 'clip' && cf.uncertain && (
+        <p className="tlc__kferr">这一段结果不明：厂商那边可能还有任务在跑或已扣费，请到厂商控制台核对，确认没有生成再重做。</p>
+      )}
       {cf.changed && <p className="tlc__kferr">预估金额已变为 {yuan(cf.cny)}，请重新确认。</p>}
       {!!rows.length && (
         <table className="film__rows">
