@@ -156,64 +156,15 @@ def shot_line(shot: dict, t0: float) -> tuple:
 
 
 def clip_prompt(clip: list, doc: dict, assets_idx: dict) -> tuple:
-    """一个 clip → Seedance 时间轴提示词块 + 它引用的资产 ID 列表。"""
-    style = doc["meta"]["style"]["style_prefix"]
-    ar = doc["meta"].get("video", {}).get("aspect_ratio", "9:16")
-    total = round(sum(s.get("duration_sec", 3) for s in clip), 1)
-    first = clip[0]
-    tod = TIME_ZH.get(first.get("time_of_day", ""), "")
-    weather = first.get("weather", "")
+    """一个 clip → Seedance 时间轴提示词块 + 它引用的资产 ID 列表。
 
-    chars, locs, props = collect_refs(clip)
-    refs, ref_lines = [], []
-    n = 1
-    for cid, outfit in chars:
-        if cid in assets_idx["creatures"]:
-            name = assets_idx["creatures"][cid].get("name", cid)
-            ref_lines.append(f"@图片{n} 生物参考：{name}（{cid}），锁定生物外观")
-        else:
-            name = assets_idx["characters"].get(cid, {}).get("name", cid)
-            outfit_note = f"，着装 {outfit}" if outfit else ""
-            ref_lines.append(f"@图片{n} 角色参考：{name}（{cid}{outfit_note}），锁定人物外观")
-        refs.append(cid)
-        n += 1
-    for lid, angle in locs:
-        name = assets_idx["locations"].get(lid, {}).get("name", lid)
-        ref_lines.append(f"@图片{n} 场景参考：{name}（{lid}，{angle} 机位），锁定环境")
-        refs.append(lid)
-        n += 1
-    for pid, state in props:
-        name = assets_idx["props"].get(pid, {}).get("name", pid)
-        state_note = f"，状态 {state}" if state else ""
-        ref_lines.append(f"@图片{n} 道具参考：{name}（{pid}{state_note}）")
-        refs.append(pid)
-        n += 1
-
-    sfx, constraints = [], []
-    for s in clip:
-        for x in s.get("sfx", []):
-            if x not in sfx:
-                sfx.append(x)
-        for x in s.get("constraints", []):
-            if x not in constraints:
-                constraints.append(x)
-
-    head = (f"{style}，{total}秒，{ar}竖屏"
-            + (f"，{tod}" if tod else "") + (f"，{weather}" if weather else ""))
-    lines = [head, ""]
-    t = 0.0
-    for s in clip:
-        line, t = shot_line(s, t)
-        lines.append(line)
-    lines.append("")
-    if sfx:
-        lines.append(f"【声音】{'，'.join(sfx)}（仅音效，不要音乐，不要字幕）")
-    # 负面约束是 v0.5 新增的镜头级禁令，出图质量的一半毁在没有约束上
-    if constraints:
-        lines.append(f"【不要】{'；'.join(constraints)}")
-    for rl in ref_lines:
-        lines.append(f"【参考】{rl}")
-    return "\n".join(lines), refs
+    组装在 render/compose.py（厂商无关，参考图是占位符），这里按 Seedance 语法改写。
+    出片发给厂商的也是同一套组装，生产包与真实请求不会分叉。
+    """
+    from render import compose                      # compose 依赖本模块，延迟导入免循环
+    from render.providers.seedance import rewrite_refs
+    text, refs = compose.neutral_prompt(clip, doc, assets_idx)
+    return rewrite_refs(text), refs
 
 
 def _asset_entries(doc: dict, used: set) -> list:
