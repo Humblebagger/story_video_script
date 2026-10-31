@@ -2,19 +2,20 @@
 import type { ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { DUR, EASE_OUT } from '@/motion'
+import { canObserve } from './observe'
 
-const canObserve = () => typeof window !== 'undefined' && 'IntersectionObserver' in window
 
-export function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+export function Reveal({ children, delay = 0, className, as = 'div' }: { children: ReactNode; delay?: number; className?: string; as?: 'div' | 'li' }) {
   const reduced = !!useReducedMotion()
-  if (!canObserve()) return <div className={className}>{children}</div>
+  const Tag = as === 'li' ? motion.li : motion.div
+  if (!canObserve()) return as === 'li' ? <li className={className}>{children}</li> : <div className={className}>{children}</div>
   return (
-    <motion.div className={className}
+    <Tag className={className}
                 initial={{ opacity: 0, y: reduced ? 0 : 16 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-60px' }}
                 transition={{ duration: DUR.slow, ease: EASE_OUT, delay }}>
       {children}
-    </motion.div>
+    </Tag>
   )
 }

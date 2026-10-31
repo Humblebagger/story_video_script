@@ -29,7 +29,7 @@ export function CanvasMock() {
           <span className="size-2.5 rounded-full bg-warning/70" />
           <span className="size-2.5 rounded-full bg-success/70" />
         </div>
-        <div className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 text-xs">
+        <div className="relative grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 text-xs">
           <span className="self-center text-muted-foreground">{t('landing.mock.shots')}</span>
           <div className="flex gap-1">
             {SHOTS.map((w, i) => (
@@ -58,8 +58,9 @@ export function CanvasMock() {
             <div style={{ flexGrow: total - SHOTS[0] - SHOTS[1] - SHOTS[2] }}
                  className="h-6 rounded-md border border-dashed px-2 py-1 text-[10px] text-muted-foreground">{t('landing.mock.rendering')}…</div>
           </div>
+          <div className="pointer-events-none absolute -bottom-1 -top-1 w-px bg-brand-to"
+               style={{ left: 'calc(100px + (100% - 100px) * 0.43)' }} />
         </div>
-        <div className="pointer-events-none absolute bottom-3 top-12 w-px bg-brand-to" style={{ left: 'calc(88px + 2.75rem + 38%)' }} />
       </motion.div>
     </div>
   )

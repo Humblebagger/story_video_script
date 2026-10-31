@@ -106,5 +106,15 @@ for (const s of ['From ink to reel.', 'Integrity check', 'Four steps to an episo
 }
 console.log('5. 英文首页 ✓')
 
+// 6. 没有 IntersectionObserver：首页不抛错，内容在
 await act(async () => { root.unmount() })
+const savedIO = g.IntersectionObserver
+delete g.IntersectionObserver
+const root2 = createRoot(container as unknown as HTMLElement)
+await act(async () => { root2.render(<I18nProvider initial="zh"><Landing onSignIn={() => {}} onSignUp={() => {}} /></I18nProvider>) })
+must(!!q('[data-testid="landing"]') && html().includes('免费注册'), '没有 IntersectionObserver 时首页照常渲染')
+g.IntersectionObserver = savedIO
+console.log('6. 无 IntersectionObserver ✓')
+
+await act(async () => { root2.unmount() })
 console.log('\nALL PASS')

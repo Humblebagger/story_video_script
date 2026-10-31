@@ -49,7 +49,7 @@ async function send(path: string, init?: RequestInit): Promise<Response> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   })
-  if (res.status === 401) {
+  if (res.status === 401 && token) {   // 没带 token 的 401（登录 / 注册失败）交给下面带服务端 detail 的错误
     notifyUnauthorized()          // 广播出去，让 App 退回登录页
     throw new Error('未登录或登录已过期')
   }

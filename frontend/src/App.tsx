@@ -1,3 +1,4 @@
+import { motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
@@ -26,6 +27,7 @@ import type {
   VerificationReport,
 } from './types'
 import { useJob } from './useJob'
+import { DUR, EASE_OUT } from './motion'
 
 const RUNNING = ['queued', 'running']
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -34,6 +36,8 @@ export default function App() {
   const { t } = useI18n()
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
   const [adminOpen, setAdminOpen] = useState(false)
+  /** 登录成功后、首页淡出期间暂存的用户；淡出完才真正进应用 */
+  const [entering, setEntering] = useState<User | null>(null)
   /** 没登录时的登录注册对话框；expired 为登录失效后自动打开时的提示 */
   const [auth, setAuth] = useState<{ open: boolean; mode: AuthMode; expired: boolean }>(
     { open: false, mode: 'login', expired: false })
@@ -186,9 +190,11 @@ export default function App() {
   }, [announce, refreshNovels, reloadOpen])
 
   // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
+  // 监听只订阅一次，所以通过 ref 拿到最新的重置函数；和退出共用，保证换账号不残留上一个人的小说与产物
+  const resetRef = useRef<() => void>(() => {})
   useEffect(() => onUnauthorized(() => {
-    setAdminOpen(false)
-    setUser(null)
+    resetRef.current()
+    setEntering(null)
     setAuth({ open: true, mode: 'login', expired: true })
   }), [])
 
@@ -435,29 +441,43 @@ export default function App() {
     }
   }
 
-  const logout = () => {
-    clearSession()
+  const resetSignedOut = () => {
     clearWork()
     setAdminOpen(false)
-    setAuth({ open: false, mode: 'login', expired: false })
     setUser(null)
     setNovel(null)
     setChapter(null)
     setNovels([])
     setRunning([])
   }
+  resetRef.current = resetSignedOut
+
+  const logout = () => {
+    clearSession()
+    resetSignedOut()
+    setAuth({ open: false, mode: 'login', expired: false })
+  }
+
+  // 登录成功后首页淡出（≤400ms），完成后进应用；动画回调之外再留一个定时兜底，进应用不只靠动画事件
+  const fadeMs = Math.round(DUR.base * 1000)
+  useEffect(() => {
+    if (!entering) return
+    const id = window.setTimeout(() => { setUser(entering); setEntering(null) }, fadeMs + 60)
+    return () => window.clearTimeout(id)
+  }, [entering, fadeMs])
 
   if (!user) {
     return (
-      <>
+      <motion.div animate={{ opacity: entering ? 0 : 1 }} transition={{ duration: fadeMs / 1000, ease: EASE_OUT }}
+                  onAnimationComplete={() => { if (entering) { setUser(entering); setEntering(null) } }}>
         <Landing onSignIn={() => setAuth({ open: true, mode: 'login', expired: false })}
                  onSignUp={() => setAuth({ open: true, mode: 'register', expired: false })} />
         <AuthDialog open={auth.open} mode={auth.mode} firstRun={firstRun}
                     notice={auth.expired ? t('auth.expired') : null}
                     onMode={(mode) => setAuth((a) => ({ ...a, mode }))}
                     onClose={() => setAuth((a) => ({ ...a, open: false }))}
-                    onDone={(u) => { setAuth({ open: false, mode: 'login', expired: false }); setUser(u) }} />
-      </>
+                    onDone={(u) => { setAuth({ open: false, mode: 'login', expired: false }); setEntering(u) }} />
+      </motion.div>
     )
   }
 

@@ -901,51 +901,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--muted);
 }
 
-/* ---------- 登录 ---------- */
-
-.login {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.login__box {
-  width: 100%;
-  max-width: 380px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 28px 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.login__box h1 { font-size: 19px; }
-.login__sub { font-size: 12.5px; color: var(--faint); margin-top: -8px; }
-.login__tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line-2); }
-.login__tab {
-  padding: 8px 16px; border: none; border-bottom: 2px solid transparent;
-  background: none; color: var(--muted); cursor: pointer;
-}
-.login__tab.is-on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-.login__field { display: flex; flex-direction: column; gap: 5px; }
-.login__field > span { font-size: 12px; color: var(--muted); }
-.login__field input {
-  padding: 9px 11px; border: 1px solid var(--line);
-  border-radius: 7px; background: var(--panel-2);
-}
-.login__field input:focus {
-  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  outline-offset: -1px;
-}
-.login__note {
-  font-size: 12px; color: var(--muted); line-height: 1.7;
-  padding: 8px 11px; border-radius: 7px; background: var(--accent-soft);
-}
-.login__err { font-size: 12.5px; color: var(--danger); }
-.login__tip { font-size: 11.5px; color: var(--faint); line-height: 1.7; }
-
 /* ---------- 顶栏导航与当前用户 ---------- */
 
 
@@ -977,7 +932,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   cursor: pointer; font-size: 16px; line-height: 1; padding: 0 3px;
 }
 .acard__del:hover { color: var(--danger); }
-.login__mismatch { font-style: normal; font-size: 11.5px; color: var(--danger); }
 .lib__emptytip { font-size: 12.5px; color: var(--faint); margin: 6px 0 14px; }
 
 /* ---------- 搜索 ---------- */

@@ -1,7 +1,7 @@
 /** 登录 / 注册对话框（原 LoginView 的逻辑）：页签切换；注册要输两次密码；全新部署时引导注册；
  *  错误显示在表单里；成功后回调 onDone。不走 portal：渲染在应用树里（测试能在容器里找到表单）。
  *  测试依赖：.login__tab、.login__field input、提交按钮 type=submit、「注册并进入」「第一个注册的账号」「两次输入的密码不一致」。 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { X } from 'lucide-react'
 import { login, register } from '@/api'
@@ -39,10 +39,34 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
   const mismatch = registering && confirm.length > 0 && confirm !== password
   const ready = username.trim() && password && (!registering || confirm === password)
 
+  const formRef = useRef<HTMLFormElement>(null)
   useEffect(() => { setConfirm(''); setError(null) }, [mode])
+  // 关闭后清空输入与错误，下次打开是干净的
+  useEffect(() => {
+    if (!open) { setUsername(''); setPassword(''); setConfirm(''); setError(null) }
+  }, [open])
+  // 打开时记下原焦点，关闭后还回去
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose() }
+    const opener = document.activeElement as HTMLElement | null
+    return () => { opener?.focus?.() }
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) { onClose(); return }
+      if (e.key !== 'Tab') return
+      // 焦点留在对话框内：Tab / Shift+Tab 首尾循环
+      const form = formRef.current
+      if (!form) return
+      const items = [...form.querySelectorAll<HTMLElement>('button, input, [href], [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => !(el as HTMLButtonElement).disabled)
+      if (items.length === 0) return
+      const first = items[0], last = items[items.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || !form.contains(active))) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && (active === last || !form.contains(active))) { e.preventDefault(); first.focus() }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, busy, onClose])
@@ -67,11 +91,11 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
   return (
     <AnimatePresence>
       {open && (
-        <motion.div key="auth" className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        <motion.div key="auth" className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                     transition={{ duration: 0.18 }}>
           <div className="absolute inset-0 bg-background/60 backdrop-blur-md" onClick={() => !busy && onClose()} />
-          <motion.form {...m.pop} onSubmit={submit} role="dialog" aria-modal="true"
+          <motion.form ref={formRef} {...m.pop} onSubmit={submit} role="dialog" aria-modal="true"
                        aria-label={registering ? t('auth.registerTitle') : t('auth.loginTitle')}
                        data-testid="auth-dialog"
                        className="login__box relative w-full max-w-sm space-y-4 rounded-2xl border bg-card p-6 shadow-2xl">
@@ -86,9 +110,9 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
               </h2>
             </div>
             {notice && <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm">{notice}</p>}
-            <div className="login__tabs grid grid-cols-2 rounded-lg bg-muted p-1">
+            <div role="tablist" className="login__tabs grid grid-cols-2 rounded-lg bg-muted p-1">
               {(['login', 'register'] as const).map((k) => (
-                <button type="button" key={k} onClick={() => onMode(k)}
+                <button type="button" key={k} role="tab" aria-selected={mode === k} onClick={() => onMode(k)}
                         className={cn('login__tab rounded-md py-1.5 text-sm transition-colors',
                                       mode === k ? 'is-on bg-background font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
                   {k === 'login' ? t('auth.tabLogin') : t('auth.tabRegister')}
@@ -113,11 +137,12 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
                 <span className="text-sm font-medium">{t('auth.confirm')}</span>
                 <Input type="password" value={confirm} autoComplete="new-password"
                        placeholder={t('auth.confirmHint')} aria-invalid={mismatch}
+                       aria-describedby={mismatch ? 'auth-mismatch' : undefined}
                        onChange={(e) => setConfirm(e.target.value)} />
-                {mismatch && <em className="block text-xs not-italic text-destructive">{t('auth.mismatch')}</em>}
+                {mismatch && <em id="auth-mismatch" role="alert" className="block text-xs not-italic text-destructive">{t('auth.mismatch')}</em>}
               </label>
             )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy || !ready}>
               {busy ? t('auth.wait') : registering ? t('auth.submitRegister') : t('auth.submitLogin')}
             </Button>

@@ -500,6 +500,7 @@ must((findByText('button', '注册并进入') as HTMLButtonElement).disabled,
 await type(cIn, 'pw123456', false)
 must(!has('两次输入的密码不一致'), '改对后提示应消失')
 await click(findByText('button', '注册并进入'))
+await settle(400)
 must(has('新建小说'), '注册后应进入新建小说')
 must(has('alice'), '顶栏应显示当前用户')
 must(![...container.querySelectorAll('button')].some((b) => b.textContent === '管理'),
@@ -704,6 +705,8 @@ console.log('11b. 创作限制（负面提示词/关键词/停用）/ 主线剧�
 
 // 12. 换个账号：看不到 alice 的任何东西
 await click(findByText('button', '退出'))
+await settle(100)
+must(!container.querySelector('[data-testid="auth-dialog"]'), '已有账号时退出后不该自动弹出注册')
 await openLogin()
 must(has('login__tab') && !has('新建小说'), '退出后应回到登录页')
 must(!has('第一个注册的账号'), '已有账号时不该再显示首次注册引导')
@@ -717,7 +720,7 @@ await type(u2, 'bob', false)
 await type(p2, 'pw654321', false)
 await type(c2, 'pw654321', false)
 await click(findByText('button', '注册并进入'))
-await settle(120)
+await settle(400)
 must(has('bob') && !has('alice'), '顶栏应换成新用户')
 must(!has('药') && !has('华老栓'), 'bob 不该看到 alice 的小说')
 must(has('还没有小说'), 'bob 的书架应为空')
@@ -730,7 +733,7 @@ const loginAs = async (name: string, pw: string) => {
   await type(uu, name, false)
   await type(pp, pw, false)
   await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
-  await settle(200)
+  await settle(400)
 }
 const btn = (t: string) =>
   [...container.querySelectorAll('button')].find((b) => b.textContent === t) as unknown as HTMLElement | undefined
@@ -747,6 +750,7 @@ must(has('管理后台'), '再次进入后台')
 await act(async () => { notifyUnauthorized() })     // 后台开着时登录失效
 await settle(50)
 must(has('login__tab') && !has('管理后台'), '401 后应回到登录页')
+must(has('登录已过期'), '401 后登录框应带过期提示')
 await loginAs('bob', 'pw654321')
 must(has('bob') && !has('管理后台') && !btn('管理') && !btn('返回书架'),
      '401 后换普通用户登录，不能落进后台，也不该有「管理」入口')
@@ -784,11 +788,16 @@ const loginTab = [...container.querySelectorAll('.login__tab')]
   .find((b) => (b.textContent ?? '').trim() === '登录') as unknown as HTMLElement
 await click(loginTab)
 const [u3, p3] = fields()
+must(!has('登录已过期'), '手动退出后的登录框不该带过期提示')
 await type(u3, 'alice', false)
+// 打错密码：显示服务端的原因，而不是当成登录过期
+await type(p3, 'wrong-password', false)
+await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
+must(has('用户名或密码不正确') && !has('登录已过期'), '密码错应显示服务端原因，不该当成登录过期')
 await type(p3, 'pw123456', false)
 // 页签和提交按钮文案都是「登录」，必须按 type=submit 取，否则点回的是页签
 await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
-await settle(200)
+await settle(400)
 must(has('药'), 'alice 应已重新登录并看到自己的小说')
 await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
 await click(chapterItem(0))

@@ -13,7 +13,9 @@ import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { cn } from '@/lib/utils'
+import { DUR, EASE_OUT } from '@/motion'
 import { CanvasMock } from './CanvasMock'
+import { canObserve } from './observe'
 import { Reveal } from './Reveal'
 
 const FEATURES = [
@@ -51,7 +53,7 @@ export function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp
           <div className="ml-auto flex items-center gap-1 md:ml-0">
             <LangToggle />
             <ThemeToggle />
-            <Button variant="ghost" size="sm" onClick={onSignIn} data-testid="landing-login">{t('landing.signIn')}</Button>
+            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={onSignIn} data-testid="landing-login">{t('landing.signIn')}</Button>
             <Button size="sm" onClick={onSignUp} data-testid="landing-register">{t('landing.signUp')}</Button>
           </div>
         </div>
@@ -59,7 +61,8 @@ export function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp
 
       <section className="relative overflow-hidden pb-24 pt-36">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
-          <motion.div className="absolute -top-32 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-brand opacity-20 blur-3xl"
+          <motion.div className="absolute -top-32 left-1/2 h-[520px] w-[820px] rounded-full bg-brand opacity-20 blur-3xl"
+                      style={{ x: '-50%' }}
                       animate={reduced ? undefined : { x: ['-52%', '-48%', '-52%'], y: [0, 24, 0] }}
                       transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }} />
           <div className="absolute inset-0 opacity-[0.035] [background-image:radial-gradient(currentColor_1px,transparent_1px)] [background-size:3px_3px]" />
@@ -71,7 +74,7 @@ export function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp
             </p>
           </Reveal>
           <Reveal delay={0.05}>
-            <h1 className="mx-auto max-w-3xl text-5xl font-semibold tracking-tight md:text-7xl">
+            <h1 className="mx-auto max-w-3xl pb-1 text-5xl leading-tight font-semibold tracking-tight md:text-7xl">
               <span className="text-brand">{t('landing.title')}</span>
             </h1>
           </Reveal>
@@ -111,24 +114,28 @@ export function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp
           <Reveal className="text-center">
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t('landing.workflowTitle')}</h2>
           </Reveal>
-          <ol className="relative mt-14 grid gap-8 md:grid-cols-4">
+          <div className="relative mt-14">
             <div aria-hidden className="absolute left-0 right-0 top-5 hidden h-px bg-border md:block">
-              <motion.div className="h-full origin-left bg-brand"
-                          initial={{ scaleX: reduced ? 1 : 0 }} whileInView={{ scaleX: 1 }}
-                          viewport={{ once: true }} transition={{ duration: 1.2, ease: 'easeOut' }} />
+              {canObserve() ? (
+                <motion.div className="h-full origin-left bg-brand"
+                            initial={{ scaleX: reduced ? 1 : 0 }} whileInView={{ scaleX: 1 }}
+                            viewport={{ once: true }} transition={{ duration: DUR.slow, ease: EASE_OUT }} />
+              ) : <div className="h-full bg-brand" />}
             </div>
+            <ol className="grid gap-8 md:grid-cols-4">
             {STEPS.map((id, i) => (
-              <Reveal key={id} delay={i * 0.15}>
-                <li className="relative list-none">
+              <Reveal key={id} as="li" delay={i * 0.1} className="relative list-none">
+                <div className="relative">
                   <span className="relative z-10 flex size-10 items-center justify-center rounded-full border bg-background font-mono text-sm font-semibold">
                     {i + 1}
                   </span>
                   <h3 className="mt-4 font-semibold">{t(k(`landing.steps.${id}.title`))}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground">{t(k(`landing.steps.${id}.desc`))}</p>
-                </li>
+                </div>
               </Reveal>
             ))}
-          </ol>
+            </ol>
+          </div>
         </div>
       </section>
 
