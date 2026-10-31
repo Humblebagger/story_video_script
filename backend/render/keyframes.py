@@ -107,3 +107,8 @@ def keyframe_plan(doc: dict) -> list:
     idx = assets_index(doc)
     return [shot_keyframe(s, doc, idx)
             for ep in doc.get("episodes") or [] for s in ep.get("shots") or []]
+
+
+# 出片（render/compose.py）给没有参考图的资产写文字描述，与静帧提示词同一套写法
+describe_character, describe_creature = _character, _creature
+describe_location, describe_prop = _location, _prop

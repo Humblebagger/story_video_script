@@ -4,8 +4,16 @@
 的语法（Seedance：@图片n）。生产包（plan.py / adapters/seedance.py）走 mode=LEGACY 的同一套
 组装，两边不会分叉。
 """
+import base64
+import hashlib
+import json
+from pathlib import Path
+from typing import Optional
+
 from pipeline.quality import DEFAULT_SPEECH_CPS, speech_seconds
-from render.plan import DIALOGUE_TYPE_ZH, TIME_ZH, collect_refs, shot_line
+from render import keyframes as kf
+from render.plan import DIALOGUE_TYPE_ZH, TIME_ZH, assets_index, collect_refs, shot_line
+from render.providers.base import ClipRequest, RefImage
 
 LEGACY = "legacy"          # 生产包写法：台词进提示词，只要音效
 AUDIO_MODES = ("tts_all", "dialogue_native", "all_native", "silent")
@@ -164,3 +172,224 @@ def neutral_prompt(clip: list, doc: dict, assets_idx: dict, *, mode: str = LEGAC
         if d:
             lines.append(f"【描述】{d}")
     return "\n".join(lines), ids
+
+
+# ---------- 切段 ----------
+
+def cut_clips(doc: dict, caps, cps: float = DEFAULT_SPEECH_CPS) -> list:
+    """按镜头顺序装箱：每段可播时长 ≤ caps.max_clip_sec。
+
+    单镜超上限独立成段并标 truncated；不足 min_clip_sec 的段并入相邻段（并得进去的话）。
+    返回 [{"id", "episode", "shots": [镜头 dict], "duration", "truncated"}]。
+    """
+    out = []
+    for ep in doc.get("episodes") or []:
+        segs, cur, cur_len = [], [], 0.0
+        for s in ep.get("shots") or []:
+            d = playable(s, cps)
+            if d > caps.max_clip_sec:
+                if cur:
+                    segs.append([cur, cur_len, False])
+                    cur, cur_len = [], 0.0
+                segs.append([[s], d, True])
+                continue
+            if cur and cur_len + d > caps.max_clip_sec + 1e-9:
+                segs.append([cur, cur_len, False])
+                cur, cur_len = [], 0.0
+            cur.append(s)
+            cur_len += d
+        if cur:
+            segs.append([cur, cur_len, False])
+        for i, (shots, d, trunc) in enumerate(_merge_short(segs, caps), 1):
+            out.append({"id": f"{ep['id']}-C{i:02d}", "episode": ep["id"], "shots": shots,
+                        "duration": round(d, 1), "truncated": trunc})
+    return out
+
+
+def _merge_short(segs: list, caps) -> list:
+    out = []
+    for shots, d, trunc in segs:
+        prev = out[-1] if out else None
+        if (prev and not trunc and not prev[2]
+                and (d < caps.min_clip_sec or prev[1] < caps.min_clip_sec)
+                and prev[1] + d <= caps.max_clip_sec + 1e-9):
+            prev[0] = prev[0] + shots
+            prev[1] += d
+        else:
+            out.append([list(shots), d, trunc])
+    return out
+
+
+# ---------- 参考图 ----------
+
+def _usable(uri) -> bool:
+    return isinstance(uri, str) and uri.startswith(("http://", "https://", "data:image/"))
+
+
+def image_for(slot: dict, assets_idx: dict) -> Optional[str]:
+    """资产卡上这个参考位的图（http(s) 地址或 data URI）；没有返回 None。
+
+    角色按着装、道具按状态、场景按机位挑图，挑不到用该卡的第一张。
+    """
+    role, aid, var = slot["role"], slot["asset_id"], slot["variant"]
+    if role == "location":
+        card = assets_idx["locations"].get(aid) or {}
+        imgs = [a for a in card.get("angles") or [] if _usable(a.get("uri"))]
+        key = "angle"
+    else:
+        kind = {"character": "characters", "creature": "creatures", "prop": "props"}[role]
+        card = assets_idx[kind].get(aid) or {}
+        imgs = [i for i in card.get("reference_images") or [] if _usable(i.get("uri"))]
+        key = "outfit" if role == "character" else "state"
+    hit = next((i for i in imgs if var and i.get(key) == var), None) or (imgs[0] if imgs else None)
+    return hit["uri"] if hit else None
+
+
+def pick_refs(clip: list, assets_idx: dict, max_refs: int) -> dict:
+    """参考位按优先级保留：本段主要角色 > 场景 > 次要角色与生物 > 道具。
+
+    主要角色 = 本段出镜镜头数最多的角色（并列都算）。保留的按出场顺序排列（占位符编号
+    与请求里的图片顺序一致）。返回 {"kept": 带 source 的参考位, "dropped": 有图但被裁的,
+    "missing": 没有图的}。
+    """
+    slots = ref_slots(clip, assets_idx)
+    counts = {}
+    for s in clip:
+        for c in s.get("characters") or []:
+            counts[c["ref"]] = counts.get(c["ref"], 0) + 1
+    top = max((counts.get(sl["asset_id"], 0) for sl in slots if sl["role"] == "character"),
+              default=0)
+
+    def tier(sl):
+        if sl["role"] == "character" and counts.get(sl["asset_id"], 0) == top:
+            return 0
+        return {"location": 1, "character": 2, "creature": 2}.get(sl["role"], 3)
+
+    found = [(i, sl, image_for(sl, assets_idx)) for i, sl in enumerate(slots)]
+    ranked = sorted((x for x in found if x[2]), key=lambda x: (tier(x[1]), x[0]))
+    keep = {i for i, _, _ in ranked[:max(max_refs, 0)]}
+    return {"kept": [{**sl, "source": src} for i, sl, src in found if i in keep],
+            "dropped": [sl for i, sl, src in found if src and i not in keep],
+            "missing": [sl for i, sl, src in found if not src]}
+
+
+def describe(slot: dict, assets_idx: dict) -> str:
+    """没有参考图（或被裁掉）的资产：用资产卡的文字描述代替。"""
+    aid, role, var = slot["asset_id"], slot["role"], slot["variant"]
+    if role == "character" and aid in assets_idx["characters"]:
+        return "人物：" + kf.describe_character(assets_idx["characters"][aid], var)
+    if role == "creature" and aid in assets_idx["creatures"]:
+        return "生物：" + kf.describe_creature(assets_idx["creatures"][aid])
+    if role == "location" and aid in assets_idx["locations"]:
+        return "场景：" + kf.describe_location(assets_idx["locations"][aid])
+    if role == "prop" and aid in assets_idx["props"]:
+        return "道具：" + kf.describe_prop(assets_idx["props"][aid], var)
+    return ""
+
+
+# ---------- 指纹与整段组装 ----------
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def fingerprint(**parts) -> str:
+    """输入指纹：镜头内容、提示词、参考图、首帧来源、厂商、档位、分辨率、声音模式。"""
+    blob = json.dumps(parts, ensure_ascii=False, sort_keys=True, default=str)
+    return _sha(blob.encode("utf-8"))
+
+
+def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
+                audio_mode: str, keyframes: dict, rewrite, cps: float = DEFAULT_SPEECH_CPS) -> list:
+    """分镜 → 出片段（session.json 的 clips，不含状态）。
+
+    keyframes：镜头 id → 关键帧图路径。首帧：段首镜头有关键帧用关键帧；否则在本段没有参考图、
+    厂商能返回尾帧时，用同一集上一段的尾帧接力；都不满足就不带首帧。厂商不能首帧与参考图同用
+    时（frame_with_refs=False），关键帧占第一个参考位（frame_mode="ref"）。
+    下划线开头的键只在内存里用，不落盘。
+    """
+    if audio_mode not in AUDIO_MODES:
+        raise ValueError(f"未知的声音模式：{audio_mode}")
+    idx = assets_index(doc)
+    out, prev = [], None
+    for c in cut_clips(doc, caps, cps):
+        shots = c["shots"]
+        refs = pick_refs(shots, idx, caps.max_refs)
+        sid = shots[0].get("id")
+        first = None
+        if caps.first_frame and sid in keyframes:
+            first = f"keyframe:{sid}"
+        elif (caps.first_frame and caps.returns_last_frame and prev is not None
+              and prev["episode"] == c["episode"] and (caps.frame_with_refs or not refs["kept"])):
+            first = f"relay:{prev['id']}"
+        frame_mode = None
+        if first:
+            frame_mode = "ref" if refs["kept"] and not caps.frame_with_refs else "frame"
+        if frame_mode == "ref" and len(refs["kept"]) >= caps.max_refs:
+            refs = pick_refs(shots, idx, caps.max_refs - 1)
+            if not refs["kept"]:
+                frame_mode = "frame"
+        described = [describe(sl, idx) for sl in refs["missing"] + refs["dropped"]]
+        text, _ = neutral_prompt(shots, doc, idx, mode=audio_mode, slots=refs["kept"],
+                                 described=described, first_frame=frame_mode == "ref",
+                                 timing="playable", cps=cps)
+        prompt = rewrite(text)
+        kf_hash = (_sha(Path(keyframes[sid]).read_bytes())
+                   if first and first.startswith("keyframe:") else None)
+        fp = fingerprint(shots=shots, prompt=prompt,
+                         refs=[_sha(sl["source"].encode("utf-8")) for sl in refs["kept"]],
+                         first=first, keyframe=kf_hash, provider=provider, model=model,
+                         resolution=resolution, audio_mode=audio_mode)
+        out.append({"id": c["id"], "episode": c["episode"],
+                    "shots": [s.get("id") for s in shots],
+                    "duration": c["duration"], "truncated": c["truncated"], "prompt": prompt,
+                    "refs": [sl["asset_id"] for sl in refs["kept"]],
+                    "dropped_refs": [sl["asset_id"] for sl in refs["dropped"]],
+                    "missing_refs": [sl["asset_id"] for sl in refs["missing"]],
+                    "first_frame": first, "frame_mode": frame_mode, "fingerprint": fp,
+                    "_slots": refs["kept"]})
+        prev = c
+    return out
+
+
+# ---------- 厂商请求 ----------
+
+_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+
+
+def data_uri(path: Path) -> str:
+    mime = _MIME.get(Path(path).suffix.lower(), "image/jpeg")
+    return f"data:{mime};base64," + base64.b64encode(Path(path).read_bytes()).decode("ascii")
+
+
+class Stale(Exception):
+    """分镜、关键帧或设置变了：这一段的指纹与会话里的对不上，不能按旧的确认去花钱。"""
+
+
+def request_for(doc: dict, session: dict, clip: dict, *, keyframes: dict, relay_frame,
+                caps, rewrite, cps: float = DEFAULT_SPEECH_CPS) -> tuple:
+    """按已保存的分镜重建这一段的厂商请求。返回 (ClipRequest, 实际使用的首帧来源或 None)。
+
+    relay_frame：上一段采用那次的尾帧文件（没有就是 None，此时不带首帧照常提交）。
+    """
+    built = build_clips(doc, caps, provider=session["provider"], model=session["model"],
+                        resolution=session["resolution"], audio_mode=session["audio_mode"],
+                        keyframes=keyframes, rewrite=rewrite, cps=cps)
+    c = next((b for b in built if b["id"] == clip["id"]), None)
+    if c is None or c["fingerprint"] != clip["fingerprint"]:
+        raise Stale(clip["id"])
+    refs = [RefImage(sl["asset_id"], sl["role"], sl["source"]) for sl in c["_slots"]]
+    image, used = None, None
+    if c["first_frame"] and c["first_frame"].startswith("keyframe:"):
+        image, used = data_uri(Path(keyframes[c["shots"][0]])), c["first_frame"]
+    elif c["first_frame"] and relay_frame is not None and Path(relay_frame).exists():
+        image, used = data_uri(Path(relay_frame)), c["first_frame"]
+    if c["frame_mode"] == "ref" and image:
+        refs.insert(0, RefImage(FIRST, "first_frame", image))
+        image = None
+    aspect = (doc.get("meta") or {}).get("video", {}).get("aspect_ratio", "9:16")
+    req = ClipRequest(prompt=c["prompt"], model=session["model"], duration=c["duration"],
+                      resolution=session["resolution"], aspect=aspect,
+                      audio=session["audio_mode"] != "silent" and caps.native_audio,
+                      refs=refs, first_frame=image)
+    return req, used

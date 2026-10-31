@@ -17,6 +17,8 @@ from pipeline.quality import speech_seconds  # noqa: E402
 from render import compose  # noqa: E402
 from render.plan import assets_index, build_plan  # noqa: E402
 from render.providers.seedance import rewrite_refs  # noqa: E402
+from render.providers import base  # noqa: E402
+from render.providers.fake import FakeVideo  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 GOLDEN = Path(__file__).resolve().parent / "golden_plan_yao.json"
@@ -93,10 +95,134 @@ def part_prompt(doc):
     print("4b. 带 beats 的镜头 ✓")
 
 
+def part_clips(doc):
+    fake = FakeVideo()
+    caps = fake.caps("fake-1")
+    idx = assets_index(doc)
+
+    # 5. 切段：按可播时长装箱，顺序不变；单镜超上限独立成段并标截断
+    clips = compose.cut_clips(doc, caps)
+    for ep in doc["episodes"]:
+        mine = [c for c in clips if c["episode"] == ep["id"]]
+        assert [s["id"] for c in mine for s in c["shots"]] == [s["id"] for s in ep["shots"]]
+        assert [c["id"] for c in mine] == [f"{ep['id']}-C{i:02d}" for i in range(1, len(mine) + 1)]
+    for c in clips:
+        if c["truncated"]:
+            assert len(c["shots"]) == 1 and compose.playable(c["shots"][0]) > caps.max_clip_sec
+        else:
+            assert c["duration"] <= caps.max_clip_sec + 1e-6
+    assert any(c["truncated"] for c in clips), "《药》里有超过 10 秒的镜头"
+    print("5. 切段 ✓")
+
+    # 6. 参考图：主要角色 > 场景 > 次要角色与生物 > 道具；没有图只写文字
+    rich = copy.deepcopy(doc)
+    for kind in ("characters", "props"):
+        for card in rich["assets"][kind]:
+            card["reference_images"] = [{"view": "front", "uri": f"https://img/{card['id']}.png"}]
+    for card in rich["assets"]["locations"]:
+        for a in card.get("angles") or []:
+            a["uri"] = f"https://img/{card['id']}-{a['angle']}.png"
+    ridx = assets_index(rich)
+    c1, c2 = rich["assets"]["characters"][0]["id"], rich["assets"]["characters"][1]["id"]
+    loc = next(card for card in rich["assets"]["locations"] if card.get("angles"))
+    prop = rich["assets"]["props"][0]["id"]
+    clip = [
+        {"id": "T1", "duration_sec": 3, "action": "甲", "characters": [{"ref": c1}],
+         "location_ref": loc["id"], "location_angle": loc["angles"][0]["angle"],
+         "prop_refs": [{"ref": prop}]},
+        {"id": "T2", "duration_sec": 3, "action": "乙",
+         "characters": [{"ref": c1}, {"ref": c2}]},
+    ]
+    got = compose.pick_refs(clip, ridx, 2)
+    assert [s["asset_id"] for s in got["kept"]] == [c1, loc["id"]], "主要角色与场景优先"
+    assert {s["asset_id"] for s in got["dropped"]} == {c2, prop} and got["missing"] == []
+    assert got["kept"][1]["source"] == f"https://img/{loc['id']}-{loc['angles'][0]['angle']}.png"
+    assert len(compose.pick_refs(clip, ridx, 10)["kept"]) == 4
+    for card in rich["assets"]["props"]:
+        card["reference_images"] = [{"view": "front", "uri": "local/none.png"}]   # 非 http/data 不算有图
+    got = compose.pick_refs(clip, assets_index(rich), 10)
+    assert [s["asset_id"] for s in got["missing"]] == [prop]
+    assert compose.describe(got["missing"][0], assets_index(rich)).startswith("道具：")
+    print("6. 参考图优先级与文字描述 ✓")
+
+    # 7. 首帧：关键帧优先；没有参考图时用上一段尾帧接力；有参考图时关键帧占参考位
+    with tempfile.TemporaryDirectory() as d:
+        kf_shot = clips[1]["shots"][0]["id"]
+        png = Path(d) / f"{kf_shot}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 16)
+        kw = dict(provider="fake", model="fake-1", resolution="720p", audio_mode="tts_all",
+                  rewrite=fake.rewrite_prompt)
+        built = compose.build_clips(doc, caps, keyframes={kf_shot: png}, **kw)
+        assert built[1]["first_frame"] == f"keyframe:{kf_shot}" and built[1]["frame_mode"] == "frame"
+        relay = [b for b in built if (b["first_frame"] or "").startswith("relay:")]
+        assert relay and all(b["frame_mode"] == "frame" for b in relay)
+        assert all(not b["first_frame"] for b in built
+                   if b["id"].endswith("-C01") and b["shots"][0] != kf_shot), "每集第一段不接力"
+        assert "{ref:" not in built[0]["prompt"], "已按厂商语法改写"
+
+        # 有参考图：关键帧作为第一个参考位
+        rich2 = copy.deepcopy(rich)
+        for card in rich2["assets"]["characters"]:
+            card["reference_images"] = [{"view": "front", "uri": f"https://img/{card['id']}.png"}]
+        rb = compose.build_clips(rich2, caps, keyframes={kf_shot: png}, **kw)
+        target = next(b for b in rb if b["shots"][0] == kf_shot)
+        if target["refs"]:
+            assert target["frame_mode"] == "ref" and "[参考__first__]" in target["prompt"]
+            assert len(target["refs"]) <= caps.max_refs - 1, "首帧占一个名额"
+
+        # 8. 指纹：设置或分镜变了才变
+        again = compose.build_clips(doc, caps, keyframes={kf_shot: png}, **kw)
+        assert [b["fingerprint"] for b in again] == [b["fingerprint"] for b in built]
+        lo = compose.build_clips(doc, caps, keyframes={kf_shot: png},
+                                 **{**kw, "resolution": "480p"})
+        assert all(a["fingerprint"] != b["fingerprint"] for a, b in zip(lo, built))
+        edited = copy.deepcopy(doc)
+        edited["episodes"][0]["shots"][0]["action"] += "（改）"
+        eb = compose.build_clips(edited, caps, keyframes={kf_shot: png}, **kw)
+        assert eb[0]["fingerprint"] != built[0]["fingerprint"]
+        assert eb[1]["fingerprint"] == built[1]["fingerprint"], "只影响所在的段"
+        must_raise(ValueError, compose.build_clips, doc, caps, keyframes={},
+                   **{**kw, "audio_mode": "karaoke"})
+        print("7. 首帧来源 ✓\n8. 指纹 ✓")
+
+        # 9. 请求组装：按已保存分镜重建，指纹对不上抛 Stale
+        session = {"provider": "fake", "model": "fake-1", "resolution": "720p",
+                   "audio_mode": "tts_all"}
+        clip_row = {k: v for k, v in built[1].items() if not k.startswith("_")}
+        req, used = compose.request_for(doc, session, clip_row, keyframes={kf_shot: png},
+                                        relay_frame=None, caps=caps, rewrite=fake.rewrite_prompt)
+        assert isinstance(req, base.ClipRequest) and used == f"keyframe:{kf_shot}"
+        assert req.first_frame.startswith("data:image/png;base64,") and req.refs == []
+        assert req.prompt == built[1]["prompt"] and req.duration == built[1]["duration"]
+        assert req.aspect == doc["meta"]["video"]["aspect_ratio"] and req.audio is True
+        r2 = next(b for b in built if (b["first_frame"] or "").startswith("relay:"))
+        row2 = {k: v for k, v in r2.items() if not k.startswith("_")}
+        req2, used2 = compose.request_for(doc, session, row2, keyframes={kf_shot: png},
+                                          relay_frame=None, caps=caps, rewrite=fake.rewrite_prompt)
+        assert req2.first_frame is None and used2 is None, "上一段还没尾帧：不带首帧"
+        jpg = Path(d) / "prev.last.jpg"
+        jpg.write_bytes(b"\xff\xd8x")
+        req3, used3 = compose.request_for(doc, session, row2, keyframes={kf_shot: png},
+                                          relay_frame=jpg, caps=caps, rewrite=fake.rewrite_prompt)
+        assert req3.first_frame.startswith("data:image/jpeg;base64,") and used3 == r2["first_frame"]
+        must_raise(compose.Stale, compose.request_for, edited, session,
+                   {k: v for k, v in built[0].items() if not k.startswith("_")},
+                   keyframes={kf_shot: png}, relay_frame=None, caps=caps,
+                   rewrite=fake.rewrite_prompt)
+        silent = compose.request_for(doc, {**session, "audio_mode": "silent"},
+                                     {**clip_row, "fingerprint": compose.build_clips(
+                                         doc, caps, keyframes={kf_shot: png},
+                                         **{**kw, "audio_mode": "silent"})[1]["fingerprint"]},
+                                     keyframes={kf_shot: png}, relay_frame=None, caps=caps,
+                                     rewrite=fake.rewrite_prompt)[0]
+        assert silent.audio is False
+        print("9. 请求组装 ✓")
+
+
 def main() -> int:
     doc = json.loads(YAO.read_text(encoding="utf-8"))
     part_prompt(doc)
-    # @@NEXT@@
+    part_clips(doc)
     print("\nALL PASS")
     return 0
 
