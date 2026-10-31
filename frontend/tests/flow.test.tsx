@@ -640,9 +640,27 @@ must(!!ageInput, '外貌字段应可编辑')
 await type(ageInput, '六十岁上下', false)
 console.log('8. 资产卡 → 名称/外貌可编辑，ID 锁死 ✓')
 
-// 9. 保存并核对：内容改了，ID 与镜头引用逐字未变
-await click(findByText('button', '保存修改'))
+// 8b. 未保存提示条：撤销回到上次保存的样子；再改一次后用提示条保存
+const bar = () => container.querySelector('[data-testid="unsaved-bar"]') as HTMLElement | null
+const barBtn = (label: string) =>
+  [...bar()!.querySelectorAll('button')].find((b) => b.textContent === label) as HTMLElement
+must(has('有未保存的修改') && !!bar(), '编辑后应出现未保存提示条')
+await click(barBtn('撤销'))
+await settle(500)          // 提示条有退场动画
+must(!bar(), '撤销后提示条应消失')
+must(![...container.querySelectorAll('.acard header input')]
+  .some((e) => (e as HTMLInputElement).value === '华老栓（改）'), '撤销后内容应回到上次保存的样子')
+await click(findByText('button', '资产卡'))
+await type([...container.querySelectorAll('.acard header input')][0] as HTMLElement, '华老栓（改）', false)
+await type([...container.querySelectorAll('.amap__row input')]
+  .find((e) => (e as HTMLInputElement).value === '五十余岁') as unknown as HTMLElement, '六十岁上下', false)
+console.log('8b. 未保存提示条 → 撤销回到原样 / 再改 ✓')
+
+// 9. 保存并核对：内容改了，ID 与镜头引用逐字未变（用提示条里的「保存」）
+await click(barBtn('保存'))
 must(saved.length === 1, '编辑后应 PUT 回后端')
+await settle(500)
+must(!bar(), '保存成功后提示条应消失')
 const out = saved[0] as unknown as typeof DOC
 const c0 = out.assets.characters[0]
 must(c0.name === '华老栓（改）', '角色名应已更新')

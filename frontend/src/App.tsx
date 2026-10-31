@@ -21,6 +21,8 @@ import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { StoryboardView } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
+import { toast } from 'sonner'
+import { UnsavedBar } from './components/workflow/UnsavedBar'
 import { notify, primeNotifications } from './notify'
 import type {
   Chapter, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
@@ -57,6 +59,8 @@ export default function App() {
   /** doc 属于哪个版本；本地打开的 JSON 与分批预览都没有 */
   const [docVid, setDocVid] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
+  /** 撤销的基准：上一次从服务端拿到（或存下）的那份 doc；编辑不改它 */
+  const savedDoc = useRef<Storyboard | null>(null)
   const [saving, setSaving] = useState(false)
   const [alert, setAlert] = useState<string | null>(null)
   /** 服务端对当前产物的复验结果。保存一次刷新一次，不通过时它就是拦人的那块牌子 */
@@ -100,16 +104,26 @@ export default function App() {
 
   /** 完成播报去重：附着轮询与后台巡检可能同时发现同一个任务结束 */
   const announced = useRef<Set<string>>(new Set())
+  /** 提示里「查看」要打开那一章；用 ref 拿最新的打开函数，announce 的依赖就不用跟着变 */
+  const openFromToast = useRef<(j: { id: string; novel_id?: string | null; chapter_id?: string | null }) => void>(() => {})
   const announce = useCallback((j: { id: string; status: string;
                                      work_title?: string | null;
-                                     chapter?: string | null }) => {
+                                     chapter?: string | null;
+                                     novel_id?: string | null;
+                                     chapter_id?: string | null }) => {
     if (announced.current.has(j.id)) return
     announced.current.add(j.id)
     const who = `${j.work_title ?? '分镜'} ${j.chapter ?? ''}`.trim()
-    if (j.status === 'failed') notify('转换失败', `${who}——失败原因见日志`)
-    else notify(j.status === 'completed_with_warnings' ? '转换完成（质量告警）' : '转换完成',
-                `${who} 已生成，点开即可审阅`)
-  }, [])
+    const view = { label: t('flow.view'), onClick: () => openFromToast.current(j) }
+    if (j.status === 'failed') {
+      notify('转换失败', `${who}——失败原因见日志`)
+      toast.error('转换失败', { description: who, action: view })
+    } else {
+      const title = j.status === 'completed_with_warnings' ? '转换完成（质量告警）' : '转换完成'
+      notify(title, `${who} 已生成，点开即可审阅`)
+      toast.success(title, { description: who, action: view })
+    }
+  }, [t])
 
   const novelRef = useRef<Novel | null>(null)
   novelRef.current = novel
@@ -126,6 +140,7 @@ export default function App() {
     previewFor.current = null
     setPreview(null)
     setDoc(done.result)
+    savedDoc.current = done.result
     setDocVid(done.id)
     setDirty(false)
   }, [refreshNovels, reloadOpen, announce])
@@ -139,6 +154,7 @@ export default function App() {
       const p = await getJobPartial(jobId)
       if (previewFor.current !== jobId) return
       setDoc(p.doc)
+      savedDoc.current = p.doc
       setDocVid(null)
       setDirty(false)
       setPreview({ done: p.batches_done, total: p.batches })
@@ -161,6 +177,7 @@ export default function App() {
     previewFor.current = null
     setPreview(null)
     setDoc(null)
+    savedDoc.current = null
     setDocVid(null)
     setDirty(false)
     setAlert(null)
@@ -237,7 +254,7 @@ export default function App() {
     return () => clearTimeout(t)
   }, [novel, chapter, reloadOpen])
 
-  const confirmLeave = () => !dirty || confirm('当前修改尚未保存，确定切换？')
+  const confirmLeave = () => !dirty || confirm(t('flow.leave'))
 
   const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
     reset()
@@ -249,6 +266,7 @@ export default function App() {
       const v = await getVersion(nid, cid, vid)
       if (openChapterId.current !== cid) return
       setDoc(v.result)
+      savedDoc.current = v.result
       setDocVid(v.result ? v.id : null)
       setDirty(false)
       if (!v.result) {
@@ -299,6 +317,23 @@ export default function App() {
     if (j.novel_id && j.chapter_id) void openChapter(j.chapter_id, j.novel_id, j.id)
     else { clearWork(); attach(j.id) }
   }
+
+  openFromToast.current = (j) => {
+    if (j.novel_id && j.chapter_id) void openChapter(j.chapter_id, j.novel_id, j.id)
+    else openJob(j as JobSummary)
+  }
+
+  const undo = () => {
+    if (savedDoc.current) { setDoc(savedDoc.current); setDirty(false) }
+  }
+
+  // 有未保存的修改时，关页面前让浏览器提醒一下
+  useEffect(() => {
+    if (!dirty) return
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [dirty])
 
   const newNovel = () => {
     if (!confirmLeave()) return
@@ -423,6 +458,7 @@ export default function App() {
       if (res.status === 'draft_invalid') {
         setAlert('已保存，但这份分镜没通过服务端复验，暂时不能采用、不能进渲染（详见下方报告）')
       }
+      savedDoc.current = doc
       setDirty(false)
       await reloadOpen(novel.id, chapter.id)
       void reloadFlow()
@@ -443,6 +479,7 @@ export default function App() {
       setChapter(null)
       setNovel(null)
       setDoc(parsed as Storyboard)    // 本地文件不入库，只能下载
+      savedDoc.current = parsed as Storyboard
     } catch (e) {
       setAlert(`读取失败：${msg(e)}`)
     }
@@ -624,6 +661,8 @@ export default function App() {
               />
             )}
             {!inWorkflow && board}
+            <UnsavedBar show={dirty && docVid !== null} saving={saving}
+                        onSave={() => void save()} onUndo={undo} />
           </div>
         )}
       </AppShell>
