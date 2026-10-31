@@ -5,9 +5,20 @@ import '@fontsource-variable/geist-mono'
 import './styles/app.css'
 import './index.css'
 import App from './App.tsx'
+import { initTheme } from './theme'
+import { I18nProvider } from './i18n'
+import { Toaster } from './components/ui/sonner'
+import { TooltipProvider } from './components/ui/tooltip'
+
+initTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <I18nProvider>
+      <TooltipProvider delayDuration={200}>
+        <App />
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
+    </I18nProvider>
   </StrictMode>,
 )

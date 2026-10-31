@@ -1,0 +1,39 @@
+/** 中文语言包：键的结构以这里为准（英文包必须一一对应）。插值写 {name}。 */
+export const zh = {
+  brand: {
+    name: '墨卷',
+    tagline: '从文字到成片',
+  },
+  common: {
+    cancel: '取消',
+    close: '关闭',
+    retry: '重试',
+    loading: '读取中…',
+    help: '这是什么？',
+  },
+  theme: { label: '主题', system: '跟随系统', light: '浅色', dark: '深色' },
+  lang: { label: '语言' },
+  shell: {
+    newNovel: '新建小说',
+    openLocal: '打开本地 JSON',
+    admin: '管理',
+    backToShelf: '返回书架',
+    logout: '退出',
+    collapse: '收起侧边栏',
+    expand: '展开侧边栏',
+    serviceDown: '服务未连通',
+    noKey: '未配置密钥',
+    signedInAs: '已登录：{name}',
+  },
+  money: {
+    total: '合计',
+    spent: '已花',
+    reserved: '在跑预留',
+    after: '执行后累计',
+    budget: '上限',
+    over: '会超过上限，服务端会拒绝：先在设置里调高上限。',
+    changed: '金额已变为 {amount}，请重新确认。',
+    rateNote: '费率依据：{note}。实际以厂商控制台账单为准。',
+    rateUnknown: '厂商未注明',
+  },
+}
