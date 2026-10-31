@@ -280,7 +280,7 @@ must(!container.querySelector('.tlc__nodeedit'), '写回后收起输入框')
 await click(container.querySelectorAll('.tlc__shot')[0])
 const area = container.querySelector('.tlc__panel .ed__at textarea') as unknown as HTMLTextAreaElement
 must(!!area, '编辑态下右侧是本镜的编辑表单（与分镜页同一套，锁死规则沿用）')
-must(!!container.querySelector('.tlc__panel') && has('🔒'), '锁死字段照样标出')
+must(!!container.querySelector('.tlc__panel .lock'), '锁死字段照样标出（锁形图标）')
 await act(async () => {
   Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!.call(area, '画布上改的画面')
   area.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)

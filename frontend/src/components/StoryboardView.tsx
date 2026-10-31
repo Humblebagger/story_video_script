@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, Clapperboard, Download, Lock, Palette, PencilLine } from 'lucide-react'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
@@ -10,6 +11,9 @@ import { RenderView } from './RenderView'
 import { SourceView } from './SourceView'
 import type { Workbench } from './CanvasPanels'
 import { TimelineCanvas } from './TimelineCanvas'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 type Tab = 'shots' | 'assets' | 'source' | 'render' | 'json'
 
@@ -109,37 +113,40 @@ export function StoryboardView({
         <div className="sb__title">
           <h2>{meta?.title ?? '未命名'}</h2>
           {source?.chapter && <span className="sb__chapter">{source.chapter}</span>}
-          <span className="tag tag--ver">schema {meta?.schema_version}</span>
-          <span className="tag">{label(FIDELITY_MODE, meta?.fidelity_mode)}</span>
-          <span className="tag">{label(NARRATION_MODE, meta?.narration?.mode)}</span>
-          <span className="tag">{meta?.video?.aspect_ratio}</span>
+          <span className="sb__badges">
+            <Badge variant="secondary" className="font-mono font-normal">schema {meta?.schema_version}</Badge>
+            <Badge variant="secondary" className="font-normal">{label(FIDELITY_MODE, meta?.fidelity_mode)}</Badge>
+            <Badge variant="secondary" className="font-normal">{label(NARRATION_MODE, meta?.narration?.mode)}</Badge>
+            <Badge variant="secondary" className="font-normal tabular-nums">{meta?.video?.aspect_ratio}</Badge>
+          </span>
 
           <div className="sb__acts">
             {!preview && (
-              <button
-                className={`btn btn--sm${editing ? '' : ' btn--ghost'}`}
-                onClick={() => setEditing((v) => !v)}
-              >
+              <Button size="sm" variant={editing ? 'default' : 'outline'}
+                      onClick={() => setEditing((v) => !v)}>
+                {editing ? <Check /> : <PencilLine />}
                 {editing ? '完成编辑' : '编辑分镜'}
-              </button>
+              </Button>
             )}
             {canSave && !preview && (
-              <button
-                className="btn btn--sm"
+              <Button
+                size="sm"
                 id="storyboard-save"
                 disabled={!dirty || saving}
                 onClick={onSave}
               >
                 {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
-              </button>
+              </Button>
             )}
-            <button className="btn btn--sm btn--ghost" onClick={() => setCanvas(true)}
+            <Button size="sm" variant="ghost" onClick={() => setCanvas(true)}
                     title="按视频时间铺开：集、场景、镜头、各角色的动作顺序、旁白台词、BGM 情绪">
+              <Clapperboard />
               时间轴画布
-            </button>
-            <button className="btn btn--sm btn--ghost" onClick={() => download(doc)}>
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => download(doc)}>
+              <Download />
               下载 JSON
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -154,13 +161,13 @@ export function StoryboardView({
           <p className="sb__editnote">
             编辑权只开在「呈现」一侧：分镜可改景别 / 运镜 / 时长 / 画面描述 / 氛围 / 音效 / 转场 / 角色表演，
             <b>资产卡</b>可改名称 / 别名 / 外貌 / 服装 / 状态 / 描述。
-            🔒 锁死的是原文句子、溯源引用、推导标记、台词与旁白文本，以及被跨引用的各级 ID——
+            <Lock size={12} aria-label="锁定" />锁死的是原文句子、溯源引用、推导标记、台词与旁白文本，以及被跨引用的各级 ID——
             改了就通不过后端的 lint 与保真校验。
             {!canSave && '　本地打开的 JSON 不入库，改完请下载。'}
           </p>
         )}
 
-        <div className="stats">
+        <div className="stats grid grid-cols-3 gap-2 md:grid-cols-6">
           <Stat n={idx.stats.units} k="原文句" />
           <Stat n={idx.stats.episodes} k="集" />
           <Stat n={idx.stats.shots} k="镜头" />
@@ -171,21 +178,29 @@ export function StoryboardView({
         </div>
 
         {meta?.style?.style_prefix && (
-          <p className="sb__style">🎨 {meta.style.style_prefix}</p>
+          <p className="sb__style"><Palette size={14} aria-hidden />{meta.style.style_prefix}</p>
         )}
       </header>
 
-      <nav className="tabs">
-        {TABS.filter(([id]) => !preview || id !== 'render').map(([id, name]) => (
-          <button
-            key={id}
-            className={`tabs__btn${tab === id ? ' is-on' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {name}
-          </button>
-        ))}
-      </nav>
+      <div className="sb__bar">
+        <nav className="inline-flex shrink-0 rounded-lg bg-muted p-1" aria-label="分镜视图">
+          {TABS.filter(([id]) => !preview || id !== 'render').map(([id, name]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={tab === id}
+              className={cn(
+                'tabs__btn rounded-md border-0 px-3 py-1.5 text-sm text-muted-foreground',
+                'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
+                tab === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
+              )}
+              onClick={() => setTab(id)}
+            >
+              {name}
+            </button>
+          ))}
+        </nav>
+      </div>
 
       {tab === 'shots' && (
         <div className="eps">

@@ -1,1 +1,5 @@
 /* 时间轴画布：泳道、侧栏、静帧、就地编辑、选区、预览窗。只用新设计变量。 */
+
+/* 画布侧栏的编辑页复用分镜页的镜头卡，去掉卡片外框（随 Task 2 从 index.css 搬来，组件层才压得过 storyboard.css） */
+.tlc__panel--edit .shot,
+.tlc__panel--edit .shot:hover { border: none; box-shadow: none; padding: 0; margin: 0; background: transparent; }

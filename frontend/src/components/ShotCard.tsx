@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { ArrowRight, Clock, Cloud, Lock, MapPin, Mic, Sparkles, Volume2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   addBeat, attachCard, detachCard, isAttached, removeBeat, setConstraints,
   setReferenceAssets, setVariant, splitList, updateBeat,
@@ -153,10 +155,6 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
   }
 
   const cam = shot.camera
-  const camText = [
-    cam?.movement && label(CAMERA_MOVEMENT, cam.movement),
-    cam?.angle && label(CAMERA_ANGLE, cam.angle),
-  ].filter(Boolean).join(' · ')
 
   const place = shot.location_ref
     ? idx.assetName(shot.location_ref) +
@@ -196,14 +194,15 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
           </>
         ) : (
           <>
-            <span className="shot__dur">{shot.duration_sec}s</span>
-            <span className="tag tag--size">{label(SHOT_SIZE, shot.shot_size)}</span>
-            {camText && <span className="tag">{camText}</span>}
-            {shot.transition_out && (
-              <span className="tag tag--ghost">→ {label(TRANSITION, shot.transition_out)}</span>
-            )}
+            <span className="chip">{label(SHOT_SIZE, shot.shot_size)}</span>
+            {cam?.movement && <span className="chip">{label(CAMERA_MOVEMENT, cam.movement)}</span>}
+            {cam?.angle && <span className="chip">{label(CAMERA_ANGLE, cam.angle)}</span>}
+            <span className="chip chip--mono shot__dur">{shot.duration_sec}s</span>
           </>
         )}
+        <span className={`deriv deriv--${shot.source?.derivation ?? 'explicit'}`}>
+          {label(DERIVATION, shot.source?.derivation)}
+        </span>
       </header>
 
       {editing ? (
@@ -234,9 +233,9 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       ) : (
         (place || shot.time_of_day || shot.weather) && (
           <div className="shot__place">
-            {place && <span>📍 {place}</span>}
-            {shot.time_of_day && <span>🕰 {label(TIME_OF_DAY, shot.time_of_day)}</span>}
-            {shot.weather && <span>☁ {shot.weather}</span>}
+            {place && <span><MapPin size={12} aria-hidden />{place}</span>}
+            {shot.time_of_day && <span><Clock size={12} aria-hidden />{label(TIME_OF_DAY, shot.time_of_day)}</span>}
+            {shot.weather && <span><Cloud size={12} aria-hidden />{shot.weather}</span>}
           </div>
         )
       )}
@@ -278,7 +277,21 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       ) : (
         <>
           <p className="shot__action">{shot.action}</p>
-          {shot.atmosphere && <p className="shot__atmo">{shot.atmosphere}</p>}
+          {(shot.atmosphere || !!shot.sfx?.length || shot.transition_out) && (
+            <div className="shot__aux">
+              {shot.atmosphere && (
+                <p className="shot__atmo"><Sparkles size={12} aria-hidden />{shot.atmosphere}</p>
+              )}
+              {!!shot.sfx?.length && (
+                <p className="shot__sfx"><Volume2 size={12} aria-hidden />{shot.sfx.join(' / ')}</p>
+              )}
+              {shot.transition_out && (
+                <p className="shot__trans">
+                  <ArrowRight size={12} aria-hidden />转场：{label(TRANSITION, shot.transition_out)}
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -406,10 +419,10 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       {editing && (
         <div className="ed__attach">
           <span className="ed__attachbox">
-            <button type="button" className="btn btn--sm btn--ghost"
+            <Button type="button" size="sm" variant="outline"
                     onClick={() => setPick(pick?.mode === 'attach' ? null : { mode: 'attach' })}>
               ＋ 挂卡
-            </button>
+            </Button>
             {pick?.mode === 'attach' && (
               <span className="cpick__wrap">
                 <input
@@ -428,18 +441,18 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
             )}
           </span>
 
-          <button type="button" className="btn btn--sm btn--ghost"
+          <Button type="button" size="sm" variant="outline"
                   title="把这个镜头拆成几拍：同一个不切的长镜头里，情绪与灯光逐级推进"
                   onClick={() => onChange(addBeat(shot))}>
             {shot.beats?.length ? '＋ 加一拍' : '拆成分镜内阶段'}
-          </button>
+          </Button>
 
           <span className="ed__attachbox">
-            <button type="button" className="btn btn--sm btn--ghost"
+            <Button type="button" size="sm" variant="outline"
                     title="出图时拿哪几张卡垫图——直接决定形象锁不锁得住"
                     onClick={() => setPick(pick?.mode === 'refs' ? null : { mode: 'refs' })}>
               垫图 {shot.prompts?.reference_assets?.length || 0}
-            </button>
+            </Button>
             {pick?.mode === 'refs' && (
               <CardPicker
                 options={options} active={active} onActive={setActive}
@@ -475,44 +488,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
         </div>
       )}
 
-      {!!shot.dialogue?.length && (
-        <div className="lines">
-          {shot.dialogue.map((d, i) => (
-            <p className="line line--dia" key={i}>
-              <span className="line__who">
-                {d.character_ref ? idx.assetName(d.character_ref) : label(DIALOGUE_TYPE, d.type)}
-              </span>
-              <span className="line__text">{d.text}</span>
-              {editing ? (
-                <input
-                  className="ed ed--slim"
-                  placeholder="情绪/语气"
-                  value={d.emotion ?? ''}
-                  onChange={(e) => onChange({
-                    dialogue: shot.dialogue!.map((x, j) =>
-                      j === i ? { ...x, emotion: e.target.value || undefined } : x),
-                  })}
-                />
-              ) : (
-                d.emotion && <span className="line__emo">{d.emotion}</span>
-              )}
-              {d.verbatim === false && <span className="tag tag--warn">非原文</span>}
-            </p>
-          ))}
-        </div>
-      )}
-
-      {shot.narration?.text && (
-        <div className="lines">
-          <p className="line line--nar">
-            <span className="line__who">旁白</span>
-            <span className="line__text">{shot.narration.text}</span>
-            {editing && <span className="lock" title="旁白取自原文，改动会破坏保真校验">🔒</span>}
-          </p>
-        </div>
-      )}
-
-      {editing ? (
+      {editing && (
         <input
           className="ed"
           placeholder="音效（多条用 / 分隔）"
@@ -522,14 +498,53 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
             onChange({ sfx: list.length ? list : undefined })
           }}
         />
-      ) : (
-        !!shot.sfx?.length && <p className="shot__sfx">🔊 {shot.sfx.join(' / ')}</p>
+      )}
+
+      {(!!shot.dialogue?.length || !!shot.narration?.text) && (
+        <div className="shot__voice">
+          {!!shot.dialogue?.length && (
+            <div className="lines">
+              {shot.dialogue.map((d, i) => (
+                <p className="line line--dia" key={i}>
+                  {d.character_ref && <span className="line__who">{idx.assetName(d.character_ref)}</span>}
+                  {d.type && <span className="chip">{label(DIALOGUE_TYPE, d.type)}</span>}
+                  <span className="line__text">{d.text}</span>
+                  {editing ? (
+                    <input
+                      className="ed ed--slim"
+                      placeholder="情绪/语气"
+                      value={d.emotion ?? ''}
+                      onChange={(e) => onChange({
+                        dialogue: shot.dialogue!.map((x, j) =>
+                          j === i ? { ...x, emotion: e.target.value || undefined } : x),
+                      })}
+                    />
+                  ) : (
+                    d.emotion && <span className="line__emo">{d.emotion}</span>
+                  )}
+                  {d.verbatim === false && <span className="chip chip--warn">非原文</span>}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {shot.narration?.text && (
+            <div className="lines">
+              <p className="line line--nar">
+                <span className="line__who"><Mic size={12} aria-hidden />旁白</span>
+                <span className="line__text">{shot.narration.text}</span>
+                {editing && (
+                  <span className="lock" title="旁白取自原文，改动会破坏保真校验">
+                    <Lock size={12} aria-label="锁定" />
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
       )}
 
       <footer className="shot__foot">
-        <span className={`deriv deriv--${shot.source?.derivation ?? 'explicit'}`}>
-          {label(DERIVATION, shot.source?.derivation)}
-        </span>
         {shot.source?.unit_refs?.map((u) => (
           <button
             className="uref"
@@ -541,7 +556,11 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
             {u}
           </button>
         ))}
-        {editing && <span className="lock" title="溯源引用与推导标记锁死，保证产物仍可通过校验">🔒 溯源锁定</span>}
+        {editing && (
+          <span className="lock" title="溯源引用与推导标记锁死，保证产物仍可通过校验">
+            <Lock size={12} aria-hidden />溯源锁定
+          </span>
+        )}
         {shot.source?.note && <span className="shot__note">{shot.source.note}</span>}
       </footer>
     </article>
