@@ -39,3 +39,11 @@ def _fake():
 
 
 register("fake", _fake)
+
+
+def _seedance():
+    from render.providers.seedance import Seedance
+    return Seedance.from_env()
+
+
+register("seedance", _seedance)
