@@ -57,47 +57,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .app { min-height: 100vh; }
 
-.top {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 12px 24px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
-}
-
-.top__brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.top h1 { font-size: 17px; letter-spacing: .02em; }
-.top__sub { color: var(--faint); font-size: 12.5px; }
-.top__right { display: flex; align-items: center; gap: 12px; }
-
 .svc { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 .svc em { color: var(--danger); font-style: normal; }
 .svc--down { color: var(--danger); }
 
-.shell {
-  display: grid;
-  grid-template-columns: 262px minmax(0, 1fr);
-  align-items: start;
-}
-
 .main {
   min-width: 0;
   max-width: 1080px;
-  padding: 24px;
+  margin: 0 auto;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-@media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
 }
 
 /* ---------- 历史记录侧栏 ---------- */
@@ -964,23 +935,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- 顶栏导航与当前用户 ---------- */
 
-.top__nav { display: flex; gap: 2px; margin-left: 8px; }
-.top__navbtn {
-  padding: 5px 14px; border: 1px solid transparent; border-radius: 999px;
-  background: none; color: var(--muted); cursor: pointer; font-size: 13px;
-}
-.top__navbtn:hover { color: var(--text); }
-.top__navbtn.is-on {
-  background: var(--accent-soft); color: var(--accent);
-  border-color: var(--accent); font-weight: 600;
-}
 
-.who { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; }
-.who__out {
-  border: 1px solid var(--line); border-radius: 6px; background: none;
-  color: var(--faint); cursor: pointer; font-size: 11.5px; padding: 2px 8px;
-}
-.who__out:hover { color: var(--danger); border-color: var(--danger); }
 
 /* ---------- 资产库管理页 ---------- */
 

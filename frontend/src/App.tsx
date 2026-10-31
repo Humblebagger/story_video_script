@@ -6,6 +6,7 @@ import {
 } from './api'
 import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
 import type { User } from './auth'
+import { AppShell } from './components/shell/AppShell'
 import { AdminView } from './components/admin/AdminView'
 import { ChapterPage } from './components/ChapterPage'
 import { JobPanel } from './components/JobPanel'
@@ -436,50 +437,31 @@ export default function App() {
     || (!!job && RUNNING.includes(job.status)))
 
   return (
-    <div className="app">
-      <header className="top">
-        <div className="top__brand">
-          <h1>小说 → 分镜 IR</h1>
-        </div>
-        <div className="top__right">
-          <button className="btn btn--sm btn--ghost" onClick={() => fileRef.current?.click()}>
-            打开本地 JSON
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) void openLocal(f)
-              e.target.value = ''
-            }}
-          />
-          {svcDown
-            ? <span className="svc svc--down">服务未连通</span>
-            : svc && (
-                <span className="svc">
-                  {svc.model}
-                  {!svc.api_key_configured && <em> · 未配置密钥</em>}
-                </span>
-              )}
-          {user.role === 'admin' && (
-            <button className="btn btn--sm btn--ghost" onClick={() => setAdminOpen((v) => !v)}>
-              {adminOpen && user.role === 'admin' ? '返回书架' : '管理'}
-            </button>
-          )}
-          <span className="who" title={`已登录：${user.username}`}>
-            {user.username}
-            <button className="who__out" onClick={logout}>退出</button>
-          </span>
-        </div>
-      </header>
-
-      {adminOpen && user.role === 'admin' ? (
-        <AdminView me={user} onBack={() => setAdminOpen(false)} />
-      ) : (
-        <div className="shell">
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) void openLocal(f)
+          e.target.value = ''
+        }}
+      />
+      <AppShell
+        username={user.username}
+        isAdmin={user.role === 'admin'}
+        adminOpen={adminOpen && user.role === 'admin'}
+        onToggleAdmin={() => setAdminOpen((v) => !v)}
+        onLogout={logout}
+        onNewNovel={newNovel}
+        onOpenLocal={() => fileRef.current?.click()}
+        crumbs={adminOpen && user.role === 'admin' ? []
+          : [novel?.title, chapter?.title, docVid ?? undefined].filter((x): x is string => !!x)}
+        service={{ down: svcDown, model: svc?.model, noKey: !!svc && !svc.api_key_configured }}
+        viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
+        sidebar={adminOpen && user.role === 'admin' ? null : (
           <NovelSidebar
             novels={novels}
             novel={novel}
@@ -493,8 +475,12 @@ export default function App() {
             onNewNovel={newNovel}
             onNewChapter={() => void newChapter()}
           />
-
-          <main className="main">
+        )}
+      >
+        {adminOpen && user.role === 'admin' ? (
+          <AdminView me={user} onBack={() => setAdminOpen(false)} />
+        ) : (
+          <div className="main">
             {!novel && !doc && !job && (
               <NewNovelForm disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
             )}
@@ -564,9 +550,9 @@ export default function App() {
                 } : null}
               />
             )}
-          </main>
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+      </AppShell>
+    </>
   )
 }

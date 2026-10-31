@@ -742,7 +742,7 @@ console.log('12b. 管理入口 → 管理员进出后台 / 401 后换普通用�
 
 // 13. 从零建小说再设定人物——「先设定人物场景再去转换」是常见用法
 await type(field('小说标题'), '鲍勃的新书', false)
-await click(findByText('button', '建小说'))
+await click(btn('建小说')!)       // 精确匹配：外壳里还有一个「新建小说」按钮
 await settle(150)
 must(shelf('bob').length === 1 && has('《鲍勃的新书》'), '不导入原文也能建小说，建完打开小说页')
 await click(findByText('button', '资产库'))
