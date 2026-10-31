@@ -99,4 +99,28 @@ export const zh = {
     tip: '每个账号的小说与资产库互相隔离；密码以 PBKDF2 哈希存储，不保存明文。',
     expired: '登录已过期，请重新登录',
   },
+  flow: {
+    primary: {
+      saveText: '保存原文',
+      next: '下一步',
+      generate: '生成分镜',
+      regenerate: '重新生成（新版本）',
+      generating: '生成中…',
+      save: '保存修改',
+      startFilm: '去出片（先切段，不花钱）',
+      tryOne: '先试一段（约 {amount}）',
+      renderRest: '出剩余 {count} 段（约 {amount}）',
+      viewFilm: '查看出片',
+      compose: '去配音合成（配音约 {amount}）',
+    },
+    block: {
+      noText: '还没有原文：先粘贴或读取本章原文',
+      textDirty: '原文有没保存的修改：先保存原文',
+      converting: '正在生成，完成后会自动停到下一步',
+      noVersion: '还没有生成成功的分镜',
+      verify: '完整性检查没通过：按检查结果修改后保存',
+      dirty: '有未保存的修改：先保存',
+      noFilm: '还没有出片：先完成第 4 步',
+    },
+  },
 }

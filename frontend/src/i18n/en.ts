@@ -101,4 +101,28 @@ export const en: Messages = {
     tip: 'Each account’s novels and assets are isolated; passwords are stored as PBKDF2 hashes, never in plain text.',
     expired: 'Your session expired. Please sign in again.',
   },
+  flow: {
+    primary: {
+      saveText: 'Save text',
+      next: 'Next',
+      generate: 'Generate storyboard',
+      regenerate: 'Regenerate (new version)',
+      generating: 'Generating…',
+      save: 'Save changes',
+      startFilm: 'Start rendering (splitting is free)',
+      tryOne: 'Try one clip (≈ {amount})',
+      renderRest: 'Render {count} remaining (≈ {amount})',
+      viewFilm: 'View render',
+      compose: 'Voice & mix (voice ≈ {amount})',
+    },
+    block: {
+      noText: 'No text yet: paste or load this chapter first',
+      textDirty: 'The text has unsaved edits: save it first',
+      converting: 'Generating — you’ll be moved to the next step when it’s done',
+      noVersion: 'No successful storyboard yet',
+      verify: 'Integrity check failed: fix the issues below and save',
+      dirty: 'You have unsaved changes: save first',
+      noFilm: 'Nothing rendered yet: finish step 4 first',
+    },
+  },
 }
