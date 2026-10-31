@@ -478,7 +478,7 @@ export default function App() {
       // 用户会一路改到点渲染时才被 422 挡住，那时早忘了改过什么。
       setVerification(res.verification)
       if (res.status === 'draft_invalid') {
-        setAlert('已保存，但这份分镜没通过服务端复验，暂时不能采用、不能进渲染（详见下方报告）')
+        setAlert('已保存，但这份分镜没通过完整性检查，暂时不能采用、不能进渲染（详见下方报告）')
       }
       savedDoc.current = doc
       setDirty(false)

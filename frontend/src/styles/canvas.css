@@ -14,8 +14,8 @@
 .tlc__main { position: relative; flex: 1; min-width: 0; height: 100%; overflow: hidden; }
 .tlc__svg { display: block; width: 100%; height: 100%; cursor: grab; }
 .tlc__svg:active { cursor: grabbing; }
-/* 成片泳道的字色还在旧样式里（film.css 接手前），组件层压得过旧层，所以这里绕开它 */
-.tlc__svg text:not(.tlc__clip text) { font-size: 11px; fill: var(--ui-muted-foreground); pointer-events: none; }
+/* 成片泳道的字色在 film.css（同样的优先级，film.css 在后面，赢） */
+.tlc__svg text { font-size: 11px; fill: var(--ui-muted-foreground); pointer-events: none; }
 
 /* ---------- 底部悬浮胶囊工具条（外观的圆角、底色、模糊、阴影在组件上用工具类） ---------- */
 

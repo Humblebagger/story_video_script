@@ -42,7 +42,7 @@ export function composeBlockers(p: ComposePreview, s: FilmSession, v: VoicesInfo
     out.push(`还有 ${p.missing_voices.length} 个说话人没选音色：${p.missing_voices.map((k) => speakerName(v, k)).join('、')}`)
   }
   if (!o.draft && p.no_video.length) {
-    out.push(`${p.no_video.length} 段还没有可用的视频：打开「草稿合成」可用关键帧补位`)
+    out.push(`${p.no_video.length} 段还没有可用的视频：打开「没出好的段先用图片代替」可用关键帧补位`)
   }
   if (s.spent_cny + p.tts_cny > s.budget_cny + 1e-9) {
     out.push(`配音约 ${yuan(p.tts_cny)}，会超过上限 ${yuan(s.budget_cny)}：先在设置里调高上限`)
@@ -53,7 +53,7 @@ export function composeBlockers(p: ComposePreview, s: FilmSession, v: VoicesInfo
 export function finalText(f: FinalState): string {
   if (f.state === 'queued' || f.state === 'running') return `合成中 · ${f.step || '开始'}`
   if (f.state === 'failed') return `合成失败：${f.error ?? '原因不明'}`
-  return f.stale ? '成片已过期：分镜、音色、BGM 或采用的视频改过，重新合成才会更新' : '成片是最新的'
+  return f.stale ? '内容改过，需要重新合成：分镜、音色、BGM 或采用的视频有变化' : '成片是最新的'
 }
 
 export interface FinalEpisode { episode: string; video?: string; srt?: string }

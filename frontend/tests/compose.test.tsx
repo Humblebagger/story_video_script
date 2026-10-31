@@ -1,6 +1,6 @@
 /** 配音与合成：纯计算（能不能合成及原因、状态文字、成片分组、对齐说明、选曲参考、BGM 类型、按钮文字、重读时机），
  *  以及「出片」页签里合成区的界面回归：缺音色拦截与选音色、没装 ffmpeg 的提示、配音金额先确认与 409 换新金额、
- *  合成中、完成后播放下载与报告、过期、失败、草稿合成开关、BGM 上传删除、未保存拦截（保存后重读）、不配音的模式，
+ *  合成中、完成后播放下载与报告、过期、失败、「先用图片代替」开关、BGM 上传删除、未保存拦截（保存后重读）、不配音的模式，
  *  以及操作报错不被重读清掉、确认框开着时锁住会改金额的操作、音色表读取失败不挡预览、预览读取失败可重试。
  *  桩后端在内存里模拟合成预览（后台合成的推进由测试直接改状态）。跑法：npm test
  */
@@ -11,7 +11,8 @@ const win = new Window({ url: 'http://localhost:5173' })
 const g = globalThis as Record<string, unknown>
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement',
                  'Element', 'Node', 'Event', 'CustomEvent', 'KeyboardEvent', 'getComputedStyle',
-                 'localStorage', 'sessionStorage']) {
+                 'localStorage', 'sessionStorage', 'PointerEvent', 'MouseEvent', 'matchMedia', 'ResizeObserver', 'DOMRect',
+                 'MutationObserver']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k],
     writable: true, configurable: true,
@@ -49,13 +50,13 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   const base = { dirty: false, gate: null, draft: true }
 
   must(composeBlockers(P, S, V, base).join('|') === '还有 1 个说话人没选音色：路人', '缺音色写说话人名字')
-  must(composeBlockers({ ...P, missing_voices: [] }, S, V, base).length === 0, '草稿合成时缺段不拦')
+  must(composeBlockers({ ...P, missing_voices: [] }, S, V, base).length === 0, '没出好的段先用图片代替时缺段不拦')
   must(composeBlockers({ ...P, missing_voices: [] }, S, V, { ...base, draft: false })[0]
-    .startsWith('1 段还没有可用的视频'), '关掉草稿合成时缺段要拦')
+    .startsWith('1 段还没有可用的视频'), '关掉「先用图片代替」时缺段要拦')
   const all = composeBlockers({ ...P, tools: false, tts_cny: 500, missing_voices: [] },
     { ...S, clips: [{ ...S.clips[0], state: 'running' }] } as FilmSession, V,
-    { dirty: true, gate: '分镜未通过独立验证', draft: true })
-  must(all.length === 5 && all[0].includes('先保存再合成') && all[1].includes('分镜未通过独立验证')
+    { dirty: true, gate: '分镜没通过完整性检查', draft: true })
+  must(all.length === 5 && all[0].includes('先保存再合成') && all[1].includes('分镜没通过完整性检查')
     && all[2].includes('apt install ffmpeg') && all[3].includes('排队或生成中') && all[4].includes('超过上限'),
     `各种拦截按顺序列出：${all.join(' / ')}`)
   const busy: FinalState = { state: 'running', step: '混音 E01', files: [], report: null, error: null, detail: null }
@@ -67,7 +68,7 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   must(finalText(busy) === '合成中 · 混音 E01', '合成中写步骤')
   must(finalText({ ...busy, state: 'failed', error: '混音 E01 失败' }) === '合成失败：混音 E01 失败', '失败写原因')
   must(finalText({ ...busy, state: 'done', stale: false }) === '成片是最新的', '最新')
-  must(finalText({ ...busy, state: 'done', stale: true }).startsWith('成片已过期'), '过期')
+  must(finalText({ ...busy, state: 'done', stale: true }).startsWith('内容改过，需要重新合成'), '内容改过')
   const eps = finalEpisodes(['final/E01.mp4', 'final/E01.srt', 'final/E02.mp4', 'final/mix_report.json'])
   must(JSON.stringify(eps) === JSON.stringify([
     { episode: 'E01', video: 'final/E01.mp4', srt: 'final/E01.srt' }, { episode: 'E02', video: 'final/E02.mp4' }]),
@@ -250,9 +251,10 @@ const root = createRoot(container as unknown as HTMLElement)
 const settle = async (ms = 50) => {
   await act(async () => { await new Promise((r) => setTimeout(r, ms)) })
 }
-const has = (s: string) => container.innerHTML.includes(s)
+// 花钱确认框是 Radix 对话框，挂在 document.body 下，所以文字与按钮都在整个 body 里找
+const has = (s: string) => win.document.body.innerHTML.includes(s)
 const button = (text: string) => {
-  const b = [...container.querySelectorAll('button')].find((x) => (x.textContent ?? '').includes(text))
+  const b = [...win.document.body.querySelectorAll('button')].find((x) => (x.textContent ?? '').includes(text))
   if (!b) throw new Error(`✗ 找不到按钮「${text}」`)
   return b as unknown as HTMLButtonElement
 }
@@ -320,7 +322,7 @@ nextConflict = 0.21
 n0 = calls.length
 await click(button('确认合成'))
 must(since(n0).includes('POST /compose {"expected_cny":0.18,"draft":true}'), '第一次带确认过的 ¥0.18')
-must(has('配音金额已变为 ¥0.21'), '金额变了要重新确认')
+must(has('金额已变为 ¥0.21'), '金额变了要重新确认')
 n0 = calls.length
 await click(button('确认合成（¥0.21）'))
 must(since(n0).includes('POST /compose {"expected_cny":0.21,"draft":true}'), '带新金额与草稿设置')
@@ -351,23 +353,23 @@ console.log('9. 完成后播放、下载与报告 ✓')
 // 10. 过期与失败：失败时写原因、ffmpeg 输出，并说明下面是上一次的成片
 preview.final = { ...preview.final, stale: true }
 await refresh()
-must(has('成片已过期'), '过期提示')
+must(has('内容改过，需要重新合成'), '内容改过提示')
 preview.final = { ...preview.final, state: 'failed', error: '混音 E01 失败（ffmpeg 退出码 1）',
                   detail: 'Invalid argument', stale: false }
 await refresh()
 must(has('合成失败：混音 E01 失败') && has('Invalid argument') && has('下面是上一次合成的成片'), '失败')
 console.log('10. 过期与失败 ✓')
 
-// 11. 草稿合成开关：关掉后按 draft=false 重读，缺段拦截；再打开恢复
+// 11. 「先用图片代替」开关：关掉后按 draft=false 重读，缺段拦截；再打开恢复
 const draftBox = container.querySelector('.compose__run input[type=checkbox]') as unknown as HTMLInputElement
 await act(async () => { draftBox.click() })
 await settle()
-must(calls.includes('GET /compose?draft=false'), '按关掉草稿合成重读')
-must(has('1 段还没有可用的视频') && composeBtn().disabled, '关掉草稿合成时缺段拦截')
+must(calls.includes('GET /compose?draft=false'), '按关掉「先用图片代替」重读')
+must(has('1 段还没有可用的视频') && composeBtn().disabled, '关掉「先用图片代替」时缺段拦截')
 await act(async () => { draftBox.click() })
 await settle()
 must(!has('1 段还没有可用的视频') && !composeBtn().disabled, '打开后恢复')
-console.log('11. 草稿合成开关 ✓')
+console.log('11. 「先用图片代替」开关 ✓')
 
 // 12. BGM：上传（按扩展名补类型）→ 已上传 → 删除；不是音频的不发请求
 const pick = async (name: string, type: string) => {
@@ -405,7 +407,7 @@ await click(composeBtn())
 must(since(n0).includes('POST /compose {"expected_cny":0,"draft":true}') && !has('确认合成'), '金额 0 不弹确认')
 console.log('14. 不配音的模式 ✓')
 
-// 15. 确认框开着：草稿合成、音色、BGM 都锁住；重读出的金额变了就换新金额；409 不带金额 → 关掉确认框、原因留着
+// 15. 确认框开着：「先用图片代替」、音色、BGM 都锁住；重读出的金额变了就换新金额；409 不带金额 → 关掉确认框、原因留着
 Object.assign(preview, { lines: 40, tts_chars: 600, tts_cny: 0.18, final: null, report: null })
 await refresh()
 await click(composeBtn())
@@ -417,7 +419,7 @@ must(draftNow.disabled && selects.length === 3 && selects.every((x) => x.disable
   '确认框开着时锁住会改金额的操作')
 preview.tts_cny = 0.2
 await refresh()
-must(has('配音金额已变为 ¥0.20') && has('确认合成（¥0.20）'), '重读出的金额变了：换新金额再确认')
+must(has('金额已变为 ¥0.20') && has('确认合成（¥0.20）'), '重读出的金额变了：换新金额再确认')
 nextPostFail = { status: 409, detail: { message: '音色刚被改过，请重新确认金额', expected_cny: null } }
 await click(button('确认合成'))
 await settle()

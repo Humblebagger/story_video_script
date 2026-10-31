@@ -1,1 +1,126 @@
 /* 出片与配音合成：成片泳道、出片与合成侧栏页。只用新设计变量。 */
+
+/* ---------- 成片泳道（SVG）与预览窗里的视频 ---------- */
+
+.tlc__clip { cursor: pointer; }
+.tlc__clip rect { fill: none; stroke: var(--border); stroke-dasharray: 4 3; }
+.tlc__clip text { font-size: 10px; fill: var(--ui-muted-foreground); pointer-events: none; }
+.tlc__clip--busy rect {
+  stroke: var(--warning); stroke-dasharray: none; animation: tlc-busy 1.2s ease-in-out infinite;
+}
+.tlc__clip--done rect {
+  fill: color-mix(in oklab, var(--success) 18%, transparent);
+  stroke: color-mix(in oklab, var(--success) 50%, transparent); stroke-dasharray: none;
+}
+.tlc__clip--done text { fill: var(--foreground); }
+.tlc__clip--failed rect { stroke: var(--destructive); stroke-dasharray: none; }
+.tlc__clip--failed text { fill: var(--destructive); }
+.tlc__clip--stale rect {
+  fill: color-mix(in oklab, var(--tone-inferred) 18%, transparent);
+  stroke: color-mix(in oklab, var(--tone-inferred) 60%, transparent); stroke-dasharray: 2 2;
+}
+.tlc__clip.is-sel rect { stroke-width: 2; }
+@keyframes tlc-busy { 50% { stroke-opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .tlc__clip--busy rect { animation: none; } }
+.tlc__pip video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.tlc__pipnote {
+  position: absolute; top: 8px; left: 8px; padding: 2px 8px; border-radius: calc(var(--ui-radius) - 4px);
+  background: rgb(0 0 0 / 0.6); color: #eee; font-size: 11px;
+}
+
+/* ---------- 侧栏「出片」页：每个分区一张卡 ---------- */
+
+.film { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.film p { margin: 0; }
+.film section { display: flex; flex-direction: column; gap: 8px; }
+.film__card {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card);
+}
+.film__settings summary { cursor: pointer; font-weight: 500; color: var(--foreground); }
+.film__settings[open] summary { margin-bottom: 4px; }
+.film__settings > .field { margin-top: 8px; }
+/* 设置表单控件：同 shadcn 的输入框外观 */
+.film .field { display: flex; flex-direction: column; gap: 4px; }
+.film .field > span { font-size: 12px; color: var(--ui-muted-foreground); }
+.film .field input, .film .field select, .compose__table select {
+  height: 32px; padding: 0 10px; border: 1px solid var(--input); border-radius: calc(var(--ui-radius) - 2px);
+  background: transparent; color: var(--foreground); font: inherit; font-size: 13px; outline: none;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.film .field input:focus-visible, .film .field select:focus-visible, .compose__table select:focus-visible {
+  border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent);
+}
+.film select option, .compose__table select option { background: var(--popover); color: var(--popover-foreground); }
+.film .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ui-muted-foreground); }
+.film .check input { accent-color: var(--primary); }
+
+.film__counts { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.film__count { font-size: 12px; color: var(--ui-muted-foreground); }
+.film__count--failed { color: var(--destructive); }
+.film__count--stale { color: var(--tone-inferred); }
+.film__money {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ui-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.film__bar { height: 6px; border-radius: 3px; background: var(--ui-muted); overflow: hidden; }
+.film__bar i { display: block; height: 100%; background: linear-gradient(100deg, var(--brand-from), var(--brand-to)); }
+
+/* 选中的一段：状态点 + 段号等宽 + 时长金额 */
+.film__clip > header { display: flex; flex-direction: column; gap: 2px; }
+.film__clip > header b { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 13px; }
+.film__clip > header span { font-size: 12px; color: var(--ui-muted-foreground); font-variant-numeric: tabular-nums; }
+.film__dot { flex: none; width: 8px; height: 8px; border-radius: 9999px; background: var(--ui-muted-foreground); }
+.film__dot--queued, .film__dot--running, .film__dot--downloading {
+  background: var(--warning); animation: film-pulse 2s ease-in-out infinite;
+}
+.film__dot--done, .film__dot--succeeded { background: var(--success); }
+.film__dot--failed { background: var(--destructive); }
+.film__dot--stale { background: var(--tone-inferred); }
+@keyframes film-pulse { 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .film__dot { animation: none !important; } }
+.film__shots { display: flex; flex-wrap: wrap; gap: 4px; }
+.film__line { font-size: 12px; color: var(--ui-muted-foreground); }
+.film__prompt {
+  white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; max-height: 30vh; overflow: auto;
+  background: var(--ui-muted); padding: 8px 10px; border-radius: calc(var(--ui-radius) - 2px); margin: 4px 0 0;
+}
+.film__dim { color: var(--ui-muted-foreground); opacity: 0.8; }
+.film__attempts, .film__rows { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.film__attempts td { padding: 3px 10px 3px 0; }
+.film__rows td { padding: 2px 8px 2px 0; }
+.film__attempts tr.is-chosen { font-weight: 600; }
+.film__rows { display: block; max-height: 30vh; overflow: auto; }
+.film__video { width: 100%; max-height: 40vh; background: #000; border-radius: 12px; }
+
+/* ---------- 配音与合成 ---------- */
+
+.compose { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
+.compose__head { display: flex; align-items: baseline; justify-content: space-between; }
+.compose h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.compose__box {
+  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card); padding: 10px 12px;
+}
+.compose__box summary { cursor: pointer; font-weight: 500; color: var(--foreground); }
+.compose__table { border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.compose__table td { padding: 4px 10px 4px 0; }
+.compose__table tr.is-missing td:first-child { color: var(--destructive); }
+.compose__ep { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.compose__eprow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.compose__curve { margin: 0; padding-left: 16px; font-size: 12px; color: var(--ui-muted-foreground); }
+.compose__run, .compose__final, .compose__play { display: flex; flex-direction: column; gap: 8px; }
+/* BGM 上传：label 套隐藏 input，外观同 Button outline / sm */
+.compose__upload, .compose__dl {
+  display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 12px;
+  border: 1px solid var(--input); border-radius: calc(var(--ui-radius) - 2px); background: var(--background);
+  color: var(--foreground); font-size: 13px; font-weight: 500; line-height: 1; cursor: pointer; text-decoration: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); transition: background-color 150ms ease-out;
+}
+.compose__upload:hover, .compose__dl:hover { background: var(--accent); color: var(--accent-foreground); }
+.compose__upload:has(input:disabled) { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+/* 下载视频是主动作，下载字幕是次要 */
+.compose__dl:not(.compose__dl--ghost) {
+  border-color: transparent; background: var(--primary); color: var(--primary-foreground);
+}
+.compose__dl:not(.compose__dl--ghost):hover { background: color-mix(in oklab, var(--primary) 90%, transparent); color: var(--primary-foreground); }
+.compose__play video { border-radius: 12px; }

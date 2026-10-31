@@ -63,7 +63,7 @@ export function laneText(c: FilmClip, now: number): string {
     case 'failed':
       return c.error ?? '失败'
     case 'stale':
-      return '已过期 · 仍可播放旧版'
+      return '内容改过 · 仍可播放旧版'
     default:
       return `${shortId(c.id)} · ${c.duration}s · 约 ${yuan(c.estimate_cny)}`
   }

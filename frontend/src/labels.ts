@@ -126,7 +126,7 @@ export const AUDIO_MODE: Record<AudioMode, string> = {
 
 export const FILM_STATE: Record<FilmClipState, string> = {
   planned: '未出片', queued: '排队中', running: '生成中', downloading: '下载中',
-  done: '已完成', failed: '失败', stale: '已过期',
+  done: '已完成', failed: '失败', stale: '内容改过',
 }
 
 export const ATTEMPT_STATE: Record<FilmAttempt['state'], string> = {

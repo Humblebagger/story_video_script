@@ -42,7 +42,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const accept = useCallback((s: FilmSession, passedGate = false) => {
     setSession(s)
     setStatus('ready')
-    if (s.gate) setGate(s.gate.ok ? null : (s.gate.message ?? '分镜未通过独立验证'))
+    if (s.gate) setGate(s.gate.ok ? null : (s.gate.message ?? '分镜没通过完整性检查'))
     else if (passedGate) setGate(null)
   }, [])
 

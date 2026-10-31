@@ -1,9 +1,11 @@
 /** 画布侧栏「出片」页：设置、前置检查、总览与主按钮、选中段详情、花钱前的确认框，最后是配音与合成（ComposePanel）。
  *
  *  花钱的按钮上都写着金额；批量和超过确认线的单段先弹确认（useFilm 决定发不发请求）。
- *  有未保存的改动或验证门没过时，所有出片按钮禁用并写明原因。 */
+ *  有未保存的改动或完整性检查没过时，所有出片按钮禁用并写明原因。 */
 import { useEffect, useState } from 'react'
 import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, label } from '../labels'
+import { Button } from '@/components/ui/button'
+import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
@@ -38,13 +40,13 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
     <div className="film">
       {film.error && <p className="tlc__kferr">{film.error}</p>}
       {blocked && <p className="tlc__notice">{blocked}</p>}
-      {film.confirm && s && <ConfirmBox s={s} film={film} blocked={blocked} />}
+      {s && <FilmConfirm s={s} film={film} blocked={blocked} />}
       {!s ? (
-        <section>
+        <section className="film__card">
           <p className="tlc__kfnote">按厂商能力把镜头切成段、组装提示词（不花钱）；先试一段，满意后再出剩余各段。</p>
-          <button className="btn btn--sm" disabled={!!blocked || film.busy} onClick={() => void film.create()}>
+          <Button size="sm" className="self-start" disabled={!!blocked || film.busy} onClick={() => void film.create()}>
             建立出片会话（不花钱）
-          </button>
+          </Button>
         </section>
       ) : (
         <>
@@ -70,7 +72,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const tried = s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))
   const otherProvider = !!draft.provider && draft.provider !== s.provider
   return (
-    <details className="film__settings" open={!tried}>
+    <details className="film__settings film__card" open={!tried}>
       <summary>
         设置 · {s.options.models[s.model]?.label ?? s.model} · {s.resolution} · {label(AUDIO_MODE, s.audio_mode)}
         {' '}· 上限 {yuan(s.budget_cny)}
@@ -122,12 +124,13 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
                onChange={(e) => setDraft({ ...draft, confirm_over_cny: Number(e.target.value) })} />
       </label>
       <p className="tlc__kfnote">
-        音色分配在配音与合成那一步做。改设置会按新设置重新切段（不花钱），已出的段标「过期」，旧视频仍可播。
+        音色分配在配音与合成那一步做。改设置会按新设置重新切段（不花钱），已出的段标「内容改过」，旧视频仍可播。
       </p>
-      <button className="btn btn--sm" disabled={!Object.keys(draft).length || flying || film.busy}
+      <Button size="sm" variant="outline" className="self-start"
+              disabled={!Object.keys(draft).length || flying || film.busy}
               onClick={() => void film.saveSettings(draft)}>
         应用设置
-      </button>
+      </Button>
       {flying && <p className="tlc__kfnote">有段在排队或生成中，等它们结束再改设置。</p>}
     </details>
   )
@@ -136,10 +139,10 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
 /** 前置检查：待核对的段、缺参考图的资产、被裁 / 截断的段 */
 function Precheck({ s, gateOk }: { s: FilmSession; gateOk: boolean }) {
   const p = precheck(s)
-  const passed = gateOk ? <p className="tlc__kfnote">验证门：已通过</p> : null
+  const passed = gateOk ? <p className="tlc__kfnote">完整性检查：已通过</p> : null
   if (!s.uncertain_count && !p.missing.length && !p.trimmed.length && !p.truncated.length) return passed
   return (
-    <section className="film__check">
+    <section className="film__check film__card">
       {passed}
       {!!s.uncertain_count && (
         <p className="tlc__kferr">
@@ -161,7 +164,7 @@ function Overview({ s, film, selected, blocked }: {
   const next = mainAction(s, selected)
   const used = Math.min(100, ((s.spent_cny + s.reserved_cny) / s.budget_cny) * 100)
   return (
-    <section className="film__overview">
+    <section className="film__overview film__card">
       <div className="film__counts">
         <b>{s.clips.length} 段</b>
         {Object.entries(s.counts).map(([k, n]) => (
@@ -177,14 +180,14 @@ function Overview({ s, film, selected, blocked }: {
       </div>
       <div className="film__bar" title="已花 + 在跑预留 占上限"><i style={{ width: `${used}%` }} /></div>
       {next.kind === 'try' && (
-        <button className="btn btn--sm" disabled={!!blocked || film.busy} onClick={() => void film.runClip(next.clip)}>
+        <Button size="sm" disabled={!!blocked || film.busy} onClick={() => void film.runClip(next.clip)}>
           先试这一段（{next.clip.id}，约 {yuan(next.clip.estimate_cny)}）
-        </button>
+        </Button>
       )}
       {next.kind === 'rest' && (
-        <button className="btn btn--sm" disabled={!!blocked || film.busy} onClick={film.runRest}>
+        <Button size="sm" disabled={!!blocked || film.busy} onClick={film.runRest}>
           出剩余 {next.count} 段（约 {yuan(next.cny)}）
-        </button>
+        </Button>
       )}
       {next.kind === 'none' && (
         <p className="tlc__kfnote">
@@ -208,9 +211,9 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
   const flying = inFlight(c)
   const redo = c.attempts.some((a) => a.state === 'succeeded')
   return (
-    <section className="film__clip">
+    <section className="film__clip film__card">
       <header>
-        <b>{c.id}</b>
+        <b><i className={`film__dot film__dot--${c.state}`} aria-hidden="true" />{c.id}</b>
         <span>{label(FILM_STATE, c.state)} · {c.duration}s · 约 {yuan(c.estimate_cny)}{c.truncated ? ' · ✂ 尾部截断' : ''}</span>
       </header>
       <div className="film__shots">
@@ -263,9 +266,9 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
         ? <video className="film__video" src={film.files[file]} controls autoPlay muted={c.mute_native} />
         : <p className="tlc__kfnote">读取视频…</p>)}
       <div className="tlc__kfacts">
-        <button className="btn btn--sm" disabled={!!blocked || flying || film.busy} onClick={() => void film.runClip(c)}>
+        <Button size="sm" disabled={!!blocked || flying || film.busy} onClick={() => void film.runClip(c)}>
           {flying ? label(FILM_STATE, c.state) : `${redo ? '重做这一段' : '出这一段'}（约 ${yuan(c.estimate_cny)}）`}
-        </button>
+        </Button>
         <label className="check" title="合成整章时这一段的视频原声静音">
           <input type="checkbox" checked={c.mute_native} disabled={film.busy}
                  onChange={(e) => void film.mute(c.id, e.target.checked)} />
@@ -276,38 +279,31 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
   )
 }
 
-/** 花钱前的确认：批量列出各段；合计、已花、在跑预留、执行后累计与上限；费率依据如实照抄 */
-function ConfirmBox({ s, film, blocked }: { s: FilmSession; film: Film; blocked: string | null }) {
-  const cf = film.confirm!
-  const rows = cf.kind === 'rest' ? batchSummary(s).rows : []
-  const after = Math.round((s.spent_cny + s.reserved_cny + cf.cny) * 100) / 100
-  const over = after > s.budget_cny + 1e-9
+/** 花钱前的确认（全站统一的 MoneyConfirm）：批量列出各段；金额变了、结果不明的提示放在明细里。
+ *  一直挂着、靠 open 开合，关闭时才有退出动画；没有确认时用占位值。 */
+function FilmConfirm({ s, film, blocked }: { s: FilmSession; film: Film; blocked: string | null }) {
+  const cf = film.confirm
+  const rows = cf?.kind === 'rest' ? batchSummary(s).rows : []
   return (
-    <section className="film__confirm" role="dialog" aria-label="确认出片金额">
-      <h4>{cf.kind === 'rest' ? `出剩余 ${rows.length} 段` : `出 ${cf.clipId}`}</h4>
-      {cf.kind === 'clip' && cf.uncertain && (
-        <p className="tlc__kferr">这一段结果不明：厂商那边可能还有任务在跑或已扣费，请到厂商控制台核对，确认没有生成再重做。</p>
+    <MoneyConfirm
+      open={!!cf}
+      title={cf?.kind === 'rest' ? `出剩余 ${rows.length} 段` : cf ? `出 ${cf.clipId}` : ''}
+      cny={cf?.cny ?? 0} spent={s.spent_cny} reserved={s.reserved_cny} budget={s.budget_cny}
+      changed={cf?.changed} rateNote={s.options.rate_note} action="确认出片"
+      blocked={!!blocked} busy={film.busy}
+      onConfirm={() => void film.confirmNow()} onCancel={film.cancelConfirm}>
+      {cf?.kind === 'clip' && cf.uncertain && (
+        <p className="text-destructive">这一段结果不明：厂商那边可能还有任务在跑或已扣费，请到厂商控制台核对，确认没有生成再重做。</p>
       )}
-      {cf.changed && <p className="tlc__kferr">预估金额已变为 {yuan(cf.cny)}，请重新确认。</p>}
       {!!rows.length && (
-        <table className="film__rows">
+        <table className="film__rows w-full text-xs tabular-nums">
           <tbody>
-            {rows.map((r) => <tr key={r.id}><td>{r.id}</td><td>{r.duration}s</td><td>{yuan(r.cny)}</td></tr>)}
+            {rows.map((r) => (
+              <tr key={r.id}><td className="font-mono">{r.id}</td><td>{r.duration}s</td><td className="text-right">{yuan(r.cny)}</td></tr>
+            ))}
           </tbody>
         </table>
       )}
-      <p>
-        合计 <b>{yuan(cf.cny)}</b> · 已花 {yuan(s.spent_cny)}
-        {s.reserved_cny > 0 ? ` · 在跑预留 ${yuan(s.reserved_cny)}` : ''} · 执行后累计 {yuan(after)} / 上限 {yuan(s.budget_cny)}
-      </p>
-      {over && <p className="tlc__kferr">会超过上限，服务端会拒绝：先在设置里调高上限。</p>}
-      <p className="tlc__kfnote">费率依据：{s.options.rate_note || '厂商未注明'}。实际以厂商控制台账单为准。</p>
-      <div className="tlc__kfacts">
-        <button className="btn btn--sm" disabled={film.busy || over || !!blocked} onClick={() => void film.confirmNow()}>
-          确认出片（{yuan(cf.cny)}）
-        </button>
-        <button className="btn btn--sm btn--ghost" onClick={film.cancelConfirm}>取消</button>
-      </div>
-    </section>
+    </MoneyConfirm>
   )
 }

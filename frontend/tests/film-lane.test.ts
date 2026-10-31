@@ -56,7 +56,7 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
   const done = clip('E01-C03', [], { state: 'done', attempts: [{ ...ok, state: 'failed', file: null }, ok], chosen: 1 })
   must(laneKind(done) === 'done' && laneText(done, now) === 'C03 · 第 2 次 · ¥7.50', '已完成写第几次与费用')
   must(laneText(clip('x', [], { state: 'failed', error: '内容审核未通过' }), now) === '内容审核未通过', '失败写原因')
-  must(laneText(clip('x', [], { state: 'stale', attempts: [ok], chosen: 0 }), now) === '已过期 · 仍可播放旧版', '过期')
+  must(laneText(clip('x', [], { state: 'stale', attempts: [ok], chosen: 0 }), now) === '内容改过 · 仍可播放旧版', '内容改过')
   const t = laneTitle(clip('E01-C04', ['S1'], { dropped_refs: ['P01'], truncated: true }))
   must(t.includes('⚠') && t.includes('P01') && t.includes('✂'), '悬停列出被裁参考图与截断')
   must(chosenAttempt(done) === ok, '采用的那次')

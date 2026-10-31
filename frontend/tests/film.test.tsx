@@ -10,7 +10,8 @@ const win = new Window({ url: 'http://localhost:5173' })
 const g = globalThis as Record<string, unknown>
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement',
                  'Element', 'Node', 'Event', 'CustomEvent', 'KeyboardEvent', 'getComputedStyle',
-                 'localStorage', 'sessionStorage']) {
+                 'localStorage', 'sessionStorage', 'PointerEvent', 'MouseEvent', 'matchMedia', 'ResizeObserver', 'DOMRect',
+                 'MutationObserver']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k],
     writable: true, configurable: true,
@@ -28,7 +29,7 @@ const doc: Storyboard = JSON.parse(
 
 /* ---------- 桩后端：内存里的出片会话 ---------- */
 const R = '/novels/n1/chapters/c1/versions/v1/render'
-const GATE = '分镜未通过独立验证，禁止进入付费渲染'
+const GATE = '分镜没通过完整性检查，禁止进入付费渲染'
 const IN_FLIGHT = ['queued', 'running', 'downloading']
 let film: FilmSession | null = null
 /** 每次出片请求记一行：`方法 子路径 请求体` */
@@ -184,9 +185,10 @@ const root = createRoot(container as unknown as HTMLElement)
 const settle = async (ms = 50) => {
   await act(async () => { await new Promise((r) => setTimeout(r, ms)) })
 }
-const has = (s: string) => container.innerHTML.includes(s)
+// 花钱确认框是 Radix 对话框，挂在 document.body 下，所以文字与按钮都在整个 body 里找
+const has = (s: string) => win.document.body.innerHTML.includes(s)
 const button = (text: string) => {
-  const b = [...container.querySelectorAll('button')].find((x) => (x.textContent ?? '').includes(text))
+  const b = [...win.document.body.querySelectorAll('button')].find((x) => (x.textContent ?? '').includes(text))
   if (!b) throw new Error(`✗ 找不到按钮「${text}」`)
   return b as unknown as HTMLButtonElement
 }
@@ -260,14 +262,15 @@ console.log('3. 出完 → 填色与缩略图 ✓')
 const n = film!.clips.length - 1
 await click(button(`出剩余 ${n} 段`))
 must(has('确认出片') && has('费率依据：假厂商'), '弹出确认框、写费率依据')
-must(container.querySelectorAll('.film__rows tr').length === n, '确认框列出各段')
+const dlg = () => win.document.body.querySelector('[data-testid="money-confirm"]')
+must(!!dlg() && dlg()!.querySelectorAll('.film__rows tr').length === n, '确认框列出各段')
 must(!calls.some((c) => c.startsWith('POST /run')), '确认前不发批量请求')
 console.log('4. 批量先确认 ✓')
 
 // 5. 服务端重算金额变了（409）→ 确认框换成新金额并提示；再确认才排队
 nextConflict = 123.45
 await click(button('确认出片'))
-must(has('预估金额已变为 ¥123.45'), '金额变了要重新确认')
+must(has('金额已变为 ¥123.45'), '金额变了要重新确认')
 await click(button('确认出片（¥123.45）'))
 must(calls[calls.length - 1] === 'POST /run {"expected_cny":123.45}', '再确认时带新金额')
 must(!has('确认出片') && film!.clips.filter((c) => c.state === 'queued').length === n, '剩余各段都排上队')
@@ -311,7 +314,7 @@ await click(bar(third))
 must(has('请到厂商控制台核对'), '段详情提示到控制台核对')
 before = calls.length
 await click(button('出这一段'))
-must(calls.length === before && !!container.querySelector('.film__confirm'), '重做待核对的段先弹确认、不发请求')
+must(calls.length === before && !!win.document.body.querySelector('[data-testid="money-confirm"]'), '重做待核对的段先弹确认、不发请求')
 await click(button('取消'))
 console.log('8. 待核对标记 ✓')
 
@@ -323,7 +326,7 @@ await act(async () => { setDirty(false) })
 await settle()
 console.log('9. 未保存拦截 ✓')
 
-// 10. 验证门：读取时报告没过 → 提示并禁用；修好后恢复
+// 10. 完整性检查：读取时报告没过 → 提示并禁用；修好后恢复
 gateFail = true
 await refresh()
 must(has(GATE) && button('出这一段').disabled, '验证门没过时不能出片')
