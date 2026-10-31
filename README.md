@@ -81,6 +81,10 @@ docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 总览主按钮先「先试这一段」，出过后变「出剩余 N 段（约 ¥x）」；批量和单段超过确认线（默认 20 元）先弹确认框，列各段金额、执行后累计与上限、费率依据。有未保存的改动或分镜没过验证门时出片按钮禁用。
 段详情里可看提示词、参考图、首帧来源、每次尝试（播放、★ 采用）、重做、原声静音；结果不明的段标「请到控制台核对」，批量跳过。工具条「播关键帧 / 播成片」切换预览窗。音色分配与合成整章在配音合成（A3）里做。
 
+**配音与合成（后端）**：合成要 ffmpeg（`brew install ffmpeg`）。配音走豆包语音合成 2.0：`backend/.env` 写 `VOLC_TTS_API_KEY=…`（新版控制台；旧版控制台写 `VOLC_TTS_APP_ID` 与 `VOLC_TTS_ACCESS_KEY`），`STORYBOARD_TTS_PROVIDER` 选厂商（缺省 `volc`，`fake` 为不联网的假配音）。
+各说话人的音色存在出片会话里（`…/render/voices`），没选的按分镜提示的性别默认；`…/render/compose` 先预览配音字数与费用（3 元/万字符，配音费计入同一上限），确认金额后后台合成，每集出 `final/E0x.mp4`、`final/E0x.srt` 与 `final/mix_report.json`。
+声画对齐：念不完先提速到 1.15 倍，再不够就定格延长；配音与已规整的段都缓存，重跑不重做。每集可上传一段 BGM（`…/render/bgm/E01`），有人声时自动压低。真实配音先用 `.venv/bin/python -m render.smoke_tts`（约 0.01 元）核对账单。画布上的音色分配与合成区另见 A3b 计划。
+
 ### 方式二：配套前端界面
 
 ```bash
