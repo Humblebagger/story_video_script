@@ -1081,7 +1081,7 @@ def render_compose_post(nid: str, cid: str, vid: str, body: RenderComposeBody,
         raise HTTPException(422, "还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in p["missing_voices"]))
     if p["no_video"] and not body.draft:
         raise HTTPException(422, f"{len(p['no_video'])} 段还没有可用的视频；打开「草稿合成」可用关键帧补位")
-    if p["tts_cny"] > 0 and (body.expected_cny is None or abs(body.expected_cny - p["tts_cny"]) > 0.005):
+    if p["tts_cny"] > 0 and (body.expected_cny is None or abs(body.expected_cny - p["tts_cny"]) > 1e-6):
         raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
                                          "expected_cny": p["tts_cny"]})
     s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],

@@ -1,6 +1,7 @@
 /** 配音与合成：纯计算（能不能合成及原因、状态文字、成片分组、对齐说明、选曲参考、BGM 类型、按钮文字、重读时机），
  *  以及「出片」页签里合成区的界面回归：缺音色拦截与选音色、没装 ffmpeg 的提示、配音金额先确认与 409 换新金额、
- *  合成中、完成后播放下载与报告、过期、失败、草稿合成开关、BGM 上传删除、未保存拦截、不配音的模式。
+ *  合成中、完成后播放下载与报告、过期、失败、草稿合成开关、BGM 上传删除、未保存拦截（保存后重读）、不配音的模式，
+ *  以及操作报错不被重读清掉、确认框开着时锁住会改金额的操作、音色表读取失败不挡预览、预览读取失败可重试。
  *  桩后端在内存里模拟合成预览（后台合成的推进由测试直接改状态）。跑法：npm test
  */
 import { readFileSync } from 'node:fs'
@@ -102,6 +103,11 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
 /** 每次合成相关请求记一行：`方法 子路径 请求体`（BGM 记 Content-Type） */
 const calls: string[] = []
 let nextConflict: number | null = null
+/** 下一次 POST /compose 直接按这个失败（测报错留在界面上） */
+let nextPostFail: { status: number; detail: unknown } | null = null
+/** 读预览 / 音色表失败 */
+let composeDown = false
+let voicesDown = false
 
 /** 每集两镜一段；最后一段还没出片 */
 function makeSession(): FilmSession {
@@ -194,10 +200,11 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
   const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
   calls.push(`${method} ${sub}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`)
   if (sub.startsWith('/compose') && method === 'GET') {
+    if (composeDown) return fail(500, '合成预览读不出来')
     const draft = new URL(`http://x${sub}`).searchParams.get('draft') !== 'false'
     return ok({ ...preview, fingerprint: draft ? 'fp1' : 'fp1-nodraft' })
   }
-  if (sub === '/voices' && method === 'GET') return ok(voicesInfo)
+  if (sub === '/voices' && method === 'GET') return voicesDown ? fail(500, '音色服务挂了') : ok(voicesInfo)
   if (sub === '/voices' && method === 'PUT') {
     for (const [k, v] of Object.entries(body.voices as Record<string, string>)) {
       const sp = voicesInfo.speakers.find((x) => x.key === k)!
@@ -210,6 +217,11 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
     return ok(voicesInfo)
   }
   if (sub === '/compose' && method === 'POST') {
+    if (nextPostFail) {
+      const f = nextPostFail
+      nextPostFail = null
+      return fail(f.status, f.detail)
+    }
     if (nextConflict !== null) {
       preview.tts_cny = nextConflict
       nextConflict = null
@@ -305,7 +317,9 @@ await click(composeBtn())
 must(has('确认合成（¥0.18）') && has('费率依据：假配音') && !since(n0).some((c) => c.startsWith('POST')),
   '确认前不发请求')
 nextConflict = 0.21
+n0 = calls.length
 await click(button('确认合成'))
+must(since(n0).includes('POST /compose {"expected_cny":0.18,"draft":true}'), '第一次带确认过的 ¥0.18')
 must(has('配音金额已变为 ¥0.21'), '金额变了要重新确认')
 n0 = calls.length
 await click(button('确认合成（¥0.21）'))
@@ -374,9 +388,11 @@ console.log('12. BGM 上传与删除 ✓')
 await act(async () => { setDirty(true) })
 await settle()
 must(has('先保存再合成') && composeBtn().disabled, '未保存拦截')
+n0 = calls.length
 await act(async () => { setDirty(false) })
 await settle()
-console.log('13. 未保存拦截 ✓')
+must(since(n0).includes('GET /compose?draft=true'), '保存后重读合成预览')
+console.log('13. 未保存拦截、保存后重读 ✓')
 
 // 14. 不配音的声音模式：不读音色表，按钮写「不花钱」
 Object.assign(preview, { lines: 0, tts_chars: 0, tts_cny: 0, missing_voices: [], voices: {} })
@@ -388,6 +404,54 @@ n0 = calls.length
 await click(composeBtn())
 must(since(n0).includes('POST /compose {"expected_cny":0,"draft":true}') && !has('确认合成'), '金额 0 不弹确认')
 console.log('14. 不配音的模式 ✓')
+
+// 15. 确认框开着：草稿合成、音色、BGM 都锁住；重读出的金额变了就换新金额；409 不带金额 → 关掉确认框、原因留着
+Object.assign(preview, { lines: 40, tts_chars: 600, tts_cny: 0.18, final: null, report: null })
+await refresh()
+await click(composeBtn())
+must(has('确认合成（¥0.18）'), '弹确认')
+const draftNow = container.querySelector('.compose__run input[type=checkbox]') as unknown as HTMLInputElement
+const selects = [...container.querySelectorAll('.compose__table select')] as unknown as HTMLSelectElement[]
+const bgmIn = container.querySelector('input[aria-label="E01 的 BGM"]') as unknown as HTMLInputElement
+must(draftNow.disabled && selects.length === 3 && selects.every((x) => x.disabled) && bgmIn.disabled,
+  '确认框开着时锁住会改金额的操作')
+preview.tts_cny = 0.2
+await refresh()
+must(has('配音金额已变为 ¥0.20') && has('确认合成（¥0.20）'), '重读出的金额变了：换新金额再确认')
+nextPostFail = { status: 409, detail: { message: '音色刚被改过，请重新确认金额', expected_cny: null } }
+await click(button('确认合成'))
+await settle()
+must(has('音色刚被改过，请重新确认金额') && !has('确认合成'), '409 不带金额：原因留着、确认框关掉')
+must(!draftNow.disabled, '确认框关掉后解锁')
+console.log('15. 确认框开着时锁住、金额变了换新、409 原因不被重读清掉 ✓')
+
+// 16. 422（比如音色刚被清掉）：原因留在界面上
+nextPostFail = { status: 422, detail: '还有说话人没选音色：路人' }
+await click(composeBtn())
+await click(button('确认合成'))
+await settle()
+must(has('还有说话人没选音色：路人') && !has('确认合成'), '422 原因留着')
+console.log('16. 422 原因留着 ✓')
+
+// 17. 音色表读不出来：预览照常、按钮还在，音色那块写原因；恢复后音色表回来
+voicesDown = true
+await refresh()
+must(has('配音 40 条') && !!composeBtn() && has('读取音色表失败：音色服务挂了'), '音色表出错不挡预览')
+voicesDown = false
+await refresh()
+must(!has('读取音色表失败') && !!container.querySelector('select[aria-label="路人 的音色"]'), '音色表恢复')
+console.log('17. 音色表出错不挡整块 ✓')
+
+// 18. 预览读不出来：写原因并给「重试」；重试成功后显示预览
+composeDown = true
+await click(tab('资产')!)
+await click(tab('出片')!)
+await settle()
+must(has('合成预览读不出来') && !has('配音 40 条'), '预览读取失败')
+composeDown = false
+await click(button('重试'))
+must(has('配音 40 条') && !has('合成预览读不出来'), '重试后显示预览')
+console.log('18. 预览读取失败可重试 ✓')
 
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

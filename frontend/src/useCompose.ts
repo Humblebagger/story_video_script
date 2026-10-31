@@ -1,8 +1,12 @@
 /** 「出片」页签里的配音与合成：读预览与音色表、改音色、上传删除 BGM、合成（配音金额先确认）、合成中轮询、
  *  成片文件的 blob URL。
  *
- *  预览随出片会话里会影响合成的部分变化重读（composeKey）；合成在跑时 3 秒一读，跑完让出片会话也重读
- *  （配音费计入了已花）。配音金额大于 0 先进 confirm；服务端重算对不上（409 带金额）就换成新金额再确认。 */
+ *  预览随出片会话里会影响合成的部分变化重读（composeKey），分镜保存后（dirty 由真变假）也重读；合成在跑时
+ *  3 秒一读，跑完让出片会话也重读（配音费计入了已花）。配音金额大于 0 先进 confirm；服务端重算对不上
+ *  （409 带金额）或重读出的金额变了，就换成新金额再确认。
+ *
+ *  报错分两份：读取的（loadError，只由 load 设和清）与操作的（actionError，下一次操作开始时才清），
+ *  免得操作失败后紧跟的重读把原因清掉。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { conflictCny, deleteBgm, filmFileUrl, getCompose, getVoices, putBgm, putVoices, startCompose } from './api'
 import { COMPOSE_POLL_MS, bgmType, composeKey, composing } from './compose'
@@ -11,14 +15,17 @@ import type { Film } from './useFilm'
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-export function useCompose(film: Film) {
+export function useCompose(film: Film, dirty: boolean) {
   const { nid, cid, vid } = film.ids
   const key = film.session ? composeKey(film.session) : ''
   const reloadFilm = film.load
   const [preview, setPreview] = useState<ComposePreview | null>(null)
   const [voices, setVoices] = useState<VoicesInfo | null>(null)
   const [draft, setDraft] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  /** 音色表读取失败：只挡音色那一块，预览照常显示 */
+  const [voicesError, setVoicesError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   /** 每次读取结束加一：合成中的轮询定时器据此重排 */
   const [tick, setTick] = useState(0)
@@ -29,26 +36,44 @@ export function useCompose(film: Film) {
   const asking = useRef(new Set<string>())
   /** 换版本 / 卸载时加一：之前的响应一律丢弃 */
   const gen = useRef(0)
+  /** 每次读取加一：只有最后一次读取的响应算数 */
+  const seq = useRef(0)
 
   const load = useCallback(async () => {
     if (!nid || !cid || !vid) return
     const mine = gen.current
+    const n = ++seq.current
+    const current = () => gen.current === mine && seq.current === n
     try {
       const p = await getCompose(nid, cid, vid, draft)
-      if (gen.current !== mine) return
-      const v = p.lines ? await getVoices(nid, cid, vid) : null
-      if (gen.current !== mine) return
+      if (!current()) return
+      let v: VoicesInfo | null = null
+      let ve: string | null = null
+      if (p.lines) {
+        try { v = await getVoices(nid, cid, vid) } catch (e) { ve = msg(e) }
+        if (!current()) return
+      }
       setPreview(p)
       setVoices(v)
-      setError(null)
+      setVoicesError(ve)
+      setLoadError(null)
+      // 确认框开着时金额变了：换成新金额再确认
+      setConfirm((c) => (c && c.cny !== p.tts_cny ? { cny: p.tts_cny, changed: true } : c))
     } catch (e) {
-      if (gen.current === mine) setError(msg(e))
+      if (current()) setLoadError(msg(e))
     } finally {
-      if (gen.current === mine) setTick((n) => n + 1)
+      if (current()) setTick((x) => x + 1)
     }
   }, [nid, cid, vid, draft])
 
   useEffect(() => { void load() }, [load, key])
+
+  // 分镜刚保存（有未保存 → 没有）：合成预览跟着重读
+  const wasDirty = useRef(dirty)
+  useEffect(() => {
+    if (wasDirty.current && !dirty) void load()
+    wasDirty.current = dirty
+  }, [dirty, load])
 
   const running = composing(preview)
   useEffect(() => {
@@ -78,7 +103,7 @@ export function useCompose(film: Film) {
         live.current[k] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setError(`读取成片文件失败：${msg(e)}`) })
+      .catch((e) => { if (gen.current === mine) setActionError(`读取成片文件失败：${msg(e)}`) })
       .finally(() => asking.current.delete(k))
   }, [nid, cid, vid, stamp])
   const url = (path?: string | null) => (path ? files[`${stamp}|${path}`] : undefined)
@@ -100,16 +125,16 @@ export function useCompose(film: Film) {
     asking.current.clear()
   }, [nid, cid, vid])
 
-  /** 不花钱的操作：忙标记、清错误、成功后重读预览 */
+  /** 不花钱的操作：忙标记、清上一次操作的错误、成功后重读预览 */
   const apply = useCallback(async (fn: () => Promise<unknown>) => {
     const mine = gen.current
     setBusy(true)
-    setError(null)
+    setActionError(null)
     try {
       await fn()
       if (gen.current === mine) await load()
     } catch (e) {
-      if (gen.current === mine) setError(msg(e))
+      if (gen.current === mine) setActionError(msg(e))
     } finally {
       if (gen.current === mine) setBusy(false)
     }
@@ -119,7 +144,7 @@ export function useCompose(film: Film) {
   const send = async (cny: number) => {
     const mine = gen.current
     setBusy(true)
-    setError(null)
+    setActionError(null)
     try {
       await startCompose(nid!, cid!, vid!, draft, cny)
       if (gen.current !== mine) return
@@ -131,7 +156,7 @@ export function useCompose(film: Film) {
       if (fresh !== null) setConfirm({ cny: fresh, changed: true })
       else {
         setConfirm(null)
-        setError(msg(e))
+        setActionError(msg(e))
       }
       void load()
     } finally {
@@ -140,13 +165,13 @@ export function useCompose(film: Film) {
   }
 
   return {
-    preview, voices, draft, error, busy, confirm, load, ensure, url,
+    preview, voices, voicesError, draft, error: actionError ?? loadError, busy, confirm, load, ensure, url,
     setDraft,
     setVoice: (speaker: string, voice: string) => apply(() => putVoices(nid!, cid!, vid!, { [speaker]: voice })),
     uploadBgm: (episode: string, file: File) => {
       const type = bgmType(file)
       if (!type) {
-        setError('BGM 只支持 mp3、wav、m4a、aac')
+        setActionError('BGM 只支持 mp3、wav、m4a、aac')
         return Promise.resolve()
       }
       return apply(() => putBgm(nid!, cid!, vid!, episode, file, type))

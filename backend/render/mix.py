@@ -307,10 +307,14 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
 
     已合成的配音（audio/cache）与已规整的段（final/work，按输入指纹命名）都复用：失败后重跑不重做已完成的步骤。
     draft=True 时没出的段用首镜关键帧定格补位，没有关键帧用黑场；False 时缺段直接拒绝。
+    成片、字幕与报告先写进 final/.next，全部集都成功才挪进 final/；中途失败 final/ 不动（旧成片仍与旧指纹一致）。
     """
     ffmpeg, ffprobe = tools
     root = Path(root)
     say = progress or (lambda step: None)
+    out_dir = root / "final"
+    nxt = out_dir / ".next"
+    shutil.rmtree(nxt, ignore_errors=True)      # 上次中断留下的半成品
     if not draft:
         for c in s["clips"]:
             if not _video(root, c):
@@ -331,8 +335,9 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
                        + "；".join(f"{x['id']}：{x['error']}" for x in failed[:5]))
     voiced = {x["id"]: x for x in done}
     size = frame_size(s["resolution"], ((doc.get("meta") or {}).get("video") or {}).get("aspect_ratio") or "9:16")
-    work = root / "final" / "work"
+    work = out_dir / "work"
     work.mkdir(parents=True, exist_ok=True)
+    nxt.mkdir()
     by_ep = {}
     for c in s["clips"]:
         by_ep.setdefault(c["episode"], []).append(c)
@@ -341,53 +346,58 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
     if s["audio_mode"] == "dialogue_native":
         report["warning"] = "台词由视频模型生成，不保证逐字"
     files = []
-    for ep in doc.get("episodes") or []:
-        clips = by_ep.get(ep["id"]) or []
-        if not clips:
-            continue
-        plan = plan_episode(ep, clips, voiced, cps)
-        segs, placeholders = [], []
-        for seg, c in zip(plan["segments"], clips):
-            src = _video(root, c)
-            still = None
-            if not src:
-                if not draft:
-                    raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
-                kf = keyframes.get(c["shots"][0]) if c["shots"] else None
-                still = str(kf) if kf else None
-                placeholders.append(c["id"])
-            ndb = native_audio_policy(s["audio_mode"], bool(c.get("mute_native")))
-            audio = bool(src) and ndb is not None and has_audio(src, ffprobe)
-            # 源文件按 (路径, 大小, 修改时间) 计：同一路径重新上传的关键帧或视频会重新规整
-            key = hashlib.sha256(json.dumps([_stat(src) if src else None, _stat(still) if still else None,
-                                             seg["duration"], size, ndb, audio]).encode()).hexdigest()[:16]
-            out = work / f"{c['id']}.{key}.mp4"
-            if not out.exists():
-                say(f"规整 {c['id']}")
-                tmp = out.with_suffix(".part.mp4")
-                run(normalize_cmd(src, still=still, duration=seg["duration"], size=size, native_db=ndb,
-                                  has_audio=audio, out=str(tmp), ffmpeg=ffmpeg), f"规整 {c['id']} ")
-                tmp.replace(out)
-            segs.append(out)
-        lst = work / f"{ep['id']}.txt"
-        lst.write_text(concat_list(segs), encoding="utf-8")
-        joined = work / f"{ep['id']}.joined.mp4"
-        say(f"拼接 {ep['id']}")
-        run(concat_cmd(lst, joined, ffmpeg), f"拼接 {ep['id']} ")
-        final = root / "final" / f"{ep['id']}.mp4"
-        tmp = final.with_suffix(".part.mp4")
-        say(f"混音 {ep['id']}")
-        music = bgm.get(ep["id"])
-        if music and not Path(music).exists():
-            music = None
-        run(mix_cmd(str(joined), plan, bgm=str(music) if music else None, out=str(tmp), ffmpeg=ffmpeg),
-            f"混音 {ep['id']} ")
-        tmp.replace(final)
-        (root / "final" / f"{ep['id']}.srt").write_text(srt(plan["subs"]), encoding="utf-8")
-        files += [f"final/{ep['id']}.mp4", f"final/{ep['id']}.srt"]
-        report["episodes"].append({"episode": ep["id"], "seconds": plan["total"], "notes": plan["notes"],
-                                   "placeholders": placeholders,
-                                   "stale": [c["id"] for c in clips if c.get("state") == "stale"]})
-    (root / "final" / "mix_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-                                                    encoding="utf-8")
+    try:
+        for ep in doc.get("episodes") or []:
+            clips = by_ep.get(ep["id"]) or []
+            if not clips:
+                continue
+            plan = plan_episode(ep, clips, voiced, cps)
+            segs, placeholders = [], []
+            for seg, c in zip(plan["segments"], clips):
+                src = _video(root, c)
+                still = None
+                if not src:
+                    if not draft:
+                        raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
+                    kf = keyframes.get(c["shots"][0]) if c["shots"] else None
+                    still = str(kf) if kf else None
+                    placeholders.append(c["id"])
+                ndb = native_audio_policy(s["audio_mode"], bool(c.get("mute_native")))
+                audio = bool(src) and ndb is not None and has_audio(src, ffprobe)
+                # 源文件按 (路径, 大小, 修改时间) 计：同一路径重新上传的关键帧或视频会重新规整
+                key = hashlib.sha256(json.dumps([_stat(src) if src else None, _stat(still) if still else None,
+                                                 seg["duration"], size, ndb, audio]).encode()).hexdigest()[:16]
+                out = work / f"{c['id']}.{key}.mp4"
+                if not out.exists():
+                    say(f"规整 {c['id']}")
+                    tmp = out.with_suffix(".part.mp4")
+                    run(normalize_cmd(src, still=still, duration=seg["duration"], size=size, native_db=ndb,
+                                      has_audio=audio, out=str(tmp), ffmpeg=ffmpeg), f"规整 {c['id']} ")
+                    tmp.replace(out)
+                segs.append(out)
+            lst = work / f"{ep['id']}.txt"
+            lst.write_text(concat_list(segs), encoding="utf-8")
+            joined = work / f"{ep['id']}.joined.mp4"
+            say(f"拼接 {ep['id']}")
+            run(concat_cmd(lst, joined, ffmpeg), f"拼接 {ep['id']} ")
+            final = nxt / f"{ep['id']}.mp4"
+            tmp = final.with_suffix(".part.mp4")
+            say(f"混音 {ep['id']}")
+            music = bgm.get(ep["id"])
+            if music and not Path(music).exists():
+                music = None
+            run(mix_cmd(str(joined), plan, bgm=str(music) if music else None, out=str(tmp), ffmpeg=ffmpeg),
+                f"混音 {ep['id']} ")
+            tmp.replace(final)
+            (nxt / f"{ep['id']}.srt").write_text(srt(plan["subs"]), encoding="utf-8")
+            files += [f"final/{ep['id']}.mp4", f"final/{ep['id']}.srt"]
+            report["episodes"].append({"episode": ep["id"], "seconds": plan["total"], "notes": plan["notes"],
+                                       "placeholders": placeholders,
+                                       "stale": [c["id"] for c in clips if c.get("state") == "stale"]})
+        (nxt / "mix_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                                             encoding="utf-8")
+        for name in [Path(f).name for f in files] + ["mix_report.json"]:
+            (nxt / name).replace(out_dir / name)
+    finally:
+        shutil.rmtree(nxt, ignore_errors=True)
     return {"files": files, "report": "final/mix_report.json"}

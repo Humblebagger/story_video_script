@@ -2,7 +2,8 @@
  *  成片（状态、播放下载、合成报告）。
  *
  *  配音花钱：金额写在按钮上，大于 0 时先弹确认（useCompose 决定发不发请求）。
- *  不能合成时按钮禁用，原因逐条写出（composeBlockers）。 */
+ *  不能合成时按钮禁用，原因逐条写出（composeBlockers）。确认框开着时，会改金额的操作（草稿合成、音色、BGM）
+ *  一律锁住，免得确认的金额与实际不符。 */
 import { useEffect, useState } from 'react'
 import { AUDIO_MODE, MOOD, label } from '../labels'
 import {
@@ -15,16 +16,25 @@ import type { Film } from '../useFilm'
 import type { FilmSession } from '../types'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
+/** 忙着，或确认框开着（改了会让确认的金额对不上） */
+const locked = (c: Compose) => c.busy || !!c.confirm
 
 export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
-  const c = useCompose(film)
+  const c = useCompose(film, dirty)
   const s = film.session!
   const p = c.preview
   if (!p) {
     return (
       <section className="compose">
         <h4>配音与合成</h4>
-        {c.error ? <p className="tlc__kferr">{c.error}</p> : <p className="tlc__kfnote">读取合成预览…</p>}
+        {c.error
+          ? (
+            <>
+              <p className="tlc__kferr">{c.error}</p>
+              <button className="btn btn--sm btn--ghost" onClick={() => void c.load()}>重试</button>
+            </>
+          )
+          : <p className="tlc__kfnote">读取合成预览…</p>}
       </section>
     )
   }
@@ -45,7 +55,7 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
           {p.no_video.length ? ` · ${p.no_video.length} 段还没出片` : ''}
         </p>
         <label className="check">
-          <input type="checkbox" checked={c.draft} disabled={c.busy} onChange={(e) => c.setDraft(e.target.checked)} />
+          <input type="checkbox" checked={c.draft} disabled={locked(c)} onChange={(e) => c.setDraft(e.target.checked)} />
           草稿合成（没出的段用关键帧定格补位，没有关键帧用黑场）
         </label>
         {blockers.map((b) => <p key={b} className="tlc__notice">{b}</p>)}
@@ -62,7 +72,11 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
 function Voices({ c }: { c: Compose }) {
   const v = c.voices
   if (!c.preview!.lines) return <p className="tlc__kfnote">这个声音模式下没有要配音的语音条。</p>
-  if (!v) return <p className="tlc__kfnote">读取音色表…</p>
+  if (!v) {
+    return c.voicesError
+      ? <p className="tlc__kferr">读取音色表失败：{c.voicesError}（点「刷新合成」重试）</p>
+      : <p className="tlc__kfnote">读取音色表…</p>
+  }
   const name = (id: string | null) => v.voices.find((x) => x.id === id)?.name ?? id ?? ''
   return (
     <details className="compose__box" open={v.missing.length > 0}>
@@ -73,7 +87,7 @@ function Voices({ c }: { c: Compose }) {
             <tr key={sp.key} className={sp.voice ? '' : 'is-missing'}>
               <td>{sp.name}{sp.hint && <span className="film__dim">（{sp.hint}）</span>}</td>
               <td>
-                <select aria-label={`${sp.name} 的音色`} value={sp.chosen ?? ''} disabled={c.busy}
+                <select aria-label={`${sp.name} 的音色`} value={sp.chosen ?? ''} disabled={locked(c)}
                         onChange={(e) => void c.setVoice(sp.key, e.target.value)}>
                   <option value="">
                     {sp.chosen ? '按提示默认' : sp.voice ? `默认：${name(sp.voice)}` : '请选择音色'}
@@ -108,7 +122,7 @@ function Music({ c }: { c: Compose }) {
               {has ? <span>已上传</span> : <span className="film__dim">没有 BGM</span>}
               <label className="tlc__linkbtn">
                 {has ? '换一段' : '上传'}
-                <input type="file" hidden accept={BGM_ACCEPT} aria-label={`${ep} 的 BGM`} disabled={c.busy}
+                <input type="file" hidden accept={BGM_ACCEPT} aria-label={`${ep} 的 BGM`} disabled={locked(c)}
                        onChange={(e) => {
                          const f = e.target.files?.[0]
                          e.target.value = ''
@@ -116,7 +130,7 @@ function Music({ c }: { c: Compose }) {
                        }} />
               </label>
               {has && (
-                <button className="tlc__linkbtn" disabled={c.busy} onClick={() => void c.removeBgm(ep)}>删除</button>
+                <button className="tlc__linkbtn" disabled={locked(c)} onClick={() => void c.removeBgm(ep)}>删除</button>
               )}
             </div>
             {(m.mood || m.style_hint) && (

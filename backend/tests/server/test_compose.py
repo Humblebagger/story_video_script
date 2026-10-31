@@ -100,6 +100,8 @@ def main() -> int:
     r = c.post(R + "/compose", headers=H, json={})
     assert r.status_code == 409 and r.json()["detail"]["expected_cny"] == p["tts_cny"]
     assert c.post(R + "/compose", headers=H, json={"expected_cny": p["tts_cny"] + 1}).status_code == 409
+    assert c.post(R + "/compose", headers=H, json={"expected_cny": p["tts_cny"] + 0.004}).status_code == 409, \
+        "差 0.004 元也要重新确认"
     r = c.post(R + "/compose", headers=H, json={"expected_cny": p["tts_cny"], "draft": False})
     assert r.status_code == 422 and "草稿合成" in r.json()["detail"]
     print("4. 拦截：没装 ffmpeg、缺音色、配音金额确认、关掉草稿合成时缺段 ✓")
