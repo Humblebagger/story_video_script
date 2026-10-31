@@ -5,6 +5,7 @@
 import copy
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 
 from render import compose, providers, session as sess  # noqa: E402
+from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
 from render.runner import Runner  # noqa: E402
 
@@ -23,6 +25,14 @@ OWNER = {"user_id": "u", "nid": "n", "cid": "c", "vid": "v"}
 
 def clip(root, cid):
     return next(c for c in sess.load(root)["clips"] if c["id"] == cid)
+
+
+def drain_runner(rn, limit=200):
+    for _ in range(limit):
+        if not rn.watching():
+            return
+        rn.tick()
+    raise AssertionError("没跑完")
 
 
 def main() -> int:
@@ -164,6 +174,138 @@ def main() -> int:
         again.tick()
     assert clip(root, ids[1])["state"] == "done" and len(fake.submitted) == before
     print("8. 重启续跑 ✓")
+
+    # ---------- 修复轮 1 ----------
+    def fresh(vid):
+        r = data / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / vid
+        built = sess.build(r, doc, owner=dict(OWNER, vid=vid), patch={"budget_cny": 100000}, keyframes={})
+        return r, [x["id"] for x in built["clips"]]
+
+    def quick():
+        return Runner(builder, sleep=lambda s: None, max_parallel=4)
+
+    # 9. 失败隔离：一个会话的根目录没了，不拖累别的会话；某段 poll 抛普通异常，其它段照常推进
+    r1, i1 = fresh("iso1")
+    r2, i2 = fresh("iso2")
+    sess.queue_run(r1, [i1[0]])
+    sess.queue_run(r2, [i2[0]])
+    rn = quick()
+    rn.watch(r1)
+    rn.watch(r2)
+    shutil.rmtree(r1)
+    before = len(fake.submitted)
+    rn.tick()
+    assert len(fake.submitted) == before + 1 and clip(r2, i2[0])["state"] == "running"
+    assert r1 not in rn.watching()
+    rn.watching() and drain_runner(rn)
+    r3, i3 = fresh("iso3")
+    i3 = [x for x in i3 if x.endswith("-C01")]
+    sess.queue_run(r3, [i3[0], i3[1]])
+    rn = quick()
+    rn.watch(r3)
+    rn.tick()
+    bad = clip(r3, i3[0])["attempts"][-1]["task_id"]
+    real_poll = fake.poll
+
+    def poll_boom(tid):
+        if tid == bad:
+            raise RuntimeError("boom")
+        return real_poll(tid)
+
+    fake.poll = poll_boom
+    rn.tick()
+    assert clip(r3, i3[0])["state"] == "running" and clip(r3, i3[1])["state"] == "downloading"
+    fake.poll = real_poll
+    drain_runner(rn)
+    print("9. 失败隔离 ✓")
+
+    # 10. 提交抛意外异常：记失败、只有一次尝试、下一轮不重复提交
+    r4, i4 = fresh("boom")
+    sess.queue_run(r4, [i4[0]])
+    real_submit = fake.submit
+
+    def submit_boom(req):
+        raise ValueError("坏了")
+
+    fake.submit = submit_boom
+    rn = quick()
+    rn.watch(r4)
+    rn.tick()
+    c = clip(r4, i4[0])
+    assert c["state"] == "failed" and "提交异常" in c["error"] and len(c["attempts"]) == 1
+    fake.submit = real_submit
+    before = len(fake.submitted)
+    rn.tick()
+    assert len(fake.submitted) == before and len(clip(r4, i4[0])["attempts"]) == 1
+    print("10. 提交异常不重复提交 ✓")
+
+    # 11. 丢失唤醒：收尾判断与 watch 互斥
+    r5, i5 = fresh("race")
+    rn = quick()
+    rn.watch(r5)
+    real_load = sess.load
+
+    def racing_load(r):
+        if sys._getframe(1).f_code.co_name == "_settle":
+            sess.load = real_load
+            sess.queue_run(r, [i5[0]])
+            rn.watch(r)
+        return real_load(r)
+
+    sess.load = racing_load
+    try:
+        rn.tick()
+    finally:
+        sess.load = real_load
+    assert r5 in rn.watching()
+    print("11. 丢失唤醒 ✓")
+
+    # 12. 瞬时错误不能无限重试：假时钟推过期限后放弃
+    now = [0.0]
+    r6, i6 = fresh("giveup")
+    sess.queue_run(r6, [i6[0]])
+    rn = Runner(builder, sleep=lambda s: None, clock=lambda: now[0],
+                poll_give_up_sec=100, download_give_up_sec=100)
+    rn.watch(r6)
+    rn.tick()
+    assert clip(r6, i6[0])["state"] == "running"
+
+    def transient_poll(tid):
+        raise base.TransientError("连不上")
+
+    fake.poll = transient_poll
+    rn.tick()
+    c = clip(r6, i6[0])
+    assert c["state"] == "running" and "正在重试" in c["error"]
+    now[0] = 101
+    rn.tick()
+    c = clip(r6, i6[0])
+    assert c["state"] == "failed" and "多次查询都失败" in c["error"]
+    fake.poll = real_poll
+
+    r7, i7 = fresh("giveup2")
+    sess.queue_run(r7, [i7[0]])
+    now[0] = 0
+    rn = Runner(builder, sleep=lambda s: None, clock=lambda: now[0],
+                poll_give_up_sec=100, download_give_up_sec=100)
+    rn.watch(r7)
+    rn.tick()
+    rn.tick()
+    assert clip(r7, i7[0])["state"] == "downloading"
+
+    def transient_dl(st, dest):
+        raise base.TransientError("下不动")
+
+    fake.download = transient_dl
+    rn.tick()
+    c = clip(r7, i7[0])
+    assert c["state"] == "downloading" and "正在重试" in c["error"]
+    now[0] = 101
+    rn.tick()
+    c = clip(r7, i7[0])
+    assert c["state"] == "failed" and "下载一直失败" in c["error"]
+    fake.download = real_download
+    print("12. 重试期限 ✓")
 
     print("\nALL PASS")
     return 0

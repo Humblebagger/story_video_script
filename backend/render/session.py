@@ -341,6 +341,12 @@ def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0) -> No
             c["state"], c["error"] = "failed", a["error"]
 
 
+def note_error(root, clip_id: str, msg: str) -> None:
+    """只记一条给用户看的提示，不改状态（如厂商暂时不可达、正在重试）。"""
+    with mutate(root) as s:
+        _clip(s, clip_id)["error"] = msg
+
+
 def _rel(root, p) -> Optional[str]:
     return Path(p).resolve().relative_to(Path(root).resolve()).as_posix() if p else None
 

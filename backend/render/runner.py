@@ -17,15 +17,20 @@ BUSY = ("running", "downloading")
 
 class Runner:
     def __init__(self, request_builder, *, poll_sec: float = 10.0, max_parallel: int = 2,
-                 retries: int = 3, sleep=time.sleep):
+                 retries: int = 3, sleep=time.sleep, clock=time.monotonic,
+                 poll_give_up_sec: float = 6 * 3600, download_give_up_sec: float = 20 * 3600):
         """request_builder(root, session, clip) → (ClipRequest, 实际首帧来源)；分镜改了抛 compose.Stale。"""
         self.request_builder = request_builder
         self.poll_sec = poll_sec
         self.max_parallel = max_parallel
         self.retries = retries
         self.sleep = sleep
+        self.clock = clock
+        self.poll_give_up_sec = poll_give_up_sec
+        self.download_give_up_sec = download_give_up_sec
+        self._first_fail: dict = {}
         self._roots: set = set()
-        self._guard = threading.Lock()
+        self._guard = threading.RLock()
         self._stop = threading.Event()
         self._thread = None
 
@@ -85,36 +90,92 @@ class Runner:
 
     # ---------- 一轮 ----------
 
+    def _isolate(self, root, e: Exception) -> bool:
+        """会话级错误：丢掉这个会话返回 True；其它错误打印后返回 False（继续下一个）。"""
+        if isinstance(e, (sess.NotFound, sess.Corrupt)):
+            print(f"[render] 跳过会话 {root}：{e}")
+            self._forget(root)
+            return True
+        traceback.print_exc()
+        return False
+
     def tick(self) -> None:
         roots = self.watching()
         for root in roots:
-            s = sess.load(root)
-            if s is None:
-                self._forget(root)
+            try:
+                s = sess.load(root)
+                if s is None:
+                    self._forget(root)
+                    continue
+                provider = get_video(s["provider"])
+            except Exception as e:
+                self._isolate(root, e)
                 continue
-            provider = get_video(s["provider"])
             for c in s["clips"]:
-                if c["state"] == "running":
-                    self._poll(root, provider, s, c)
-                elif c["state"] == "downloading":
-                    self._download(root, provider, s, c)
+                if c["state"] not in BUSY:
+                    continue
+                try:
+                    if c["state"] == "running":
+                        self._poll(root, provider, s, c)
+                    else:
+                        self._download(root, provider, s, c)
+                except Exception as e:
+                    if self._isolate(root, e):
+                        break
 
-        loaded = [(root, s) for root in roots if (s := sess.load(root)) is not None]
+        loaded = []
+        for root in roots:
+            try:
+                s = sess.load(root)
+            except Exception as e:
+                self._isolate(root, e)
+                continue
+            if s is not None:
+                loaded.append((root, s))
         busy = sum(1 for _, s in loaded for c in s["clips"] if c["state"] in BUSY)
         for root, s in loaded:
-            provider = get_video(s["provider"])
+            try:
+                provider = get_video(s["provider"])
+            except Exception as e:
+                self._isolate(root, e)
+                continue
             for c in s["clips"]:
                 if busy >= self.max_parallel:
                     break
-                if c["state"] != "queued" or sess.waiting_on_relay(s, c):
-                    continue
-                if self._submit(root, provider, s, c):
-                    busy += 1
+                try:
+                    if c["state"] != "queued" or sess.waiting_on_relay(s, c):
+                        continue
+                    if self._submit(root, provider, s, c):
+                        busy += 1
+                except Exception as e:
+                    if self._isolate(root, e):
+                        break
 
         for root in roots:
-            s = sess.load(root)
+            self._settle(root)
+
+    def _settle(self, root) -> None:
+        """没有未完成的段就不再盯。读取与移除在锁内，与 watch 互斥，避免刚排队的段被漏掉。"""
+        with self._guard:
+            try:
+                s = sess.load(root)
+            except Exception:
+                s = None
             if s is None or not any(c["state"] in sess.IN_FLIGHT for c in s["clips"]):
-                self._forget(root)
+                self._roots.discard(Path(root))
+
+    def _transient(self, kind, root, c, task_id, e, give_up) -> bool:
+        """记下瞬时失败；超过期限返回 True（调用方应放弃）。"""
+        key = (kind, str(root), c["id"], task_id)
+        first = self._first_fail.setdefault(key, self.clock())
+        if self.clock() - first >= give_up:
+            self._first_fail.pop(key, None)
+            return True
+        sess.note_error(root, c["id"], f"厂商暂时不可达，正在重试：{e}")
+        return False
+
+    def _clear(self, kind, root, c, task_id) -> None:
+        self._first_fail.pop((kind, str(root), c["id"], task_id), None)
 
     @staticmethod
     def _stub(s: dict, c: dict) -> base.ClipRequest:
@@ -126,10 +187,15 @@ class Runner:
         a = c["attempts"][-1]
         try:
             st = self._retry(lambda: provider.poll(a["task_id"]))
-        except base.TransientError:
+        except base.TransientError as e:
+            if self._transient("poll", root, c, a["task_id"], e, self.poll_give_up_sec):
+                st = base.TaskState(a["task_id"], "failed",
+                                    error="多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + str(e))
+                sess.poll_update(root, c["id"], st, 0.0)
             return                                  # 下一轮再查
         except base.ProviderError as e:
             st = base.TaskState(a["task_id"], "failed", error=str(e))
+        self._clear("poll", root, c, a["task_id"])
         cost = provider.cost(st, self._stub(s, c)) if st.status == "failed" else 0.0
         sess.poll_update(root, c["id"], st, cost)
 
@@ -141,11 +207,15 @@ class Runner:
         cost = provider.cost(st, self._stub(s, c))
         try:
             files = self._retry(lambda: provider.download(st, dest))
-        except base.TransientError:
+        except base.TransientError as e:
+            if self._transient("download", root, c, a["task_id"], e, self.download_give_up_sec):
+                sess.download_failed(root, c["id"], "下载一直失败，结果地址即将过期：" + str(e), cost)
             return                                  # 结果地址 24 小时有效，下一轮再下
         except base.ProviderError as e:
+            self._clear("download", root, c, a["task_id"])
             sess.download_failed(root, c["id"], str(e), cost)
             return
+        self._clear("download", root, c, a["task_id"])
         if not base.is_playable_mp4(files["video"]):
             sess.download_failed(root, c["id"], "下载到的文件不是可播放的视频", cost)
             return
@@ -172,5 +242,12 @@ class Runner:
         except base.ProviderError as e:
             sess.submit_failed(root, c["id"], str(e))
             return False
-        sess.submitted(root, c["id"], tid, used)
+        except Exception as e:
+            sess.submit_failed(root, c["id"], f"提交异常：{type(e).__name__}: {e}")
+            return False
+        try:
+            sess.submitted(root, c["id"], tid, used)
+        except Exception:
+            print(f"[render] 已提交但写回失败，任务 id {tid}（{root} {c['id']}），请到厂商控制台核对")
+            raise
         return True
