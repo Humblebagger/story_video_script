@@ -164,11 +164,43 @@ def part_clips(doc):
         rich2 = copy.deepcopy(rich)
         for card in rich2["assets"]["characters"]:
             card["reference_images"] = [{"view": "front", "uri": f"https://img/{card['id']}.png"}]
-        rb = compose.build_clips(rich2, caps, keyframes={kf_shot: png}, **kw)
-        target = next(b for b in rb if b["shots"][0] == kf_shot)
-        if target["refs"]:
-            assert target["frame_mode"] == "ref" and "[参考__first__]" in target["prompt"]
-            assert len(target["refs"]) <= caps.max_refs - 1, "首帧占一个名额"
+        rc = next(c for c in compose.cut_clips(rich2, caps) if c["shots"][0].get("characters"))
+        rk = rc["shots"][0]["id"]
+        rpng = Path(d) / f"rich-{rk}.png"
+        rpng.write_bytes(b"\x89PNG\r\n\x1a\n" + b"1" * 16)
+        rkw = {rk: rpng}
+        rb = compose.build_clips(rich2, caps, keyframes=rkw, **kw)
+        target = next(b for b in rb if b["id"] == rc["id"])
+        assert target["refs"], "合成用例必须有参考图"
+        assert target["frame_mode"] == "ref" and "[参考__first__]" in target["prompt"]
+        assert len(target["refs"]) <= caps.max_refs - 1, "首帧占一个名额"
+        sess = {"provider": "fake", "model": "fake-1", "resolution": "720p", "audio_mode": "tts_all"}
+        row = {k: v for k, v in target.items() if not k.startswith("_")}
+        rq, _ = compose.request_for(rich2, sess, row, keyframes=rkw, relay_frame=None,
+                                    caps=caps, rewrite=fake.rewrite_prompt)
+        assert rq.refs[0].asset_id == compose.FIRST and rq.refs[0].role == "first_frame"
+        assert rq.refs[0].source.startswith("data:image/png;base64,") and rq.first_frame is None
+
+        caps2 = FakeVideo(frame_with_refs=True).caps("fake-1")
+        rb2 = compose.build_clips(rich2, caps2, keyframes=rkw, **kw)
+        t2 = next(b for b in rb2 if b["shots"][0] == rk)
+        assert t2["frame_mode"] == "frame"
+        row2f = {k: v for k, v in t2.items() if not k.startswith("_")}
+        rq2, _ = compose.request_for(rich2, sess, row2f, keyframes=rkw, relay_frame=None,
+                                     caps=caps2, rewrite=fake.rewrite_prompt)
+        assert rq2.first_frame and all(r.asset_id != compose.FIRST for r in rq2.refs)
+
+        # 关键帧文件内容变了：指纹跟着变，其他段不变
+        png2 = Path(d) / "other.png"
+        png2.write_bytes(b"\x89PNG\r\n\x1a\n" + b"9" * 16)
+        chg = compose.build_clips(doc, caps, keyframes={kf_shot: png2}, **kw)
+        assert chg[1]["fingerprint"] != built[1]["fingerprint"]
+        assert all(a["fingerprint"] == b["fingerprint"]
+                   for i, (a, b) in enumerate(zip(chg, built)) if i != 1)
+
+        # 关键帧文件丢了：不崩，该段不用关键帧
+        gone = compose.build_clips(doc, caps, keyframes={kf_shot: Path(d) / "gone.png"}, **kw)
+        assert not (gone[1]["first_frame"] or "").startswith("keyframe:")
 
         # 8. 指纹：设置或分镜变了才变
         again = compose.build_clips(doc, caps, keyframes={kf_shot: png}, **kw)

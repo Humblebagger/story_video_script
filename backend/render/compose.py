@@ -316,10 +316,14 @@ def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
         shots = c["shots"]
         refs = pick_refs(shots, idx, caps.max_refs)
         sid = shots[0].get("id")
-        first = None
+        first, kf_hash = None, None
         if caps.first_frame and sid in keyframes:
-            first = f"keyframe:{sid}"
-        elif (caps.first_frame and caps.returns_last_frame and prev is not None
+            try:
+                kf_hash = _sha(Path(keyframes[sid]).read_bytes())
+                first = f"keyframe:{sid}"
+            except OSError:
+                kf_hash = None      # 关键帧文件丢了：当作没有关键帧
+        if not first and (caps.first_frame and caps.returns_last_frame and prev is not None
               and prev["episode"] == c["episode"] and (caps.frame_with_refs or not refs["kept"])):
             first = f"relay:{prev['id']}"
         frame_mode = None
@@ -334,8 +338,6 @@ def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
                                  described=described, first_frame=frame_mode == "ref",
                                  timing="playable", cps=cps)
         prompt = rewrite(text)
-        kf_hash = (_sha(Path(keyframes[sid]).read_bytes())
-                   if first and first.startswith("keyframe:") else None)
         fp = fingerprint(shots=shots, prompt=prompt,
                          refs=[_sha(sl["source"].encode("utf-8")) for sl in refs["kept"]],
                          first=first, keyframe=kf_hash, provider=provider, model=model,
