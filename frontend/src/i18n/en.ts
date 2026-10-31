@@ -122,6 +122,7 @@ export const en: Messages = {
       renderRest: 'Render {count} remaining (≈ {amount})',
       viewFilm: 'View render',
       compose: 'Voice & mix (voice ≈ {amount})',
+      composeNoAmount: 'Voice & mix',
     },
     block: {
       noText: 'No text yet: paste or load this chapter first',
@@ -131,6 +132,9 @@ export const en: Messages = {
       verify: 'Integrity check failed: fix the issues below and save',
       dirty: 'You have unsaved changes: save first',
       noFilm: 'Nothing rendered yet: finish step 4 first',
+      renderFirst: 'Some clips aren’t rendered yet: finish step 4 first',
+      noClips: 'No clips to render yet: open the render panel to split again',
+      uncertain: 'Some clips have an unknown status at the provider: check them in the render panel',
     },
     unsaved: 'You have unsaved changes',
     unsavedSave: 'Save',
@@ -142,6 +146,13 @@ export const en: Messages = {
       compose: 'Final video is ready to download',
     },
     view: 'View',
+    toast: {
+      failed: 'Generation failed',
+      done: 'Generation finished',
+      doneWarn: 'Generation finished (quality warnings)',
+      fallbackWho: 'Storyboard',
+    },
+    novelTitle: '“{title}”',
     source: { chars: 'Chapter text · {n} chars', edit: 'Edit text' },
     progress: 'View progress',
     download: {

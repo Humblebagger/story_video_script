@@ -80,4 +80,33 @@ must(primaryFor('compose', { ...base, film: null }).blocked?.fix.step === 'rende
 must(primaryFor('download', base).action === 'none', '⑥没有主按钮动作（下载在工作区里）')
 console.log('3. primaryFor ✓')
 
+// 4. ④ 的剩余段：失败、过期的都算要重出；状态不明的另说；一段都没有也要说原因
+const p6 = primaryFor('render', { ...base, film: film([clip('c1', 'done'), clip('c2', 'failed')], { remaining_cny: 2.5 }) })
+must(p6.label === 'flow.primary.renderRest' && p6.count === 1 && !p6.blocked, '失败的段算进「出剩余」')
+const p6b = primaryFor('render', { ...base, film: film([clip('c1', 'done'), clip('c2', 'stale'), clip('c3', 'stale')], { remaining_cny: 5 }) })
+must(p6b.label === 'flow.primary.renderRest' && p6b.count === 2 && p6b.cny === 5, '分镜改过后过期的段也算要重出')
+must(at({ film: film([clip('c1', 'done'), clip('c2', 'stale')]) }) === 'render', '有过期的段 → 仍在 ④')
+const zero = { ...base, film: film([]) }
+must(at(zero) === 'render', '会话里一段都没有 → ④')
+const p6c = primaryFor('render', zero)
+must(p6c.blocked?.reason === 'flow.block.noClips' && p6c.blocked.fix.openFilm === true, '一段都没有：说原因，去修复打开出片面板')
+const unc = { ...base, film: film([clip('c1', 'done'), clip('c2', 'failed', { uncertain: true })]) }
+must(at(unc) === 'render', '只剩状态不明的段 → 仍在 ④')
+const p6d = primaryFor('render', unc)
+must(p6d.label === 'flow.primary.viewFilm' && p6d.blocked?.reason === 'flow.block.uncertain'
+     && p6d.blocked.fix.openFilm === true, '只剩状态不明的段：查看出片 + 说原因，去修复打开出片面板')
+const p6e = primaryFor('render', { ...base, film: film([clip('c1', 'done'), clip('c2', 'running')]) })
+must(p6e.label === 'flow.primary.viewFilm' && !p6e.blocked, '剩下的在出：查看出片、不拦')
+const finalFailed = { ...finalDone, state: 'failed', files: [] }
+must(at({ film: { ...done2, final: finalFailed } as FilmSession }) === 'compose', '合成失败 → ⑤')
+console.log('4. ④ 剩余段（失败 / 过期 / 状态不明 / 一段都没有）✓')
+
+// 5. ⑤ 的主按钮：没出完先去 ④；合成预览没读到时不写金额
+const p7 = primaryFor('compose', { ...base, film: film([clip('c1', 'done'), clip('c2', 'planned')]), compose: preview })
+must(p7.blocked?.reason === 'flow.block.renderFirst' && p7.blocked.fix.step === 'render', '还有段没出好：拦住，去修复到 ④')
+const p7b = primaryFor('compose', { ...base, film: done2, compose: null })
+must(p7b.label === 'flow.primary.composeNoAmount' && p7b.cny === undefined && !p7b.blocked, '预览没读到：「去配音合成」不带金额')
+must(primaryFor('compose', { ...base, film: done2, compose: preview }).label === 'flow.primary.compose', '预览读到了：带配音金额')
+console.log('5. ⑤ 主按钮（先出完 / 没有金额时的文字）✓')
+
 console.log('\nALL PASS')

@@ -36,7 +36,8 @@ export function DownloadStep({ version, film, onOpenFilm }: {
       document.body.appendChild(a)
       a.click()
       a.remove()
-      URL.revokeObjectURL(url)
+      // 立刻回收会让 Firefox / Safari 中断下载：等它接手后再收
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e) {
       setErrors((x) => ({ ...x, [key]: msg(e) }))
     } finally {

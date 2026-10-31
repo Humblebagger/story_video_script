@@ -26,7 +26,7 @@ export function PrimaryBar({ primary, busy, onRun, onFix }: {
           <motion.div {...m.enter} role="status" data-testid="primary-reason"
                       className="pointer-events-auto flex items-center gap-3 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg">
             <span>{t(primary.blocked.reason)}</span>
-            {(primary.blocked.fix.step || primary.blocked.fix.target) && (
+            {(primary.blocked.fix.step || primary.blocked.fix.target || primary.blocked.fix.openFilm) && (
               <Button size="sm" variant="outline" className="gap-1.5" data-testid="primary-fix"
                       onClick={() => onFix(primary.blocked!.fix)}>
                 <Wrench className="size-3.5" />{t('flow.fix')}

@@ -120,7 +120,7 @@ function ChaptersTab({ novel, running, onOpenChapter, onNewChapter }: {
     if (live) {
       return (
         <Badge variant="secondary">
-          <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
+          <span className="size-1.5 animate-pulse motion-reduce:animate-none rounded-full bg-primary" aria-hidden />
           {t('novel.status.running')}
         </Badge>
       )

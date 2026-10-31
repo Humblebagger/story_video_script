@@ -657,10 +657,14 @@ await type([...container.querySelectorAll('.amap__row input')]
 console.log('8b. 未保存提示条 → 撤销回到原样 / 再改 ✓')
 
 // 9. 保存并核对：内容改了，ID 与镜头引用逐字未变（用提示条里的「保存」）
+//    先回看 ③：保存后「该做的那一步」从 ③ 回到 ④，不算往后走，视图不能被拉走
+await goStep('review')
+must(onStep('review') && !!bar(), '回看 ③，提示条仍在')
 await click(barBtn('保存'))
 must(saved.length === 1, '编辑后应 PUT 回后端')
 await settle(500)
 must(!bar(), '保存成功后提示条应消失')
+must(onStep('review'), '保存后视图应停在用户正看的 ③，不能跳步')
 const out = saved[0] as unknown as typeof DOC
 const c0 = out.assets.characters[0]
 must(c0.name === '华老栓（改）', '角色名应已更新')
@@ -684,6 +688,7 @@ await click(primary())
 finishJob('job3')
 await settle(1800)
 must(has('E01-SH001') && has('采用此版'), '新版本跑完应摆出来，可以改采用')
+must(onStep('render'), '生成完成后应自动跟到 ④ 出片（新版本没有出片会话）')
 await click(findByText('button', '采用此版'))
 await settle(120)
 must(shelf('alice')[0].chapters[0].adopted_version === 'job3', '采用应写回后端')
@@ -885,7 +890,12 @@ await mouseDown(findByText('button', '一包洋钱'))
 await click(findByText('button', '垫图'))
 await mouseDown(findByText('button', '康大叔'))
 must(has('已挂'), '垫图浮层应标出已勾选的卡')
-await click(findByText('button', '保存修改'))
+// 分镜视图自己的「保存修改」按钮（#storyboard-save，主按钮的「去修复」也定位到它）
+const sbSave = container.querySelector('#storyboard-save') as unknown as HTMLButtonElement
+must(!!sbSave && (sbSave.textContent ?? '').includes('保存修改') && !sbSave.disabled, '分镜视图里应有可点的「保存修改」')
+const savedBefore15 = saved.length
+await click(sbSave)
+must(saved.length === savedBefore15 + 1, '点 #storyboard-save 应 PUT 回后端')
 
 const out2 = saved[saved.length - 1] as unknown as typeof DOC
 const shot2 = out2.episodes[0].shots[0]

@@ -120,6 +120,7 @@ export const zh = {
       renderRest: '出剩余 {count} 段（约 {amount}）',
       viewFilm: '查看出片',
       compose: '去配音合成（配音约 {amount}）',
+      composeNoAmount: '去配音合成',
     },
     block: {
       noText: '还没有原文：先粘贴或读取本章原文',
@@ -129,6 +130,9 @@ export const zh = {
       verify: '完整性检查没通过：按检查结果修改后保存',
       dirty: '有未保存的修改：先保存',
       noFilm: '还没有出片：先完成第 4 步',
+      renderFirst: '还有段没出好：先完成第 4 步',
+      noClips: '还没有可出的段：打开出片面板重新切段',
+      uncertain: '有段在厂商那边状态不明：先到出片面板核对',
     },
     unsaved: '有未保存的修改',
     unsavedSave: '保存',
@@ -140,6 +144,13 @@ export const zh = {
       compose: '成片已合成，可以下载了',
     },
     view: '查看',
+    toast: {
+      failed: '转换失败',
+      done: '转换完成',
+      doneWarn: '转换完成（质量告警）',
+      fallbackWho: '分镜',
+    },
+    novelTitle: '《{title}》',
     source: { chars: '本章原文 · {n} 字', edit: '修改原文' },
     progress: '查看进度',
     download: {

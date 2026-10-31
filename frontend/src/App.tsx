@@ -78,6 +78,10 @@ export default function App() {
   const reloadFlow = flow.reload
   /** 递增一次 = 打开画布并切到「出片」页 */
   const [openFilmN, setOpenFilmN] = useState(0)
+  /** 章节原文框里有没保存的改动（由章节工作流报上来）；和分镜的 dirty 一起管离开提醒 */
+  const [textDirty, setTextDirty] = useState(false)
+  /** 正附着着的任务（announce 用来判断「用户正看着它跑完」） */
+  const attachedJob = useRef<string | null>(null)
 
   const refreshNovels = useCallback(async () => {
     try {
@@ -105,7 +109,8 @@ export default function App() {
   /** 完成播报去重：附着轮询与后台巡检可能同时发现同一个任务结束 */
   const announced = useRef<Set<string>>(new Set())
   /** 提示里「查看」要打开那一章；用 ref 拿最新的打开函数，announce 的依赖就不用跟着变 */
-  const openFromToast = useRef<(j: { id: string; novel_id?: string | null; chapter_id?: string | null }) => void>(() => {})
+  const openFromToast = useRef<(j: { id: string; status: string; novel_id?: string | null;
+                                       chapter_id?: string | null }) => void>(() => {})
   const announce = useCallback((j: { id: string; status: string;
                                      work_title?: string | null;
                                      chapter?: string | null;
@@ -113,15 +118,20 @@ export default function App() {
                                      chapter_id?: string | null }) => {
     if (announced.current.has(j.id)) return
     announced.current.add(j.id)
-    const who = `${j.work_title ?? '分镜'} ${j.chapter ?? ''}`.trim()
+    const who = `${j.work_title ?? t('flow.toast.fallbackWho')} ${j.chapter ?? ''}`.trim()
     const view = { label: t('flow.view'), onClick: () => openFromToast.current(j) }
     if (j.status === 'failed') {
       notify('转换失败', `${who}——失败原因见日志`)
-      toast.error('转换失败', { description: who, action: view })
+      toast.error(t('flow.toast.failed'), { description: who, action: view })
     } else {
       const title = j.status === 'completed_with_warnings' ? '转换完成（质量告警）' : '转换完成'
       notify(title, `${who} 已生成，点开即可审阅`)
-      toast.success(title, { description: who, action: view })
+      // 用户正在本章看着它跑完：产物会直接摆出来，章节工作流另有「分镜已生成」，这里不再弹一条
+      const watching = !!j.chapter_id && j.chapter_id === openChapterId.current && attachedJob.current === j.id
+      if (!watching) {
+        toast.success(t(j.status === 'completed_with_warnings' ? 'flow.toast.doneWarn' : 'flow.toast.done'),
+                      { description: who, action: view })
+      }
     }
   }, [t])
 
@@ -146,6 +156,7 @@ export default function App() {
   }, [refreshNovels, reloadOpen, announce])
 
   const { job, error, submitting, start, attach, reset } = useJob(onJobDone)
+  attachedJob.current = job?.id ?? null
 
   /** 打开/刷新整章跑完之前的预览：已完成批次的合并结果，只读 */
   const loadPreview = useCallback(async (jobId: string) => {
@@ -254,7 +265,7 @@ export default function App() {
     return () => clearTimeout(t)
   }, [novel, chapter, reloadOpen])
 
-  const confirmLeave = () => !dirty || confirm(t('flow.leave'))
+  const confirmLeave = () => !(dirty || textDirty) || confirm(t('flow.leave'))
 
   const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
     reset()
@@ -269,6 +280,10 @@ export default function App() {
       savedDoc.current = v.result
       setDocVid(v.result ? v.id : null)
       setDirty(false)
+      // 这一版的复验没过（改坏的草稿）：把检查结果摆出来，「去修复」才有地方可去
+      if (v.result && (v.status === 'draft_invalid' || v.verification?.status === 'failed')) {
+        setVerification(v.verification ?? null)
+      }
       if (!v.result) {
         setVerification(v.verification ?? null)
         setAlert(v.status === 'failed'
@@ -291,8 +306,8 @@ export default function App() {
     }
   }
 
-  /** 打开章节：本章有转换在跑就接上任务面板，否则摆出采用版（没有就最新一版） */
-  const openChapter = async (cid: string, nid = novel?.id, jobId?: string) => {
+  /** 打开章节：给了 vid 就直接打开那一版；否则本章有转换在跑就接上任务面板，再否则摆出采用版（没有就最新一版） */
+  const openChapter = async (cid: string, nid = novel?.id, jobId?: string, vid?: string) => {
     if (!nid || !confirmLeave()) return
     clearWork()
     try {
@@ -301,11 +316,11 @@ export default function App() {
       setNovel(n)
       openChapterId.current = c.id
       setChapter(c)
-      const live = jobId ?? running.find((j) => j.chapter_id === cid)?.id
+      const live = vid ? undefined : jobId ?? running.find((j) => j.chapter_id === cid)?.id
       if (live) attach(live)
       else {
-        const vid = c.adopted_version ?? c.versions[0]?.id
-        if (vid) void openVersion(nid, cid, vid)
+        const target = vid ?? c.adopted_version ?? c.versions[0]?.id
+        if (target) void openVersion(nid, cid, target)
       }
     } catch (e) {
       setAlert(`打开章节失败：${msg(e)}`)
@@ -318,22 +333,29 @@ export default function App() {
     else { clearWork(); attach(j.id) }
   }
 
+  // 成功的：直接打开它产出的那一版（版本号 = 任务号），不留一个跑完的任务面板；失败的接上任务面板看原因
   openFromToast.current = (j) => {
-    if (j.novel_id && j.chapter_id) void openChapter(j.chapter_id, j.novel_id, j.id)
-    else openJob(j as JobSummary)
+    const { novel_id: nid, chapter_id: cid } = j
+    if (nid && cid) {
+      if (j.status === 'failed') void openChapter(cid, nid, j.id)
+      // 已经在这一章：和点版本条一样只换版本；否则和侧栏打开别的章节一样
+      else if (novel?.id === nid && chapter?.id === cid) { if (confirmLeave()) void openVersion(nid, cid, j.id) }
+      else void openChapter(cid, nid, undefined, j.id)
+    } else openJob(j as unknown as JobSummary)
   }
 
   const undo = () => {
     if (savedDoc.current) { setDoc(savedDoc.current); setDirty(false) }
   }
 
-  // 有未保存的修改时，关页面前让浏览器提醒一下
+  // 有未保存的修改（分镜或原文）时，关页面前让浏览器提醒一下
+  const anyDirty = dirty || textDirty
   useEffect(() => {
-    if (!dirty) return
+    if (!anyDirty) return
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', h)
     return () => window.removeEventListener('beforeunload', h)
-  }, [dirty])
+  }, [anyDirty])
 
   const newNovel = () => {
     if (!confirmLeave()) return
@@ -460,8 +482,9 @@ export default function App() {
       }
       savedDoc.current = doc
       setDirty(false)
-      await reloadOpen(novel.id, chapter.id)
+      // 和 setDirty 同一拍开始重读出片状态：不让保存后的那一拍拿旧的出片状态去跟步
       void reloadFlow()
+      await reloadOpen(novel.id, chapter.id)
     } catch (e) {
       setAlert(`保存失败：${msg(e)}`)
     } finally {
@@ -632,6 +655,7 @@ export default function App() {
                 converting={converting}
                 disabled={submitting || svcDown}
                 running={running}
+                liveJobId={job && RUNNING.includes(job.status) ? job.id : null}
                 onOpenJob={openJob}
                 onConvert={convert}
                 onOpenVersion={(vid) => {
@@ -641,6 +665,8 @@ export default function App() {
                 onDeleteVersion={(vid) => void removeVersion(vid)}
                 onSaveText={saveText}
                 onSave={() => void save()}
+                onUndo={undo}
+                onTextDirty={setTextDirty}
                 onDelete={() => void removeChapter()}
                 onRerunDigest={() => void rerunDigest(novel.id, chapter.id)
                   .then(() => reloadOpen(novel.id, chapter.id))
@@ -662,8 +688,11 @@ export default function App() {
               />
             )}
             {!inWorkflow && board}
-            <UnsavedBar show={dirty && docVid !== null} saving={saving}
-                        onSave={() => void save()} onUndo={undo} />
+            {/* 章节打开时提示条由章节工作流摆（原文与分镜一起管） */}
+            {!(novel && chapter) && (
+              <UnsavedBar show={dirty && docVid !== null} saving={saving}
+                          onSave={() => void save()} onUndo={undo} />
+            )}
           </div>
         )}
       </AppShell>

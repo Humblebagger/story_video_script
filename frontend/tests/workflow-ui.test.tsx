@@ -23,9 +23,10 @@ const { Stepper } = await import('../src/components/workflow/Stepper')
 const { PrimaryBar } = await import('../src/components/workflow/PrimaryBar')
 const { UnsavedBar } = await import('../src/components/workflow/UnsavedBar')
 const { flashTarget } = await import('../src/lib/flash')
+const { ChapterWorkflow } = await import('../src/components/workflow/ChapterWorkflow')
 const { primaryFor, stepStates } = await import('../src/workflow')
 import type { FlowInput, StepId, Fix } from '../src/workflow'
-import type { FilmClip, FilmSession, VersionSummary } from '../src/types'
+import type { Chapter, FilmClip, FilmSession, Novel, VersionSummary } from '../src/types'
 
 const container = win.document.createElement('div')
 win.document.body.appendChild(container)
@@ -59,14 +60,31 @@ const viewed: StepId[] = []
 await render(<Stepper states={stepStates(base)} view="render" onView={(id) => viewed.push(id)} />)
 const items = qa('[data-step]')
 must(items.length === 6, '六个步骤')
-for (const b of items.slice(0, 3)) must(!!b.querySelector('svg') && !/\d/.test(b.textContent ?? ''), '前三步打勾、不显示数字')
+for (const b of items.slice(0, 3)) must(!!b.querySelector('svg') && !b.querySelector('[data-testid="step-num"]'), '前三步打勾、不显示数字')
+must(!!items[3].querySelector('[data-testid="step-num"]'), '当前步显示步号')
 await click(q('[data-step="compose"]'))
 must(viewed.length === 0, '点灰步不切换')
 must((q('[data-testid="step-hint"]')?.textContent ?? '').includes('需要先完成第 4 步'), '说明要先完成第 4 步')
+const composeBtn = q('[data-step="compose"]')!
+must(composeBtn.getAttribute('aria-expanded') === 'true'
+     && composeBtn.getAttribute('aria-controls') === q('[data-testid="step-hint"]')?.id, '灰步按钮标出展开状态并指向说明')
+must(q('[data-step="download"]')?.getAttribute('aria-expanded') === 'false', '别的灰步是收起状态')
+await act(async () => { win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event) })
+await settle(300)
+must(!q('[data-testid="step-hint"]'), 'Esc 收起说明')
+await click(q('[data-step="compose"]'))
+must(!!q('[data-testid="step-hint"]'), '再点灰步重新打开说明')
 await click(qa('[data-testid="step-hint"] button')[0])
 must(viewed.join() === 'render', '点「去第 4 步」切到出片')
 await click(q('[data-step="review"]'))
 must(viewed.join() === 'render,review', '点已完成的步骤可回看')
+// 说明开着时那一步解锁了：说明随之收起
+await click(q('[data-step="compose"]'))
+must(!!q('[data-testid="step-hint"]'), '说明打开')
+const doneFilm = { clips: [{ ...clip('c1'), state: 'done' }], remaining_cny: 0, final: null } as unknown as FilmSession
+await render(<Stepper states={stepStates({ ...base, film: doneFilm })} view="render" onView={(id) => viewed.push(id)} />)
+await settle(300)
+must(!q('[data-testid="step-hint"]'), '那一步解锁后说明自动收起')
 console.log('1. Stepper ✓')
 
 // 2. 主按钮
@@ -83,6 +101,14 @@ must((q('[data-testid="primary-reason"]')?.textContent ?? '').includes('完整�
 must((q('[data-testid="primary-action"]') as HTMLButtonElement).disabled, '主按钮禁用')
 await click(q('[data-testid="primary-fix"]'))
 must(fixed.length === 1 && fixed[0].step === 'review' && fixed[0].target === 'verification', '去修复带目标')
+await render(<PrimaryBar primary={primaryFor('storyboard', { ...base, converting: true })} onRun={() => {}} onFix={() => {}} />)
+must((q('[data-testid="primary-reason"]')?.textContent ?? '').includes('正在生成'), '生成中：说原因')
+must(!q('[data-testid="primary-fix"]'), '没有可去修复的地方时不显示「去修复」')
+await render(<PrimaryBar primary={primaryFor('render', { ...base, film: { ...film, clips: [] } as FilmSession })}
+                         onRun={() => {}} onFix={(f) => fixed.push(f)} />)
+must((q('[data-testid="primary-reason"]')?.textContent ?? '').includes('还没有可出的段'), '一段都没有：说原因')
+await click(q('[data-testid="primary-fix"]'))
+must(fixed.length === 2 && fixed[1].openFilm === true, '去修复 = 打开出片面板')
 await render(<PrimaryBar primary={primaryFor('download', base)} onRun={() => {}} onFix={() => {}} />)
 must(!q('[data-testid="primary-action"]'), '⑥ 不渲染')
 console.log('2. PrimaryBar ✓')
@@ -108,7 +134,56 @@ flashTarget('x')
 must(target.classList.contains('fix-flash'), '加上高亮')
 await new Promise((r) => setTimeout(r, 1600))
 must(!target.classList.contains('fix-flash'), '1.5 秒后去掉')
+flashTarget('x')
+await new Promise((r) => setTimeout(r, 1000))
+flashTarget('x')
+await new Promise((r) => setTimeout(r, 1000))
+must(target.classList.contains('fix-flash'), '1.5 秒内再定位一次：重新计时，不被上一次的定时器提前收掉')
+await new Promise((r) => setTimeout(r, 700))
+must(!target.classList.contains('fix-flash'), '第二次定位的 1.5 秒后去掉')
 console.log('4. flashTarget ✓')
 
+// 5. 章节工作流的跟步：未保存修改的来回不拉视图；换版本重新停到该做的那一步；⑥「回到画布重新合成」
+{
+  const vs = (id: string) => ({ ...ver, id })
+  const chapter = { id: 'c1', title: '一', order: 1, text: '他推门。', adopted_version: 'v1',
+    versions: [vs('v2'), vs('v1')], digest: null } as Chapter
+  const novel = { id: 'n1', title: '药', created_at: '', updated_at: '', params: {}, memory: {}, chapters: [] } as unknown as Novel
+  const doneClip = { ...clip('c1'), state: 'done' } as unknown as FilmClip
+  const full = { clips: [doneClip], remaining_cny: 0,
+    final: { state: 'done', files: ['final/E01.mp4'], report: null, error: null, detail: null } } as unknown as FilmSession
+  const flowOf = (f: FilmSession | null, loaded = true) =>
+    ({ film: f, compose: null, finalStale: false, reload: async () => {}, loaded, pending: false })
+  let films = 0
+  const wf = (p: { docVid: string; dirty?: boolean; flow: ReturnType<typeof flowOf> }) => (
+    <ChapterWorkflow novel={novel} chapter={chapter} docVid={p.docVid} doc={null} dirty={!!p.dirty} saving={false}
+                     verificationFailed={false} converting={false} disabled={false} running={[]} liveJobId={null}
+                     onOpenJob={() => {}} onConvert={() => {}} onOpenVersion={() => {}} onAdopt={() => {}}
+                     onDeleteVersion={() => {}} onSaveText={async () => {}} onSave={() => {}} onUndo={() => {}}
+                     onTextDirty={() => {}} onDelete={() => {}} onRerunDigest={() => {}}
+                     storyboard={<div data-testid="board" />} openFilm={() => { films++ }} flow={p.flow as never} />
+  )
+  const on = (id: string) => !!q(`[data-step="${id}"][aria-current="step"]`)
+  await render(null)
+  await render(wf({ docVid: 'v1', flow: flowOf(full) }))
+  must(on('download') && !!q('[data-testid="download-step"]'), '整条链都完成：进章节停在 ⑥')
+  await click(qa('[data-testid="download-step"] button').find((b) => (b.textContent ?? '').includes('回到画布重新合成')))
+  must(on('compose') && !!q('[data-testid="board"]'), '「回到画布重新合成」先回到 ⑤（分镜视图挂上）')
+  must(films === 1, '再打开画布的出片页')
+  await click(q('[data-step="review"]'))
+  await render(wf({ docVid: 'v1', dirty: true, flow: flowOf(full) }))
+  must(on('review'), '改动中：视图不动')
+  await render(wf({ docVid: 'v1', dirty: false, flow: flowOf(full) }))
+  must(on('review'), '保存 / 撤销后：「该做的那一步」没往前走，视图不跳到 ⑥')
+  await render(wf({ docVid: 'v2', flow: flowOf(null, false) }))
+  must(on('review'), '新版本的出片状态没读到之前不动')
+  await render(wf({ docVid: 'v2', flow: flowOf(null) }))
+  must(on('render'), '换到没出过片的版本：重新停到 ④，不停在灰掉的 ⑥ 或用户之前看的步骤')
+  await render(null)
+  console.log('5. ChapterWorkflow 跟步 ✓')
+}
+
+// 收尾：卸载并关掉 happy-dom 的窗口（清掉它的定时器），进程自然退出
+await act(async () => { root.unmount() })
+await win.happyDOM.close()
 console.log('\nALL PASS')
-process.exit(0)

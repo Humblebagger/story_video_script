@@ -5,11 +5,11 @@ import type { Chapter, VersionSummary } from '@/types'
 
 const ADOPTABLE = ['succeeded', 'completed_with_warnings']
 
-function fmtTime(iso: string | null): string {
+function fmtTime(iso: string | null, lang: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', {
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString(lang, {
     hour: '2-digit', minute: '2-digit' })}`
 }
 
@@ -22,7 +22,8 @@ export function VersionBar({ chapter, versionId, onOpenVersion, onAdopt, onDelet
   onDeleteVersion: (vid: string) => void
   onRerunDigest: () => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
+  const lang = locale === 'zh' ? 'zh-CN' : 'en-US'
   // 版本按时间正序编号 v1 v2 …（接口按时间倒序给）
   const versions: VersionSummary[] = [...chapter.versions].reverse()
   const current = versions.find((v) => v.id === versionId)
@@ -44,7 +45,7 @@ export function VersionBar({ chapter, versionId, onOpenVersion, onAdopt, onDelet
             <button key={v.id}
                     className={`vchip${v.id === versionId ? ' is-on' : ''}${
                       v.id === chapter.adopted_version ? ' is-adopted' : ''}`}
-                    title={`${fmtTime(v.created_at)} · ${label(JOB_STATUS, v.status)} · ${t('flow.chapter.shots', { n: v.shots })}`}
+                    title={`${fmtTime(v.created_at, lang)} · ${label(JOB_STATUS, v.status)} · ${t('flow.chapter.shots', { n: v.shots })}`}
                     onClick={() => onOpenVersion(v.id)}>
               v{i + 1}{v.id === chapter.adopted_version && ' ★'}
               {!ADOPTABLE.includes(v.status) && <em>{label(JOB_STATUS, v.status)}</em>}

@@ -1,7 +1,7 @@
 
 /** 章节页顶部的六步步骤条：已完成打勾（弹一下）、当前高亮、没到的灰掉；点灰掉的说明要先完成第几步并给直达按钮。
  *  view 是正在看的步骤（可以回看已完成的）。 */
-import { useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,18 @@ export function Stepper({ states, view, onView }: {
   const { t } = useI18n()
   const m = useMotionPresets()
   const [hint, setHint] = useState<StepState | null>(null)
+  const hintId = useId()
+  // 那一步已经解锁了：说明随之收起，不留一句过期的「需要先完成第几步」
+  useEffect(() => {
+    if (hint && states.find((s) => s.id === hint.id)?.state !== 'locked') setHint(null)
+  }, [states, hint])
+  // Esc 收起说明
+  useEffect(() => {
+    if (!hint) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setHint(null) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [hint])
   return (
     <nav aria-label={t('flow.stepsLabel')} className="relative">
       <ol className="flex flex-wrap items-center gap-1">
@@ -28,6 +40,8 @@ export function Stepper({ states, view, onView }: {
             {i > 0 && <span aria-hidden className={cn('h-px w-4 md:w-8', s.state === 'locked' ? 'bg-border' : 'bg-brand')} />}
             <button type="button" data-step={s.id} aria-current={view === s.id ? 'step' : undefined}
                     aria-disabled={s.state === 'locked'}
+                    aria-expanded={s.state === 'locked' ? hint?.id === s.id : undefined}
+                    aria-controls={s.state === 'locked' && hint?.id === s.id ? hintId : undefined}
                     onClick={() => (s.state === 'locked' ? setHint(hint?.id === s.id ? null : s) : (setHint(null), onView(s.id)))}
                     className={cn('flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
                                   view === s.id && 'border-transparent bg-foreground text-background',
@@ -41,7 +55,7 @@ export function Stepper({ states, view, onView }: {
                     ? <motion.span key="ok" {...m.pop}><Check className="size-3" /></motion.span>
                     : s.state === 'locked'
                       ? <Lock key="lock" className="size-3" />
-                      : <span key="n">{i + 1}</span>}
+                      : <span key="n" data-testid="step-num">{i + 1}</span>}
                 </AnimatePresence>
               </span>
               {t(`flow.steps.${s.id}` as MsgKey)}
@@ -51,7 +65,7 @@ export function Stepper({ states, view, onView }: {
       </ol>
       <AnimatePresence>
         {hint && (
-          <motion.div {...m.enter} role="status" data-testid="step-hint"
+          <motion.div {...m.enter} id={hintId} role="status" data-testid="step-hint"
                       className="absolute left-0 top-full z-20 mt-2 flex items-center gap-3 rounded-lg border bg-popover px-3 py-2 text-sm shadow-lg">
             {t('flow.needs', { n: hint.needs ?? 1 })}
             <Button size="sm" variant="outline"

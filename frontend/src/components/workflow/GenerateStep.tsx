@@ -42,7 +42,7 @@ export function GenerateStep({ novel, chars, mode, strict, converting, onMode, o
       </div>
       {converting && (
         <div role="status" className="flex items-center gap-3 text-sm">
-          <Loader2 className="size-4 animate-spin text-brand-to" aria-hidden />
+          <Loader2 className="size-4 animate-spin motion-reduce:animate-none text-brand-to" aria-hidden />
           <span>{t('flow.primary.generating')}</span>
           {onOpenJob && <Button size="sm" variant="outline" onClick={onOpenJob}>{t('flow.progress')}</Button>}
         </div>

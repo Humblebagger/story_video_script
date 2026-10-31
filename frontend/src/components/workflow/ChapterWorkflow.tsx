@@ -1,5 +1,7 @@
 /** 章节页 = 六步工作流：标题、步骤条、版本条，按正在看的步骤摆工作区（①原文 ②生成 ③④⑤分镜视图 ⑥下载），右下角一个主按钮。
- *  进章节停在「该做的那一步」；之后只有该做的那一步往后走时才跟着跳（用户手点的步骤保持），并对刚完成的步骤弹一句结果。 */
+ *  进章节、换版本（读到这一版的出片状态后）停在「该做的那一步」；之后只有该做的那一步往后走、且越过正在看的步骤时才跟着跳
+ *  （用户手点的步骤保持；未保存的修改不算进跟步，保存或撤销不会让视图跳走），并对刚完成的步骤弹一句结果。
+ *  原文与分镜的未保存修改共用底部的未保存提示条（保存 / 撤销两样都管）。 */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'motion/react'
@@ -19,6 +21,7 @@ import { GenerateStep } from './GenerateStep'
 import { PrimaryBar } from './PrimaryBar'
 import { SourceStep } from './SourceStep'
 import { Stepper } from './Stepper'
+import { UnsavedBar } from './UnsavedBar'
 import { VersionBar } from './VersionBar'
 
 interface Props {
@@ -37,6 +40,8 @@ interface Props {
   disabled: boolean
   /** 在跑的任务（找本章的那个给「查看进度」） */
   running: JobSummary[]
+  /** 正附着着的在跑任务（任务面板里那个）；没有为 null */
+  liveJobId: string | null
   onOpenJob: (j: JobSummary) => void
   onConvert: (opts: { narration_mode?: NarrationMode; strict: boolean }) => void
   onOpenVersion: (vid: string) => void
@@ -44,6 +49,10 @@ interface Props {
   onDeleteVersion: (vid: string) => void
   onSaveText: (patch: { title?: string; text?: string }) => Promise<void>
   onSave: () => void
+  /** 分镜回到上次保存的样子 */
+  onUndo: () => void
+  /** 原文框有没有没保存的改动（App 用来做离开提醒） */
+  onTextDirty: (dirty: boolean) => void
   onDelete: () => void
   onRerunDigest: () => void
   /** ③④⑤ 的工作区：复验报告 + 分镜视图（App 组好传进来） */
@@ -55,6 +64,7 @@ interface Props {
 
 const BOARD: StepId[] = ['review', 'render', 'compose']
 const LIVE = ['queued', 'running']
+const idx = (id: StepId) => STEPS.indexOf(id)
 const nextFrame = (fn: () => void) =>
   typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => fn()) : setTimeout(fn, 0)
 
@@ -66,11 +76,13 @@ interface Seen {
   compose: boolean
   /** 看到过本章在生成，等它出结果 */
   awaitingGen: boolean
+  /** 等的是哪个任务（版本号 = 任务号）；只对它产出的版本提示「分镜已生成」 */
+  genJob: string | undefined
 }
 
 export function ChapterWorkflow({
-  novel, chapter, docVid, doc, dirty, saving, verificationFailed, converting, disabled, running, onOpenJob,
-  onConvert, onOpenVersion, onAdopt, onDeleteVersion, onSaveText, onSave, onDelete, onRerunDigest,
+  novel, chapter, docVid, doc, dirty, saving, verificationFailed, converting, disabled, running, liveJobId, onOpenJob,
+  onConvert, onOpenVersion, onAdopt, onDeleteVersion, onSaveText, onSave, onUndo, onTextDirty, onDelete, onRerunDigest,
   storyboard, openFilm, flow,
 }: Props) {
   const { t } = useI18n()
@@ -87,6 +99,9 @@ export function ChapterWorkflow({
 
   const locked = !!chapter.adopted_version
   const textDirty = title.trim() !== chapter.title || (!locked && text !== chapter.text)
+  useEffect(() => { onTextDirty(textDirty) }, [textDirty, onTextDirty])
+  // 离开本章（卸载）时撤掉离开提醒
+  useEffect(() => () => onTextDirty(false), [onTextDirty])
   const version = chapter.versions.find((v) => v.id === docVid) ?? null
   // 出片状态没读到之前按「还没有」算：不让上一版的会话串过来，也不因为读到一半就跳步
   const ready = flow.loaded
@@ -97,6 +112,8 @@ export function ChapterWorkflow({
     compose: ready ? flow.compose : null,
   }
   const cur = currentStep(input)
+  // 跟步只看「做完了什么」：未保存的修改不算（否则保存或撤销会被当成往后走）
+  const followCur = currentStep({ ...input, dirty: false, textDirty: false })
   const [view, setView] = useState<StepId>(cur)
 
   // 跟步与完成提示：只在「该做的那一步」往后走时跟；进章节的第一次计算、换版本后的首次读取都不提示
@@ -107,27 +124,40 @@ export function ChapterWorkflow({
   const genDone = stepDone('storyboard', input)
   const renderDone = stepDone('render', input)
   const composeDone = stepDone('compose', input)
+  const liveJob = running.find((j) => j.chapter_id === chapter.id)
+  const genJobNow = liveJob?.id ?? liveJobId ?? undefined
+  // 出片状态有读取在路上时值可能是旧的：跟步与提示等它落地
+  const settled = ready && !flow.pending
   useEffect(() => {
     const now = { render: renderDone, compose: composeDone }
     const before = seen.current
     if (!before) {
-      seen.current = { cur, vid: ready ? vid : undefined, ...now, awaitingGen: converting }
+      seen.current = { cur: followCur, vid: settled ? vid : undefined, ...now, awaitingGen: converting,
+                       genJob: converting ? genJobNow : undefined }
       return
     }
     let awaitingGen = before.awaitingGen || converting
-    // 生成结束：版本不再是「在跑」时出结果（成功就提示；失败或没打开版本就不再等）
+    let genJob = awaitingGen ? genJobNow ?? before.genJob : undefined
+    // 生成结束：版本不再是「在跑」时出结果（只对这次生成产出的版本提示；失败或没打开它就不再等）
     if (awaitingGen && !converting && !live) {
-      if (vid && genDone) toast.success(t('flow.done.storyboard', { shots }))
+      if (vid && vid === genJob && genDone) toast.success(t('flow.done.storyboard', { shots }))
       awaitingGen = false
+      genJob = undefined
     }
-    if (!ready) { seen.current = { ...before, awaitingGen }; return }
-    if (STEPS.indexOf(cur) > STEPS.indexOf(before.cur)) setView(cur)
+    if (!settled) { seen.current = { ...before, awaitingGen, genJob }; return }
+    if (vid && before.vid !== vid) {
+      // 换了版本（含进章节后第一次打开版本、生成完摆出新版本）：等同重新进章节，停到这一版该做的那一步
+      setView(followCur)
+    } else if (idx(followCur) > idx(before.cur) && idx(followCur) > idx(view)) {
+      // 只往前跟，且不把视图往回拉
+      setView(followCur)
+    }
     if (before.vid === vid) {
       if (!before.render && now.render) toast.success(t('flow.done.render'))
       if (!before.compose && now.compose) toast.success(t('flow.done.compose'))
     }
-    seen.current = { cur, vid, ...now, awaitingGen }
-  }, [cur, vid, ready, converting, live, shots, genDone, renderDone, composeDone, t])
+    seen.current = { cur: followCur, vid, ...now, awaitingGen, genJob }
+  }, [followCur, view, vid, settled, converting, live, shots, genDone, renderDone, composeDone, genJobNow, t])
 
   const saveText = async () => {
     setSavingText(true)
@@ -152,6 +182,16 @@ export function ChapterWorkflow({
       case 'none': break
     }
   }
+  /** 底部提示条：原文与分镜的未保存修改一起保存 / 一起撤销 */
+  const boardDirty = dirty && docVid !== null
+  const saveAll = async () => {
+    if (textDirty) await saveText()
+    if (boardDirty) onSave()
+  }
+  const undoAll = () => {
+    if (textDirty) { setTitle(chapter.title); setText(chapter.text) }
+    if (boardDirty) onUndo()
+  }
   const busy = primary.action === 'generate' ? disabled
     : primary.action === 'save' ? saving
     : primary.action === 'saveText' ? savingText : false
@@ -159,9 +199,14 @@ export function ChapterWorkflow({
     if (f.step) setView(f.step)
     const target = f.target
     if (target) nextFrame(() => flashTarget(target))
+    if (f.openFilm) openFilm()
+  }
+  /** ⑥「回到画布重新合成」：先回到 ⑤ 把分镜视图挂上，下一帧再打开画布（同一帧里加的计数会被新挂载的视图当成旧的） */
+  const recompose = () => {
+    setView('compose')
+    nextFrame(openFilm)
   }
 
-  const liveJob = running.find((j) => j.chapter_id === chapter.id)
   const finalFiles = input.film?.final?.files ?? []
   const workspace = (() => {
     switch (view) {
@@ -188,7 +233,7 @@ export function ChapterWorkflow({
         return docVid && input.film && finalFiles.length ? (
           <section className="chap">
             <DownloadStep version={{ nid: novel.id, cid: chapter.id, vid: docVid }} film={input.film}
-                          compose={input.compose} onOpenFilm={openFilm} />
+                          compose={input.compose} onOpenFilm={recompose} />
           </section>
         ) : (
           <EmptyState icon={<Film className="size-6" />} title={t('flow.empty.film')} hint={t('flow.empty.filmHint')}
@@ -211,7 +256,7 @@ export function ChapterWorkflow({
     <div className="flex flex-col gap-4 pb-28">
       <section className="chap">
         <header className="chap__head">
-          <span className="chap__novel">《{novel.title}》</span>
+          <span className="chap__novel">{t('flow.novelTitle', { title: novel.title })}</span>
           <span className="text-[17px] font-semibold">{chapter.title}</span>
         </header>
         <Stepper states={stepStates(input)} view={view} onView={setView} />
@@ -225,6 +270,8 @@ export function ChapterWorkflow({
         {workspace}
       </motion.div>
       <PrimaryBar primary={primary} busy={busy} onRun={run} onFix={fix} />
+      <UnsavedBar show={boardDirty || textDirty} saving={saving || savingText}
+                  onSave={() => void saveAll()} onUndo={undoAll} />
     </div>
   )
 }

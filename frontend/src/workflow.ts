@@ -69,6 +69,8 @@ export interface Fix {
   step?: StepId
   /** 再滚到并高亮哪个元素（id） */
   target?: string
+  /** 打开画布的出片面板（要在面板里处理的情况：还没切出段、有段状态不明） */
+  openFilm?: true
 }
 
 export interface Primary {
@@ -108,7 +110,9 @@ export function primaryFor(id: StepId, f: FlowInput): Primary {
     }
     case 'render': {
       const s = f.film
-      const rest = s ? s.clips.filter((c) => (c.state === 'planned' || c.state === 'failed') && !c.uncertain) : []
+      // 要（重新）出的段：没出、失败、分镜改过后过期的；厂商那边状态不明的先不算（批量出片会跳过，要人去核对）
+      const rest = s ? s.clips.filter((c) => (c.state === 'planned' || c.state === 'failed' || c.state === 'stale') && !c.uncertain) : []
+      const unsettled = s ? s.clips.filter((c) => c.state !== 'done') : []
       const tried = !!s?.clips.some((c) => c.state === 'done')
       const p: Primary = !s ? { action: 'openFilm', label: 'flow.primary.startFilm' }
         : !rest.length ? { action: 'openFilm', label: 'flow.primary.viewFilm' }
@@ -119,12 +123,21 @@ export function primaryFor(id: StepId, f: FlowInput): Primary {
       if (verifyFailed(f)) {
         return block(p, 'flow.block.verify', { step: 'review', target: 'verification' })
       }
+      // 会话里一段都没有 / 剩下没出好的全是状态不明的：主按钮没法替人决定，说原因并打开出片面板
+      if (s && !s.clips.length) return block(p, 'flow.block.noClips', { openFilm: true })
+      if (s && !rest.length && unsettled.length && unsettled.every((c) => c.uncertain)) {
+        return block(p, 'flow.block.uncertain', { openFilm: true })
+      }
       return p
     }
     case 'compose': {
-      const p: Primary = { action: 'openFilm', label: 'flow.primary.compose', cny: f.compose?.tts_cny }
+      // 合成预览还没读到时不写金额（不显示「约 —」）
+      const p: Primary = f.compose
+        ? { action: 'openFilm', label: 'flow.primary.compose', cny: f.compose.tts_cny }
+        : { action: 'openFilm', label: 'flow.primary.composeNoAmount' }
       if (f.dirty) return block(p, 'flow.block.dirty', { step: 'review', target: 'storyboard-save' })
       if (!f.film) return block(p, 'flow.block.noFilm', { step: 'render' })
+      if (!stepDone('render', f)) return block(p, 'flow.block.renderFirst', { step: 'render' })
       return p
     }
     case 'download':
