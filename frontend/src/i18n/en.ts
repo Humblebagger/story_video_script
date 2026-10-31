@@ -192,4 +192,12 @@ export const en: Messages = {
       rerun: 'Rerun',
     },
   },
+  novel: {
+    chapters: 'Chapters',
+    chars: '{n} chars',
+    versions: '{n} versions',
+    status: { running: 'Generating', adopted: 'Adopted', failed: 'Failed', generated: 'Generated', none: 'Not generated' },
+    newChapter: '+ New chapter',
+    empty: 'No chapters yet. Start by importing the first one',
+  },
 }

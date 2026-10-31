@@ -734,6 +734,20 @@ await click(findByText('button', '保存梗概'))
 must(shelf('alice')[0].memory.plot.outline === '华老栓买药救子。', '全书梗概应写回')
 console.log('11b. 创作限制（负面提示词/关键词/停用）/ 主线剧情（梗概 + 逐章摘要）✓')
 
+// 11c. 小说页默认是「章节」卡片：含章节标题与「已采用」，点卡片进入章节
+await click(container.querySelector('.hchap__item') as unknown as HTMLElement)     // 先进章节，再回小说页以重新挂载
+await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
+const tabOn = container.querySelector('.tabs__btn.is-on')
+must((tabOn?.textContent ?? '') === '章节', '小说页无待确认提议时默认停在「章节」页签')
+const cards = [...container.querySelectorAll('[data-testid="chapter-card"]')]
+must(cards.length === 2 && (cards[0].textContent ?? '').includes('一')
+     && (cards[0].textContent ?? '').includes('已采用')
+     && (cards[1].textContent ?? '').includes('未生成'), '章节卡片应含标题、「已采用」与「未生成」')
+must(has('＋ 新章节'), '应有「＋ 新章节」卡')
+await click(cards[0] as unknown as HTMLElement)
+must(!!container.querySelector('[data-step]'), '点卡片应进入章节工作流')
+console.log('11c. 小说页章节卡片 → 默认页签 / 状态徽章 / 点卡片进章节 ✓')
+
 // 12. 换个账号：看不到 alice 的任何东西
 await click(findByText('button', '退出'))
 await settle(100)

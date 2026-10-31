@@ -15,14 +15,13 @@ interface Props {
   onOpenNovel: (nid: string) => void
   onOpenChapter: (cid: string) => void
   onOpenJob: (job: JobSummary) => void
-  onNewNovel: () => void
   onNewChapter: () => void
 }
 
 /** 侧栏：小说（总会话）→ 章节（二级会话）。章节上标出采用版与在跑的转换 */
 export function NovelSidebar({
   novels, novel, chapterId, running, activeJobId, loading,
-  onOpenNovel, onOpenChapter, onOpenJob, onNewNovel, onNewChapter,
+  onOpenNovel, onOpenChapter, onOpenJob, onNewChapter,
 }: Props) {
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
@@ -33,7 +32,6 @@ export function NovelSidebar({
     <aside className="hist">
       <div className="hist__head">
         <h2>小说</h2>
-        <button className="btn btn--sm" onClick={onNewNovel}>＋ 新小说</button>
       </div>
 
       {!!running.length && (

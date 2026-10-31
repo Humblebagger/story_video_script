@@ -190,4 +190,12 @@ export const zh = {
       rerun: '重跑',
     },
   },
+  novel: {
+    chapters: '章节',
+    chars: '{n} 字',
+    versions: '{n} 个版本',
+    status: { running: '生成中', adopted: '已采用', failed: '失败', generated: '已生成', none: '未生成' },
+    newChapter: '＋ 新章节',
+    empty: '还没有章节，从导入第一章开始',
+  },
 }

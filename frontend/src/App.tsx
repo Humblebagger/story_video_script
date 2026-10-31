@@ -597,7 +597,6 @@ export default function App() {
             onOpenNovel={(nid) => void openNovel(nid)}
             onOpenChapter={(cid) => void openChapter(cid)}
             onOpenJob={openJob}
-            onNewNovel={newNovel}
             onNewChapter={() => void newChapter()}
           />
         )}
@@ -616,6 +615,8 @@ export default function App() {
                 onChanged={() => { void reloadOpen(novel.id); void refreshNovels() }}
                 onDeleted={() => { setNovel(null); void refreshNovels() }}
                 onOpenChapter={(cid) => void openChapter(cid)}
+                running={running}
+                onNewChapter={() => void newChapter()}
               />
             )}
             {novel && chapter && (

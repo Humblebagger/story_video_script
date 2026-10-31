@@ -1,14 +1,22 @@
+import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
+import { BookOpen } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { EmptyState } from '@/components/common/EmptyState'
+import { useI18n } from '@/i18n/core'
+import { useMotionPresets } from '@/motion'
 import {
   addConstraint, addLifecycle, deleteConstraint, deleteLifecycle, deleteNovel, setOutline,
   setSynopsis, updateConstraint, updateLifecycle, updateNovel,
 } from '../api'
 import { LIFECYCLE_STATUS, LIFECYCLE_TYPE, label } from '../labels'
-import type { LifecycleType, Novel, NovelParams } from '../types'
+import type { ChapterSummary, JobSummary, LifecycleType, Novel, NovelParams } from '../types'
 import { NovelAssets } from './NovelAssets'
 import { DEFAULT_PARAMS, Field, ParamsForm } from './ParamsForm'
 
-type Tab = 'params' | 'plot' | 'constraints' | 'assets' | 'lifecycle'
+type Tab = 'chapters' | 'params' | 'plot' | 'constraints' | 'assets' | 'lifecycle'
 
 interface Props {
   novel: Novel
@@ -16,14 +24,18 @@ interface Props {
   onChanged: () => void
   onDeleted: () => void
   onOpenChapter: (cid: string) => void
+  /** 后台在跑的转换：章节卡片据此显示「生成中」与进度 */
+  running: JobSummary[]
+  onNewChapter: () => void
 }
 
 const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** 小说页 = 总会话：制作参数默认值 + 长期记忆（主线剧情、创作限制、资产库、人物生命周期） */
-export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter }: Props) {
+export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running, onNewChapter }: Props) {
+  const { t } = useI18n()
   const pending = novel.memory.lifecycle.filter((e) => e.status === 'proposed').length
-  const [tab, setTab] = useState<Tab>(pending ? 'lifecycle' : 'params')
+  const [tab, setTab] = useState<Tab>(pending ? 'lifecycle' : 'chapters')
   const [alert, setAlert] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -46,7 +58,7 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter }: Props)
   }
 
   const tabs: [Tab, string][] = [
-    ['params', '制作参数'], ['plot', '主线剧情'], ['constraints', '创作限制'],
+    ['chapters', t('novel.chapters')], ['params', '制作参数'], ['plot', '主线剧情'], ['constraints', '创作限制'],
     ['assets', '资产库'], ['lifecycle', pending ? `人物生命周期（${pending} 待确认）` : '人物生命周期'],
   ]
 
@@ -71,6 +83,10 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter }: Props)
       </nav>
       {alert && <p className="alert">{alert}</p>}
       <div className="novel__body">
+        {tab === 'chapters' && (
+          <ChaptersTab novel={novel} running={running}
+                       onOpenChapter={onOpenChapter} onNewChapter={onNewChapter} />
+        )}
         {tab === 'params' && <ParamsTab novel={novel} busy={busy} run={run} />}
         {tab === 'plot' && <PlotTab novel={novel} busy={busy} run={run} />}
         {tab === 'constraints' && <ConstraintsTab novel={novel} busy={busy} run={run} />}
@@ -82,6 +98,69 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter }: Props)
         )}
       </div>
     </section>
+  )
+}
+
+/** 章节卡片网格：状态一眼可见，整卡可点进入该章 */
+function ChaptersTab({ novel, running, onOpenChapter, onNewChapter }: {
+  novel: Novel
+  running: JobSummary[]
+  onOpenChapter: (cid: string) => void
+  onNewChapter: () => void
+}) {
+  const { t } = useI18n()
+  const m = useMotionPresets()
+  if (!novel.chapters.length) {
+    return (
+      <EmptyState icon={<BookOpen className="size-5" />} title={t('novel.empty')}
+                  action={<button className="btn" onClick={onNewChapter}>{t('novel.newChapter')}</button>} />
+    )
+  }
+  const badge = (c: ChapterSummary, live: JobSummary | undefined) => {
+    if (live) {
+      return (
+        <Badge variant="secondary">
+          <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
+          {t('novel.status.running')}
+        </Badge>
+      )
+    }
+    if (c.adopted_version) return <Badge>{t('novel.status.adopted')}</Badge>
+    if (c.latest_status === 'failed') return <Badge variant="destructive">{t('novel.status.failed')}</Badge>
+    if (c.versions.length) return <Badge variant="outline">{t('novel.status.generated')}</Badge>
+    return <Badge variant="outline" className="text-muted-foreground">{t('novel.status.none')}</Badge>
+  }
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {novel.chapters.map((c, i) => {
+        const live = running.find((j) => j.chapter_id === c.id)
+        const p = live?.progress
+        return (
+          <motion.div key={c.id} {...m.item(i)}>
+            <Card role="button" tabIndex={0} data-testid="chapter-card"
+                  className="h-full cursor-pointer gap-3 p-4 transition-shadow hover:shadow-md"
+                  onClick={() => onOpenChapter(c.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChapter(c.id) } }}>
+              <div className="flex items-start justify-between gap-2">
+                <b className="text-base">{c.title}</b>
+                {badge(c, live)}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {t('novel.chars', { n: c.chars })} · {t('novel.versions', { n: c.versions.length })}
+              </p>
+              {p && p.total_chars > 0 && <Progress value={(p.done_chars / p.total_chars) * 100} />}
+            </Card>
+          </motion.div>
+        )
+      })}
+      <motion.div {...m.item(novel.chapters.length)}>
+        <Card role="button" tabIndex={0} onClick={onNewChapter}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewChapter() } }}
+              className="h-full min-h-24 cursor-pointer items-center justify-center border-dashed p-4 text-sm text-muted-foreground hover:bg-accent">
+          {t('novel.newChapter')}
+        </Card>
+      </motion.div>
+    </div>
   )
 }
 
