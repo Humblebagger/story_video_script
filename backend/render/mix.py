@@ -244,20 +244,49 @@ def chosen_file(c: dict) -> Optional[str]:
     return a["file"] if a and a.get("state") == "succeeded" and a.get("file") else None
 
 
-def compose_fingerprint(doc: dict, s: dict, voices: dict, bgm: dict, draft: bool) -> str:
-    """成片的输入指纹：语音条、各镜头可播时长、声音模式、音色、各段采用的视频与静音、BGM、草稿合成。"""
-    shots = [(sh["id"], round(shotcalc.playable(sh), 3))
+def _video(root, c: dict) -> Optional[str]:
+    """段可用的视频（绝对路径）：采用的那次成功且文件还在磁盘上；否则 None。"""
+    rel = chosen_file(c)
+    p = Path(root) / rel if rel else None
+    return str(p) if p is not None and p.exists() else None
+
+
+def _stat(path) -> Optional[list]:
+    try:
+        st = Path(path).stat()
+    except OSError:
+        return None
+    return [str(path), st.st_size, st.st_mtime_ns]
+
+
+def compose_fingerprint(root, doc: dict, s: dict, voices: dict, bgm: dict, draft: bool,
+                        keyframes: dict = None, cps: float = DEFAULT_SPEECH_CPS) -> str:
+    """成片的输入指纹：语音条、各镜头可播时长、画幅、声音模式、音色、各段可用的视频与静音、
+    草稿补位（关键帧或黑场）、BGM、草稿合成。"""
+    keyframes = keyframes or {}
+    shots = [(sh["id"], round(shotcalc.playable(sh, cps), 3))
              for ep in doc.get("episodes") or [] for sh in ep.get("shots") or []]
-    music = {k: [str(v), Path(v).stat().st_size, Path(v).stat().st_mtime_ns] for k, v in sorted(bgm.items())
-             if Path(v).exists()}
+    music = {}
+    for k, v in sorted(bgm.items()):
+        st = _stat(v)
+        if st:
+            music[k] = st
+    size = frame_size(s["resolution"], ((doc.get("meta") or {}).get("video") or {}).get("aspect_ratio") or "9:16")
+    holes = {}
+    if draft:
+        for c in s["clips"]:
+            if not _video(root, c):
+                kf = keyframes.get(c["shots"][0]) if c["shots"] else None
+                holes[c["id"]] = (_stat(kf) if kf else None)
     return shotcalc.fingerprint(
         lines=[(x["id"], x["kind"], x["speaker"], x["text"]) for x in voice.speech_lines(doc)],
-        shots=shots, mode=s["audio_mode"], resolution=s["resolution"], voices=voices,
-        clips=[(c["id"], chosen_file(c), bool(c.get("mute_native"))) for c in s["clips"]],
-        bgm=music, draft=draft)
+        shots=shots, mode=s["audio_mode"], resolution=s["resolution"], size=size, voices=voices,
+        clips=[(c["id"], _video(root, c), bool(c.get("mute_native"))) for c in s["clips"]],
+        holes=holes, bgm=music, draft=draft)
 
 
-def preview(root, doc: dict, s: dict, *, tts, bgm: dict, draft: bool) -> dict:
+def preview(root, doc: dict, s: dict, *, tts, bgm: dict, draft: bool, keyframes: dict = None,
+            cps: float = DEFAULT_SPEECH_CPS) -> dict:
     """合成前的预览：配音条数、未缓存字数与费用、缺音色的说话人、缺视频的段、成片指纹。不花钱。"""
     lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
     voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
@@ -265,8 +294,8 @@ def preview(root, doc: dict, s: dict, *, tts, bgm: dict, draft: bool) -> dict:
            else {"lines": len(lines), "chars": 0, "cny": 0.0})
     return {"lines": len(lines), "tts_chars": est["chars"], "tts_cny": est["cny"],
             "missing_voices": missing, "voices": voices,
-            "no_video": [c["id"] for c in s["clips"] if not chosen_file(c)],
-            "fingerprint": compose_fingerprint(doc, s, voices, bgm, draft)}
+            "no_video": [c["id"] for c in s["clips"] if not _video(root, c)],
+            "fingerprint": compose_fingerprint(root, doc, s, voices, bgm, draft, keyframes, cps)}
 
 
 def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft: bool, tools: tuple,
@@ -279,6 +308,10 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
     ffmpeg, ffprobe = tools
     root = Path(root)
     say = progress or (lambda step: None)
+    if not draft:
+        for c in s["clips"]:
+            if not _video(root, c):
+                raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
     lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
     voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
     if missing:
@@ -310,8 +343,7 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
         plan = plan_episode(ep, clips, voiced, cps)
         segs, placeholders = [], []
         for seg, c in zip(plan["segments"], clips):
-            rel = chosen_file(c)
-            src = str(root / rel) if rel and (root / rel).exists() else None
+            src = _video(root, c)
             still = None
             if not src:
                 if not draft:
@@ -339,6 +371,8 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
         tmp = final.with_suffix(".part.mp4")
         say(f"混音 {ep['id']}")
         music = bgm.get(ep["id"])
+        if music and not Path(music).exists():
+            music = None
         run(mix_cmd(str(joined), plan, bgm=str(music) if music else None, out=str(tmp), ffmpeg=ffmpeg),
             f"混音 {ep['id']} ")
         tmp.replace(final)

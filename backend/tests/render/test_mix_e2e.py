@@ -4,6 +4,7 @@
 
 没装 ffmpeg 时只跑预览部分并注明跳过。用法: python3 tests/render/test_mix_e2e.py
 """
+import copy
 import json
 import subprocess
 import sys
@@ -41,6 +42,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         tts = FakeTts()
+        (root / "clips").mkdir()
+        (root / "clips" / "E01-C01.t1.mp4").write_bytes(b"x")  # 占位文件；有 ffmpeg 时下面换成真视频
         p = mix.preview(root, DOC, session(True), tts=tts, bgm={}, draft=True)
         assert p["lines"] == 2 and p["tts_chars"] == len("秋天的后半夜月亮下去了") + len("小栓的爹")
         assert p["missing_voices"] == [] and p["no_video"] == ["E01-C02"] and p["voices"]["C1"] == "fake-female"
@@ -50,6 +53,16 @@ def main() -> int:
             "采用的视频变了，成片过期"
         s = dict(session(True), audio_mode="silent")
         assert mix.preview(root, DOC, s, tts=tts, bgm={}, draft=True)["tts_chars"] == 0
+        d169 = copy.deepcopy(DOC)
+        d169["meta"]["video"]["aspect_ratio"] = "16:9"
+        assert mix.preview(root, d169, session(True), tts=tts, bgm={}, draft=True)["fingerprint"] != fp, "画幅变了"
+        kf = root / "kf_S3.png"
+        kf.write_bytes(b"png")
+        assert mix.preview(root, DOC, session(True), tts=tts, bgm={}, draft=True,
+                           keyframes={"S3": kf})["fingerprint"] != fp, "补位关键帧变了"
+        gone = session(True)
+        gone["clips"][0]["attempts"][0]["file"] = "clips/nope.mp4"
+        assert mix.preview(root, DOC, gone, tts=tts, bgm={}, draft=True)["no_video"] == ["E01-C01", "E01-C02"]
         print("1. 预览：配音条数与未缓存字数、缺音色、缺视频的段、成片指纹 ✓")
 
         tools = mix.tools()
@@ -57,7 +70,6 @@ def main() -> int:
             print("\nALL PASS（跳过：没装 ffmpeg，端到端合成没跑；brew install ffmpeg 后再跑）")
             return 0
         ffmpeg, ffprobe = tools
-        (root / "clips").mkdir()
         subprocess.run([ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25",
                         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "4",
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
