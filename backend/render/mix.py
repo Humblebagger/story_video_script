@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from pipeline.quality import DEFAULT_SPEECH_CPS
-from render import compose, voice
+from render import compose as shotcalc, voice
 
 FPS = 30
 SPEEDUP_MAX = 1.15
@@ -78,7 +78,7 @@ def plan_episode(ep: dict, clips: list, voiced: dict, cps: float = DEFAULT_SPEEC
             shot = shots.get(sid)
             if shot is None:
                 continue
-            p = compose.playable(shot, cps)
+            p = shotcalc.playable(shot, cps)
             base += p
             lines = by_shot.get(sid, [])
             durs = [voiced[x["id"]]["duration"] if x["id"] in voiced else len(x["text"]) / cps for x in lines]
@@ -233,3 +233,120 @@ def media_seconds(path, ffprobe: str) -> float:
         return float(r.stdout.strip())
     except ValueError:
         return 0.0
+
+
+# ---------- 整章合成 ----------
+
+def chosen_file(c: dict) -> Optional[str]:
+    """段采用的那次的视频（会话目录下的相对路径）；没有成功的就 None。"""
+    i = c.get("chosen")
+    a = c["attempts"][i] if i is not None and 0 <= i < len(c.get("attempts") or []) else None
+    return a["file"] if a and a.get("state") == "succeeded" and a.get("file") else None
+
+
+def compose_fingerprint(doc: dict, s: dict, voices: dict, bgm: dict, draft: bool) -> str:
+    """成片的输入指纹：语音条、各镜头可播时长、声音模式、音色、各段采用的视频与静音、BGM、草稿合成。"""
+    shots = [(sh["id"], round(shotcalc.playable(sh), 3))
+             for ep in doc.get("episodes") or [] for sh in ep.get("shots") or []]
+    music = {k: [str(v), Path(v).stat().st_size, Path(v).stat().st_mtime_ns] for k, v in sorted(bgm.items())
+             if Path(v).exists()}
+    return shotcalc.fingerprint(
+        lines=[(x["id"], x["kind"], x["speaker"], x["text"]) for x in voice.speech_lines(doc)],
+        shots=shots, mode=s["audio_mode"], resolution=s["resolution"], voices=voices,
+        clips=[(c["id"], chosen_file(c), bool(c.get("mute_native"))) for c in s["clips"]],
+        bgm=music, draft=draft)
+
+
+def preview(root, doc: dict, s: dict, *, tts, bgm: dict, draft: bool) -> dict:
+    """合成前的预览：配音条数、未缓存字数与费用、缺音色的说话人、缺视频的段、成片指纹。不花钱。"""
+    lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
+    voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
+    est = (voice.estimate(lines, voices, tts, root) if not missing
+           else {"lines": len(lines), "chars": 0, "cny": 0.0})
+    return {"lines": len(lines), "tts_chars": est["chars"], "tts_cny": est["cny"],
+            "missing_voices": missing, "voices": voices,
+            "no_video": [c["id"] for c in s["clips"] if not chosen_file(c)],
+            "fingerprint": compose_fingerprint(doc, s, voices, bgm, draft)}
+
+
+def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft: bool, tools: tuple,
+            on_cost=None, progress=None, cps: float = DEFAULT_SPEECH_CPS) -> dict:
+    """合成整章：配音 → 每集规整、拼接、混音 → 字幕与报告。返回 {"files", "report"}（会话目录下的相对路径）。
+
+    已合成的配音（audio/cache）与已规整的段（final/work，按输入指纹命名）都复用：失败后重跑不重做已完成的步骤。
+    draft=True 时没出的段用首镜关键帧定格补位，没有关键帧用黑场；False 时缺段直接拒绝。
+    """
+    ffmpeg, ffprobe = tools
+    root = Path(root)
+    say = progress or (lambda step: None)
+    lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
+    voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
+    if missing:
+        raise MixError("还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in missing))
+    say(f"配音 {len(lines)} 条")
+    try:
+        done, failed = voice.synthesize(lines, voices, tts, root, on_cost=on_cost)
+    except voice.VoiceError as e:
+        raise MixError(str(e))
+    if failed:
+        raise MixError("有语音条合成失败，为免成片漏句已停止合成："
+                       + "；".join(f"{x['id']}：{x['error']}" for x in failed[:5]))
+    voiced = {x["id"]: x for x in done}
+    size = frame_size(s["resolution"], ((doc.get("meta") or {}).get("video") or {}).get("aspect_ratio") or "9:16")
+    work = root / "final" / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    by_ep = {}
+    for c in s["clips"]:
+        by_ep.setdefault(c["episode"], []).append(c)
+    report = {"audio_mode": s["audio_mode"], "size": f"{size[0]}x{size[1]}", "draft": draft, "episodes": [],
+              "alignment": "段内镜头切换时刻由视频模型决定，台词按计划镜头起点放置，属近似对齐"}
+    if s["audio_mode"] == "dialogue_native":
+        report["warning"] = "台词由视频模型生成，不保证逐字"
+    files = []
+    for ep in doc.get("episodes") or []:
+        clips = by_ep.get(ep["id"]) or []
+        if not clips:
+            continue
+        plan = plan_episode(ep, clips, voiced, cps)
+        segs, placeholders = [], []
+        for seg, c in zip(plan["segments"], clips):
+            rel = chosen_file(c)
+            src = str(root / rel) if rel and (root / rel).exists() else None
+            still = None
+            if not src:
+                if not draft:
+                    raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
+                kf = keyframes.get(c["shots"][0]) if c["shots"] else None
+                still = str(kf) if kf else None
+                placeholders.append(c["id"])
+            ndb = native_audio_policy(s["audio_mode"], bool(c.get("mute_native")))
+            audio = bool(src) and ndb is not None and has_audio(src, ffprobe)
+            key = hashlib.sha256(json.dumps([src, still, seg["duration"], size, ndb, audio]).encode()).hexdigest()[:16]
+            out = work / f"{c['id']}.{key}.mp4"
+            if not out.exists():
+                say(f"规整 {c['id']}")
+                tmp = out.with_suffix(".part.mp4")
+                run(normalize_cmd(src, still=still, duration=seg["duration"], size=size, native_db=ndb,
+                                  has_audio=audio, out=str(tmp), ffmpeg=ffmpeg), f"规整 {c['id']} ")
+                tmp.replace(out)
+            segs.append(out)
+        lst = work / f"{ep['id']}.txt"
+        lst.write_text(concat_list(segs), encoding="utf-8")
+        joined = work / f"{ep['id']}.joined.mp4"
+        say(f"拼接 {ep['id']}")
+        run(concat_cmd(lst, joined, ffmpeg), f"拼接 {ep['id']} ")
+        final = root / "final" / f"{ep['id']}.mp4"
+        tmp = final.with_suffix(".part.mp4")
+        say(f"混音 {ep['id']}")
+        music = bgm.get(ep["id"])
+        run(mix_cmd(str(joined), plan, bgm=str(music) if music else None, out=str(tmp), ffmpeg=ffmpeg),
+            f"混音 {ep['id']} ")
+        tmp.replace(final)
+        (root / "final" / f"{ep['id']}.srt").write_text(srt(plan["subs"]), encoding="utf-8")
+        files += [f"final/{ep['id']}.mp4", f"final/{ep['id']}.srt"]
+        report["episodes"].append({"episode": ep["id"], "seconds": plan["total"], "notes": plan["notes"],
+                                   "placeholders": placeholders,
+                                   "stale": [c["id"] for c in clips if c.get("state") == "stale"]})
+    (root / "final" / "mix_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                                                    encoding="utf-8")
+    return {"files": files, "report": "final/mix_report.json"}
