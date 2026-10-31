@@ -86,3 +86,11 @@ def _fake_tts():
 
 
 register_tts("fake", _fake_tts)
+
+
+def _volc_tts():
+    from render.providers.tts_volc import VolcTts
+    return VolcTts.from_env()
+
+
+register_tts("volc", _volc_tts)
