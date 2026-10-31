@@ -27,11 +27,14 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   /** 验证门没过的原因（读取时报告的，或出片被 422 拦下的） */
   const [gate, setGate] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 每次读取结束加一：让轮询定时器在成功或失败后都重新排上 */
+  const [tick, setTick] = useState(0)
   const [confirm, setConfirm] = useState<FilmConfirm | null>(null)
   /** 会话目录下的相对路径 → blob URL */
   const [files, setFiles] = useState<Record<string, string>>({})
   const live = useRef<Record<string, string>>({})
   const asking = useRef(new Set<string>())
+
   /** 换版本 / 卸载时加一：之前没取回来的文件取回后直接回收 */
   const gen = useRef(0)
 
@@ -49,10 +52,14 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
 
   const load = useCallback(async () => {
     if (!nid || !cid || !vid) return
+    const mine = gen.current
     try {
-      accept(await getFilm(nid, cid, vid))
+      const got = await getFilm(nid, cid, vid)
+      if (gen.current !== mine) return
+      accept(got)
       setError(null)
     } catch (e) {
+      if (gen.current !== mine) return
       if (e instanceof ApiError && e.status === 404) {
         setSession(null)
         setStatus('none')
@@ -60,6 +67,8 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
         fail(e)
         setStatus((st) => (st === 'loading' ? 'none' : st))
       }
+    } finally {
+      if (gen.current === mine) setTick((n) => n + 1)
     }
   }, [nid, cid, vid, accept, fail])
 
@@ -77,29 +86,37 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     if (status !== 'ready') return
     const id = setTimeout(() => void load(), pollDelay(session, opts.active))
     return () => clearTimeout(id)
-  }, [status, session, opts.active, load])
+  }, [status, session, opts.active, load, tick])
 
   /** 不花钱的操作：忙标记、清错误、成功后收下新会话 */
   const apply = useCallback(async (fn: () => Promise<FilmSession>) => {
+    const mine = gen.current
     setBusy(true)
     setError(null)
     try {
-      accept(await fn())
+      const got = await fn()
+      if (gen.current !== mine) return
+      accept(got)
     } catch (e) {
+      if (gen.current !== mine) return
       fail(e)
     } finally {
-      setBusy(false)
+      if (gen.current === mine) setBusy(false)
     }
   }, [accept, fail])
 
   /** 花钱的操作：409 带了重算金额就放回确认框，等用户再确认 */
   const spend = async (fn: () => Promise<FilmSession>, again: (cny: number) => FilmConfirm) => {
+    const mine = gen.current
     setBusy(true)
     setError(null)
     try {
-      accept(await fn())
+      const got = await fn()
+      if (gen.current !== mine) return
+      accept(got)
       setConfirm(null)
     } catch (e) {
+      if (gen.current !== mine) return
       const fresh = conflictCny(e)
       if (fresh !== null) {
         setConfirm(again(fresh))
@@ -108,7 +125,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
         fail(e)
       }
     } finally {
-      setBusy(false)
+      if (gen.current === mine) setBusy(false)
     }
   }
   const sendClip = (clipId: string, cny?: number) =>

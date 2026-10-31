@@ -36,6 +36,15 @@ const calls: string[] = []
 /** 下一次花钱请求先回 409（模拟服务端重算的金额变了） */
 let nextConflict: number | null = null
 let gateFail = false
+/** 下一次读取会话抛网络错误（只一次） */
+let failNextGet = false
+/** 记下长间隔（轮询）定时器，看出错后有没有重新排上 */
+const pollTimers: number[] = []
+const realSetTimeout = globalThis.setTimeout
+g.setTimeout = ((fn: () => void, ms?: number, ...a: unknown[]) => {
+  if ((ms ?? 0) >= 5000) pollTimers.push(ms!)
+  return (realSetTimeout as (...x: unknown[]) => unknown)(fn, ms, ...a)
+}) as unknown
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
 
 function recount(s: FilmSession): FilmSession {
@@ -110,6 +119,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
              blob: async () => new Blob(['x'], { type: sub.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg' }) }
   }
   if (sub === '/session' && method === 'GET') {
+    if (failNextGet) { failNextGet = false; throw new Error('网络断了') }
     return film ? ok({ ...film, gate: gateFail ? { ok: false, message: GATE } : { ok: true, message: null } })
       : fail(404, '还没有出片会话')
   }
@@ -306,6 +316,38 @@ gateFail = false
 await refresh()
 must(!has(GATE) && !button('出这一段').disabled, '验证门通过后恢复')
 console.log('10. 验证门拦截 ✓')
+
+// 10b. 确认框开着时：未保存 / 验证门没过都要禁用确认；总览主按钮在未保存时也禁用
+Object.assign(clipOf(second), { state: 'failed', error: null, uncertain: false, estimate_cny: 25 })
+film = recount(film!)
+await refresh()
+await click(bar(second))
+await click(button('出这一段（约 ¥25.00）'))
+must(has('确认出片（¥25.00）') && !button('确认出片').disabled, '确认框开着、可确认')
+await act(async () => { setDirty(true) })
+await settle()
+must(button('确认出片').disabled, '未保存时确认按钮禁用')
+must(button('出剩余').disabled || button('先试这一段').disabled, '未保存时总览主按钮禁用')
+await act(async () => { setDirty(false) })
+await settle()
+gateFail = true
+await refresh()
+must(button('确认出片').disabled, '验证门没过时确认按钮禁用')
+gateFail = false
+await refresh()
+must(!button('确认出片').disabled, '恢复后确认按钮可用')
+await click(button('取消'))
+must(!has('确认出片'), '取消关掉确认框')
+console.log('10b. 确认框随未保存 / 验证门禁用 ✓')
+
+// 10c. 读取出错后轮询重新排上
+failNextGet = true
+const armed = pollTimers.length
+await refresh()
+must(has('网络断了'), '读取出错显示原因')
+must(pollTimers.length > armed, '出错后轮询定时器重新排上')
+await refresh()
+console.log('10c. 出错后轮询不断 ✓')
 
 // 11. 播成片：有已出的段才有开关；切到「播成片」后播放，预览窗里是采用那次的视频
 await click(button('播关键帧'))
