@@ -161,6 +161,8 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
 
   return {
     enabled, session, status, error, gate, busy, confirm, files, load, ensure,
+    /** 版本 id（没有版本时都为 undefined）：配音与合成用同一会话 */
+    ids: { nid, cid, vid },
     create: () => apply(() => createFilm(nid!, cid!, vid!), true),
     saveSettings: (patch: FilmSettings) => apply(() => patchFilm(nid!, cid!, vid!, patch), true),
     /** 出这一段：超过确认线先弹确认，确认后才发请求 */

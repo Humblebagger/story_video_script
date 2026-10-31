@@ -8,7 +8,7 @@ import type { User } from './auth'
 import type {
   Chapter, Constraint, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
-  FilmSession, FilmSettings,
+  FilmSession, FilmSettings, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
   AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
 } from './types'
@@ -374,6 +374,41 @@ export function conflictCny(e: unknown): number | null {
   if (!(e instanceof ApiError) || e.status !== 409) return null
   const d = e.detail as { expected_cny?: unknown } | null
   return d && typeof d === 'object' && typeof d.expected_cny === 'number' ? d.expected_cny : null
+}
+
+/* ---------- 配音与合成 ---------- */
+
+/** 音色表与各说话人现在用的音色；这个声音模式不配音时为空表 */
+export function getVoices(nid: string, cid: string, vid: string): Promise<VoicesInfo> {
+  return req(`${filmPath(nid, cid, vid)}/voices`)
+}
+
+/** 选音色：说话人 → 音色 id，空串为恢复按提示默认 */
+export function putVoices(nid: string, cid: string, vid: string,
+                          voices: Record<string, string>): Promise<VoicesInfo> {
+  return req(`${filmPath(nid, cid, vid)}/voices`, jsonBody('PUT', { voices }))
+}
+
+/** 合成预览（不花钱）：配音条数与金额、缺音色、缺视频的段、BGM、选曲参考、成片状态与报告 */
+export function getCompose(nid: string, cid: string, vid: string, draft: boolean): Promise<ComposePreview> {
+  return req(`${filmPath(nid, cid, vid)}/compose?draft=${draft}`)
+}
+
+/** 合成整章（后台）：带用户确认过的配音金额，服务端重算不一致 409 */
+export function startCompose(nid: string, cid: string, vid: string, draft: boolean,
+                             expectedCny: number): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/compose`, jsonPost({ expected_cny: expectedCny, draft }))
+}
+
+/** 上传一集的 BGM（原样作为请求体） */
+export function putBgm(nid: string, cid: string, vid: string, episode: string, file: Blob,
+                       type: string): Promise<{ episode: string; bytes: number }> {
+  return req(`${filmPath(nid, cid, vid)}/bgm/${enc(episode)}`,
+             { method: 'PUT', headers: { 'Content-Type': type }, body: file })
+}
+
+export function deleteBgm(nid: string, cid: string, vid: string, episode: string): Promise<{ deleted: string }> {
+  return req(`${filmPath(nid, cid, vid)}/bgm/${enc(episode)}`, { method: 'DELETE' })
 }
 
 /* ---------- 管理后台 ---------- */

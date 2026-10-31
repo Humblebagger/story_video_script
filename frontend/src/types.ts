@@ -731,6 +731,10 @@ export interface FilmSession {
   /** 单段预估超过它要先确认 */
   confirm_over_cny: number
   spent_cny: number
+  /** 说话人 → 用户选的音色 id */
+  voices?: Record<string, string>
+  /** 合成状态与成片（没合成过为 null 或没有） */
+  final?: FinalState | null
   clips: FilmClip[]
   orphaned: { id: string; shots: string[]; attempts: FilmAttempt[]; chosen: number | null }[]
   counts: Partial<Record<FilmClipState, number>>
@@ -751,4 +755,77 @@ export interface FilmSession {
     audio_modes: AudioMode[]
     rate_note: string
   }
+}
+
+/* ---------- 配音与合成（…/render/voices、…/render/compose） ---------- */
+
+export interface TtsVoice { id: string; name: string; gender: 'male' | 'female' }
+
+export interface VoiceSpeaker {
+  /** narration 为旁白，其余为角色 id */
+  key: string
+  name: string
+  /** 分镜里的抽象音色提示（male_elder…） */
+  hint: string | null
+  /** 现在用的音色（选的或按提示默认）；null 为缺音色 */
+  voice: string | null
+  /** 用户选的；null 为按提示默认 */
+  chosen: string | null
+}
+
+export interface VoicesInfo {
+  /** 这个声音模式不配音时为 null（音色表为空） */
+  provider: string | null
+  rate_note: string
+  voices: TtsVoice[]
+  speakers: VoiceSpeaker[]
+  missing: string[]
+}
+
+export interface FinalState {
+  state: 'queued' | 'running' | 'done' | 'failed'
+  step?: string
+  /** 现有成片（会话目录下的相对路径）；失败时仍是上一次的 */
+  files: string[]
+  report: string | null
+  error: string | null
+  /** ffmpeg 的错误输出 */
+  detail: string | null
+  draft?: boolean
+  started_at?: string
+  finished_at?: string
+  /** 只在合成预览里有：现有成片是否已过期 */
+  stale?: boolean
+}
+
+export interface MixNote { shot: string; kind: 'speedup' | 'freeze'; speed: number; extend?: number }
+
+export interface MixReport {
+  audio_mode: AudioMode
+  size: string
+  draft: boolean
+  alignment: string
+  warning?: string
+  episodes: { episode: string; seconds: number; notes: MixNote[]; placeholders: string[]; stale: string[] }[]
+}
+
+export interface ComposePreview {
+  /** 走 TTS 的语音条数 */
+  lines: number
+  /** 还没缓存的字数与配音费用（合成前要确认） */
+  tts_chars: number
+  tts_cny: number
+  missing_voices: string[]
+  voices: Record<string, string>
+  /** 没有可用视频的段 */
+  no_video: string[]
+  fingerprint: string
+  final: FinalState | null
+  /** 已上传 BGM 的集号 */
+  bgm: string[]
+  /** 服务器装了 ffmpeg */
+  tools: boolean
+  /** 各集的选曲参考（分镜 music） */
+  music: Record<string, { mood?: Mood; style_hint?: string; curve?: MusicSegment[] }>
+  report: MixReport | null
 }
