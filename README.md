@@ -61,7 +61,7 @@ docker build -t storyboard backend/
 docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 ```
 
-离线回归（不调 LLM，用《药》归档回放编排逻辑）：`for t in tests/pipeline/test_*.py tests/server/test_*.py; do .venv/bin/python $t || break; done`（各自应打印 `ALL PASS`）
+离线回归（不调 LLM、不调视频厂商，用《药》归档回放）：`for t in tests/pipeline/test_*.py tests/server/test_*.py tests/render/test_*.py; do .venv/bin/python $t || break; done`（各自应打印 `ALL PASS`）
 
 **管理后台**：先指定管理员 `cd backend && .venv/bin/python -m server.admin promote <用户名>`，
 该用户登录后右上角出现「管理」：概览、用户（停用/启用、月上限、重置密码、设为或取消管理员）、
@@ -69,6 +69,13 @@ docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 用量记在 `data/usage.jsonl`（转换与章后整理结束时落账，删版本不影响），金额按 `data/pricing.json`
 （美元，后台可改）现算。已有版本的历史用量补导一次：`.venv/bin/python -m server.admin backfill-usage`。月上限是软限制：只在提交时检查，并发提交可能都通过，未定价的模型按 $0 计；`backfill-usage` 部署时跑一次即可，之后重跑也安全，重跑会补上尚未登录的用户的旧版运行记录。
 管理员看不到小说原文与分镜内容。
+
+**出片（视频生成，后端）**：`backend/.env` 写 `ARK_API_KEY=…`（火山方舟），`STORYBOARD_VIDEO_PROVIDER` 选厂商（缺省 `seedance`；`fake` 为不联网的假厂商，本地演示用）。
+每个版本一个出片会话（`/novels/{nid}/chapters/{cid}/versions/{vid}/render/...`）：建会话时过验证门、按厂商能力把镜头切成段（时长按能念完旁白台词的可播时长），
+先试一段，满意后带上确认过的预估金额批量出剩余各段；单章上限默认 200 元，超过拒绝。后台线程提交、每 10 秒查询、成功即下载（结果地址 24 小时有效），
+服务重启后续跑不重复提交。改了分镜或设置，已出的段标「过期」，旧视频仍可播。片段在 `chapters/<cid>/render/<vid>/clips/`。
+费率为 2026-10 刊例价（fast 约 0.80 元/秒、mini 约 0.50 元/秒，720p），首次真实出片后用 `.venv/bin/python -m render.smoke` 的用量与账单核对、
+必要时用 `STORYBOARD_SEEDANCE_CNY_PER_M` 校准。画布上的出片界面、配音与合成另见后续计划。
 
 ### 方式二：配套前端界面
 
