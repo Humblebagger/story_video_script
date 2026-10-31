@@ -113,6 +113,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
   if (path === '/novels/n1/chapters/c1/versions/v1/keyframes') return ok({ shots: [] })
   if (!path.startsWith(R)) throw new Error(`桩后端未实现的路径: ${method} ${path}`)
   const sub = path.slice(R.length)
+  // 配音与合成由 compose.test.tsx 覆盖：这里回 404，也不记进 calls（免得打乱「最后一次调用」的断言）
+  if (sub.startsWith('/compose') || sub.startsWith('/voices')) return fail(404, '还没有出片会话')
   calls.push(`${method} ${sub}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`)
   if (sub.startsWith('/files/')) {
     return { ok: true, status: 200,

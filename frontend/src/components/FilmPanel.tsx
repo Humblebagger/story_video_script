@@ -1,4 +1,4 @@
-/** 画布侧栏「出片」页：设置、前置检查、总览与主按钮、选中段详情、花钱前的确认框。
+/** 画布侧栏「出片」页：设置、前置检查、总览与主按钮、选中段详情、花钱前的确认框，最后是配音与合成（ComposePanel）。
  *
  *  花钱的按钮上都写着金额；批量和超过确认线的单段先弹确认（useFilm 决定发不发请求）。
  *  有未保存的改动或验证门没过时，所有出片按钮禁用并写明原因。 */
@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, label } from '../labels'
 import { batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
 import type { Film } from '../useFilm'
+import { ComposePanel } from './ComposePanel'
 import type { AudioMode, FilmClip, FilmSession, FilmSettings } from '../types'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
@@ -54,6 +55,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
           {clip
             ? <ClipDetail key={clip.id} c={clip} film={film} blocked={blocked} onPickShot={onPickShot} />
             : <p className="tlc__kfnote">点「成片」泳道上的一段看详情、重做或换用别的一次。</p>}
+          <ComposePanel film={film} dirty={dirty} />
         </>
       )}
     </div>
@@ -188,7 +190,7 @@ function Overview({ s, film, selected, blocked }: {
         <p className="tlc__kfnote">
           {!s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded')) && s.clips.some(inFlight)
             ? '试段生成中，出完再出剩余各段'
-            : s.clips.some(inFlight) ? '各段在生成中，出完会自动刷新。' : '没有要出的段了；配音与合成整章在下一步。'}
+            : s.clips.some(inFlight) ? '各段在生成中，出完会自动刷新。' : '各段都出完了：在下面「配音与合成」合成整章。'}
         </p>
       )}
     </section>
