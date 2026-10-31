@@ -21,6 +21,8 @@ import { promptSheet, useKeyframes } from '../useKeyframes'
 interface Props {
   doc: Storyboard
   onClose: () => void
+  /** 打开时停在哪个侧栏页 */
+  initialPanel?: PanelTab
   /** 点镜头：回分镜页定位到这一镜 */
   onJumpShot: (shotId: string) => void
   /** 所在的章节会话：给了侧栏才有「剧情」「任务」两页 */
@@ -43,7 +45,7 @@ const RULER = 30
 const ROW = { episode: 24, scene: 26, shot: 38, clip: 34, frame: 72, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
 
-type PanelTab = 'shot' | 'source' | 'assets' | 'film' | 'novel' | 'tasks'
+export type PanelTab = 'shot' | 'source' | 'assets' | 'film' | 'novel' | 'tasks'
 
 interface Row { key: string; label: string; sub?: string; y: number; h: number }
 
@@ -98,14 +100,14 @@ function downloadText(name: string, text: string) {
 
 export function TimelineCanvas({
   doc, onClose, onJumpShot, bench = null, version = null,
-  onChange, canSave = false, dirty = false, saving = false, onSave,
+  onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
 }: Props) {
   const kf = useKeyframes(doc, version)
   const idx = useMemo(() => buildIndex(doc), [doc])
   const editable = !!onChange
   const [editing, setEditing] = useState(false)
   /** 侧栏页签：外面能做的事在画布里都有一页，不必退出去 */
-  const [panel, setPanel] = useState<PanelTab>('shot')
+  const [panel, setPanel] = useState<PanelTab>(initialPanel ?? 'shot')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   /** 出片会话（只有存进后端的版本才有）；「出片」页签开着时轮询更勤 */
   const film = useFilm(version, { active: panel === 'film' })

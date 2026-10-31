@@ -121,3 +121,11 @@
 @utility bg-brand {
   background-image: linear-gradient(100deg, var(--brand-from), var(--brand-to));
 }
+@layer components {
+  .fix-flash {
+    outline: 2px solid var(--brand-to);
+    outline-offset: 4px;
+    border-radius: var(--ui-radius);
+    transition: outline-color 0.3s ease-out;
+  }
+}

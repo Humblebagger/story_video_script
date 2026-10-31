@@ -32,6 +32,10 @@ function download(doc: Storyboard) {
 
 interface Props {
   doc: Storyboard
+  /** 每加一就打开画布并停在「出片」页（章节工作流 ④⑤ 的主按钮） */
+  openFilm?: number
+  /** 画布关上时（出片、合成可能改了状态，让上层重读） */
+  onCanvasClose?: () => void
   /** 有 id 才能存回后端；本地打开的 JSON 只能下载 */
   canSave: boolean
   /** 历史记录 id，随任务清单一起带出去，便于把渲染产物挂回这次转换 */
@@ -50,12 +54,19 @@ interface Props {
 
 export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
-  bench = null,
+  bench = null, openFilm, onCanvasClose,
 }: Props) {
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [canvas, setCanvas] = useState(false)
+  const [canvasPanel, setCanvasPanel] = useState<'film' | undefined>(undefined)
+  useEffect(() => {
+    if (!openFilm) return
+    setCanvasPanel('film')
+    setCanvas(true)
+  }, [openFilm])
+  const closeCanvas = () => { setCanvas(false); setCanvasPanel(undefined); onCanvasClose?.() }
   /** 从画布跳回来要定位的镜头 */
   const [focusShot, setFocusShot] = useState<string | null>(null)
   const idx = useMemo(() => buildIndex(doc), [doc])
@@ -67,7 +78,7 @@ export function StoryboardView({
   }
 
   const jumpShot = (shotId: string) => {
-    setCanvas(false)
+    closeCanvas()
     setTab('shots')
     setFocusShot(shotId)
   }
@@ -112,6 +123,7 @@ export function StoryboardView({
             {canSave && !preview && (
               <button
                 className="btn btn--sm"
+                id="storyboard-save"
                 disabled={!dirty || saving}
                 onClick={onSave}
               >
@@ -198,7 +210,7 @@ export function StoryboardView({
                         bench={preview ? null : bench}
                         onChange={preview ? undefined : onChange}
                         canSave={canSave && !preview} dirty={dirty} saving={saving} onSave={onSave}
-                        onClose={() => setCanvas(false)} onJumpShot={jumpShot} />
+                        onClose={closeCanvas} onJumpShot={jumpShot} initialPanel={canvasPanel} />
       )}
     </div>
   )
