@@ -78,6 +78,20 @@ def part_prompt(doc):
     assert "【首帧】{ref:" + compose.FIRST + "}" in t
     print("4. 可播时长、文字描述、首帧位 ✓")
 
+    # 4b. 带 beats 的镜头：声音模式与可播时长同样生效（shot_line 逐拍展开，不读 action/dialogue）
+    bshot = dict(talky, beats=[{"action": "第一拍", "duration_sec": 1},
+                               {"action": "第二拍", "duration_sec": 1}])
+    t, _ = compose.neutral_prompt([bshot], doc, idx, mode="tts_all", slots=[])
+    assert "人物交谈但不发声" in t and line not in t, "beats + tts_all：应有不发声且台词不进提示词"
+    t, _ = compose.neutral_prompt([bshot], doc, idx, mode="dialogue_native", slots=[])
+    assert line in t and "人物交谈但不发声" not in t, "beats + dialogue_native：台词应进提示词"
+    t, _ = compose.neutral_prompt([bshot], doc, idx, mode="tts_all", slots=[], timing="playable")
+    end = float(round(compose.playable(bshot), 1))  # shot_line 输出 4.0 而非 4
+    assert f"-{end}秒" in t, "beats + playable：末拍应止于可播时长"
+    t, _ = compose.neutral_prompt([dict(talky, action="")], doc, idx, mode="tts_all", slots=[])
+    assert "，，" not in t, "空 action 不应产生前导逗号"
+    print("4b. 带 beats 的镜头 ✓")
+
 
 def main() -> int:
     doc = json.loads(YAO.read_text(encoding="utf-8"))

@@ -5,7 +5,7 @@
 组装，两边不会分叉。
 """
 from pipeline.quality import DEFAULT_SPEECH_CPS, speech_seconds
-from render.plan import TIME_ZH, collect_refs, shot_line
+from render.plan import DIALOGUE_TYPE_ZH, TIME_ZH, collect_refs, shot_line
 
 LEGACY = "legacy"          # 生产包写法：台词进提示词，只要音效
 AUDIO_MODES = ("tts_all", "dialogue_native", "all_native", "silent")
@@ -52,12 +52,25 @@ def ref_slots(clip: list, assets_idx: dict) -> list:
 
 def _shot_for(shot: dict, mode: str, timing: str, cps: float) -> dict:
     s = dict(shot)
+    beats = shot.get("beats")
     if timing == "playable":
-        s["duration_sec"] = round(playable(shot, cps), 1)
+        target = round(playable(shot, cps), 1)
+        s["duration_sec"] = target
+        total = sum(b.get("duration_sec", 0) for b in beats) if beats else 0
+        if total > 0:
+            # 逐拍时长按比例放到可播时长；末拍吸收取整误差，保证拍子加起来等于可播时长
+            scaled = [dict(b, duration_sec=round(b.get("duration_sec", 0) * target / total, 1))
+                      for b in beats]
+            scaled[-1]["duration_sec"] = round(
+                target - sum(b["duration_sec"] for b in scaled[:-1]), 1)
+            s["beats"] = scaled
     if mode in ("tts_all", "silent") and s.get("dialogue"):
         # 台词交给 TTS（或不要声音）：画面里人物照样说话，但不让模型发声
         s["dialogue"] = []
-        s["action"] = (s.get("action") or "").rstrip("。，； ") + "，人物交谈但不发声"
+        if not beats:
+            # 分了 beats 的镜头由 neutral_prompt 追加这句（shot_line 不读 action）
+            base = (s.get("action") or "").rstrip("。，； ")
+            s["action"] = f"{base}，人物交谈但不发声" if base else "人物交谈但不发声"
     return s
 
 
@@ -119,6 +132,17 @@ def neutral_prompt(clip: list, doc: dict, assets_idx: dict, *, mode: str = LEGAC
     for raw, s in zip(clip, shots):
         line, t = shot_line(s, t)
         narration = (raw.get("narration") or {}).get("text")
+        extras = []
+        if raw.get("beats") and mode != LEGACY and raw.get("dialogue"):
+            # shot_line 逐拍展开时不读 dialogue，所以台词与“不发声”在这里补到末行
+            if mode in ("tts_all", "silent"):
+                extras.append("人物交谈但不发声")
+            else:
+                extras += [f"{DIALOGUE_TYPE_ZH.get(d.get('type'), '台词')}"
+                           f"（{d.get('character_ref', '')}，{d.get('emotion', '')}）：“{d['text']}”"
+                           for d in raw["dialogue"]]
+        if extras:
+            line = line.rstrip("。") + "，" + "，".join(extras) + "。"
         if mode == "all_native" and narration:
             line = line.rstrip("。") + f"，旁白：“{narration}”。"
         lines.append(line)
