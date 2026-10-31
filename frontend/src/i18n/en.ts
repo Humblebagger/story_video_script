@@ -102,6 +102,14 @@ export const en: Messages = {
     expired: 'Your session expired. Please sign in again.',
   },
   flow: {
+    steps: {
+      import: 'Import text', storyboard: 'Storyboard', review: 'Review & edit',
+      render: 'Render', compose: 'Voice & mix', download: 'Download',
+    },
+    stepsLabel: 'Chapter progress',
+    needs: 'Finish step {n} first',
+    goNeeded: 'Go to step {n}',
+    fix: 'Fix it',
     primary: {
       saveText: 'Save text',
       next: 'Next',
@@ -124,5 +132,17 @@ export const en: Messages = {
       dirty: 'You have unsaved changes: save first',
       noFilm: 'Nothing rendered yet: finish step 4 first',
     },
+    unsaved: 'You have unsaved changes',
+    unsavedSave: 'Save',
+    unsavedUndo: 'Undo',
+    leave: 'You have unsaved changes. Leave anyway?',
+    done: {
+      storyboard: 'Storyboard ready — {shots} shots',
+      render: 'All clips rendered. Next: voice & mix',
+      compose: 'Final video is ready to download',
+    },
+    view: 'View',
+    source: { chars: 'Chapter text · {n} chars', edit: 'Edit text' },
+    progress: 'View progress',
   },
 }

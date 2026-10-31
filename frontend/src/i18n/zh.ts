@@ -100,6 +100,14 @@ export const zh = {
     expired: '登录已过期，请重新登录',
   },
   flow: {
+    steps: {
+      import: '导入原文', storyboard: '生成分镜', review: '检查修改',
+      render: '出片', compose: '配音合成', download: '下载成片',
+    },
+    stepsLabel: '章节进度',
+    needs: '需要先完成第 {n} 步',
+    goNeeded: '去第 {n} 步',
+    fix: '去修复',
     primary: {
       saveText: '保存原文',
       next: '下一步',
@@ -122,5 +130,17 @@ export const zh = {
       dirty: '有未保存的修改：先保存',
       noFilm: '还没有出片：先完成第 4 步',
     },
+    unsaved: '有未保存的修改',
+    unsavedSave: '保存',
+    unsavedUndo: '撤销',
+    leave: '当前修改尚未保存，确定离开？',
+    done: {
+      storyboard: '分镜已生成，共 {shots} 镜',
+      render: '所有段都出好了，下一步配音合成',
+      compose: '成片已合成，可以下载了',
+    },
+    view: '查看',
+    source: { chars: '本章原文 · {n} 字', edit: '修改原文' },
+    progress: '查看进度',
   },
 }
