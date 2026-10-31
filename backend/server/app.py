@@ -36,6 +36,12 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
 静帧预演的关键帧图（在别处出图后上传，挂在版本上、不进 IR）：
   GET                 /novels/{nid}/chapters/{cid}/versions/{vid}/keyframes            已有关键帧的镜头
   GET/PUT/DELETE      /novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}  取图 / 上传（原始图片体）/ 删
+出片（视频生成，状态在 chapters/<cid>/render/<vid>/session.json，后台线程提交/轮询/下载）：
+  POST/GET/PATCH      …/versions/{vid}/render/session           建立（过验证门）/ 查询（标过期）/ 改设置
+  POST                …/versions/{vid}/render/clips/{clip}/run  出这一段（试段或重做）
+  POST                …/versions/{vid}/render/run               批量出剩余各段（带确认金额，不一致 409）
+  PUT / PATCH         …/render/clips/{clip}/chosen、…/clips/{clip}   采用某次 / 原声静音
+  GET                 …/versions/{vid}/render/files/{path}      取片段与尾帧
 
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
@@ -64,6 +70,10 @@ from pipeline import novel_memory, verification
 from pipeline.chat import ChatInvoker
 from render import keyframes as keyframes_mod
 from render import plan as render_plan_mod
+from render import compose as render_compose
+from render import providers as render_providers
+from render import runner as render_runner
+from render import session as render_session
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, library, novels, pricing, store, usage
@@ -625,6 +635,20 @@ def memory_asset_delete(nid: str, kind: str, card_id: str,
 
 # ---------- 渲染任务包 ----------
 
+def _render_gate(doc: dict, record: Optional[dict]):
+    """分镜未通过独立验证禁止进入付费渲染（渲染任务包与出片共用）。会改写 doc 的覆盖率字段。"""
+    frozen = _frozen_of(record) if record else None
+    probe = verification.verify_document(doc, frozen_units=frozen or None)
+    verification.recompute_coverage_field(doc, probe.coverage)
+    report = verification.verify_document(doc, frozen_units=frozen or None)
+    if not report.ok:
+        raise HTTPException(422, detail={
+            "message": "分镜未通过独立验证，禁止进入付费渲染",
+            "verification": report.to_dict(),
+        })
+    return report
+
+
 class RenderPlanRequest(BaseModel):
     """要渲染的分镜。传当前屏幕上的产物而不是只按 run_id 取，
     这样人工编辑还没保存也能先导出来看提示词与费用。"""
@@ -645,7 +669,7 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
     提示词、看清楚要出几张图、以及这一章大概要烧多少钱。
     """
     doc = copy.deepcopy(req.result)
-    frozen = None
+    record = None
     if req.run_id:
         try:
             record = novels.find_version(user["id"], req.run_id)
@@ -653,15 +677,7 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
             raise HTTPException(400, str(e))
         if record is None:
             raise HTTPException(404, "版本不存在")
-        frozen = _frozen_of(record)
-    probe = verification.verify_document(doc, frozen_units=frozen or None)
-    verification.recompute_coverage_field(doc, probe.coverage)
-    report = verification.verify_document(doc, frozen_units=frozen or None)
-    if not report.ok:
-        raise HTTPException(422, detail={
-            "message": "分镜未通过独立验证，禁止进入付费渲染",
-            "verification": report.to_dict(),
-        })
+    report = _render_gate(doc, record)
     try:
         plan = render_plan_mod.build_plan(doc, req.max_clip_seconds, req.run_id,
                                           req.model, req.cny_per_second)
@@ -719,6 +735,177 @@ def keyframes_delete(nid: str, cid: str, vid: str, shot_id: str,
                      user: dict = Depends(novel_user)):
     _novel_call(novels.delete_keyframe, user["id"], nid, cid, vid, shot_id)
     return {"deleted": shot_id}
+
+
+# ---------- 出片（视频生成）：会话在 chapters/<cid>/render/<vid>/，不进 IR ----------
+
+_R = "/novels/{nid}/chapters/{cid}/versions/{vid}/render"
+
+
+def _keyframe_paths(uid: str, nid: str, cid: str, vid: str) -> dict:
+    return {sid: novels.keyframe_file(uid, nid, cid, vid, sid)[0]
+            for sid in novels.list_keyframes(uid, nid, cid, vid)}
+
+
+def _render_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = True) -> tuple:
+    """(会话目录, 已保存的分镜, 关键帧, 归属)。出片只用已保存的版本内容；gate 时过验证门。"""
+    uid = user["id"]
+    record = _novel_call(novels.get_version, uid, nid, cid, vid)
+    root = _novel_call(novels.render_dir, uid, nid, cid, vid)
+    doc = record.get("result") or {}
+    if gate:
+        if not doc.get("episodes"):
+            raise HTTPException(422, "这个版本还没有分镜产物")
+        _render_gate(copy.deepcopy(doc), record)
+    owner = {"user_id": uid, "nid": nid, "cid": cid, "vid": vid}
+    return root, doc, _keyframe_paths(uid, nid, cid, vid), owner
+
+
+def _render_call(fn, *args, **kwargs):
+    """把出片会话的业务异常翻成 HTTP 状态码。"""
+    try:
+        return fn(*args, **kwargs)
+    except render_session.NotFound as e:
+        raise HTTPException(404, str(e))
+    except render_session.Conflict as e:
+        raise HTTPException(409, detail={"message": str(e), "expected_cny": e.expected_cny})
+    except render_session.Corrupt:
+        raise HTTPException(500, "出片记录文件已损坏，原文件已备份，请联系管理员处理")
+    except render_session.SessionError as e:
+        raise HTTPException(422, str(e))
+
+
+def _render_request(root, s: dict, clip: dict):
+    """出片线程提交前：按已保存的分镜与关键帧重建这一段的厂商请求。"""
+    o = s["owner"]
+    record = novels.get_version(o["user_id"], o["nid"], o["cid"], o["vid"])
+    provider = render_providers.get_video(s["provider"])
+    return render_compose.request_for(
+        record.get("result") or {}, s, clip,
+        keyframes=_keyframe_paths(o["user_id"], o["nid"], o["cid"], o["vid"]),
+        relay_frame=render_session.relay_frame(root, s, clip),
+        caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt)
+
+
+_render_runner = render_runner.Runner(
+    _render_request,
+    poll_sec=float(os.environ.get("STORYBOARD_RENDER_POLL_SEC", "10")),
+    max_parallel=int(os.environ.get("STORYBOARD_RENDER_PARALLEL", "2")))
+
+
+@app.on_event("startup")
+def _start_render_runner():
+    """出片线程随服务启动，续上重启前没跑完的段。STORYBOARD_RENDER_RUNNER=0 关闭（测试里手动 tick）。"""
+    if os.environ.get("STORYBOARD_RENDER_RUNNER", "1") == "0":
+        return
+    n = _render_runner.recover(auth.DATA_DIR)
+    if n:
+        print(f"[render] 续上 {n} 个出片会话", flush=True)
+    _render_runner.start()
+
+
+class RenderSettingsBody(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    resolution: Optional[str] = None
+    audio_mode: Optional[str] = None
+    budget_cny: Optional[float] = Field(None, gt=0, le=100000)
+    confirm_over_cny: Optional[float] = Field(None, ge=0, le=100000)
+
+
+class RenderRunBody(BaseModel):
+    expected_cny: Optional[float] = Field(None, ge=0)
+
+
+class RenderChosenBody(BaseModel):
+    attempt: int = Field(ge=0)
+
+
+class RenderClipBody(BaseModel):
+    mute_native: bool
+
+
+@app.post(_R + "/session")
+def render_session_post(nid: str, cid: str, vid: str, body: Optional[RenderSettingsBody] = None,
+                        user: dict = Depends(novel_user)):
+    """过验证门、按设置切段，生成或重建会话（不花钱）。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
+    patch = body.model_dump(exclude_none=True) if body else {}
+    s = _render_call(render_session.build, root, doc, owner=owner, patch=patch, keyframes=kfs)
+    return _render_call(render_session.view, s)
+
+
+@app.get(_R + "/session")
+def render_session_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    """查询；按当前已保存的分镜重算指纹并标过期（在跑的段不动）。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid, gate=False)
+    if render_session.load(root) is None:
+        raise HTTPException(404, "还没有出片会话")
+    s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
+                     allow_in_flight=True)
+    return _render_call(render_session.view, s)
+
+
+@app.patch(_R + "/session")
+def render_session_patch(nid: str, cid: str, vid: str, body: RenderSettingsBody,
+                         user: dict = Depends(novel_user)):
+    """改设置（厂商、档位、分辨率、声音模式、上限）。有段在跑时 409。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
+    if render_session.load(root) is None:
+        raise HTTPException(404, "还没有出片会话")
+    s = _render_call(render_session.build, root, doc, owner=owner,
+                     patch=body.model_dump(exclude_none=True), keyframes=kfs)
+    return _render_call(render_session.view, s)
+
+
+@app.post(_R + "/clips/{clip_id}/run")
+def render_clip_run(nid: str, cid: str, vid: str, clip_id: str,
+                    body: Optional[RenderRunBody] = None, user: dict = Depends(novel_user)):
+    """出这一段（试段或重做）。超过确认线时要带 expected_cny。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
+    _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
+                 allow_in_flight=True)
+    s = _render_call(render_session.queue_run, root, [clip_id], body.expected_cny if body else None)
+    _render_runner.watch(root)
+    return _render_call(render_session.view, s)
+
+
+@app.post(_R + "/run")
+def render_run_all(nid: str, cid: str, vid: str, body: RenderRunBody,
+                   user: dict = Depends(novel_user)):
+    """批量出剩余各段：必须带用户确认的预估金额，服务端重算不一致 409。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
+    _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
+                 allow_in_flight=True)
+    s = _render_call(render_session.queue_run, root, None, body.expected_cny)
+    _render_runner.watch(root)
+    return _render_call(render_session.view, s)
+
+
+@app.put(_R + "/clips/{clip_id}/chosen")
+def render_clip_chosen(nid: str, cid: str, vid: str, clip_id: str, body: RenderChosenBody,
+                       user: dict = Depends(novel_user)):
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    s = _render_call(render_session.set_chosen, root, clip_id, body.attempt)
+    return _render_call(render_session.view, s)
+
+
+@app.patch(_R + "/clips/{clip_id}")
+def render_clip_patch(nid: str, cid: str, vid: str, clip_id: str, body: RenderClipBody,
+                      user: dict = Depends(novel_user)):
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    s = _render_call(render_session.set_mute, root, clip_id, body.mute_native)
+    return _render_call(render_session.view, s)
+
+
+@app.get(_R + "/files/{path:path}")
+def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(novel_user)):
+    """取本版本出片目录下的文件（片段、尾帧）。拒绝路径穿越。"""
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid).resolve()
+    target = (root / path).resolve()
+    if root not in target.parents or not target.is_file():
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(target)
 
 
 # ---------- 长期记忆：人物生命周期、主线剧情、创作限制 ----------

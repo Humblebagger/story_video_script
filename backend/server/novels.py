@@ -400,6 +400,7 @@ def delete_version(user_id: str, nid: str, cid: str, vid: str) -> None:
             raise NotFound("版本不存在")
         path.unlink()
         shutil.rmtree(_chapter_dir(user_id, nid, cid) / "keyframes" / vid, ignore_errors=True)
+        shutil.rmtree(_chapter_dir(user_id, nid, cid) / "render" / vid, ignore_errors=True)
 
 
 # ---------- 采用：版本 → 长期记忆 ----------
@@ -885,6 +886,14 @@ def keyframe_file(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> t
 def delete_keyframe(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> None:
     path, _ = keyframe_file(user_id, nid, cid, vid, shot_id)
     path.unlink()
+
+
+# ---------- 出片会话目录（会话状态、片段、成片；不进 IR） ----------
+
+def render_dir(user_id: str, nid: str, cid: str, vid: str) -> Path:
+    """出片会话目录：和关键帧一样挂在版本上；删版本时一并删除。"""
+    get_version(user_id, nid, cid, vid)
+    return _chapter_dir(user_id, nid, cid) / "render" / _check_id(vid)
 
 
 # ---------- 旧数据迁移 ----------
