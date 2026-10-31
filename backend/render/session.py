@@ -6,6 +6,7 @@
 """
 import json
 import os
+import shutil
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -40,6 +41,10 @@ class Conflict(SessionError):
         self.expected_cny = expected_cny
 
 
+class Corrupt(SessionError):
+    """会话文件损坏（原文件保留，另存备份）。"""
+
+
 class BudgetExceeded(SessionError):
     """超出单章上限（422）。"""
 
@@ -65,6 +70,22 @@ def load(root) -> Optional[dict]:
         return None
 
 
+def _read_existing(root) -> Optional[dict]:
+    """文件不存在返回 None；存在但读不出来则备份后抛 Corrupt，绝不当作没有会话。"""
+    path = Path(root) / SESSION_FILE
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+        try:
+            shutil.copy2(path, path.with_name(f"{SESSION_FILE}.corrupt-{stamp}"))
+        except OSError:
+            pass
+        raise Corrupt(f"出片会话文件损坏：{path}，已保留原文件，请检查后再操作")
+
+
 def _save(root, s: dict) -> None:
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -79,7 +100,7 @@ def _save(root, s: dict) -> None:
 def mutate(root):
     """读改写一个已有会话；块内抛异常则不写回。"""
     with _lock(root):
-        s = load(root)
+        s = _read_existing(root)
         if s is None:
             raise NotFound("还没有出片会话")
         yield s
@@ -134,7 +155,7 @@ def resolve_settings(old: Optional[dict], patch: dict) -> tuple:
 
 def _carry(row: dict, old: Optional[dict]) -> dict:
     """沿用同一段（同 id、同镜头）的尝试记录，并按采用那次的指纹判定 done / stale。"""
-    same = old is not None and old["shots"] == row["shots"]
+    same = old is not None
     row["attempts"] = old["attempts"] if same else []
     row["chosen"] = old.get("chosen") if same else None
     row["mute_native"] = bool(old.get("mute_native")) if same else False
@@ -158,11 +179,11 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
     """
     root = Path(root)
     with _lock(root):
-        old = load(root)
+        old = _read_existing(root)
         settings, provider, caps = resolve_settings(old, patch)
         olds = {c["id"]: c for c in (old or {}).get("clips", [])}
         flying = {cid: c for cid, c in olds.items() if c["state"] in IN_FLIGHT}
-        if flying and not allow_in_flight:
+        if flying and (not allow_in_flight or any(v is not None for v in (patch or {}).values())):
             raise Conflict("有段在排队或生成中，等它们结束再改设置")
         try:
             built = compose.build_clips(doc, caps, provider=settings["provider"],
@@ -180,8 +201,16 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
             row["estimate_cny"] = base.estimate_cny(row["duration"], caps, settings["resolution"])
             clips.append(_carry(row, olds.get(b["id"])))
         clips.extend(flying.values())
+        orphaned = list((old or {}).get("orphaned", []))
+        seen = {o["id"] for o in orphaned}
+        kept = {c["id"] for c in clips}
+        for cid, oc in olds.items():
+            if cid not in kept and oc.get("attempts") and cid not in seen:
+                orphaned.append({"id": cid, "shots": oc["shots"], "attempts": oc["attempts"],
+                                 "chosen": oc.get("chosen")})
         s = {"version": 1, "owner": owner, **settings,
              "spent_cny": (old or {}).get("spent_cny", 0.0), "clips": clips,
+             "orphaned": orphaned,
              "voices": (old or {}).get("voices", {}), "final": (old or {}).get("final"),
              "created_at": (old or {}).get("created_at") or _now()}
         _save(root, s)
@@ -217,7 +246,7 @@ def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[floa
         if clip_ids is None:
             targets = [c for c in s["clips"] if c["state"] in REMAINING]
         else:
-            targets = [_clip(s, cid) for cid in clip_ids]
+            targets = [_clip(s, cid) for cid in dict.fromkeys(clip_ids)]
             for c in targets:
                 if c["state"] in IN_FLIGHT:
                     raise Conflict(f"{c['id']} 已在排队或生成中")

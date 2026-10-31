@@ -164,6 +164,67 @@ def main() -> int:
     assert c["attempts"][-1]["state"] == "failed"
     print("9. 重启恢复 ✓")
 
+    # 10. 不丢已付费的尝试：切段变了 → stale 保留；段消失 → orphaned；再重建不重复
+    root3 = Path(tmp.name) / "render" / "v3"
+    b3 = lambda d, **kw: sess.build(root3, d, owner=OWNER, patch=kw.pop("patch", {}), keyframes={})  # noqa: E731
+    s3 = b3(doc, patch={"budget_cny": 100000.0})
+    ep1 = [c["id"] for c in s3["clips"] if c["episode"] == s3["clips"][0]["episode"]]
+    assert len(ep1) >= 2, ep1
+    with sess.mutate(root3) as s3:
+        for c in s3["clips"]:
+            if c["id"] in ep1:
+                c["state"] = "queued"
+    for cid in ep1:
+        finish(root3, fake, cid)
+    kept = {cid: len(clip(sess.load(root3), cid)["attempts"]) for cid in ep1}
+    cut2 = copy.deepcopy(doc)
+    del cut2["episodes"][0]["shots"][1]
+    s3 = b3(cut2)
+    stale = [c for c in s3["clips"] if c["id"] in ep1 and c["state"] == "stale"]
+    assert stale and all(len(c["attempts"]) == kept[c["id"]] and c["chosen"] == 0 for c in stale)
+    s3 = b3(doc)
+    assert all(c["state"] == "done" for c in s3["clips"] if c["id"] in ep1)
+    cut = copy.deepcopy(doc)
+    shots = cut["episodes"][0]["shots"]
+    cut["episodes"][0]["shots"] = shots[:1]
+    s3 = b3(cut)
+    now = {c["id"] for c in s3["clips"]}
+    gone = [cid for cid in ep1 if cid not in now]
+    assert gone, "缩短后应有段消失"
+    assert {o["id"] for o in s3["orphaned"]} == set(gone)
+    assert all(len(o["attempts"]) == kept[o["id"]] for o in s3["orphaned"])
+    for cid in ep1:
+        if cid in now:
+            assert len(clip(s3, cid)["attempts"]) == kept[cid]
+            assert len(clip(s3, cid)["attempts"]) == kept[cid]
+    s3 = b3(doc)
+    assert [o["id"] for o in s3["orphaned"]] == gone
+    s3 = b3(doc)
+    assert [o["id"] for o in s3["orphaned"]] == gone
+    print("10. 保留尝试与 orphaned ✓")
+
+    # 11. 文件损坏不当作没有会话
+    root4 = Path(tmp.name) / "render" / "v4"
+    sess.build(root4, doc, owner=OWNER, patch={}, keyframes={})
+    (root4 / "session.json").write_text("{garbage", encoding="utf-8")
+    must_raise(sess.Corrupt, sess.build, root4, doc, owner=OWNER, patch={}, keyframes={})
+    must_raise(sess.Corrupt, sess.set_mute, root4, "E01-C01", True)
+    assert list(root4.glob("session.json.corrupt-*")) and (root4 / "session.json").read_text() == "{garbage"
+    assert sess.load(root4) is None
+    print("11. 损坏保护 ✓")
+
+    # 12. 在跑时带设置的刷新被拒；重复 id 不重复计金额
+    must_raise(sess.Conflict, sess.build, root, doc, owner=OWNER, patch={"resolution": "480p"},
+               keyframes={}, allow_in_flight=True)
+    root5 = Path(tmp.name) / "render" / "v5"
+    s5 = sess.build(root5, doc, owner=OWNER, patch={"confirm_over_cny": 0}, keyframes={})
+    a = s5["clips"][0]
+    e = must_raise(sess.Conflict, sess.queue_run, root5, [a["id"], a["id"]])
+    assert e.expected_cny == round(a["estimate_cny"], 2)
+    s5 = sess.queue_run(root5, [a["id"], a["id"]], e.expected_cny)
+    assert clip(s5, a["id"])["state"] == "queued"
+    print("12. 在跑拒改设置与去重 ✓")
+
     print("\nALL PASS")
     return 0
 
