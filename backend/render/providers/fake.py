@@ -1,9 +1,11 @@
 """假视频厂商：不联网、不花钱，按调用次数推进状态。测试与本地演示用。"""
 import re
+from pathlib import Path
 from typing import Optional
 
 from render.providers.base import (Caps, ProviderError, TaskState, TransientError,
                                    last_frame_path, request_seconds)
+from render.providers.tts_base import TtsCaps, TtsResult, Voice, tts_cost, write_wav
 
 FAKE_MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
 FAKE_JPG = b"\xff\xd8\xff\xe0fake-last-frame"
@@ -71,3 +73,30 @@ class FakeVideo:
         if st.status != "succeeded":
             return 0.0
         return round(st.usage.get("seconds", 0) * self._caps.cny_per_sec.get(req.resolution, 0.0), 2)
+
+
+class FakeTts:
+    """假 TTS：不联网、不花钱，按字数出静音 WAV（每字 1/4.5 秒）；可指定前几次限流或一律失败。"""
+    name = "fake"
+    rate_note = "假配音：不联网、不花钱，金额只用于演示"
+    RATE = 24000
+
+    def __init__(self, *, fail_times: int = 0, fail_with: Optional[str] = None, max_chars: int = 300):
+        self.caps = TtsCaps(voices=[Voice("fake-male", "假男声", "male"), Voice("fake-female", "假女声", "female")],
+                            emotions=False, max_chars=max_chars, cny_per_k_chars=0.3)
+        self.fail_times = fail_times
+        self.fail_with = fail_with
+        self.calls = []         # 依次合成的 (文字, 音色)
+
+    def synthesize(self, text, voice, emotion, speed, dest):
+        self.calls.append((text, voice))
+        if self.fail_with:
+            raise ProviderError(self.fail_with)
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise TransientError("假的限流")
+        if voice not in {v.id for v in self.caps.voices}:
+            raise ProviderError(f"未知的音色：{voice}")
+        frames = int(round(len(text) / 4.5 / speed * self.RATE))
+        duration = write_wav(Path(dest), b"\x00\x00" * frames, self.RATE)
+        return TtsResult(Path(dest), duration, tts_cost(len(text), self.caps), len(text))
