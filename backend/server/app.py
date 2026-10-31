@@ -51,6 +51,7 @@ import copy
 import sys
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -74,6 +75,9 @@ from render import compose as render_compose
 from render import providers as render_providers
 from render import runner as render_runner
 from render import session as render_session
+from render import mix as render_mix
+from render import voice as render_voice
+from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, library, novels, pricing, store, usage
@@ -924,6 +928,168 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
     if root not in target.parents or not target.is_file():
         raise HTTPException(404, "文件不存在")
     return FileResponse(target)
+
+
+# ---------- 配音与合成：音色存在 session.json 的 voices，成片在 final/ ----------
+
+BGM_TYPES = {"audio/mpeg": ".mp3", "audio/mp3": ".mp3", "audio/wav": ".wav", "audio/x-wav": ".wav",
+             "audio/wave": ".wav", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a", "audio/aac": ".aac"}
+BGM_MAX_BYTES = 30 * 1024 * 1024
+_compose_threads: dict = {}
+
+
+class RenderVoicesBody(BaseModel):
+    voices: dict[str, str]          # 说话人 → 音色 id；空串为清除
+
+
+class RenderComposeBody(BaseModel):
+    expected_cny: Optional[float] = Field(None, ge=0)
+    draft: bool = True
+
+
+def _tts():
+    try:
+        return render_providers.get_tts()
+    except KeyError as e:
+        raise HTTPException(422, e.args[0])
+    except render_video_base.ProviderError as e:
+        raise HTTPException(422, str(e))
+
+
+def _bgm_files(root) -> dict:
+    d = Path(root) / "audio" / "bgm"
+    return ({p.stem: p for p in sorted(d.iterdir()) if p.is_file() and not p.name.startswith(".")}
+            if d.is_dir() else {})
+
+
+def _session_or_404(root) -> dict:
+    s = render_session.load(root)
+    if s is None:
+        raise HTTPException(404, "还没有出片会话")
+    return s
+
+
+@app.get(_R + "/voices")
+def render_voices(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    """配音厂商的音色表、各说话人当前用的音色（选的或默认）、缺音色的说话人。"""
+    root, doc, _kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
+    s = _session_or_404(root)
+    tts = _tts()
+    lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
+    voices, missing = render_voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
+    info = render_voice.speakers(doc)
+    chosen = s.get("voices") or {}
+    return {"provider": tts.name, "rate_note": tts.rate_note,
+            "voices": [{"id": x.id, "name": x.name, "gender": x.gender} for x in tts.caps.voices],
+            "speakers": [{"key": k, "name": (info.get(k) or {}).get("name") or k or "（未标说话人）",
+                          "hint": (info.get(k) or {}).get("hint"), "voice": voices.get(k), "chosen": chosen.get(k)}
+                         for k in dict.fromkeys(x["speaker"] for x in lines)],
+            "missing": missing}
+
+
+@app.put(_R + "/voices")
+def render_voices_put(nid: str, cid: str, vid: str, body: RenderVoicesBody,
+                      user: dict = Depends(novel_user)):
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    ids = {x.id for x in _tts().caps.voices}
+    bad = [v for v in body.voices.values() if v and v not in ids]
+    if bad:
+        raise HTTPException(422, f"没有这个音色：{'、'.join(bad)}")
+    _render_call(render_session.set_voices, root, body.voices)
+    return render_voices(nid, cid, vid, user)
+
+
+def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> tuple:
+    root, doc, kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
+    s = _session_or_404(root)
+    bgm = _bgm_files(root)
+    p = render_mix.preview(root, doc, s, tts=_tts(), bgm=bgm, draft=draft, keyframes=kfs)
+    f = s.get("final")
+    p["final"] = dict(f, stale=f.get("state") == "done" and f.get("fingerprint") != p["fingerprint"]) if f else None
+    p["bgm"] = sorted(bgm)
+    p["tools"] = render_mix.tools() is not None
+    p["music"] = {ep["id"]: ep.get("music") or {} for ep in doc.get("episodes") or []}
+    return root, doc, kfs, s, p
+
+
+@app.get(_R + "/compose")
+def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: dict = Depends(novel_user)):
+    """合成预览（配音条数、未缓存字数与费用、缺音色、缺视频的段、BGM、选曲参考）与当前成片状态。"""
+    return _compose_preview(user, nid, cid, vid, draft)[4]
+
+
+def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tuple) -> None:
+    try:
+        out = render_mix.compose(root, doc, s, tts=render_providers.get_tts(), keyframes=kfs,
+                                 bgm=_bgm_files(root), draft=draft, tools=tools,
+                                 on_cost=lambda cny: render_session.add_spent(root, cny),
+                                 progress=lambda step: render_session.compose_progress(root, step))
+        render_session.compose_done(root, out["files"], out["report"])
+    except render_mix.MixError as e:
+        render_session.compose_failed(root, str(e), e.stderr)
+    except Exception as e:  # noqa: BLE001  任何意外都要落到失败，不能卡在「合成中」
+        traceback.print_exc()
+        try:
+            render_session.compose_failed(root, f"合成异常：{type(e).__name__}: {e}")
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+
+
+@app.post(_R + "/compose")
+def render_compose_post(nid: str, cid: str, vid: str, body: RenderComposeBody,
+                        user: dict = Depends(novel_user)):
+    """合成整章（后台线程）。过验证门；配音金额（未缓存的字数 × 单价）大于 0 时必须带确认金额。"""
+    _render_ctx(user, nid, cid, vid)          # 过验证门
+    root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, body.draft)
+    tools = render_mix.tools()
+    if tools is None:
+        raise HTTPException(422, "没有装 ffmpeg：先在终端执行 brew install ffmpeg，再重启后端")
+    if p["missing_voices"]:
+        raise HTTPException(422, "还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in p["missing_voices"]))
+    if p["no_video"] and not body.draft:
+        raise HTTPException(422, f"{len(p['no_video'])} 段还没有可用的视频；打开「草稿合成」可用关键帧补位")
+    if p["tts_cny"] > 0 and (body.expected_cny is None or abs(body.expected_cny - p["tts_cny"]) > 0.005):
+        raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
+                                         "expected_cny": p["tts_cny"]})
+    s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
+                     tts_cny=p["tts_cny"], draft=body.draft)
+    t = threading.Thread(target=_compose_worker, args=(root, doc, s, kfs, body.draft, tools),
+                         name=f"compose-{vid}", daemon=True)
+    _compose_threads[str(root)] = t
+    t.start()
+    return _render_call(render_session.view, s)
+
+
+@app.put(_R + "/bgm/{episode}")
+async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Request,
+                         user: dict = Depends(novel_user)):
+    """每集一段 BGM（mp3 / wav / m4a / aac，≤ 30MB）；合成时循环铺满，有人声时自动压低。"""
+    root, doc, _kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
+    _session_or_404(root)
+    if episode not in {ep["id"] for ep in doc.get("episodes") or []}:
+        raise HTTPException(404, f"没有这一集：{episode}")
+    ext = BGM_TYPES.get(request.headers.get("content-type", "").split(";")[0].strip().lower())
+    if ext is None:
+        raise HTTPException(422, "BGM 只支持 mp3、wav、m4a、aac")
+    data = await request.body()
+    if not data or len(data) > BGM_MAX_BYTES:
+        raise HTTPException(422, "BGM 文件为空或超过 30MB")
+    d = Path(root) / "audio" / "bgm"
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob(f"{episode}.*"):
+        old.unlink()
+    tmp = d / f".{episode}{ext}.part"
+    tmp.write_bytes(data)
+    tmp.replace(d / f"{episode}{ext}")
+    return {"episode": episode, "bytes": len(data)}
+
+
+@app.delete(_R + "/bgm/{episode}")
+def render_bgm_delete(nid: str, cid: str, vid: str, episode: str, user: dict = Depends(novel_user)):
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    for old in (Path(root) / "audio" / "bgm").glob(f"{episode}.*") if (Path(root) / "audio" / "bgm").is_dir() else []:
+        old.unlink()
+    return {"deleted": episode}
 
 
 # ---------- 长期记忆：人物生命周期、主线剧情、创作限制 ----------

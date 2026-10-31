@@ -26,6 +26,8 @@ INTERRUPTED_SUBMIT = "提交时服务中断，不确定厂商是否已受理；�
 DEFAULT_BUDGET_CNY = 200.0
 DEFAULT_CONFIRM_OVER_CNY = 20.0
 SETTING_KEYS = ("provider", "model", "resolution", "audio_mode", "budget_cny", "confirm_over_cny")
+COMPOSE_BUSY = ("queued", "running")
+COMPOSE_INTERRUPTED = "合成时服务中断，请重新合成（已合成的配音与已规整的片段会复用）"
 
 
 class SessionError(ValueError):
@@ -482,6 +484,67 @@ def recover(root) -> bool:
                 a.update(state="failed", error=INTERRUPTED_SUBMIT)
                 c["state"], c["error"], c["uncertain"] = "failed", a["error"], True
                 changed = True
+        f = s.get("final") or {}
+        if f.get("state") in COMPOSE_BUSY:
+            f.update(state="failed", error=COMPOSE_INTERRUPTED, finished_at=_now())
+            s["final"] = f
+            changed = True
         if changed:
             _save(root, s)
         return any(c["state"] in IN_FLIGHT for c in s["clips"])
+
+
+# ---------- 配音与合成（设计文档第 3 节） ----------
+
+def set_voices(root, voices: dict) -> dict:
+    """说话人 → 厂商音色 id；空值为清除（回到按提示的默认）。音色是否存在由调用方按厂商校验。"""
+    with mutate(root) as s:
+        cur = dict(s.get("voices") or {})
+        for k, v in voices.items():
+            if v:
+                cur[k] = v
+            else:
+                cur.pop(k, None)
+        s["voices"] = cur
+        return s
+
+
+def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool) -> dict:
+    """开始合成：不能正在合成、不能有段在跑；配音费用过同一上限。旧成片的文件留着直到新的合成完成。"""
+    with mutate(root) as s:
+        f = s.get("final") or {}
+        if f.get("state") in COMPOSE_BUSY:
+            raise Conflict("正在合成，等它结束再合成")
+        if any(c["state"] in IN_FLIGHT for c in s["clips"]):
+            raise Conflict("有段在排队或生成中，等它们结束再合成")
+        if s["spent_cny"] + tts_cny > s["budget_cny"] + 1e-9:
+            raise BudgetExceeded(f"超出上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"
+                                 f"本次配音约 ¥{tts_cny:.2f}")
+        s["final"] = {"state": "running", "fingerprint": fingerprint, "draft": draft, "step": "开始",
+                      "started_at": _now(), "files": f.get("files") or [], "report": f.get("report"),
+                      "error": None, "detail": None}
+        return s
+
+
+def compose_progress(root, step: str) -> None:
+    with mutate(root) as s:
+        (s.get("final") or {})["step"] = step
+
+
+def add_spent(root, cny: float) -> None:
+    """配音的真实花费（每合成一条记一次）计入同一 spent_cny。"""
+    with mutate(root) as s:
+        s["spent_cny"] = round(s["spent_cny"] + cny, 4)
+
+
+def compose_done(root, files: list, report: str) -> None:
+    with mutate(root) as s:
+        s["final"].update(state="done", files=files, report=report, step="完成", error=None, detail=None,
+                          finished_at=_now())
+
+
+def compose_failed(root, error: str, detail: str = "") -> None:
+    with mutate(root) as s:
+        f = s.get("final") or {}
+        f.update(state="failed", error=error, detail=detail or None, finished_at=_now())
+        s["final"] = f
