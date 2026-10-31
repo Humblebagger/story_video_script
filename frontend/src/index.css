@@ -1503,3 +1503,47 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .adm__pricing { width: 100%; min-height: 180px; font-family: var(--mono); }
 .adm__err-detail summary { cursor: pointer; }
 .adm__err-detail pre { white-space: pre-wrap; font-size: 11.5px; margin: 6px 0 0; }
+
+/* ---------- 画布出片：成片泳道、预览窗视频、侧栏「出片」页 ---------- */
+.tlc__clip { cursor: pointer; }
+.tlc__clip rect { fill: none; stroke: var(--line); stroke-dasharray: 4 3; }
+.tlc__clip text { font-size: 10px; fill: var(--muted); pointer-events: none; }
+.tlc__clip--busy rect { stroke: var(--accent); stroke-dasharray: none; animation: tlc-busy 1.2s ease-in-out infinite; }
+.tlc__clip--done rect { fill: var(--accent-soft); stroke: var(--accent); stroke-dasharray: none; }
+.tlc__clip--done text { fill: var(--text); }
+.tlc__clip--failed rect { stroke: var(--danger); stroke-dasharray: none; }
+.tlc__clip--failed text { fill: var(--danger); }
+.tlc__clip--stale rect { fill: var(--warn-bg); stroke: var(--inferred); stroke-dasharray: 2 2; }
+.tlc__clip.is-sel rect { stroke-width: 2; }
+@keyframes tlc-busy { 50% { stroke-opacity: 0.3; } }
+.tlc__pip video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.tlc__pipnote { position: absolute; top: 8px; left: 8px; padding: 2px 8px; border-radius: 4px;
+                background: rgba(0, 0, 0, 0.6); color: #eee; font-size: 11px; }
+
+.film { display: flex; flex-direction: column; gap: 12px; font-size: 12.5px; }
+.film section { display: flex; flex-direction: column; gap: 6px; }
+.film p { margin: 0; }
+.film__settings { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 8px; }
+.film__settings summary { cursor: pointer; color: var(--muted); }
+.film__settings .field { margin-top: 6px; }
+.film__counts { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.film__count { color: var(--muted); }
+.film__count--failed { color: var(--danger); }
+.film__count--stale { color: var(--inferred); }
+.film__money { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); }
+.film__bar { height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+.film__bar i { display: block; height: 100%; background: var(--accent); }
+.film__clip > header { display: flex; flex-direction: column; gap: 1px; }
+.film__clip > header b { font-family: var(--mono); }
+.film__clip > header span { font-size: 11.5px; color: var(--faint); }
+.film__shots { display: flex; flex-wrap: wrap; gap: 4px; }
+.film__prompt { white-space: pre-wrap; font-size: 11.5px; max-height: 30vh; overflow: auto;
+                background: var(--panel-2); padding: 6px 8px; border-radius: 4px; margin: 4px 0 0; }
+.film__dim { color: var(--faint); }
+.film__attempts, .film__rows { border-collapse: collapse; font-size: 12px; }
+.film__attempts td, .film__rows td { padding: 2px 8px 2px 0; }
+.film__attempts tr.is-chosen { font-weight: 600; }
+.film__rows { display: block; max-height: 30vh; overflow: auto; }
+.film__video { width: 100%; max-height: 40vh; background: #000; border-radius: 4px; }
+.film__confirm { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+.film__confirm h4 { margin: 0; }
