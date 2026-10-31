@@ -292,6 +292,8 @@ def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[floa
     确认金额；单段超过确认线也要带。金额与服务端重算不一致 → Conflict（附重算金额）。
     单段点名重做视为用户已看过「请到控制台核对」，清掉待核对标记。"""
     with mutate(root) as s:
+        if (s.get("final") or {}).get("state") in COMPOSE_BUSY:
+            raise Conflict("正在合成，等它结束再出片")
         if clip_ids is None:
             targets = _remaining(s)
         else:

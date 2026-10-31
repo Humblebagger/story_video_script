@@ -152,6 +152,16 @@ def main() -> int:
     render_session.recover(root)
     f = render_session.load(root)["final"]
     assert f["state"] == "failed" and f["error"] == render_session.COMPOSE_INTERRUPTED
+    # 7b. 合成中不能出片
+    render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True)
+    clip0 = render_session.load(root)["clips"][0]["id"]
+    assert c.post(R + f"/clips/{clip0}/run", headers=H, json={}).status_code == 409
+    render_session.recover(root)
+    # 7c. 成片按当时的草稿设置判过期
+    fp_full = c.get(R + "/compose?draft=false", headers=H).json()["fingerprint"]
+    with render_session.mutate(root) as s_:
+        s_["final"] = {"state": "done", "fingerprint": fp_full, "draft": False, "files": [], "report": None}
+    assert c.get(R + "/compose", headers=H).json()["final"]["stale"] is False
     mix.compose = fake_compose
     TTS.caps.cny_per_k_chars = 100000.0
     big = c.get(R + "/compose", headers=H).json()["tts_cny"]
@@ -167,6 +177,13 @@ def main() -> int:
     assert c.put(R + "/bgm/E99", headers={**H, "Content-Type": "audio/mpeg"}, content=b"x").status_code == 404
     assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/wav"}, content=b"RIFFwav").status_code == 200
     assert sorted(p.name for p in (root / "audio" / "bgm").iterdir()) == ["E01.wav"], "换格式时删掉旧文件"
+    old_max = app_mod.BGM_MAX_BYTES
+    app_mod.BGM_MAX_BYTES = 4
+    assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/mpeg"}, content=b"too-large").status_code == 422
+    app_mod.BGM_MAX_BYTES = old_max
+    assert sorted(p.name for p in (root / "audio" / "bgm").iterdir()) == ["E01.wav"], "超限不动旧文件"
+    assert c.delete(R + "/bgm/E99", headers=H).status_code == 404
+    assert c.delete(R + "/bgm/*", headers=H).status_code == 404
     assert c.delete(R + "/bgm/E01", headers=H).status_code == 200
     assert c.get(R + "/compose", headers=H).json()["bgm"] == []
     print("8. BGM 上传、校验、删除 ✓")

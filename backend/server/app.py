@@ -1005,7 +1005,13 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
     bgm = _bgm_files(root)
     p = render_mix.preview(root, doc, s, tts=_tts(), bgm=bgm, draft=draft, keyframes=kfs)
     f = s.get("final")
-    p["final"] = dict(f, stale=f.get("state") == "done" and f.get("fingerprint") != p["fingerprint"]) if f else None
+    if f:
+        fp = p["fingerprint"]
+        if f.get("draft", draft) != draft:      # 按成片当时的草稿设置比，不随预览参数变
+            fp = render_mix.compose_fingerprint(root, doc, s, p["voices"], bgm, f["draft"], kfs)
+        p["final"] = dict(f, stale=f.get("state") == "done" and f.get("fingerprint") != fp)
+    else:
+        p["final"] = None
     p["bgm"] = sorted(bgm)
     p["tools"] = render_mix.tools() is not None
     p["music"] = {ep["id"]: ep.get("music") or {} for ep in doc.get("episodes") or []}
@@ -1074,20 +1080,38 @@ async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Re
     data = await request.body()
     if not data or len(data) > BGM_MAX_BYTES:
         raise HTTPException(422, "BGM 文件为空或超过 30MB")
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > BGM_MAX_BYTES:
+        raise HTTPException(422, "BGM 文件为空或超过 30MB")
     d = Path(root) / "audio" / "bgm"
     d.mkdir(parents=True, exist_ok=True)
-    for old in d.glob(f"{episode}.*"):
-        old.unlink()
     tmp = d / f".{episode}{ext}.part"
-    tmp.write_bytes(data)
-    tmp.replace(d / f"{episode}{ext}")
-    return {"episode": episode, "bytes": len(data)}
+    total = 0
+    try:
+        with open(tmp, "wb") as fh:
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > BGM_MAX_BYTES:
+                    break
+                fh.write(chunk)
+        if total == 0 or total > BGM_MAX_BYTES:
+            raise HTTPException(422, "BGM 文件为空或超过 30MB")
+        tmp.replace(d / f"{episode}{ext}")
+    finally:
+        tmp.unlink(missing_ok=True)
+    for old in d.glob(f"{episode}.*"):
+        if old.name != f"{episode}{ext}":
+            old.unlink()
+    return {"episode": episode, "bytes": total}
 
 
 @app.delete(_R + "/bgm/{episode}")
 def render_bgm_delete(nid: str, cid: str, vid: str, episode: str, user: dict = Depends(novel_user)):
-    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
-    for old in (Path(root) / "audio" / "bgm").glob(f"{episode}.*") if (Path(root) / "audio" / "bgm").is_dir() else []:
+    root, doc, _kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
+    if episode not in {ep["id"] for ep in doc.get("episodes") or []}:
+        raise HTTPException(404, f"没有这一集：{episode}")
+    old = _bgm_files(root).get(episode)
+    if old:
         old.unlink()
     return {"deleted": episode}
 
