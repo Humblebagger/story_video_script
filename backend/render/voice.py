@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from render.providers.base import ProviderError, TransientError
-from render.providers.tts_base import concat_wavs, default_voice, tts_cost, wav_seconds
+from render.providers.tts_base import BilledError, concat_wavs, default_voice, tts_cost, wav_seconds
 
 NARRATION = "narration"
 # 各声音模式下哪些语音条走 TTS（设计文档 3.4）；其余由视频模型自己出声或不出声，只进字幕
@@ -148,7 +148,7 @@ def synthesize(lines: list, voices: dict, provider, root, *, retries: int = 3, s
 
     结果每条 = 语音条 + file、duration、cost_cny、cached；失败每条 = 语音条 + error（原因原样）。
     瞬时错误重试 retries 次；厂商明确失败与重试用尽都记进失败，不中断其余各条。
-    on_cost(cny) 在每次真实合成后调用（计入出片会话的已花金额）。
+    on_cost(cny) 在每次真实合成后调用（计入出片会话的已花金额）；厂商收下后才失败（BilledError）也按其金额调用。
     """
     cache = _cache(root)
     done, failed = [], []
@@ -176,6 +176,10 @@ def synthesize(lines: list, voices: dict, provider, root, *, retries: int = 3, s
                     Path(f).unlink(missing_ok=True)
             done.append({**line, "file": final, "duration": wav_seconds(final),
                          "cost_cny": round(cost, 4), "cached": False})
+        except BilledError as e:         # 厂商收下后才失败：可能已计费，照记花费，不重试
+            if on_cost:
+                on_cost(e.billed_cny)
+            failed.append({**line, "error": str(e)})
         except (ProviderError, TransientError) as e:
             failed.append({**line, "error": str(e)})
     return done, failed

@@ -8,8 +8,10 @@
   结束块 code=20000000；其他非 0 码为失败。
 - 2.0 音色名以 _uranus_bigtts 结尾；后付费 3 元/万字符。
 我们要 pcm（24kHz 16 位单声道）自己封成 WAV，时长按帧数算。密钥只放进请求头，不进日志与报错。
+收到 200 之后的任何失败（中途断开、坏行、坏音频、流内错误码、没有结束块）按已计费报 BilledError、不重试。
 """
 import base64
+import binascii
 import json
 import os
 import uuid
@@ -20,7 +22,7 @@ import httpx
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
 from render.providers.base import ProviderError, TransientError
-from render.providers.tts_base import TtsCaps, TtsResult, Voice, tts_cost, write_wav
+from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
 
 URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 RESOURCE_ID = "seed-tts-2.0"
@@ -82,6 +84,9 @@ class VolcTts:
                    app_id=os.environ.get("VOLC_TTS_APP_ID", "").strip(),
                    access_key=os.environ.get("VOLC_TTS_ACCESS_KEY", "").strip())
 
+    def _billed(self, message: str, text: str) -> BilledError:
+        return BilledError(message, tts_cost(len(text), self.caps))
+
     def synthesize(self, text, voice, emotion, speed, dest):
         params = {"format": "pcm", "sample_rate": SAMPLE_RATE,
                   "speech_rate": max(-50, min(100, round((speed - 1) * 100)))}
@@ -91,7 +96,7 @@ class VolcTts:
                 "req_params": {"text": text, "speaker": voice, "audio_params": params}}
         headers = {**self._auth, "X-Api-Resource-Id": RESOURCE_ID,
                    "X-Api-Request-Id": str(uuid.uuid4()), "Content-Type": "application/json"}
-        pcm, done = bytearray(), False
+        pcm, done, seen = bytearray(), False, False
         try:
             with self._http.stream("POST", self._url, headers=headers, json=body) as r:
                 if r.status_code == 429 or r.status_code >= 500:
@@ -99,6 +104,7 @@ class VolcTts:
                 if r.status_code >= 400:
                     r.read()
                     raise ProviderError(_error_text(r))
+                seen = True         # 已收下请求：此后的失败可能已计费，按已计费报、不重试
                 for raw in r.iter_lines():
                     line = raw.strip()
                     if line.startswith("data:"):
@@ -108,19 +114,26 @@ class VolcTts:
                     try:
                         msg = json.loads(line)
                     except ValueError:
-                        raise TransientError("豆包语音返回的不是 JSON")
+                        raise self._billed("豆包语音返回的不是 JSON", text) from None
+                    if not isinstance(msg, dict):
+                        raise self._billed("豆包语音返回的不是 JSON 对象", text)
                     code = msg.get("code", 0)
                     if code == DONE:
                         done = True
                         break
                     if code != 0:
                         detail = msg.get("message") or ""
-                        raise ProviderError(f"豆包语音合成失败（{code}）" + (f"：{detail}" if detail else ""))
+                        raise self._billed(f"豆包语音合成失败（{code}）" + (f"：{detail}" if detail else ""), text)
                     if msg.get("data"):
-                        pcm += base64.b64decode(msg["data"])
+                        try:
+                            pcm += base64.b64decode(msg["data"], validate=True)
+                        except (binascii.Error, ValueError, TypeError):
+                            raise self._billed("豆包语音返回的音频无法解码", text) from None
         except httpx.TransportError as e:
-            raise TransientError(f"连接豆包语音失败：{type(e).__name__}")
+            if seen:
+                raise self._billed(f"豆包语音中途断开：{type(e).__name__}", text) from None
+            raise TransientError(f"连接豆包语音失败：{type(e).__name__}") from None
         if not done or not pcm:
-            raise TransientError("豆包语音没有返回完整的音频")
+            raise self._billed("豆包语音没有返回完整的音频", text)
         duration = write_wav(Path(dest), bytes(pcm), SAMPLE_RATE)
         return TtsResult(Path(dest), duration, tts_cost(len(text), self.caps), len(text))

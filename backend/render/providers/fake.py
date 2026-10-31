@@ -5,7 +5,7 @@ from typing import Optional
 
 from render.providers.base import (Caps, ProviderError, TaskState, TransientError,
                                    last_frame_path, request_seconds)
-from render.providers.tts_base import TtsCaps, TtsResult, Voice, tts_cost, write_wav
+from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
 
 FAKE_MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
 FAKE_JPG = b"\xff\xd8\xff\xe0fake-last-frame"
@@ -76,22 +76,26 @@ class FakeVideo:
 
 
 class FakeTts:
-    """假 TTS：不联网、不花钱，按字数出静音 WAV（每字 1/4.5 秒）；可指定前几次限流或一律失败。"""
+    """假 TTS：不联网、不花钱，按字数出静音 WAV（每字 1/4.5 秒）；可指定前几次限流、一律失败或收下后失败（已计费）。"""
     name = "fake"
     rate_note = "假配音：不联网、不花钱，金额只用于演示"
     RATE = 24000
 
-    def __init__(self, *, fail_times: int = 0, fail_with: Optional[str] = None, max_chars: int = 300):
+    def __init__(self, *, fail_times: int = 0, fail_with: Optional[str] = None,
+                 fail_billed: Optional[str] = None, max_chars: int = 300):
         self.caps = TtsCaps(voices=[Voice("fake-male", "假男声", "male"), Voice("fake-female", "假女声", "female")],
                             emotions=False, max_chars=max_chars, cny_per_k_chars=0.3)
         self.fail_times = fail_times
         self.fail_with = fail_with
+        self.fail_billed = fail_billed      # 模拟收下请求后才失败（按已计费记账）
         self.calls = []         # 依次合成的 (文字, 音色)
 
     def synthesize(self, text, voice, emotion, speed, dest):
         self.calls.append((text, voice))
         if self.fail_with:
             raise ProviderError(self.fail_with)
+        if self.fail_billed:
+            raise BilledError(self.fail_billed, tts_cost(len(text), self.caps))
         if self.fail_times > 0:
             self.fail_times -= 1
             raise TransientError("假的限流")

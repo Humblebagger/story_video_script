@@ -2,7 +2,8 @@
 
 主流程只用 caps / synthesize。厂商一律产出 WAV（16 位单声道 PCM），时长按帧数算，不需要 ffprobe。
 新增厂商 = 新文件 + 在 providers/__init__.py 用 register_tts 注册一行。错误沿用视频厂商的两类：
-ProviderError（明确失败，原样展示）、TransientError（断连、限流，调用方重试）。
+ProviderError（明确失败，原样展示）、TransientError（断连、限流，调用方重试）；另加 BilledError：
+厂商已收下请求（可能已计费）后才失败，调用方按 billed_cny 记账且不重试。
 """
 import wave
 from dataclasses import dataclass
@@ -10,6 +11,14 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from render.providers.base import ProviderError, TransientError  # noqa: F401  （供 TTS 厂商与调用方导入）
+
+
+class BilledError(ProviderError):
+    """厂商已收下请求后才失败（如流式响应中途断开）：这次可能已计费，按 billed_cny 记账，不重试。"""
+
+    def __init__(self, message: str, billed_cny: float):
+        super().__init__(message)
+        self.billed_cny = billed_cny
 
 
 @dataclass

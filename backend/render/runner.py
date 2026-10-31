@@ -13,6 +13,7 @@ from render import compose, session as sess
 from render.providers import base, get_video
 
 BUSY = ("running", "downloading")
+SESSIONS_GLOB = "users/*/novels/*/chapters/*/render/*/session.json"   # 数据目录下全部出片会话
 
 
 class Runner:
@@ -51,7 +52,7 @@ class Runner:
     def recover(self, data_dir) -> int:
         """扫描全部会话，续上还有在跑的段的会话。返回续上的会话数。"""
         n = 0
-        for path in Path(data_dir).glob("users/*/novels/*/chapters/*/render/*/session.json"):
+        for path in Path(data_dir).glob(SESSIONS_GLOB):
             if sess.recover(path.parent):
                 self.watch(path.parent)
                 n += 1

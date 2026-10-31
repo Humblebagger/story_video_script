@@ -486,14 +486,27 @@ def recover(root) -> bool:
                 a.update(state="failed", error=INTERRUPTED_SUBMIT)
                 c["state"], c["error"], c["uncertain"] = "failed", a["error"], True
                 changed = True
-        f = s.get("final") or {}
-        if f.get("state") in COMPOSE_BUSY:
-            f.update(state="failed", error=COMPOSE_INTERRUPTED, finished_at=_now())
-            s["final"] = f
-            changed = True
+        changed = _fail_interrupted_compose(s) or changed
         if changed:
             _save(root, s)
         return any(c["state"] in IN_FLIGHT for c in s["clips"])
+
+
+def _fail_interrupted_compose(s: dict) -> bool:
+    f = s.get("final") or {}
+    if f.get("state") not in COMPOSE_BUSY:
+        return False
+    f.update(state="failed", error=COMPOSE_INTERRUPTED, finished_at=_now())
+    s["final"] = f
+    return True
+
+
+def recover_compose(root) -> None:
+    """只收尾合成：重启前没合成完的标失败（关掉后台出片时启动也要做，段的提交中断留给 recover）。"""
+    with _lock(root):
+        s = load(root)
+        if s is not None and _fail_interrupted_compose(s):
+            _save(root, s)
 
 
 # ---------- 配音与合成（设计文档第 3 节） ----------
@@ -511,12 +524,15 @@ def set_voices(root, voices: dict) -> dict:
         return s
 
 
-def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool) -> dict:
-    """开始合成：不能正在合成、不能有段在跑；配音费用过同一上限。旧成片的文件留着直到新的合成完成。"""
+def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool, voices: dict = None) -> dict:
+    """开始合成：不能正在合成、不能有段在跑；配音费用过同一上限。旧成片的文件留着直到新的合成完成，
+    连同它出自哪次合成（files_fingerprint、files_draft）。voices 为预览时的音色选择，与现在的不同就要重新确认。"""
     with mutate(root) as s:
         f = s.get("final") or {}
         if f.get("state") in COMPOSE_BUSY:
             raise Conflict("正在合成，等它结束再合成")
+        if voices is not None and (s.get("voices") or {}) != voices:
+            raise Conflict("音色刚被改过，请重新确认金额", expected_cny=None)
         if any(c["state"] in IN_FLIGHT for c in s["clips"]):
             raise Conflict("有段在排队或生成中，等它们结束再合成")
         if s["spent_cny"] + tts_cny > s["budget_cny"] + 1e-9:
@@ -524,6 +540,8 @@ def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool) -> dic
                                  f"本次配音约 ¥{tts_cny:.2f}")
         s["final"] = {"state": "running", "fingerprint": fingerprint, "draft": draft, "step": "开始",
                       "started_at": _now(), "files": f.get("files") or [], "report": f.get("report"),
+                      "files_fingerprint": f.get("files_fingerprint", f.get("fingerprint")),
+                      "files_draft": f.get("files_draft", f.get("draft")),
                       "error": None, "detail": None}
         return s
 
@@ -541,8 +559,9 @@ def add_spent(root, cny: float) -> None:
 
 def compose_done(root, files: list, report: str) -> None:
     with mutate(root) as s:
-        s["final"].update(state="done", files=files, report=report, step="完成", error=None, detail=None,
-                          finished_at=_now())
+        f = s["final"]
+        f.update(state="done", files=files, report=report, step="完成", error=None, detail=None,
+                 files_fingerprint=f.get("fingerprint"), files_draft=f.get("draft"), finished_at=_now())
 
 
 def compose_failed(root, error: str, detail: str = "") -> None:

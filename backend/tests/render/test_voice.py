@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """配音：语音条顺序（与 timeline.ts speechOf 一致）、各声音模式走 TTS 的语音条、说话人与音色分配、
-缓存命中不重复计费、长句切开、瞬时错误重试与失败汇总、预估。
+缓存命中不重复计费、长句切开、瞬时错误重试与失败汇总（含收下后失败按已计费）、预估。
 
 假 TTS，不联网、不花钱。用法: python3 tests/render/test_voice.py
 """
@@ -100,7 +100,15 @@ def main() -> int:
         bad = FakeTts(fail_with="音色无权限")
         done, failed = voice.synthesize(two, voices, bad, Path(d), sleep=lambda s: None)
         assert not done and [x["error"] for x in failed] == ["音色无权限", "音色无权限"] and len(bad.calls) == 2
-    print("6. 瞬时错误重试 3 次、明确失败不重试，失败汇总不中断其余各条 ✓")
+    with tempfile.TemporaryDirectory() as d:
+        billed = FakeTts(fail_billed="中途断开")
+        spent = []
+        one = lines[:1]
+        done, failed = voice.synthesize(one, voices, billed, Path(d), on_cost=spent.append, sleep=sleeps.append)
+        assert not done and [x["error"] for x in failed] == ["中途断开"] and len(billed.calls) == 1, "不重试"
+        assert spent == [tts_cost(len(one[0]["text"]), billed.caps)], "收下后才失败照记花费"
+        assert not list((Path(d) / voice.CACHE_DIR).glob("*.wav")), "失败不留缓存"
+    print("6. 瞬时错误重试 3 次、明确失败不重试，收下后失败按已计费记账，失败汇总不中断其余各条 ✓")
 
     try:
         voice.synthesize(lines, voices, tts, Path("/nonexistent/render/v1"), sleep=lambda s: None)

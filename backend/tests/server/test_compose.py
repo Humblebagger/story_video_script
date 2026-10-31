@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """配音与合成接口：音色（默认、选择、清除、校验）、合成预览、合成的拦截（没装 ffmpeg、缺音色、配音金额
-确认 409、草稿合成关掉时缺段、上限、合成中再合成）、后台线程推进到完成/失败、成片过期、重启中断、BGM 上传删除。
+确认 409、草稿合成关掉时缺段、上限、合成中再合成、预览后改音色）、后台线程推进到完成/失败（报错隐去服务器路径）、
+成片过期（按成片出自的那次合成）、重启中断（含关掉后台出片）、BGM 上传删除、无声模式不需要配音密钥。
 
 假视频厂商 + 假 TTS；合成本身用替身函数（真 ffmpeg 合成由 tests/render/test_mix_e2e.py 覆盖）。
 用法: python3 tests/server/test_compose.py
@@ -130,13 +131,18 @@ def main() -> int:
 
     # 6. 合成失败：错误与 ffmpeg 输出记下；意外异常也落到失败
     def broken(*a, **kw):
-        raise mix.MixError("混音 E01 失败（ffmpeg 退出码 1）", "Invalid argument")
+        raise mix.MixError(f"混音 E01 失败（ffmpeg 退出码 1）：{root}/final/work/E01.joined.mp4",
+                           f"Invalid argument: {Path(root).resolve()}/final/E01.part.mp4")
     mix.compose = broken
     exp = c.get(R + "/compose", headers=H).json()["tts_cny"]
     assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
     wait(root)
     f = c.get(R + "/compose", headers=H).json()["final"]
-    assert f["state"] == "failed" and "混音" in f["error"] and f["detail"] == "Invalid argument"
+    assert f["state"] == "failed" and "混音" in f["error"] and f["detail"].startswith("Invalid argument")
+    assert str(root) not in f["error"] + f["detail"] and str(Path(root).resolve()) not in f["detail"], f
+    assert "…/final/work/E01.joined.mp4" in f["error"], "报错里隐去服务器路径"
+    assert f["files"] == ["final/E01.mp4"] and f["stale"] is False, "失败不改现有成片的出处，没改动就不过期"
+    assert f["files_fingerprint"] == p2["fingerprint"] and f["files_draft"] is True
 
     def boom(*a, **kw):
         raise RuntimeError("意外")
@@ -159,16 +165,35 @@ def main() -> int:
     render_session.recover(root)
     # 7c. 成片按当时的草稿设置判过期
     fp_full = c.get(R + "/compose?draft=false", headers=H).json()["fingerprint"]
-    with render_session.mutate(root) as s_:
-        s_["final"] = {"state": "done", "fingerprint": fp_full, "draft": False, "files": [], "report": None}
+    with render_session.mutate(root) as s_:       # 旧记录（没有 files_fingerprint）回退到 fingerprint
+        s_["final"] = {"state": "done", "fingerprint": fp_full, "draft": False, "files": ["final/E01.mp4"],
+                       "report": None}
     assert c.get(R + "/compose", headers=H).json()["final"]["stale"] is False
+    with render_session.mutate(root) as s_:
+        s_["final"]["draft"] = True
+    assert c.get(R + "/compose", headers=H).json()["final"]["stale"] is True
+    # 7d. 预览后音色被改：开始合成时 409 要重新确认
+    seen_voices = dict(render_session.load(root).get("voices") or {})
+    c.put(R + "/voices", headers=H, json={"voices": {"narration": "fake-female"}})
+    try:
+        render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True, voices=seen_voices)
+        raise AssertionError("音色变了应 409")
+    except render_session.Conflict as e:
+        assert "音色" in str(e)
+    c.put(R + "/voices", headers=H, json={"voices": {"narration": seen_voices.get("narration", "")}})
+    assert render_session.load(root)["final"]["state"] == "done", "被拒时不动成片"
+    # 7e. 关掉后台出片（STORYBOARD_RENDER_RUNNER=0）时启动也收尾中断的合成
+    render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True)
+    app_mod._start_render_runner()
+    f = render_session.load(root)["final"]
+    assert f["state"] == "failed" and f["error"] == render_session.COMPOSE_INTERRUPTED
     mix.compose = fake_compose
     TTS.caps.cny_per_k_chars = 100000.0
     big = c.get(R + "/compose", headers=H).json()["tts_cny"]
     r = c.post(R + "/compose", headers=H, json={"expected_cny": big})
     assert r.status_code == 422 and "上限" in r.json()["detail"]
     TTS.caps.cny_per_k_chars = 0.3
-    print("7. 合成中再合成 409、超上限 422、重启中断标失败 ✓")
+    print("7. 合成中再合成 409、超上限 422、重启中断标失败（关掉后台出片也收尾）、预览后改音色 409 ✓")
 
     # 8. BGM：上传、预览里列出、类型与集号校验、删除
     assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/mpeg"}, content=b"ID3bgm").status_code == 200
@@ -187,6 +212,31 @@ def main() -> int:
     assert c.delete(R + "/bgm/E01", headers=H).status_code == 200
     assert c.get(R + "/compose", headers=H).json()["bgm"] == []
     print("8. BGM 上传、校验、删除 ✓")
+
+    # 9. 没有要配音的语音条（无声模式）：不需要配音密钥
+    def no_key():
+        raise providers.base.ProviderError("没有配置配音密钥")
+    providers.register_tts("fake", no_key)
+    with render_session.mutate(root) as s_:
+        mode, s_["audio_mode"] = s_["audio_mode"], "silent"
+    try:
+        r = c.get(R + "/compose", headers=H)
+        assert r.status_code == 200 and r.json()["lines"] == 0 and r.json()["tts_cny"] == 0, r.text
+        assert r.json()["voices"] == {} and r.json()["missing_voices"] == []
+
+        def silent_compose(root_, doc, s, *, tts, **kw):
+            assert tts is None, "无声模式不取配音厂商"
+            return {"files": ["final/E01.mp4"], "report": "final/mix_report.json"}
+        mix.compose = silent_compose
+        assert c.post(R + "/compose", headers=H, json={}).status_code == 200
+        wait(root)
+        assert render_session.load(root)["final"]["state"] == "done"
+        assert c.get(R + "/voices", headers=H).status_code == 422, "音色表仍要配音厂商"
+    finally:
+        with render_session.mutate(root) as s_:
+            s_["audio_mode"] = mode
+        providers.register_tts("fake", lambda: TTS)
+    print("9. 无声模式不需要配音密钥 ✓")
 
     mix.tools, mix.compose = real_tools, real_compose
     print("\nALL PASS")

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""合成的纯计算：画幅、原声策略、声画对齐（提速 / 定格）、字幕、ffmpeg 参数。不需要 ffmpeg。
+"""合成的纯计算：画幅、原声策略、声画对齐（提速 / 定格）、字幕、ffmpeg 参数；整章合成的复用（ffmpeg 用替身）。
+不需要 ffmpeg。
 
 用法: python3 tests/render/test_mix.py
 """
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -78,6 +80,7 @@ def main() -> int:
     black = " ".join(mix.normalize_cmd(None, still=None, duration=3, size=(480, 854), native_db=None,
                                        has_audio=False, out="o.mp4"))
     assert "color=c=black:s=480x854" in black
+    assert "scale=out_range=tv,format=yuv420p" in " ".join(still), "关键帧图与视频统一色域"
     print("5. 规整参数：缩放补边、尾帧定格、原声音量、关键帧或黑场补位 ✓")
 
     lst = mix.concat_list(["/a/1.mp4", "/a/2.mp4"])
@@ -93,6 +96,39 @@ def main() -> int:
     bare = mix.mix_cmd("v.mp4", {"speech": [], "total": 3.0}, bgm=None, out="out.mp4")
     assert "[nat]loudnorm" in bare[bare.index("-filter_complex") + 1] and bare.count("-i") == 1
     print("6. 拼接与混音参数：配音按时刻放置并提速、BGM 循环并在有人声时压低、响度标准化 ✓")
+
+    # 7. 整章合成（ffmpeg 换成替身）：无声模式不碰 tts；同一路径重新上传的关键帧会重新规整
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        kf = root / "kf.png"
+        kf.write_bytes(b"png-1")
+        ran = []
+
+        def fake_run(cmd, what):
+            ran.append(what.strip())
+            Path(cmd[-1]).parent.mkdir(parents=True, exist_ok=True)
+            Path(cmd[-1]).write_bytes(b"x")
+        real_run, mix.run = mix.run, fake_run
+        try:
+            doc = {"episodes": [EP]}
+            s = {"audio_mode": "silent", "resolution": "720p", "voices": {},
+                 "clips": [dict(c, episode="E01", attempts=[], chosen=None) for c in CLIPS]}
+            kfs = {"S1": kf}
+            assert mix.preview(root, doc, s, tts=None, bgm={}, draft=True, keyframes=kfs)["lines"] == 0
+            args = dict(tts=None, keyframes=kfs, bgm={}, draft=True, tools=("ffmpeg", "ffprobe"))
+            mix.compose(root, doc, s, **args)
+            first = [x for x in ran if x.startswith("规整")]
+            assert len(first) == 2, ran
+            ran.clear()
+            mix.compose(root, doc, s, **args)
+            assert not [x for x in ran if x.startswith("规整")], "输入没变，已规整的段复用"
+            kf.write_bytes(b"png-2-reuploaded")
+            ran.clear()
+            mix.compose(root, doc, s, **args)
+            assert [x for x in ran if x.startswith("规整")] == ["规整 E01-C01"], ran
+        finally:
+            mix.run = real_run
+    print("7. 无声模式不需要 tts；换关键帧后补位段重新规整 ✓")
 
     print("\nALL PASS")
     return 0

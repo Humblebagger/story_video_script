@@ -133,7 +133,8 @@ def normalize_cmd(src: Optional[str], *, still: Optional[str], duration: float, 
     w, h = size
     d = f"{duration:.3f}"
     fit = (f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-           f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS}")
+           f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS},"
+           f"scale=out_range=tv,format=yuv420p")     # 关键帧图（全范围 JPEG/PNG）与视频统一色域
     if src:
         inputs = ["-i", src]
         vf = f"[0:v]{fit},tpad=stop_mode=clone:stop_duration={d}[v]"
@@ -287,10 +288,12 @@ def compose_fingerprint(root, doc: dict, s: dict, voices: dict, bgm: dict, draft
 
 def preview(root, doc: dict, s: dict, *, tts, bgm: dict, draft: bool, keyframes: dict = None,
             cps: float = DEFAULT_SPEECH_CPS) -> dict:
-    """合成前的预览：配音条数、未缓存字数与费用、缺音色的说话人、缺视频的段、成片指纹。不花钱。"""
+    """合成前的预览：配音条数、未缓存字数与费用、缺音色的说话人、缺视频的段、成片指纹。不花钱。
+    没有要配音的语音条时不碰 tts（可传 None）。"""
     lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
-    voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
-    est = (voice.estimate(lines, voices, tts, root) if not missing
+    voices, missing = (voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps) if lines
+                       else ({}, []))
+    est = (voice.estimate(lines, voices, tts, root) if lines and not missing
            else {"lines": len(lines), "chars": 0, "cny": 0.0})
     return {"lines": len(lines), "tts_chars": est["chars"], "tts_cny": est["cny"],
             "missing_voices": missing, "voices": voices,
@@ -313,14 +316,16 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
             if not _video(root, c):
                 raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
     lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
-    voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
-    if missing:
-        raise MixError("还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in missing))
-    say(f"配音 {len(lines)} 条")
-    try:
-        done, failed = voice.synthesize(lines, voices, tts, root, on_cost=on_cost)
-    except voice.VoiceError as e:
-        raise MixError(str(e))
+    done, failed = [], []
+    if lines:                       # 没有要配音的语音条就不碰 tts（tts 可为 None）
+        voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
+        if missing:
+            raise MixError("还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in missing))
+        say(f"配音 {len(lines)} 条")
+        try:
+            done, failed = voice.synthesize(lines, voices, tts, root, on_cost=on_cost)
+        except voice.VoiceError as e:
+            raise MixError(str(e))
     if failed:
         raise MixError("有语音条合成失败，为免成片漏句已停止合成："
                        + "；".join(f"{x['id']}：{x['error']}" for x in failed[:5]))
@@ -353,7 +358,9 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
                 placeholders.append(c["id"])
             ndb = native_audio_policy(s["audio_mode"], bool(c.get("mute_native")))
             audio = bool(src) and ndb is not None and has_audio(src, ffprobe)
-            key = hashlib.sha256(json.dumps([src, still, seg["duration"], size, ndb, audio]).encode()).hexdigest()[:16]
+            # 源文件按 (路径, 大小, 修改时间) 计：同一路径重新上传的关键帧或视频会重新规整
+            key = hashlib.sha256(json.dumps([_stat(src) if src else None, _stat(still) if still else None,
+                                             seg["duration"], size, ndb, audio]).encode()).hexdigest()[:16]
             out = work / f"{c['id']}.{key}.mp4"
             if not out.exists():
                 say(f"规整 {c['id']}")

@@ -803,6 +803,8 @@ _render_runner = render_runner.Runner(
 def _start_render_runner():
     """出片线程随服务启动，续上重启前没跑完的段。STORYBOARD_RENDER_RUNNER=0 关闭（测试里手动 tick）。"""
     if os.environ.get("STORYBOARD_RENDER_RUNNER", "1") == "0":
+        for path in Path(auth.DATA_DIR).glob(render_runner.SESSIONS_GLOB):   # 中断的合成照样收尾
+            render_session.recover_compose(path.parent)
         return
     n = _render_runner.recover(auth.DATA_DIR)
     if n:
@@ -1003,13 +1005,17 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
     root, doc, kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
     s = _session_or_404(root)
     bgm = _bgm_files(root)
-    p = render_mix.preview(root, doc, s, tts=_tts(), bgm=bgm, draft=draft, keyframes=kfs)
+    lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
+    p = render_mix.preview(root, doc, s, tts=_tts() if lines else None, bgm=bgm, draft=draft, keyframes=kfs)
     f = s.get("final")
     if f:
-        fp = p["fingerprint"]
-        if f.get("draft", draft) != draft:      # 按成片当时的草稿设置比，不随预览参数变
-            fp = render_mix.compose_fingerprint(root, doc, s, p["voices"], bgm, f["draft"], kfs)
-        p["final"] = dict(f, stale=f.get("state") == "done" and f.get("fingerprint") != fp)
+        stale = False
+        if f.get("files"):                      # 现有成片出自哪次合成（之后的失败不改它）就跟哪次比
+            fp, made = p["fingerprint"], f.get("files_draft", f.get("draft", draft))
+            if made != draft:                   # 按成片当时的草稿设置比，不随预览参数变
+                fp = render_mix.compose_fingerprint(root, doc, s, p["voices"], bgm, made, kfs)
+            stale = f.get("files_fingerprint", f.get("fingerprint")) != fp
+        p["final"] = dict(f, stale=stale)
     else:
         p["final"] = None
     p["bgm"] = sorted(bgm)
@@ -1024,19 +1030,31 @@ def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: d
     return _compose_preview(user, nid, cid, vid, draft)[4]
 
 
+def _hide_root(text: str, root) -> str:
+    """存进会话的报错里隐去服务器上的目录。"""
+    for r in {str(root), str(Path(root).resolve())}:
+        text = text.replace(r, "…")
+    return text
+
+
 def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tuple) -> None:
+    def failed(error: str, detail: str = "") -> None:
+        render_session.compose_failed(root, _hide_root(error, root), _hide_root(detail or "", root))
+
     try:
-        out = render_mix.compose(root, doc, s, tts=render_providers.get_tts(), keyframes=kfs,
+        lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
+        tts = render_providers.get_tts() if lines else None     # 没有要配音的语音条就不需要配音密钥
+        out = render_mix.compose(root, doc, s, tts=tts, keyframes=kfs,
                                  bgm=_bgm_files(root), draft=draft, tools=tools,
                                  on_cost=lambda cny: render_session.add_spent(root, cny),
                                  progress=lambda step: render_session.compose_progress(root, step))
         render_session.compose_done(root, out["files"], out["report"])
     except render_mix.MixError as e:
-        render_session.compose_failed(root, str(e), e.stderr)
+        failed(str(e), e.stderr)
     except Exception as e:  # noqa: BLE001  任何意外都要落到失败，不能卡在「合成中」
         traceback.print_exc()
         try:
-            render_session.compose_failed(root, f"合成异常：{type(e).__name__}: {e}")
+            failed(f"合成异常：{type(e).__name__}: {e}")
         except Exception:  # noqa: BLE001
             traceback.print_exc()
 
@@ -1058,7 +1076,7 @@ def render_compose_post(nid: str, cid: str, vid: str, body: RenderComposeBody,
         raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
                                          "expected_cny": p["tts_cny"]})
     s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
-                     tts_cny=p["tts_cny"], draft=body.draft)
+                     tts_cny=p["tts_cny"], draft=body.draft, voices=s.get("voices") or {})
     t = threading.Thread(target=_compose_worker, args=(root, doc, s, kfs, body.draft, tools),
                          name=f"compose-{vid}", daemon=True)
     _compose_threads[str(root)] = t
@@ -1082,7 +1100,7 @@ async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Re
         raise HTTPException(422, "BGM 文件为空或超过 30MB")
     d = Path(root) / "audio" / "bgm"
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / f".{episode}{ext}.part"
+    tmp = d / f".{episode}{ext}.{uuid.uuid4().hex}.part"     # 同一集并发上传各写各的
     total = 0
     try:
         with open(tmp, "wb") as fh:
