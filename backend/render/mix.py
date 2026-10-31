@@ -186,9 +186,10 @@ def mix_cmd(video: str, plan: dict, *, bgm: Optional[str], out: str, ffmpeg: str
         b = n + 1
         inputs += ["-stream_loop", "-1", "-i", bgm]
         parts.append(f"[{b}:a]aformat=sample_rates={AUDIO_RATE}:channel_layouts=stereo,"
-                     f"volume={BGM_DB}dB,atrim=0:{plan['total']:.3f}[bgm]")
+                     f"volume={BGM_DB}dB,atrim=end={plan['total']:.3f}[bgm]")
         if n:
-            parts.append("[speech]asplit=2[sp][key]")
+            parts.append("[speech]asplit=2[sp][k0]")
+            parts.append("[k0]apad[key]")
             parts.append("[bgm][key]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[bgmd]")
             mixed += ["[sp]", "[bgmd]"]
         else:

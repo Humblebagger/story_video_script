@@ -88,6 +88,7 @@ def main() -> int:
     assert m.count("-i") == 1 + 3 + 1 and m[m.index("bgm.mp3") - 3:m.index("bgm.mp3")] == ["-stream_loop", "-1", "-i"]
     assert "atempo=1.1000" in fc and "adelay=4000|4000" in fc and "amix=inputs=3" in fc
     assert "sidechaincompress" in fc and f"loudnorm=I={mix.LUFS}" in fc
+    assert "[k0]apad[key]" in fc and f"atrim=end={plan['total']:.3f}" in fc
     assert m[m.index("-t") + 1] == f"{plan['total']:.3f}" and m[-1] == "out.mp4"
     bare = mix.mix_cmd("v.mp4", {"speech": [], "total": 3.0}, bgm=None, out="out.mp4")
     assert "[nat]loudnorm" in bare[bare.index("-filter_complex") + 1] and bare.count("-i") == 1
