@@ -1,6 +1,6 @@
 /** 枚举值 → 中文标签。IR 里存英文枚举（机器消费），界面上一律显示中文。 */
 import type {
-  CameraAngle, CameraMovement, Derivation, DialogueType, FidelityMode,
+  AudioMode, CameraAngle, CameraMovement, Derivation, DialogueType, FidelityMode, FilmAttempt, FilmClipState,
   JobStatus, LifecycleEntry, LifecycleType, LocationAngle, Mood, NarrationMode, ShotSize, TimeOfDay,
   Transition, UnitKind,
 } from './types'
@@ -114,4 +114,21 @@ export const LIFECYCLE_TYPE: Record<LifecycleType, string> = {
 
 export const LIFECYCLE_STATUS: Record<LifecycleEntry['status'], string> = {
   proposed: '待确认', confirmed: '已确认', rejected: '已驳回',
+}
+
+/** 出片的声音模式（设计文档 1.3 / 3.4） */
+export const AUDIO_MODE: Record<AudioMode, string> = {
+  tts_all: '全部配音（视频只出环境音，字一定对）',
+  dialogue_native: '台词原声（有口型，不保证逐字）',
+  all_native: '全部原声（最省事）',
+  silent: '无声（画面 + 字幕）',
+}
+
+export const FILM_STATE: Record<FilmClipState, string> = {
+  planned: '未出片', queued: '排队中', running: '生成中', downloading: '下载中',
+  done: '已完成', failed: '失败', stale: '已过期',
+}
+
+export const ATTEMPT_STATE: Record<FilmAttempt['state'], string> = {
+  submitting: '提交中', running: '生成中', succeeded: '成功', failed: '失败',
 }

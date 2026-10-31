@@ -8,6 +8,7 @@ import type { User } from './auth'
 import type {
   Chapter, Constraint, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
+  FilmSession, FilmSettings,
   VerificationReport, VersionRecord,
   AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
 } from './types'
@@ -314,6 +315,65 @@ export function uploadKeyframe(nid: string, cid: string, vid: string, shotId: st
 export function deleteKeyframe(nid: string, cid: string, vid: string, shotId: string) {
   return req<{ deleted: string }>(`${keyframePath(nid, cid, vid)}/${enc(shotId)}`,
                                   { method: 'DELETE' })
+}
+
+/* ---------- 出片（视频生成会话） ---------- */
+
+const filmPath = (nid: string, cid: string, vid: string) => `${versionPath(nid, cid, vid)}/render`
+
+/** 读取出片会话（附验证门结果）；还没建过是 404 */
+export function getFilm(nid: string, cid: string, vid: string): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/session`)
+}
+
+/** 建立（或按当前设置重建）出片会话：过验证门、切段，不花钱 */
+export function createFilm(nid: string, cid: string, vid: string,
+                           settings: FilmSettings = {}): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/session`, jsonPost(settings))
+}
+
+/** 改设置：按新设置重新切段（不花钱）；有段在跑时 409 */
+export function patchFilm(nid: string, cid: string, vid: string,
+                          settings: FilmSettings): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/session`, jsonBody('PATCH', settings))
+}
+
+/** 出这一段（试段 / 重做）。超过确认线时要带用户确认过的金额 */
+export function runFilmClip(nid: string, cid: string, vid: string, clipId: string,
+                            expectedCny?: number): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/clips/${enc(clipId)}/run`,
+             jsonPost(expectedCny === undefined ? {} : { expected_cny: expectedCny }))
+}
+
+/** 批量出剩余各段：必须带确认金额，服务端重算不一致 409 */
+export function runFilmRest(nid: string, cid: string, vid: string,
+                            expectedCny: number): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/run`, jsonPost({ expected_cny: expectedCny }))
+}
+
+/** 采用这一段的第几次 */
+export function chooseFilmAttempt(nid: string, cid: string, vid: string, clipId: string,
+                                  attempt: number): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/clips/${enc(clipId)}/chosen`, jsonBody('PUT', { attempt }))
+}
+
+/** 合成时这一段的视频原声静音 */
+export function muteFilmClip(nid: string, cid: string, vid: string, clipId: string,
+                             mute: boolean): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/clips/${enc(clipId)}`, jsonBody('PATCH', { mute_native: mute }))
+}
+
+/** 取会话目录下的文件（片段视频、尾帧）。<video>/<image> 带不了 token，转成 blob URL（用完要 revoke） */
+export async function filmFileUrl(nid: string, cid: string, vid: string, path: string): Promise<string> {
+  const res = await send(`${filmPath(nid, cid, vid)}/files/${path.split('/').map(enc).join('/')}`)
+  return URL.createObjectURL(await res.blob())
+}
+
+/** 出片 409 里服务端重算的金额（确认金额对不上、或单段需要确认时附带）；不是这种错误返回 null */
+export function conflictCny(e: unknown): number | null {
+  if (!(e instanceof ApiError) || e.status !== 409) return null
+  const d = e.detail as { expected_cny?: unknown } | null
+  return d && typeof d === 'object' && typeof d.expected_cny === 'number' ? d.expected_cny : null
 }
 
 /* ---------- 管理后台 ---------- */

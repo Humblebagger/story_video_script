@@ -664,3 +664,91 @@ export interface PricingTable {
   updated_at: string | null
   models: Record<string, { input: number; output: number; cache_read: number; cache_write: number }>
 }
+
+/* ---------- 出片（视频生成会话，…/versions/{vid}/render/session） ---------- */
+
+export type FilmClipState = 'planned' | 'queued' | 'running' | 'downloading' | 'done' | 'failed' | 'stale'
+export type AudioMode = 'tts_all' | 'dialogue_native' | 'all_native' | 'silent'
+
+/** 一段的一次出片尝试 */
+export interface FilmAttempt {
+  task_id: string | null
+  state: 'submitting' | 'running' | 'succeeded' | 'failed'
+  cost_cny: number
+  /** 会话目录下的相对路径，用 filmFileUrl 取 */
+  file: string | null
+  last_frame: string | null
+  error: string | null
+  at: string
+  fingerprint: string
+  first_frame_used: string | null
+}
+
+export interface FilmClip {
+  id: string
+  episode: string
+  shots: string[]
+  duration: number
+  /** 超出单段上限，尾部被截断 */
+  truncated: boolean
+  prompt: string
+  /** 带图的参考资产；dropped 为超出名额被裁的；missing 为没有图、只写文字描述的 */
+  refs: string[]
+  dropped_refs: string[]
+  missing_refs: string[]
+  /** keyframe:<镜头 id> | relay:<上一段 id> | null */
+  first_frame: string | null
+  frame_mode: 'frame' | 'ref' | null
+  fingerprint: string
+  estimate_cny: number
+  attempts: FilmAttempt[]
+  /** 采用第几次（attempts 的下标） */
+  chosen: number | null
+  mute_native: boolean
+  /** 厂商那边可能还有这一段的任务（提交结果不明、查询放弃）：请到控制台核对，批量出片跳过 */
+  uncertain: boolean
+  error: string | null
+  state: FilmClipState
+  queued_at?: string
+}
+
+export interface FilmSettings {
+  provider?: string
+  model?: string
+  resolution?: string
+  audio_mode?: AudioMode
+  budget_cny?: number
+  confirm_over_cny?: number
+}
+
+export interface FilmSession {
+  provider: string
+  model: string
+  resolution: string
+  audio_mode: AudioMode
+  /** 上限按版本计 */
+  budget_cny: number
+  /** 单段预估超过它要先确认 */
+  confirm_over_cny: number
+  spent_cny: number
+  clips: FilmClip[]
+  orphaned: { id: string; shots: string[]; attempts: FilmAttempt[]; chosen: number | null }[]
+  counts: Partial<Record<FilmClipState, number>>
+  /** 批量「出剩余各段」的预估（不含待核对的段） */
+  remaining_cny: number
+  /** 在排队 / 生成中的段的预估 */
+  reserved_cny: number
+  uncertain_count: number
+  /** 验证门：只有读取时带；没有就当已通过（建会话、出片这几个接口本身过门） */
+  gate?: { ok: boolean; message: string | null }
+  options: {
+    providers: string[]
+    models: Record<string, { label: string }>
+    resolutions: string[]
+    cny_per_sec: Record<string, number>
+    max_clip_sec: number
+    max_refs: number
+    audio_modes: AudioMode[]
+    rate_note: string
+  }
+}
