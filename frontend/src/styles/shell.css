@@ -1,10 +1,6 @@
-/* 外壳与侧栏：主区布局、服务状态、小说 → 章节导航 */
+/* 外壳与侧栏：主区布局、小说 → 章节导航 */
 
 .app { min-height: 100vh; }
-
-.svc { font-size: 12px; color: var(--muted-foreground); font-family: var(--font-mono); }
-.svc em { color: var(--destructive); font-style: normal; }
-.svc--down { color: var(--destructive); }
 
 .main {
   min-width: 0; max-width: 1080px; margin: 0 auto; padding: 0;
@@ -46,20 +42,17 @@
 .hrun__title { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hrun__chapter { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hrun__meta { display: flex; flex-direction: column; gap: 1px; font-size: 12px; color: var(--muted-foreground); margin-top: 3px; }
-.hrun__tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
 .hrun__last {
   font-size: 12px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-/* 删除按钮：在侧栏条目里悬停或键盘聚焦才出现；约束清单等别处常显 */
+/* 删除按钮（约束清单等处） */
 .hrun__del {
   border: none; background: none; color: var(--muted-foreground);
   cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; transition: opacity 150ms ease-out, color 150ms ease-out;
 }
 .hrun__del:hover { color: var(--destructive); }
-.hrun .hrun__del { opacity: 0; }
-.hrun:hover .hrun__del, .hrun .hrun__del:focus-visible { opacity: 1; }
 
 /* 生成中的小圆点：品牌色缓慢脉动，减少动态效果时不动 */
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground); flex: none; }

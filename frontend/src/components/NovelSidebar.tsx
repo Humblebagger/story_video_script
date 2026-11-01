@@ -69,7 +69,7 @@ export function NovelSidebar({
                onChange={(e) => setQuery(e.target.value)} />
       )}
       {loading && (
-        <div className="flex flex-col gap-2" data-testid="shelf-loading" aria-label={t('common.loading')}>
+        <div className="flex flex-col gap-2" data-testid="shelf-loading" role="status" aria-label={t('common.loading')}>
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-8" />)}
         </div>
       )}
