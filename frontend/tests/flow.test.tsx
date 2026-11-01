@@ -648,7 +648,7 @@ must(onStep('render'), '有采用版、还没有出片会话：进章节应停�
 must(has('编辑分镜') && has('下载 JSON'), '产物应带编辑与下载入口')
 must(has('v1 ★') && has('采用版：资产卡'), '版本条要标出采用版')
 must(has('1 条人物状态待确认'), '章后整理的结果要在章节页说出来')
-await click(findByText('button', '资产卡'))
+await click(findByText('button', '资产'))
 must(has('华老栓') && has('C01'), '资产卡页签应展示角色卡')
 console.log('6. 章节 → 采用版产物 + 页签切换 ✓')
 
@@ -672,7 +672,7 @@ console.log('7. 失败 → 原因摊开显示（含结构化验证发现）/ 失
 // 8. 资产卡编辑：改得动内容，但跨引用的 ID 一个都不能变
 await click(findByText('button', 'v1'))
 await click(findByText('button', '编辑分镜'))
-await click(findByText('button', '资产卡'))
+await click(findByText('button', '资产'))
 
 must(!!container.querySelector('.acard .acard__id svg'), '编辑态下应标出锁死的 ID')
 const idCell = findByText('span', 'C01')
@@ -699,7 +699,7 @@ await settle(500)          // 提示条有退场动画
 must(!bar(), '撤销后提示条应消失')
 must(![...container.querySelectorAll('.acard header input')]
   .some((e) => (e as HTMLInputElement).value === '华老栓（改）'), '撤销后内容应回到上次保存的样子')
-await click(findByText('button', '资产卡'))
+await click(findByText('button', '资产'))
 await type([...container.querySelectorAll('.acard header input')][0] as HTMLElement, '华老栓（改）', false)
 await type([...container.querySelectorAll('.amap__row input')]
   .find((e) => (e as HTMLInputElement).value === '五十余岁') as unknown as HTMLElement, '六十岁上下', false)
@@ -1130,7 +1130,7 @@ console.log('16. 渲染任务包 → 按可播时长计价 / 可选范围渲染 
 //     不合法的 IR，屏幕照样显示保存成功，要到点渲染才被 422 打回。
 // 步骤条上「生成分镜」也含「分镜」二字：按分镜视图的页签精确取
 await click([...container.querySelectorAll('.tabs__btn')]
-  .find((b) => b.textContent === '分镜') as unknown as HTMLElement)
+  .find((b) => b.textContent === '卡片') as unknown as HTMLElement)
 const area17 = container.querySelector('.ed__at textarea') as unknown as HTMLTextAreaElement
 must(!!area17, '切回分镜页应仍在编辑态')
 await typeAt(area17, '推门，康大叔（再改）')

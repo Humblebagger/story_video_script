@@ -595,7 +595,7 @@ export const zh = {
     statNarrated: '旁白占比',
     statInferred: '系统补充镜',
     viewsAria: '分镜视图',
-    tabs: { shots: '分镜', assets: '资产卡', source: '原文溯源', render: '渲染', json: 'JSON' },
+    tabs: { focus: '镜头', cards: '卡片', assets: '资产', source: '原文', render: '渲染', json: 'JSON' },
     focus: {
       search: '搜索镜头：ID / 画面 / 台词',
       listAria: '镜头列表',

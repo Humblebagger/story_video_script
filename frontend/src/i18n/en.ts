@@ -601,7 +601,7 @@ export const en: Messages = {
     statNarrated: 'Narrated',
     statInferred: 'Added shots',
     viewsAria: 'Storyboard views',
-    tabs: { shots: 'Shots', assets: 'Assets', source: 'Source', render: 'Render', json: 'JSON' },
+    tabs: { focus: 'Shots', cards: 'Cards', assets: 'Assets', source: 'Source', render: 'Render', json: 'JSON' },
     focus: {
       search: 'Search shots: ID / action / lines',
       listAria: 'Shot list',

@@ -206,5 +206,46 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   await act(async () => { root.render(null as never) })
 }
 
+// ---------- 3. 分镜视图的页签 ----------
+{
+  const { act, createElement: h } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { I18nProvider } = await import('../src/i18n')
+  const { TooltipProvider } = await import('../src/components/ui/tooltip')
+  const { StoryboardView } = await import('../src/components/StoryboardView')
+  const d = win.document
+  const container = d.createElement('div')
+  d.body.appendChild(container)
+  const root = createRoot(container as unknown as HTMLElement)
+  const settle = async (ms = 30) => { await act(async () => { await new Promise((r) => setTimeout(r, ms)) }) }
+  const qa = (sel: string) => [...container.querySelectorAll(sel)] as unknown as HTMLElement[]
+  const doc3 = { ...doc, meta: { video: { aspect_ratio: '16:9' } }, source: { work_title: 'x', units: [] } } as unknown as Storyboard
+  const mount = async (extra: Record<string, unknown> = {}) => {
+    await act(async () => {
+      root.render(h(I18nProvider, { initial: 'zh' }, h(TooltipProvider, null,
+        h(StoryboardView, { doc: doc3, canSave: false, dirty: false, saving: false,
+          onChange: () => {}, onSave: () => {}, ...extra } as never))) as never)
+    })
+    await settle()
+  }
+  await mount()
+  must(qa('.tabs__btn').map((b) => b.textContent).join(' ') === '镜头 卡片 资产 原文 渲染 JSON', '六个页签')
+  must(qa('.focus').length > 0, '默认是镜头视图')
+  must(qa('.shot').length === 1, '镜头视图里只有中栏一张卡')
+  await act(async () => { qa('.tabs__btn')[1].dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event) })
+  await settle()
+  must(qa('.shot').length === 3, '卡片页签有 3 张')
+  await act(async () => { root.unmount() })
+  const root2 = createRoot(container as unknown as HTMLElement)
+  await act(async () => {
+    root2.render(h(I18nProvider, { initial: 'zh' }, h(TooltipProvider, null,
+      h(StoryboardView, { doc: doc3, canSave: false, dirty: false, saving: false, defaultTab: 'cards',
+        onChange: () => {}, onSave: () => {} } as never))) as never)
+  })
+  await settle()
+  must(qa('.shot').length === 3 && qa('.focus').length === 0, 'defaultTab=cards 一开始就是卡片')
+  await act(async () => { root2.unmount() })
+}
+
 win.happyDOM.abort?.()
 console.log('chapter: ALL PASS')

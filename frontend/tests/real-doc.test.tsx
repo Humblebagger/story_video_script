@@ -40,7 +40,7 @@ const root = createRoot(container as unknown as HTMLElement)
 let current = doc
 await act(async () => {
   root.render(
-    <StoryboardView doc={current} canSave={false} dirty={false} saving={false}
+    <StoryboardView defaultTab="cards" doc={current} canSave={false} dirty={false} saving={false}
                     onChange={(d) => { current = d }} onSave={() => {}} />)
 })
 
@@ -75,7 +75,7 @@ dirtyDoc.episodes[0].shots[0].characters = [{ ref: 'C99' }]
 dirtyDoc.episodes[0].shots[0].prop_refs = [{ ref: 'P99', state: '不存在' }]
 await act(async () => {
   root.render(
-    <StoryboardView doc={dirtyDoc} canSave={false} dirty={false} saving={false}
+    <StoryboardView defaultTab="cards" doc={dirtyDoc} canSave={false} dirty={false} saving={false}
                     onChange={() => {}} onSave={() => {}} />)
 })
 must(container.querySelectorAll('.shot').length === shots.length,
@@ -105,16 +105,16 @@ console.log(`挂卡规则 ok：40 个镜头 × ${idx.cardOptions.length} 张卡�
   await act(async () => {
     root.render(
       <I18nProvider initial="en">
-        <StoryboardView doc={doc} canSave={false} dirty={false} saving={false}
+        <StoryboardView defaultTab="cards" doc={doc} canSave={false} dirty={false} saving={false}
                         onChange={() => {}} onSave={() => {}} />
       </I18nProvider>)
   })
   const tabs = [...container.querySelectorAll('.tabs__btn')].map((b) => b.textContent).join(' ')
-  must(tabs === 'Shots Assets Source Render JSON', `英文视图切换：${tabs}`)
+  must(tabs === 'Shots Cards Assets Source Render JSON', `英文视图切换：${tabs}`)
   must((container.querySelector('.stats')?.textContent ?? '').includes('Coverage'), '英文统计卡有 Coverage')
   must([...container.querySelectorAll('.shot .chip')].some((c) => c.textContent === 'Wide'), '镜头卡景别标签是英文 Wide')
   must(!/[一-鿿]/.test(container.querySelector('.sb__head .stats')?.textContent ?? ''), '统计卡无中文')
-  await act(async () => { root.render(<StoryboardView doc={doc} canSave={false} dirty={false} saving={false}
+  await act(async () => { root.render(<StoryboardView defaultTab="cards" doc={doc} canSave={false} dirty={false} saving={false}
                                                       onChange={() => {}} onSave={() => {}} />) })
   setCurrentLocale('zh')
   console.log('英文渲染 ok')

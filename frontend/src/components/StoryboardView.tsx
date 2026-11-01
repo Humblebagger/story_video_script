@@ -4,9 +4,10 @@ import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
 import { buildIndex, pct } from '../resolve'
-import type { Shot, Storyboard, VersionRef } from '../types'
+import type { FilmSession, Shot, Storyboard, VerificationReport, VersionRef } from '../types'
 import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
+import { ShotFocusView } from './ShotFocusView'
 import { RenderView } from './RenderView'
 import { SourceView } from './SourceView'
 import type { Workbench } from './CanvasPanels'
@@ -16,9 +17,9 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/i18n/core'
 
-type Tab = 'shots' | 'assets' | 'source' | 'render' | 'json'
+export type Tab = 'focus' | 'cards' | 'assets' | 'source' | 'render' | 'json'
 
-const TABS: Tab[] = ['shots', 'assets', 'source', 'render', 'json']
+const TABS: Tab[] = ['focus', 'cards', 'assets', 'source', 'render', 'json']
 
 function download(doc: Storyboard) {
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
@@ -52,14 +53,19 @@ interface Props {
   version?: VersionRef | null
   /** 所在的章节会话：画布里的「剧情」「任务」页要用 */
   bench?: Workbench | null
+  /** 检查报告：三栏视图给镜头标红点 */
+  report?: VerificationReport | null
+  /** 出片会话：三栏视图右栏切成片段 */
+  film?: FilmSession | null
+  defaultTab?: Tab
 }
 
 export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
-  bench = null, openFilm, onCanvasClose,
+  bench = null, openFilm, onCanvasClose, report = null, film = null, defaultTab,
 }: Props) {
   const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>('shots')
+  const [tab, setTab] = useState<Tab>(defaultTab ?? 'focus')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [canvas, setCanvas] = useState(false)
@@ -72,9 +78,10 @@ export function StoryboardView({
     setCanvasPanel('film')
     setCanvas(true)
   }, [openFilm])
-  const closeCanvas = () => { setCanvas(false); setCanvasPanel(undefined); onCanvasClose?.() }
+  const [imagesKey, setImagesKey] = useState(0)
+  const closeCanvas = () => { setImagesKey((k) => k + 1); setCanvas(false); setCanvasPanel(undefined); onCanvasClose?.() }
   /** 从画布跳回来要定位的镜头 */
-  const [focusShot, setFocusShot] = useState<string | null>(null)
+  const [focusShot, setFocusShot] = useState<{ id: string; n: number } | null>(null)
   const idx = useMemo(() => buildIndex(doc), [doc])
   const { meta, source } = doc
 
@@ -85,19 +92,9 @@ export function StoryboardView({
 
   const jumpShot = (shotId: string) => {
     closeCanvas()
-    setTab('shots')
-    setFocusShot(shotId)
+    setTab('focus')
+    setFocusShot((prev) => ({ id: shotId, n: (prev?.n ?? 0) + 1 }))
   }
-
-  useEffect(() => {
-    if (!focusShot || tab !== 'shots') return
-    const el = document.getElementById(`shot-${focusShot}`)
-    el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
-    el?.classList.add('is-flash')
-    const t = window.setTimeout(() => el?.classList.remove('is-flash'), 1600)
-    setFocusShot(null)
-    return () => clearTimeout(t)
-  }, [focusShot, tab])
 
   // stampVersion：一旦用上 beats/constraints，产物就不该再自称 0.4
   const changeShot = (episodeId: string, shotId: string, patch: Partial<Shot>) =>
@@ -199,7 +196,16 @@ export function StoryboardView({
         </nav>
       </div>
 
-      {tab === 'shots' && (
+      {tab === 'focus' && (
+        <ShotFocusView
+          doc={doc} idx={idx} report={report} film={film} version={version}
+          imagesKey={imagesKey} readOnly={!!preview} dirty={dirty} saving={saving}
+          canSave={canSave && !preview} focusShot={focusShot}
+          onShotChange={changeShot} onPickUnit={pickUnit} onSave={onSave}
+          onOpenCanvas={() => setCanvas(true)}
+        />
+      )}
+      {tab === 'cards' && (
         <div className="eps">
           {doc.episodes?.map((ep) => (
             <EpisodeView

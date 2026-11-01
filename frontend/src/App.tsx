@@ -651,6 +651,8 @@ export default function App() {
         <StoryboardView
           doc={doc}
           canSave={docVid !== null}
+          report={verification}
+          film={flow.film}
           preview={preview}
           runId={docVid}
           version={novel && chapter && docVid

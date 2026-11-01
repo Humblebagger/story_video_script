@@ -188,7 +188,7 @@ must(container.querySelector('.tlc__panel header b')?.textContent === target, '�
 await click(button('在分镜页打开这一镜'))
 must(!container.querySelector('.tlc'), '「在分镜页打开」应关闭画布')
 must(!!win.document.getElementById(`shot-${target}`), '分镜页应有该镜头的锚点')
-must(win.document.getElementById(`shot-${target}`)!.classList.contains('is-flash'), '定位的镜头要闪一下')
+must(!!win.document.querySelector('.focus') && win.document.querySelector('[role="option"][aria-selected="true"]')?.getAttribute('data-shot') === target, '定位的镜头要在镜头视图里被选中')
 console.log(`3. 点镜头 → 就地选中 / 按钮回分镜页定位 ${target} ✓`)
 
 // 4. 点浮层里的原文句：在侧栏「原文」页定位，不离开画布；点句子下的镜头号回到那一镜
