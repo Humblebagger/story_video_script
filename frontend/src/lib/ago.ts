@@ -1,6 +1,6 @@
-import { tr } from '@/i18n/core'
+import { currentLocale, tr } from '@/i18n/core'
 
-/** 相对时间：刚刚 / N 分钟 / N 小时 / N 天；超过 30 天或无法解析时给日期 */
+/** 相对时间：刚刚 / N 分钟 / N 小时 / N 天；超过 30 天给日期（按界面语言）；缺失或无法解析时返回空串 */
 export function ago(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return ''
   const ts = Date.parse(iso)
@@ -10,5 +10,5 @@ export function ago(iso: string | null | undefined, now = Date.now()): string {
   if (min < 60) return tr('shelf.ago.min', { n: min })
   if (min < 1440) return tr('shelf.ago.hour', { n: Math.floor(min / 60) })
   if (min < 43200) return tr('shelf.ago.day', { n: Math.floor(min / 1440) })
-  return new Date(ts).toLocaleDateString()
+  return new Date(ts).toLocaleDateString(currentLocale() === 'en' ? 'en-US' : 'zh-CN')
 }

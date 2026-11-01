@@ -62,7 +62,8 @@ export function ShelfHome({ novels, running, disabled, onSubmit, onOpenNovel }: 
                 <span className="flex flex-col gap-0.5 p-3">
                   <span className="truncate text-sm font-medium">{n.title}</span>
                   <span className="text-xs text-muted-foreground">
-                    {t('shelf.home.stats', { chapters: n.chapters, adopted: n.adopted, ago: ago(n.updated_at) })}
+                    {t('shelf.home.stats', { chapters: n.chapters, adopted: n.adopted })}
+                    {ago(n.updated_at) && ` · ${ago(n.updated_at)}`}
                   </span>
                 </span>
               </motion.button>

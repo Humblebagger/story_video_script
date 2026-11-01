@@ -30,6 +30,7 @@ const { notice } = await import('../src/lib/notice')
 const { ParamChip } = await import('../src/components/params/ParamChip')
 const { NewNovelComposer } = await import('../src/components/NewNovelComposer')
 const { StatusPill } = await import('../src/components/common/StatusPill')
+const { ago } = await import('../src/lib/ago')
 const { ShelfHome } = await import('../src/components/ShelfHome')
 const { TooltipProvider } = await import('../src/components/ui/tooltip')
 
@@ -238,6 +239,18 @@ const setInput = async (el: HTMLElement, v: string) => {
   await act(async () => { ref.current!.openMore() })
   await act(async () => { await new Promise((r) => setTimeout(r, 80)) })
   must(!!q('[data-more="prefix"]') && doc.activeElement === (q('[data-more="prefix"]') as unknown), 'openMore 应打开更多并聚焦风格前缀')
+}
+
+{ // ago
+  const now = Date.parse('2026-11-01T12:00:00Z')
+  const at = (min: number) => new Date(now - min * 60000).toISOString()
+  must(ago(null, now) === '' && ago('bad', now) === '', '缺失或无法解析应为空串')
+  must(ago(at(0), now) === '刚刚', '刚刚')
+  must(ago(at(59), now) === '59 分钟前', '59 分钟')
+  must(ago(at(60), now) === '1 小时前', '60 分钟应为 1 小时')
+  must(ago(at(23 * 60), now) === '23 小时前', '23 小时')
+  must(ago(at(24 * 60), now) === '1 天前', '24 小时应为 1 天')
+  must(ago(at(31 * 1440), now) === new Date(now - 31 * 86400000).toLocaleDateString('zh-CN'), '超过 30 天给日期')
 }
 
 { // 书架首页
