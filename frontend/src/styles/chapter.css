@@ -127,13 +127,15 @@
   .chead__cell { flex: 1; }
 }
 .chead--compact {
+  min-width: 0; max-width: 100%;
   display: inline-flex; flex-wrap: nowrap; gap: 8px; padding: 4px 10px; border-radius: 999px;
   background: color-mix(in oklab, var(--card) 80%, transparent); backdrop-filter: blur(8px);
 }
-.chead--compact .chead__title { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.chead--compact .chead__title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 28ch; }
 .chead--compact .chead__money { font-size: 12px; color: var(--ui-muted-foreground); white-space: nowrap; }
 .chead--compact .chead__num { padding: 2px 6px; font-size: 12px; }
-.tlc__head { position: absolute; top: 12px; left: 12px; z-index: 2; max-width: calc(100% - 24px); }
+.tlc__chead { position: absolute; left: 12px; bottom: 16px; z-index: 2; max-width: 30%; min-width: 0; }
+@media (max-width: 899px) { .tlc__chead { display: none; } }
 
 /* 导入原文、生成分镜、下载：居中卡片，主按钮在卡片右下角 */
 .chap-card { width: 100%; max-width: 880px; margin-inline: auto; display: flex; flex-direction: column; gap: 16px; }

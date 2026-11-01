@@ -176,15 +176,8 @@
   border-color: color-mix(in oklab, var(--foreground) 18%, var(--border));
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
 }
-/* 跳转定位：品牌色外环，停一会儿再渐隐（组件 1.6s 后摘掉类名） */
-.shot.is-flash { animation: shot-flash 1.6s ease-out both; }
-@keyframes shot-flash {
-  0%, 55% { box-shadow: 0 0 0 2px var(--brand-to); }
-  100% { box-shadow: 0 0 0 2px transparent; }
-}
 @media (prefers-reduced-motion: reduce) {
   .ep__caret { transition: none; }
-  .shot.is-flash { animation: none; box-shadow: 0 0 0 2px var(--brand-to); }
 }
 
 /* 顶行：镜号 + 景别 / 运镜 / 机位 / 时长 + 推导标记 */

@@ -22,7 +22,7 @@ export function PrimaryBar({ primary, busy, inline, onRun, onFix }: {
   if (primary.action === 'none') return null
   const text = t(primary.label, { amount: yuan(primary.cny), count: primary.count ?? 0 })
   return (
-    <div className={inline ? 'mt-2 flex items-center justify-end gap-3'
+    <div className={inline ? 'mt-2 flex flex-wrap items-center justify-end gap-3'
                            : 'pointer-events-none fixed bottom-6 right-6 z-30 flex max-w-sm flex-col items-end gap-2'}>
       <AnimatePresence>
         {primary.blocked && (

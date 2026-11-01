@@ -28,7 +28,7 @@ function nextId(assets: Assets, kind: AssetKind): string {
 }
 
 type AnyCard = { id: string; name: string; aliases?: string[]; outfits?: unknown[]; states?: unknown[]
-  reference_images?: { uri?: string }[] }
+  reference_images?: { uri?: string }[]; angles?: { uri?: string }[] }
 
 function AssetTile({ kind, card, onOpen }: { kind: AssetKind; card: AnyCard; onOpen: () => void }) {
   const { t } = useI18n()
@@ -191,7 +191,7 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
             {t('assets.add', { id: nextId(assets, newKind) })}
           </Button>
         </div>
-        <div className="lib__searchbox">
+        {!openCard && <div className="lib__searchbox">
           <Search size={14} aria-hidden />
           <Input
             className="lib__search"
@@ -200,7 +200,7 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
             placeholder={t('assets.searchPh')}
             onChange={(e) => setQuery(e.target.value)}
           />
-        </div>
+        </div>}
         <div className="lib__acts">
           <Button size="sm" disabled={!dirty.size || busy} onClick={() => void save()}>
             {busy ? t('assets.saving') : dirty.size ? t('assets.save', { n: dirty.size }) : t('assets.saved')}
@@ -211,13 +211,13 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
         <EmptyState icon={<Boxes className="size-5" />} title={t('assets.emptyTitle')}
                     hint={t('assets.emptyHint')} />
       )}
-      {q && (
+      {q && !openCard && (
         <p className="lib__found">
           {t('assets.matchPre')} <b>{shownCount}</b> {t('assets.matchPost', { all: allCount })}
           {shownCount === 0 && ` ${t('assets.tryOther')}`}
         </p>
       )}
-      {q && shownCount === 0 && !!allCount && (
+      {q && !openCard && shownCount === 0 && !!allCount && (
         <EmptyState title={t('assets.noMatch')}
                     action={<Button size="sm" variant="outline" onClick={() => setQuery('')}>{t('common.clearSearch')}</Button>} />
       )}

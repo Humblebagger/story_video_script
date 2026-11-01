@@ -188,7 +188,7 @@ export function StoryboardView({
                 'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
                 tab === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
               )}
-              onClick={() => setTab(id)}
+              onClick={() => { setTab(id); setFocusShot(null) }}
             >
               {t(`board.tabs.${id}`)}
             </button>

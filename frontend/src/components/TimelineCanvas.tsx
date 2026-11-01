@@ -481,7 +481,7 @@ export function TimelineCanvas({
   return (
     <div className="tlc">
       <div className="tlc__main" ref={box}>
-      {head && <div className="tlc__head" onPointerDown={(e) => e.stopPropagation()}>{head}</div>}
+      {head && <div className="tlc__chead" onPointerDown={(e) => e.stopPropagation()}>{head}</div>}
       <div className="tlc__bar rounded-full border bg-card/80 px-2 py-1.5 shadow-xl backdrop-blur-md"
            onPointerDown={(e) => e.stopPropagation()}>
         {editable && (

@@ -1129,6 +1129,22 @@ await click(findByText('button', '全选'))
 must(!has('选中 1/2'), '全选应恢复')
 console.log('16. 渲染任务包 → 按可播时长计价 / 可选范围渲染 / 费用可切档 ✓')
 
+// 16b. 镜头视图（默认）里改一处 → 出现未保存提示条，主按钮变「保存修改」；撤销后复原
+await goStep('review')
+await click([...container.querySelectorAll('.tabs__btn')]
+  .find((b) => b.textContent === '镜头') as unknown as HTMLElement)
+const focusArea = container.querySelector('.focus .shot textarea') as unknown as HTMLTextAreaElement
+must(!!focusArea, '镜头视图应有可编辑文本框')
+must(!bar(), '改之前没有未保存提示条')
+await typeAt(focusArea, focusArea.value + '（镜头视图改）')
+must(!!bar(), '在镜头视图里编辑后应出现未保存提示条')
+must((container.querySelector('[data-testid="focus-primary"]')?.textContent ?? '') === '保存修改', '镜头视图主按钮应变「保存修改」')
+await click(barBtn('撤销'))
+await settle(500)
+must(!bar(), '撤销后提示条消失')
+must((container.querySelector('[data-testid="focus-primary"]')?.textContent ?? '') === '在画布中查看', '撤销后主按钮回到「在画布中查看」')
+console.log('16b. 镜头视图编辑 → 未保存提示条 / 撤销复原 ✓')
+
 // 17. 服务端验证结果必须在界面上看得见
 //     后端每次保存、每次渲染前都整份复验，但界面一直没透出来——用户改出一份
 //     不合法的 IR，屏幕照样显示保存成功，要到点渲染才被 422 打回。

@@ -48,6 +48,7 @@ must(filterShots(rows, '推门').map((r) => r.shot.id).join() === 'SH002', '按�
 must(filterShots(rows, '  ').length === 3, '空查询不过滤')
 
 must(assetThumb({ id: 'C01', name: '华', reference_images: [{ uri: 'refs/a.png' }, { uri: 'https://x/a.png' }] } as never) === 'https://x/a.png', '取第一个可直接显示的')
+must(assetThumb({ id: 'L01', name: '街', angles: [{ uri: 'https://x/s.png' }] } as never) === 'https://x/s.png', '场景图取自 angles')
 must(assetThumb({ id: 'C01', name: '华' } as never) === null, '没有图为 null')
 
 // ---------- 2. 镜头三栏视图 ----------
