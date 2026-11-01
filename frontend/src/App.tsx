@@ -28,6 +28,7 @@ import type { DoneJob } from './components/shell/ActivityPanel'
 import { ProjectNav } from './components/shell/ProjectNav'
 import { readLastChapter, writeLastChapter } from './lastChapter'
 import type { Section } from './section'
+import { useStyleImage } from './useStyleImage'
 import { StoryboardView } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
 import { toast } from 'sonner'
@@ -101,6 +102,7 @@ export default function App() {
   const [summaryKey, setSummaryKey] = useState(0)
   const bumpSummary = useCallback(() => setSummaryKey((k) => k + 1), [])
   const summary = useNovelSummary(novel?.id, summaryKey)
+  const styleUrl = useStyleImage(novel?.id ?? '', novel?.style_image?.hash)
   const flowReload = flow.reload
   const reloadFlow = useCallback(async () => { await flowReload(); bumpSummary() }, [flowReload, bumpSummary])
   /** 递增一次 = 打开画布并切到「出片」页 */
@@ -653,6 +655,8 @@ export default function App() {
           canSave={docVid !== null}
           report={verification}
           film={flow.film}
+          styleUrl={styleUrl}
+          styleMime={novel?.style_image?.mime}
           preview={preview}
           runId={docVid}
           version={novel && chapter && docVid

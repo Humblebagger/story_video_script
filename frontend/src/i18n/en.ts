@@ -883,6 +883,8 @@ export const en: Messages = {
     filmModeTip: 'The preview plays rendered clips (the chosen take); clips not rendered yet show keyframes',
     kfCount: 'Keyframes {n}/{total}',
     kfCountTip: 'Shots with an uploaded keyframe image',
+    styleDownload: 'Download style image',
+    styleAria: 'Style reference image',
     range: 'Selection {from}–{to} ({len}s)',
     rangeClear: 'Clear selection (Esc)',
     helpLabel: 'Shortcuts and controls',
@@ -1031,6 +1033,13 @@ export const en: Messages = {
     relay: 'Last frame of the previous clip ({id})',
     gateFailed: 'The storyboard did not pass the integrity check',
     readClipFailed: 'Could not read the clip file: {error}',
+    style: {
+      used: 'Style image ✓',
+      full: 'Not used: reference slots are full',
+      firstFrame: 'Not used: this clip uses a first frame (keyframe or previous clip tail)',
+      outdated: 'Style image changed; this clip can be re-rendered',
+      outdatedCount: '{n} clips can be re-rendered with the new style image',
+    },
     panel: {
       loading: 'Loading render session…',
       blockedDirty: 'You have unsaved changes: save before rendering (rendering only uses the saved version)',

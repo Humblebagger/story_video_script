@@ -387,6 +387,57 @@ must(pollTimers.length > armed, '出错后轮询定时器重新排上')
 await refresh()
 console.log('10c. 出错后轮询不断 ✓')
 
+// 10d. 风格图：逐段说明、可重出提示与汇总计数；状态仍是完成
+{
+  const ids = film!.clips.map((c) => c.id)
+  clipOf(ids[0]).style = 'used'
+  clipOf(ids[0]).style_outdated = true
+  clipOf(ids[1]).style = 'full'
+  clipOf(ids[2]).style = 'first_frame'
+  film!.style_outdated_count = 2
+  await refresh()
+  const styleText = async (id: string) => {
+    await click(bar(id))
+    return container.querySelector('[data-testid="clip-style"]')?.textContent ?? null
+  }
+  must((await styleText(ids[0])) === '风格图 ✓', 'used 写「风格图 ✓」')
+  must((container.querySelector('[data-testid="clip-style-outdated"]')?.textContent ?? '').includes('风格图已换，可重出这一段'),
+       '过期段有可重出提示')
+  must(bar(ids[0]).classList.contains('tlc__clip--done'), '可重出的段状态仍是完成')
+  must(has('2 段可按新风格图重出'), '汇总里有可重出计数')
+  must((await styleText(ids[1])) === '未带上：参考位已满', 'full 的文字')
+  must(!container.querySelector('[data-testid="clip-style-outdated"]'), '未过期的段没有可重出提示')
+  must((await styleText(ids[2])) === '未带上：本段用首帧（关键帧或上一段尾帧）', 'first_frame 的文字')
+  clipOf(ids[2]).style = null
+  film!.style_outdated_count = 0
+  await refresh()
+  must((await styleText(ids[2])) === null, 'style 为 null 时没有这一行')
+  must(!has('可按新风格图重出'), '计数为 0 时不显示')
+  console.log('10d. 风格图说明与可重出 ✓')
+}
+
+// 10e. 画布关键帧区：给了 styleUrl 才有缩略图与下载链接
+{
+  const styled = (url: string | null) => (
+    <StoryboardView doc={doc} canSave dirty={false} saving={false}
+                    version={{ nid: 'n1', cid: 'c1', vid: 'v1' }}
+                    styleUrl={url} styleMime="image/jpeg" onChange={() => {}} onSave={() => {}} />)
+  await act(async () => { root.render(styled('blob:style-1')) })
+  await click(button('时间轴画布'))
+  const box = container.querySelector('[data-testid="kf-style"]')
+  must(!!box && !!box.querySelector('img'), '有 styleUrl 时关键帧区有缩略图')
+  const link = box!.querySelector('a')!
+  must((link.textContent ?? '') === '下载风格图' && link.getAttribute('download') === 'style-reference.jpg',
+       '下载链接文字与文件名')
+  await act(async () => { root.render(styled(null)) })
+  must(!container.querySelector('[data-testid="kf-style"]'), '不传 styleUrl 时没有这块')
+  console.log('10e. 关键帧区下载风格图 ✓')
+  await act(async () => { root.render(<Host key="v1" withVersion />) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
+}
+
 // 11. 播成片：有已出的段才有开关；切到「播成片」后播放，预览窗里是采用那次的视频
 await click(button('播关键帧'))
 must(!!button('播成片'), '切到播成片')

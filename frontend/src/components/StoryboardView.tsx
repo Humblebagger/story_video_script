@@ -58,11 +58,14 @@ interface Props {
   /** 出片会话：三栏视图右栏切成片段 */
   film?: FilmSession | null
   defaultTab?: Tab
+  /** 小说风格参考图：画布关键帧区显示与下载 */
+  styleUrl?: string | null
+  styleMime?: string
 }
 
 export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
-  bench = null, openFilm, onCanvasClose, report = null, film = null, defaultTab,
+  bench = null, openFilm, onCanvasClose, report = null, film = null, defaultTab, styleUrl = null, styleMime,
 }: Props) {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>(defaultTab ?? 'focus')
@@ -231,7 +234,8 @@ export function StoryboardView({
                         bench={preview ? null : bench}
                         onChange={preview ? undefined : onChange}
                         canSave={canSave && !preview} dirty={dirty} saving={saving} onSave={onSave}
-                        onClose={closeCanvas} onJumpShot={jumpShot} initialPanel={canvasPanel} />
+                        onClose={closeCanvas} onJumpShot={jumpShot} initialPanel={canvasPanel}
+                        styleUrl={styleUrl} styleMime={styleMime} />
       )}
     </div>
   )

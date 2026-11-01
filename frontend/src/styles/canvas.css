@@ -361,3 +361,7 @@
   transition: background-color 150ms ease-out;
 }
 .tlc__vscroll:hover .tlc__vthumb { background: color-mix(in oklab, var(--foreground) 38%, transparent); }
+
+.tlc__kfstyle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 0 4px; }
+.tlc__kfstyle img { height: 24px; width: 24px; object-fit: cover; border-radius: 4px; }
+.tlc__kfstyle a { color: var(--ui-muted-foreground); text-decoration: underline; }

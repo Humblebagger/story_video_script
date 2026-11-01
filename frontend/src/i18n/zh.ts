@@ -877,6 +877,8 @@ export const zh = {
     filmModeTip: '预览窗播已出的成片（采用的那一次）；未出片的段显示关键帧',
     kfCount: '关键帧 {n}/{total}',
     kfCountTip: '已上传关键帧图的镜头数',
+    styleDownload: '下载风格图',
+    styleAria: '风格参考图',
     range: '选区 {from}–{to}（{len}s）',
     rangeClear: '清除选区（Esc）',
     helpLabel: '快捷键与操作说明',
@@ -1025,6 +1027,13 @@ export const zh = {
     relay: '接力上一段（{id}）的尾帧',
     gateFailed: '分镜没通过完整性检查',
     readClipFailed: '读取片段文件失败：{error}',
+    style: {
+      used: '风格图 ✓',
+      full: '未带上：参考位已满',
+      firstFrame: '未带上：本段用首帧（关键帧或上一段尾帧）',
+      outdated: '风格图已换，可重出这一段',
+      outdatedCount: '{n} 段可按新风格图重出',
+    },
     panel: {
       loading: '读取出片会话…',
       blockedDirty: '有未保存的修改：先保存再出片（出片只用已保存的版本）',

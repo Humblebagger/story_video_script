@@ -42,6 +42,9 @@ interface Props {
   dirty?: boolean
   saving?: boolean
   onSave?: () => void
+  /** 小说的风格参考图（blob URL）；有才在关键帧区显示缩略图与下载 */
+  styleUrl?: string | null
+  styleMime?: string
 }
 
 /** 连续打字时把一串改动并成一步撤销 */
@@ -53,6 +56,8 @@ const RULER = 30
 const BAR_SPACE = 72
 const ROW = { episode: 24, scene: 26, shot: 38, clip: 34, frame: 72, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
+
+const styleExt = (mime?: string) => (mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png')
 
 export type PanelTab = 'shot' | 'source' | 'assets' | 'film' | 'novel' | 'tasks'
 
@@ -110,6 +115,7 @@ function downloadText(name: string, text: string) {
 export function TimelineCanvas({
   doc, onClose, onJumpShot, bench = null, version = null,
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
+  styleUrl = null, styleMime,
 }: Props) {
   const { t: tt } = useI18n()
   const head = useContext(ChapterHeadContext)
@@ -531,6 +537,12 @@ export function TimelineCanvas({
                   onClick={() => setFilmMode((v) => !v)}>
             {filmMode ? tt('canvas.filmModeOn') : tt('canvas.filmModeOff')}
           </Button>
+        )}
+        {styleUrl && (
+          <span className="tlc__kfstyle" data-testid="kf-style">
+            <img src={styleUrl} alt={tt('canvas.styleAria')} />
+            <a href={styleUrl} download={`style-reference.${styleExt(styleMime)}`}>{tt('canvas.styleDownload')}</a>
+          </span>
         )}
         <span className="tlc__kfcount" title={tt('canvas.kfCountTip')}>
           {tt('canvas.kfCount', { n: Object.keys(kf.urls).length, total: tl.shots.length })}

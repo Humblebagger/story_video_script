@@ -686,6 +686,8 @@ export interface FilmAttempt {
   at: string
   fingerprint: string
   first_frame_used: string | null
+  /** 这次实际带上的风格图哈希（没带为 null） */
+  style_ref?: string | null
 }
 
 export interface FilmClip {
@@ -714,6 +716,11 @@ export interface FilmClip {
   error: string | null
   state: FilmClipState
   queued_at?: string
+  /** 风格图：used 已带上 / full 参考位已满 / first_frame 本段用首帧 / null 没有风格图 */
+  style?: 'used' | 'full' | 'first_frame' | null
+  style_hash?: string | null
+  /** 用旧风格图出完的段，可按新图重出 */
+  style_outdated?: boolean
 }
 
 export interface FilmSettings {
@@ -747,6 +754,8 @@ export interface FilmSession {
   /** 在排队 / 生成中的段的预估 */
   reserved_cny: number
   uncertain_count: number
+  /** 可按新风格图重出的段数 */
+  style_outdated_count?: number
   /** 验证门：只有读取时带；没有就当已通过（建会话、出片这几个接口本身过门） */
   gate?: { ok: boolean; message: string | null }
   options: {

@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, label } from '../labels'
 import { Button } from '@/components/ui/button'
+import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
 import { batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
@@ -175,6 +176,11 @@ function Overview({ s, film, selected, blocked }: {
         ))}
         <button className="tlc__linkbtn" onClick={() => void film.load()}>{t('film.panel.refresh')}</button>
       </div>
+      {!!s.style_outdated_count && (
+        <p data-testid="style-outdated-count">
+          <StatusPill tone="warn">{t('film.style.outdatedCount', { n: s.style_outdated_count })}</StatusPill>
+        </p>
+      )}
       <div className="film__money">
         <span>{t('film.panel.spent', { v: yuan(s.spent_cny) })}</span>
         {s.reserved_cny > 0 && <span>{t('film.panel.reserved', { v: yuan(s.reserved_cny) })}</span>}
@@ -241,6 +247,16 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
         {!!c.dropped_refs.length && <span className="film__dim">{t('film.panel.droppedList', { list: c.dropped_refs.join(sep) })}</span>}
         {!!c.missing_refs.length && <span className="film__dim">{t('film.panel.missingList', { list: c.missing_refs.join(sep) })}</span>}
       </p>
+      {c.style && (
+        <p className="film__line" data-testid="clip-style">
+          {t(c.style === 'used' ? 'film.style.used' : c.style === 'full' ? 'film.style.full' : 'film.style.firstFrame')}
+        </p>
+      )}
+      {c.style_outdated && (
+        <p className="film__line" data-testid="clip-style-outdated">
+          <StatusPill tone="warn">{t('film.style.outdated')}</StatusPill>
+        </p>
+      )}
       <p className="film__line">{t('film.panel.firstFrame', { v: firstFrameText(c) })}</p>
       {!!c.attempts.length && (
         <table className="film__attempts">
