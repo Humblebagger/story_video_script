@@ -374,6 +374,9 @@ export const zh = {
     styleImageChange: '换图',
     styleImageReset: '恢复默认',
     styleImageFail: '图片存不下，已保持原样',
+    styleImageChangeOf: '换图：{name}',
+    styleImageResetOf: '恢复默认：{name}',
+    styleImageTooBig: '图片太大，换一张小一点的',
     narrDetail: '旁白细项',
     narr: {
       narrated: '旁白解说', narratedDesc: '解说人念出旁白，画面配合讲述',

@@ -130,7 +130,7 @@ const setInput = async (el: HTMLElement, v: string) => {
 }
 
 { // MoreParams
-  let got = await mount(MoreParams, DEFAULT_PARAMS)
+  const got = await mount(MoreParams, DEFAULT_PARAMS)
   const selects = qa('select')
   const sel0 = selects[0] as unknown as HTMLSelectElement
   await act(async () => {
@@ -151,7 +151,6 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(qa('[data-narr-mode]').length === 4, '旁白细项应有 4 种')
   await click(q('[data-narr-mode="original_text"]'))
   must(got.at(-1)!.narration_mode === 'original_text', '旁白细项可选原文照念')
-  got = []
 }
 
 { // ParamChip

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
@@ -15,6 +16,7 @@ interface Props {
 
 export function MoreParams({ value, onChange, prefixRef }: Props) {
   const { t } = useI18n()
+  const narrId = useId()
   const set = <K extends keyof NovelParams>(k: K, v: NovelParams[K]) => onChange({ ...value, [k]: v })
   return (
     <div className="flex flex-col gap-4">
@@ -26,9 +28,11 @@ export function MoreParams({ value, onChange, prefixRef }: Props) {
         <SelectOrCustom value={value.target_platform} options={TARGET_PLATFORMS}
                         onChange={(v) => set('target_platform', v)} />
       </Field>
-      <Field label={t('params.stylePrefix')}>
-        <Input ref={prefixRef} data-more="prefix" value={value.style_prefix}
-               onChange={(e) => set('style_prefix', e.target.value)} />
+      <div className="flex flex-col gap-1.5 text-sm">
+        <Field label={t('params.stylePrefix')}>
+          <Input ref={prefixRef} data-more="prefix" value={value.style_prefix}
+                 onChange={(e) => set('style_prefix', e.target.value)} />
+        </Field>
         <span className="flex flex-wrap gap-1.5">
           {STYLE_PREFIXES.map((s) => (
             <button key={s.value} type="button" data-prefix-tag
@@ -39,10 +43,10 @@ export function MoreParams({ value, onChange, prefixRef }: Props) {
             </button>
           ))}
         </span>
-      </Field>
+      </div>
       <div className="flex flex-col gap-1.5 text-sm">
-        <span id="more-narr-detail">{t('params.narrDetail')}</span>
-        <div role="radiogroup" aria-labelledby="more-narr-detail" className="grid grid-cols-2 gap-1.5">
+        <span id={narrId}>{t('params.narrDetail')}</span>
+        <div role="radiogroup" aria-labelledby={narrId} className="grid grid-cols-2 gap-1.5">
           {(Object.keys(NARRATION_MODE) as NarrationMode[]).map((k) => (
             <button key={k} type="button" role="radio" aria-checked={value.narration_mode === k} data-narr-mode={k}
                     onClick={() => set('narration_mode', k)}

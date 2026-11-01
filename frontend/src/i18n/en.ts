@@ -376,6 +376,9 @@ export const en: Messages = {
     styleImageChange: 'Change image',
     styleImageReset: 'Reset',
     styleImageFail: 'Could not store the image; kept the original',
+    styleImageChangeOf: 'Change image: {name}',
+    styleImageResetOf: 'Reset image: {name}',
+    styleImageTooBig: 'Image is too large; pick a smaller one',
     narrDetail: 'Narration detail',
     narr: {
       narrated: 'Narrated', narratedDesc: 'A narrator tells the story over the visuals',

@@ -5,6 +5,7 @@ import { notice } from './lib/notice'
 
 const KEY = 'inkreel.styleImages'
 const MAX_SIDE = 320
+const MAX_RAW = 1.5 * 1024 * 1024
 
 type ImageMap = Record<string, string>
 
@@ -39,21 +40,26 @@ const readDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
 })
 
 /** 缩成最长边 320px 的 JPEG；没有 canvas / createImageBitmap（测试环境）时退化成直接读文件 */
+async function raw(file: Blob): Promise<string> {
+  if (file.size > MAX_RAW) throw new Error('too large')
+  return await readDataUrl(file)
+}
+
 async function shrink(file: Blob): Promise<string> {
   try {
-    if (typeof createImageBitmap !== 'function') return await readDataUrl(file)
+    if (typeof createImageBitmap !== 'function') return await raw(file)
     const bmp = await createImageBitmap(file)
     const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(bmp.width * k))
     canvas.height = Math.max(1, Math.round(bmp.height * k))
     const ctx = canvas.getContext('2d')
-    if (!ctx) return await readDataUrl(file)
+    if (!ctx) return await raw(file)
     ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height)
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85))
-    return await readDataUrl(blob ?? file)
+    return await (blob ? readDataUrl(blob) : raw(file))
   } catch {
-    return await readDataUrl(file)
+    return await raw(file)
   }
 }
 
@@ -65,8 +71,8 @@ export async function setStyleImage(id: string, file: Blob): Promise<boolean> {
     localStorage.setItem(KEY, JSON.stringify(next))
     publish(next)
     return true
-  } catch {
-    notice.err(tr('params.styleImageFail'))
+  } catch (e) {
+    notice.err(tr(e instanceof Error && e.message === 'too large' ? 'params.styleImageTooBig' : 'params.styleImageFail'))
     return false
   }
 }
