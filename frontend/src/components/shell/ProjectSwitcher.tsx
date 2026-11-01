@@ -35,7 +35,7 @@ export function ProjectSwitcher({ novels, currentId, meta, onOpen, onNew, onAll 
                 data-testid="project-switcher">
           <span className="flex min-w-0 flex-col items-start text-left leading-tight">
             <span className="max-w-full truncate text-sm font-medium">{cur?.title ?? t('brand.name')}</span>
-            {meta && <span className="font-mono text-[11px] font-normal text-muted-foreground">{meta}</span>}
+            {meta && <span className="max-w-full truncate font-mono text-[11px] font-normal text-muted-foreground">{meta}</span>}
           </span>
           <ChevronDown className="size-3.5 shrink-0 opacity-60" />
         </Button>

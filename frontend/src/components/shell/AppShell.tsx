@@ -136,9 +136,9 @@ export function AppShell(p: AppShellProps) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b bg-background/80 px-5 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        <header className="sticky top-0 z-20 grid h-14 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-3 border-b bg-background/80 px-5 backdrop-blur supports-[backdrop-filter]:bg-background/60"
                 data-testid="topbar">
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
             {p.projectSwitcher ? (
               <>{p.projectSwitcher}{p.chapterCrumb}</>
             ) : (

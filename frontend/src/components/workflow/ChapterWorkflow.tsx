@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
 import { flashTarget } from '@/lib/flash'
+import { useBarFits } from '@/lib/useBarFits'
 import { useMedia } from '@/lib/useMedia'
 import { useMotionPresets } from '@/motion'
 import { playableSeconds } from '@/timeline'
@@ -97,6 +98,7 @@ export function ChapterWorkflow({
   const m = useMotionPresets()
   const slot = useTopbarSlot()
   const narrowBar = useMedia('(max-width: 899px)')
+  const barFits = useBarFits(slot)
   const [title, setTitle] = useState(chapter.title)
   const [text, setText] = useState(chapter.text)
   const [mode, setMode] = useState<NarrationMode | ''>('')
@@ -274,7 +276,7 @@ export function ChapterWorkflow({
   })()
 
   // 步骤条在顶栏中间的插槽里；拿不到插槽（单测等）时留在章节页原位
-  const stepper = <Stepper states={stepStates(input)} view={view} onView={setView} compact={!!slot && narrowBar} />
+  const stepper = <Stepper states={stepStates(input)} view={view} onView={setView} compact={!!slot && (narrowBar || !barFits)} />
   const headShots = doc ? doc.episodes.reduce((n, e) => n + e.shots.length, 0) : version?.shots ?? null
   const headSeconds = doc ? doc.episodes.reduce((n, e) => n + e.shots.reduce((a, sh) => a + playableSeconds(sh), 0), 0) : null
   const headProps = {

@@ -121,7 +121,7 @@ export function ShotFocusView({
 
   const shot = cur?.shot
   const title = shot && [
-    `${cur.ep}-${shot.id}`,
+    shot.id.startsWith(`${cur.ep}-`) ? shot.id : `${cur.ep}-${shot.id}`,
     label(SHOT_SIZE, shot.shot_size),
     label(CAMERA_MOVEMENT, shot.camera?.movement),
     typeof shot.duration_sec === 'number' ? `${shot.duration_sec.toFixed(1)}s` : '',
