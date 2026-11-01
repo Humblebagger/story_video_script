@@ -27,6 +27,8 @@ export interface NewNovel {
 export interface ComposerHandle {
   /** 打开「更多」浮层并聚焦风格前缀输入框 */
   openMore: () => void
+  /** 聚焦标题输入 */
+  focusTitle: () => void
 }
 
 interface Props {
@@ -56,12 +58,13 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
   const fileRef = useRef<HTMLInputElement>(null)
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const prefixRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
   const [styleOpen, setStyleOpen] = useState(false)
   const [focusPrefix, setFocusPrefix] = useState(false)
   const openMoreAndFocus = () => { setStyleOpen(false); setMoreOpen(true); setFocusPrefix(true) }
-  useImperativeHandle(ref, () => ({ openMore: openMoreAndFocus }))
+  useImperativeHandle(ref, () => ({ openMore: openMoreAndFocus, focusTitle: () => titleRef.current?.focus() }))
   // 「更多」浮层挂载后再聚焦风格前缀输入框（浮层内容在入口之后才渲染，等下一帧）
   useEffect(() => {
     if (!moreOpen || !focusPrefix) return
@@ -136,7 +139,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
           </div>
         )}
         <div className="flex flex-col gap-3 p-4 pb-3">
-          <input value={title} placeholder={t('composer.titlePh')} aria-label={t('composer.titleAria')}
+          <input ref={titleRef} value={title} placeholder={t('composer.titlePh')} aria-label={t('composer.titleAria')}
                  onChange={(e) => setTitle(e.target.value)}
                  className="w-full border-0 bg-transparent text-[18px] font-semibold outline-none placeholder:text-muted-foreground/70" />
           <NarrationPick value={params} onChange={setParams} />

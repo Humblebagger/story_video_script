@@ -18,7 +18,7 @@ import { useI18n } from './i18n/core'
 import { Tour } from './components/common/Tour'
 import { useConfirm } from './components/common/ConfirmDialog'
 import type { NewNovel } from './components/NewNovelComposer'
-import { NewNovelComposer } from './components/NewNovelComposer'
+import { ShelfHome } from './components/ShelfHome'
 import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { StoryboardView } from './components/StoryboardView'
@@ -640,7 +640,8 @@ export default function App() {
         ) : (
           <div className="main">
             {!novel && !doc && !job && (
-              <NewNovelComposer disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
+              <ShelfHome novels={novels} running={running} disabled={busy || svcDown}
+                         onSubmit={(n) => void submitNovel(n)} onOpenNovel={(nid) => void openNovel(nid)} />
             )}
             {novel && !chapter && (
               <NovelPage

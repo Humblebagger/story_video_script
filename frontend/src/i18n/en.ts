@@ -42,6 +42,24 @@ export const en: Messages = {
     regen: { title: 'Generate without saving?', body: 'This version has unsaved changes. When generation finishes, the canvas will switch to the new version.', action: 'Generate anyway' },
     user: { title: 'Are you sure you want to {label}?' },
   },
+  shelf: {
+    home: {
+      heading: 'Where does your next story begin?',
+      sub: 'Paste the text or drop a .txt; chapters are split automatically',
+      hint: 'A novel is one master session: the asset library, character lifecycles, main storyline, constraints and numbering all live here and go into every conversion. Each chapter is a sub-session, and each conversion is a version.',
+      styles: 'Visual style',
+      recent: 'Recent novels',
+      stats: '{chapters} ch · {adopted} adopted · {ago}',
+      live: 'Generating',
+      newCard: 'New',
+  },
+  ago: {
+    now: 'just now',
+    min: '{n} min ago',
+    hour: '{n} h ago',
+    day: '{n} d ago',
+  },
+  },
   shell: {
     newNovel: 'New novel',
     openLocal: 'Open local JSON',

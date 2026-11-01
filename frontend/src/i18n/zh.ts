@@ -40,6 +40,24 @@ export const zh = {
     regen: { title: '先不保存直接生成？', body: '本版有未保存的修改，生成完成后画布会换成新版本。', action: '直接生成' },
     user: { title: '确定要{label}？' },
   },
+  shelf: {
+    home: {
+      heading: '新的故事，从哪一章开始？',
+      sub: '贴原文或拖入 .txt，自动按章拆分',
+      hint: '一部小说是一个总会话：资产库、人物生命周期、主线剧情、创作限制与编号接续都记在这里，转换任何一章都会带上；每一章是其中的二级会话，每次转换是一个版本。',
+      styles: '画面风格',
+      recent: '最近的小说',
+      stats: '{chapters} 章 · {adopted} 已采用 · {ago}',
+      live: '生成中',
+      newCard: '新建',
+  },
+  ago: {
+    now: '刚刚',
+    min: '{n} 分钟前',
+    hour: '{n} 小时前',
+    day: '{n} 天前',
+  },
+  },
   shell: {
     newNovel: '新建小说',
     openLocal: '打开本地 JSON',

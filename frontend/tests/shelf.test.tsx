@@ -30,6 +30,8 @@ const { notice } = await import('../src/lib/notice')
 const { ParamChip } = await import('../src/components/params/ParamChip')
 const { NewNovelComposer } = await import('../src/components/NewNovelComposer')
 const { StatusPill } = await import('../src/components/common/StatusPill')
+const { ShelfHome } = await import('../src/components/ShelfHome')
+const { TooltipProvider } = await import('../src/components/ui/tooltip')
 
 const container = win.document.createElement('div')
 win.document.body.appendChild(container)
@@ -236,6 +238,31 @@ const setInput = async (el: HTMLElement, v: string) => {
   await act(async () => { ref.current!.openMore() })
   await act(async () => { await new Promise((r) => setTimeout(r, 80)) })
   must(!!q('[data-more="prefix"]') && doc.activeElement === (q('[data-more="prefix"]') as unknown), 'openMore 应打开更多并聚焦风格前缀')
+}
+
+{ // 书架首页
+  const nv = (id: string, title: string) => ({ id, title, updated_at: new Date(Date.now() - 2 * 3600e3).toISOString(), chapters: 6, adopted: 2, asset_counts: {} })
+  const opened: string[] = []
+  const props = { disabled: false, onSubmit: () => {}, onOpenNovel: (id: string) => { opened.push(id) } }
+  await act(async () => {
+    root.render(h(TooltipProvider, null, h(ShelfHome as never, { key: 'home', ...props, novels: [nv('a', '药'), nv('b', '洪水'), nv('c', '雪')], running: [{ id: 'j1', novel_id: 'b' }] })))
+  })
+  must((q('h1')?.textContent ?? '') === '新的故事，从哪一章开始？', '应有首屏大标题')
+  must(!!q('button[data-help]'), '标题旁应有帮助按钮')
+  must(qa('[data-style-picker] [data-style], [data-style-picker] [data-style-custom]').length === 10, '风格区应有 10 张卡片')
+  await click(q('[data-style-picker] [data-style="watercolor"]'))
+  must((q('[data-testid="chip-style"]')?.textContent ?? '').includes('水彩'), '点水彩后风格胶囊变成水彩')
+  must(qa('[data-testid="shelf-card"]').length === 3 && !!q('[data-testid="shelf-new"]'), '应有 3 张小说卡加新建卡')
+  must(qa('[data-testid="shelf-card"]')[1].querySelector('[data-tone="live"]') !== null, '生成中的卡片有 live 标签')
+  must(qa('[data-testid="shelf-card"]')[0].textContent!.includes('6 章 · 2 已采用 · 2 小时前'), '卡片应显示章数、采用数、相对时间')
+  await click(qa('[data-testid="shelf-card"]')[2])
+  must(opened.at(-1) === 'c', '点卡片应打开该小说')
+  await click(q('[data-testid="shelf-new"]'))
+  must(doc.activeElement === (q('input[aria-label="小说标题"]') as unknown), '点新建卡应聚焦标题输入')
+  await act(async () => {
+    root.render(h(TooltipProvider, null, h(ShelfHome as never, { key: 'empty', ...props, novels: [], running: [] })))
+  })
+  must(!q('[data-testid="shelf-recent"]'), '没有小说时不显示最近的小说区')
 }
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

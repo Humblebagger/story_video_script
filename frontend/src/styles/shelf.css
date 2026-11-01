@@ -16,3 +16,9 @@
 .composer[data-drop="on"] { border-color: var(--primary); }
 .composer__drop { background: color-mix(in oklab, var(--card) 80%, transparent); color: var(--primary); backdrop-filter: blur(2px); }
 .composer .form__text textarea[data-slot] { min-height: 160px; max-height: 360px; line-height: 1.85; }
+
+/* 书架首页 */
+.shelf-card { transition: border-color 0.15s, transform 0.15s; }
+.shelf-card:hover { border-color: var(--ring); transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) { .shelf-card:hover { transform: none; } }
+.shelf-card__cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 70%); }
