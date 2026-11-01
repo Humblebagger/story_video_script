@@ -6,6 +6,7 @@
 （STORYBOARD_SEEDANCE_CNY_PER_M）。
 """
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -25,7 +26,12 @@ def main(argv=None) -> int:
     ap.add_argument("--resolution", default="480p")
     ap.add_argument("--out", default="/tmp/seedance-smoke")
     ap.add_argument("--yes", action="store_true", help="不再询问，直接提交")
+    ap.add_argument("--style", default=None, help="风格参考图路径（可选）")
     a = ap.parse_args(argv)
+    style = None
+    if a.style:
+        sp = Path(a.style)
+        style = {"source": compose.data_uri(sp), "hash": hashlib.sha256(sp.read_bytes()).hexdigest()}
 
     sd = Seedance.from_env()
     caps = sd.caps(a.model)
@@ -34,12 +40,13 @@ def main(argv=None) -> int:
                "audio_mode": "tts_all"}
     clip = compose.build_clips(doc, caps, provider="seedance", model=a.model,
                                resolution=a.resolution, audio_mode="tts_all", keyframes={},
-                               rewrite=sd.rewrite_prompt)[0]
+                               rewrite=sd.rewrite_prompt, style=style)[0]
     req, _ = compose.request_for(doc, session, clip, keyframes={}, relay_frame=None, caps=caps,
-                                 rewrite=sd.rewrite_prompt)
+                                 rewrite=sd.rewrite_prompt, style=style)
     req.duration = caps.min_clip_sec               # 冒烟只出最短的一条
     est = base.estimate_cny(req.duration, caps, a.resolution)
     print(req.prompt, "\n")
+    print("风格图：", clip.get("style"))
     print(f"{a.model} · {a.resolution} · {base.request_seconds(req.duration, caps)} 秒 · "
           f"预估 ¥{est:.2f}（冒烟上限 ¥{LIMIT_CNY:g}）")
     if est > LIMIT_CNY:

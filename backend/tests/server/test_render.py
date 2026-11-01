@@ -236,6 +236,19 @@ def main() -> int:
         app_mod._render_gate = real_gate
     print("12. 读取报告验证门、费率依据 ✓")
 
+    # 13. 上传风格图后建会话：段用上风格图；读取带回可重出计数
+    novels.save_style_image(uid, nid, "image/png", PNG)
+    R13 = f"/novels/{nid}/chapters/{cid}/versions/v13/render"
+    novels.create_version(uid, nid, cid, "v13", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "v13", "succeeded", result=copy.deepcopy(DOC))
+    s = c.post(R13 + "/session", headers=H, json={}).json()
+    kinds = {x["style"] for x in s["clips"]}
+    assert "used" in kinds and kinds <= {"used", "first_frame"}, kinds   # 首帧单用的段不带风格图
+    assert s["style_outdated_count"] == 0
+    g = c.get(R13 + "/session", headers=H).json()
+    assert g["style_outdated_count"] == 0 and all(x["style_outdated"] is False for x in g["clips"])
+    print("13. 风格图进会话 ✓")
+
     print("\nALL PASS")
     return 0
 

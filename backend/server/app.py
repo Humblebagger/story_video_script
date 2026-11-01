@@ -812,6 +812,16 @@ def _render_call(fn, *args, **kwargs):
         raise HTTPException(422, str(e))
 
 
+def _style_for(uid: str, nid: str) -> Optional[dict]:
+    """这部小说当前的风格参考图（data URI + 哈希）；没有或读不到为 None。"""
+    try:
+        path, _ = novels.style_image_file(uid, nid)
+        meta = novels.get_novel(uid, nid).get("style_image") or {}
+        return {"source": render_compose.data_uri(path), "hash": meta.get("hash")}
+    except (novels.NotFound, OSError):
+        return None
+
+
 def _render_request(root, s: dict, clip: dict):
     """出片线程提交前：按已保存的分镜与关键帧重建这一段的厂商请求。"""
     o = s["owner"]
@@ -821,7 +831,8 @@ def _render_request(root, s: dict, clip: dict):
         record.get("result") or {}, s, clip,
         keyframes=_keyframe_paths(o["user_id"], o["nid"], o["cid"], o["vid"]),
         relay_frame=render_session.relay_frame(root, s, clip),
-        caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt)
+        caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt,
+        style=_style_for(o["user_id"], o["nid"]))
 
 
 _render_runner = render_runner.Runner(
@@ -870,7 +881,8 @@ def render_session_post(nid: str, cid: str, vid: str, body: Optional[RenderSetti
     """过验证门、按设置切段，生成或重建会话（不花钱）。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
     patch = body.model_dump(exclude_none=True) if body else {}
-    s = _render_call(render_session.build, root, doc, owner=owner, patch=patch, keyframes=kfs)
+    s = _render_call(render_session.build, root, doc, owner=owner, patch=patch, keyframes=kfs,
+                     style=_style_for(owner["user_id"], owner["nid"]))
     return _render_call(render_session.view, s)
 
 
@@ -895,7 +907,7 @@ def render_session_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_
     if render_session.load(root) is None:
         raise HTTPException(404, "还没有出片会话")
     s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
-                     allow_in_flight=True)
+                     allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     out = _render_call(render_session.view, s)
     out["gate"] = _gate_status(user, nid, cid, vid)
     return out
@@ -909,7 +921,8 @@ def render_session_patch(nid: str, cid: str, vid: str, body: RenderSettingsBody,
     if render_session.load(root) is None:
         raise HTTPException(404, "还没有出片会话")
     s = _render_call(render_session.build, root, doc, owner=owner,
-                     patch=body.model_dump(exclude_none=True), keyframes=kfs)
+                     patch=body.model_dump(exclude_none=True), keyframes=kfs,
+                     style=_style_for(owner["user_id"], owner["nid"]))
     return _render_call(render_session.view, s)
 
 
@@ -919,7 +932,7 @@ def render_clip_run(nid: str, cid: str, vid: str, clip_id: str,
     """出这一段（试段或重做）。超过确认线时要带 expected_cny。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
     _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
-                 allow_in_flight=True)
+                 allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     s = _render_call(render_session.queue_run, root, [clip_id], body.expected_cny if body else None)
     _render_runner.watch(root)
     return _render_call(render_session.view, s)
@@ -931,7 +944,7 @@ def render_run_all(nid: str, cid: str, vid: str, body: RenderRunBody,
     """批量出剩余各段：必须带用户确认的预估金额，服务端重算不一致 409。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
     _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
-                 allow_in_flight=True)
+                 allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     s = _render_call(render_session.queue_run, root, None, body.expected_cny)
     _render_runner.watch(root)
     return _render_call(render_session.view, s)

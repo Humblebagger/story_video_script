@@ -50,7 +50,8 @@ def main() -> int:
     def builder(r, sess_now, c):
         return compose.request_for(current["doc"], sess_now, c, keyframes={},
                                    relay_frame=sess.relay_frame(r, sess_now, c),
-                                   caps=fake.caps(sess_now["model"]), rewrite=fake.rewrite_prompt)
+                                   caps=fake.caps(sess_now["model"]), rewrite=fake.rewrite_prompt,
+                                   style=current.get("style"))
 
     slept = []
     runner = Runner(builder, sleep=slept.append, max_parallel=2)
@@ -383,6 +384,22 @@ def main() -> int:
     assert sess.load(r10)["spent_cny"] == 0.0
     fake.poll = real_poll
     print("15. 查询出错不算失败、到期标待核对 ✓")
+
+    # 风格图：请求带哈希，提交后写回最后一次尝试
+    rootS = data / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "vs"
+    current["style"] = {"source": "data:image/png;base64,AAAA", "hash": "h1"}
+    sS = sess.build(rootS, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={},
+                    style=current["style"])
+    sid = next(c["id"] for c in sS["clips"] if c["style"] == "used")
+    req_s, _ = builder(rootS, sS, next(c for c in sS["clips"] if c["id"] == sid))
+    assert req_s.style_ref == "h1"
+    sess.queue_run(rootS, [sid])
+    runner.watch(rootS)
+    runner.tick()
+    assert clip(rootS, sid)["attempts"][-1]["style_ref"] == "h1"
+    drain()
+    current["style"] = None
+    print("风格图写回尝试 ✓")
 
     print("\nALL PASS")
     return 0

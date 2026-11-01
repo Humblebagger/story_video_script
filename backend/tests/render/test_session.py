@@ -34,14 +34,14 @@ def clip(s, cid):
     return next(c for c in s["clips"] if c["id"] == cid)
 
 
-def finish(root, fake, clip_id):
+def finish(root, fake, clip_id, style_ref=None):
     """不经出片线程把一段走完：提交 → 成功 → 下载。"""
     snap = sess.begin_submit(root, clip_id)
     s = sess.load(root)
     req = base.ClipRequest(prompt=snap["prompt"], model=s["model"], duration=snap["duration"],
                            resolution=s["resolution"])
     tid = fake.submit(req)
-    sess.submitted(root, clip_id, tid, None)
+    sess.submitted(root, clip_id, tid, None, style_ref=style_ref)
     st = fake.poll(tid)
     sess.poll_update(root, clip_id, st)
     files = fake.download(st, sess.clip_dest(root, clip_id, tid))
@@ -305,6 +305,39 @@ def main() -> int:
     assert len(c["attempts"]) == 1 and c["attempts"][0]["state"] == "failed"
     assert c["state"] == "failed" and c["uncertain"] is True and c["error"] == sess.INTERRUPTED_SUBMIT
     print("17. 提交中未写回不重复提交 ✓")
+
+    # 18. 风格图：段记 style / style_hash；用旧风格图出完的段换图后标可重出（仍 done、不进剩余）
+    root8 = Path(tmp.name) / "render" / "v8"
+    s1 = {"source": "data:image/png;base64,AAAA", "hash": "h1"}
+    s2 = {"source": "data:image/png;base64,BBBB", "hash": "h2"}
+    b8 = lambda st: sess.build(root8, doc, owner=OWNER, patch={}, keyframes={}, style=st)  # noqa: E731
+    s8 = b8(s1)
+    assert all(c["style"] in ("used", "full", "first_frame") for c in s8["clips"])
+    assert all(c["style_hash"] == ("h1" if c["style"] == "used" else None) for c in s8["clips"])
+    x = next(c["id"] for c in s8["clips"] if c["style"] == "used")
+    sess.queue_run(root8, [x])
+    finish(root8, fake, x, style_ref="h1")
+    s8 = b8(s2)
+    assert clip(s8, x)["state"] == "done" and clip(s8, x)["style_hash"] == "h2"
+    v8 = sess.view(s8)
+    assert next(c for c in v8["clips"] if c["id"] == x)["style_outdated"] is True
+    assert v8["style_outdated_count"] == 1
+    others = round(sum(c["estimate_cny"] for c in s8["clips"] if c["id"] != x), 2)
+    assert v8["remaining_cny"] == others, "可重出的段不进剩余"
+    v8 = sess.view(b8(s1))
+    assert next(c for c in v8["clips"] if c["id"] == x)["style_outdated"] is False
+    assert v8["style_outdated_count"] == 0
+    v8 = sess.view(b8(None))
+    assert all(c["style"] is None and c["style_outdated"] is False for c in v8["clips"])
+    assert v8["style_outdated_count"] == 0
+    # 旧会话的尝试没有 style_ref 键：现在有风格图就按可重出
+    raw = sess.load(root8)
+    for a in clip(raw, x)["attempts"]:
+        a.pop("style_ref", None)
+    sess._save(root8, raw)
+    v8 = sess.view(b8(s1))
+    assert next(c for c in v8["clips"] if c["id"] == x)["style_outdated"] is True
+    print("18. 风格图记录与可重出 ✓")
 
     print("\nALL PASS")
     return 0

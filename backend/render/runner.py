@@ -251,7 +251,7 @@ class Runner:
             sess.submit_failed(root, c["id"], f"提交异常：{type(e).__name__}: {e}")
             return False
         try:
-            sess.submitted(root, c["id"], tid, used)
+            sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None))
         except Exception:
             print(f"[render] 已提交但写回失败，任务 id {tid}（{root} {c['id']}），请到厂商控制台核对")
             raise

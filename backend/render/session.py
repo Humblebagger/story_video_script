@@ -204,7 +204,7 @@ def _merge_orphan(orph: dict, o: dict) -> None:
 
 
 def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
-          allow_in_flight: bool = False) -> dict:
+          allow_in_flight: bool = False, style: Optional[dict] = None) -> dict:
     """按已保存的分镜切段、组装提示词，生成或重建会话。不花钱。
 
     改设置时（allow_in_flight=False）有段在排队或生成中就拒绝；读取时的刷新传 True，
@@ -227,7 +227,7 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
             built = compose.build_clips(doc, caps, provider=settings["provider"],
                                         model=settings["model"], resolution=settings["resolution"],
                                         audio_mode=settings["audio_mode"], keyframes=keyframes,
-                                        rewrite=provider.rewrite_prompt)
+                                        rewrite=provider.rewrite_prompt, style=style)
         except (KeyError, TypeError, ValueError) as e:
             raise SessionError(f"分镜结构不完整，无法切段：{e}")
         orph = {}
@@ -257,6 +257,13 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
         return s
 
 
+def _style_outdated(c: dict) -> bool:
+    """已出完、本段带风格图，但采用的那次尝试用的不是当前风格图（旧会话没记录按 None 算）。"""
+    if c["state"] != "done" or c.get("style") != "used" or c.get("chosen") is None:
+        return False
+    return c["attempts"][c["chosen"]].get("style_ref") != c.get("style_hash")
+
+
 def view(s: dict) -> dict:
     """给界面的会话：去掉归属，附状态计数、剩余与在跑预估、可选项。"""
     provider = _provider(s["provider"])
@@ -266,7 +273,9 @@ def view(s: dict) -> dict:
         counts[c["state"]] = counts.get(c["state"], 0) + 1
     out = {k: v for k, v in s.items() if k != "owner"}
     # uncertain：厂商那边可能还有这一段的任务（提交中断、查询放弃），界面提示「请到控制台核对」
-    out["clips"] = [dict(c, uncertain=bool(c.get("uncertain"))) for c in s["clips"]]
+    out["clips"] = [dict(c, uncertain=bool(c.get("uncertain")), style_outdated=_style_outdated(c))
+                    for c in s["clips"]]
+    out["style_outdated_count"] = sum(1 for c in out["clips"] if c["style_outdated"])
     out["counts"] = counts
     out["remaining_cny"] = round(sum(c["estimate_cny"] for c in _remaining(s)), 2)
     out["uncertain_count"] = sum(1 for c in s["clips"] if c.get("uncertain"))
@@ -361,10 +370,12 @@ def begin_submit(root, clip_id: str) -> Optional[dict]:
         return json.loads(json.dumps(c))
 
 
-def submitted(root, clip_id: str, task_id: str, first_frame_used: Optional[str]) -> None:
+def submitted(root, clip_id: str, task_id: str, first_frame_used: Optional[str],
+              style_ref: Optional[str] = None) -> None:
     with mutate(root) as s:
         c = _clip(s, clip_id)
-        c["attempts"][-1].update(task_id=task_id, state="running", first_frame_used=first_frame_used)
+        c["attempts"][-1].update(task_id=task_id, state="running", first_frame_used=first_frame_used,
+                                 style_ref=style_ref)
         c["state"] = "running"
 
 
