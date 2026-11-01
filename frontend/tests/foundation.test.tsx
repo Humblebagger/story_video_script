@@ -219,6 +219,8 @@ const SRC = path.resolve(import.meta.dirname ?? '.', '../src')
 const I18N_FILES = [
   'labels.ts', 'presets.ts', 'compose.ts', 'film.ts', 'api.ts', 'chapters.ts', 'useKeyframes.ts',
   'useFilm.ts', 'useCompose.ts', 'edit.ts', 'resolve.ts', 'types.ts', 'theme.ts', 'auth.ts', 'notify.ts', 'main.tsx',
+  ...['NovelPage', 'NovelAssets', 'NewNovelForm', 'ParamsForm', 'CardPicker', 'SelectOrCustom', 'JobPanel', 'JobProgress']
+    .map((f) => `components/${f}.tsx`),
   ...fs.readdirSync(path.join(SRC, 'components/admin')).map((f) => `components/admin/${f}`),
 ]
 // 必须保持中文的数据字面量（正确性所需），按文件、按行形态放行：
@@ -227,6 +229,8 @@ const I18N_FILES = [
 const ALLOW: Record<string, RegExp> = {
   'presets.ts': /^\s*P\('[^']*', 'presets\./,
   'chapters.ts': /^\s*re: \/\^/,
+  // 制作参数默认值：逐字对齐后端 ConvertParams，会写进分镜、发给模型，不能译
+  'components/ParamsForm.tsx': /^\s*(style_prefix|color_tone|target_platform): '/,
 }
 const stripComments = (s: string) => s
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1')

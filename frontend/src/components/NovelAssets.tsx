@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
+import { Boxes, Search } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { EmptyState } from '@/components/common/EmptyState'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { notice } from '@/lib/notice'
 import { deleteMemoryCard, upsertMemoryCard } from '../api'
 import type { AssetKind } from '../edit'
 import type { Assets } from '../types'
-import { AssetsView } from './AssetsView'
+import { AssetsView, KIND_TITLE } from './AssetsView'
 
-const KIND_LABEL: Record<AssetKind, string> = {
-  characters: '角色 C', locations: '场景 S', props: '道具 P', creatures: '生物 A',
-}
 /** 各类资产的惯用 ID 前缀，新建时按现有卡数自动续号 */
 const KIND_PREFIX: Record<AssetKind, string> = {
   characters: 'C', locations: 'S', props: 'P', creatures: 'A',
@@ -39,7 +41,6 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
   const [assets, setAssets] = useState<Assets>(initial)
   const [dirty, setDirty] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [alert, setAlert] = useState<string | null>(null)
   const [newKind, setNewKind] = useState<AssetKind>('characters')
   const [newName, setNewName] = useState('')
   const [query, setQuery] = useState('')
@@ -60,17 +61,17 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
 
   const run = async (what: string, fn: () => Promise<void>) => {
     setBusy(true)
-    setAlert(null)
     try {
       await fn()
+      notice.ok(t('novel.done', { what }))
     } catch (e) {
-      setAlert(`${what}失败：${e instanceof Error ? e.message : String(e)}`)
+      notice.err(t('novel.failed', { what }), e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
   }
 
-  const save = () => run('保存', async () => {
+  const save = () => run(t('assets.whatSave'), async () => {
     for (const key of dirty) {
       const [kind, id] = key.split(':') as [AssetKind, string]
       const card = (assets[kind] ?? []).find((c) => c.id === id)
@@ -80,7 +81,7 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
     onSaved()
   })
 
-  const addCard = () => run('新建', async () => {
+  const addCard = () => run(t('assets.whatAdd'), async () => {
     const name = newName.trim()
     if (!name) return
     const card = { id: nextId(assets, newKind), name }
@@ -94,7 +95,7 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
   const removeCard = async (kind: AssetKind, id: string) => {
     if (!(await ask({ title: t('confirm.asset.title', { id }), body: t('confirm.asset.body'),
       action: t('confirm.delete'), danger: true }))) return
-    void run('删除', async () => {
+    void run(t('assets.whatDelete'), async () => {
       await deleteMemoryCard(nid, kind, id)
       setAssets((prev) => ({ ...prev, [kind]: (prev[kind] ?? []).filter((c) => c.id !== id) }))
       setDirty((prev) => {
@@ -129,46 +130,48 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
   return (
     <div className="lib">
       {confirmUi}
-      <p className="lib__hint">
-        各章采用版的资产卡自动并进这里；转换本书任何一章都整份注入为【已有资产库】，
-        模型须沿用其 ID 与描述。也可以先把人物场景设定好再去转换。
-      </p>
-      {alert && <p className="alert">{alert}</p>}
+      <p className="lib__hint">{t('assets.hint')}</p>
       <div className="lib__bar">
         <div className="lib__add">
           <select value={newKind} onChange={(e) => setNewKind(e.target.value as AssetKind)}>
-            {(Object.keys(KIND_LABEL) as AssetKind[]).map((k) => (
-              <option key={k} value={k}>{KIND_LABEL[k]}</option>
+            {(Object.keys(KIND_TITLE) as AssetKind[]).map((k) => (
+              <option key={k} value={k}>{KIND_TITLE[k]}</option>
             ))}
           </select>
-          <input
+          <Input
             value={newName}
-            placeholder="新卡名称"
+            placeholder={t('assets.newName')}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addCard() } }}
           />
-          <button className="btn btn--sm" disabled={busy || !newName.trim()}
-                  onClick={() => void addCard()}>
-            ＋ 新建（ID 自动续号 {nextId(assets, newKind)}）
-          </button>
+          <Button size="sm" disabled={busy || !newName.trim()} onClick={() => void addCard()}>
+            {t('assets.add', { id: nextId(assets, newKind) })}
+          </Button>
         </div>
-        <input
-          className="lib__search"
-          value={query}
-          placeholder="搜索卡片：ID / 名称 / 别名 / 描述"
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="lib__searchbox">
+          <Search size={14} aria-hidden />
+          <Input
+            className="lib__search"
+            value={query}
+            aria-label={t('assets.search')}
+            placeholder={t('assets.searchPh')}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         <div className="lib__acts">
-          <button className="btn btn--sm" disabled={!dirty.size || busy} onClick={() => void save()}>
-            {busy ? '保存中…' : dirty.size ? `保存修改（${dirty.size}）` : '已保存'}
-          </button>
+          <Button size="sm" disabled={!dirty.size || busy} onClick={() => void save()}>
+            {busy ? t('assets.saving') : dirty.size ? t('assets.save', { n: dirty.size }) : t('assets.saved')}
+          </Button>
         </div>
       </div>
-      {!allCount && <p className="empty">资产库还是空的：转换并采用一章后自动填入，或在上面手工新建。</p>}
+      {!allCount && (
+        <EmptyState icon={<Boxes className="size-5" />} title={t('assets.emptyTitle')}
+                    hint={t('assets.emptyHint')} />
+      )}
       {q && (
         <p className="lib__found">
-          匹配 <b>{shownCount}</b> / {allCount} 张卡
-          {shownCount === 0 && ' —— 换个关键词试试'}
+          {t('assets.matchPre')} <b>{shownCount}</b> {t('assets.matchPost', { all: allCount })}
+          {shownCount === 0 && ` ${t('assets.tryOther')}`}
         </p>
       )}
       <AssetsView

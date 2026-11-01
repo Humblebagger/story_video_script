@@ -1,0 +1,254 @@
+/* 小说页各页签、新建小说表单、预设下拉、钉卡选中态、任务面板与进度、资产库页、章节页、侧栏小说 → 章节导航。
+ * 只用新变量；卡片 1px --border、圆角 ui-radius + 2px、悬停只抬描边色。 */
+
+/* ---------- 表单 ---------- */
+
+.form {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--ui-radius) + 2px);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.form__h { font-size: 16px; font-weight: 600; }
+.form__textbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.form__textbar label { font-weight: 600; font-size: 14px; }
+.form__count { color: var(--ui-muted-foreground); font-size: 12px; margin-right: auto; font-family: var(--font-mono); }
+/* 章节页的原文框仍是原生 textarea（SourceStep），外观与 Textarea 组件一致 */
+.form textarea:not([data-slot]) {
+  width: 100%;
+  min-height: 220px;
+  padding: 12px 14px;
+  border: 1px solid var(--input);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  resize: vertical;
+  line-height: 1.85;
+  font-size: 14px;
+}
+.form textarea:not([data-slot]):focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent); }
+.form__text textarea[data-slot] { min-height: 220px; line-height: 1.85; }
+.form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.form__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  border-top: 1px solid var(--border); padding-top: 14px;
+}
+.form__chapters { margin: 6px 0 0; padding-left: 20px; font-size: 12px; color: var(--ui-muted-foreground); max-height: 160px; overflow: auto; }
+
+/* 原生下拉与 Input 同外观（Task 8 统一进 controls.css） */
+:is(.field, .soc, .lib__add, .life__new) select {
+  height: 36px;
+  width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: calc(var(--ui-radius) - 2px);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+:is(.field, .soc, .lib__add, .life__new) select:focus-visible {
+  outline: none; border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent);
+}
+.dark :is(.field, .soc, .lib__add, .life__new) select { background: color-mix(in oklab, var(--input) 30%, transparent); }
+.field > span { font-size: 12px; color: var(--ui-muted-foreground); }
+
+/* 预设下拉 + 自定义兜底 */
+.soc { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- 钉卡：选中的卡用 primary 描边与对勾 ---------- */
+
+.cpick__item { transition: background-color 150ms ease-out, box-shadow 150ms ease-out; }
+.cpick__item.is-attached { box-shadow: inset 0 0 0 1px var(--primary); }
+.cpick__on { display: inline-flex; align-items: center; gap: 3px; color: var(--primary); font-size: 12px; }
+
+/* ---------- 任务面板 ---------- */
+
+.job {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--ui-radius) + 2px);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.job--failed { border-color: color-mix(in oklab, var(--destructive) 45%, var(--border)); }
+.job--completed_with_warnings { border-color: color-mix(in oklab, var(--warning) 50%, var(--border)); }
+.job__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.job__id { font-family: var(--font-mono); font-size: 12px; color: var(--ui-muted-foreground); }
+.job__hint { color: var(--ui-muted-foreground); font-size: 12px; margin-left: auto; }
+.job__head > [data-slot="button"] { margin-left: auto; }
+.job__hint + [data-slot="button"] { margin-left: 0; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ui-muted-foreground); flex: none; }
+.dot--live { background: var(--primary); animation: dot-pulse 1.4s ease-in-out infinite; }
+@keyframes dot-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .dot--live { animation: none; opacity: .7; } }
+
+.job__log, .job__err, .job__warn pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: color-mix(in oklab, var(--ui-muted) 60%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+}
+/* 日志最后一行：等宽辅助色 */
+.job__logline--last { color: var(--ui-muted-foreground); }
+.job__partial { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; color: var(--ui-muted-foreground); }
+.job__partial > [data-slot="button"] { margin-left: auto; }
+.job__err { color: var(--destructive); }
+.job__warn { display: flex; flex-direction: column; gap: 8px; }
+.job__warn > b { color: var(--warning); font-size: 14px; }
+.job__warn pre { background: color-mix(in oklab, var(--warning) 10%, var(--card)); }
+.job__warn--err > b { color: var(--destructive); }
+.job__warn--err pre { background: color-mix(in oklab, var(--destructive) 8%, var(--card)); }
+
+/* 进度：实心段 = 已完成批次（按字数），脉动段 = 正在跑的这一批 */
+.jprog { display: flex; flex-direction: column; gap: 6px; }
+.jprog__bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--secondary); }
+.jprog__done { background: var(--primary); transition: width .4s ease; }
+.jprog__cur {
+  background: color-mix(in oklab, var(--primary) 35%, var(--secondary));
+  animation: jprog-pulse 1.6s ease-in-out infinite;
+}
+@keyframes jprog-pulse { 50% { opacity: .45; } }
+/* 减少动态效果：不脉动，只保留固定的半透明 */
+@media (prefers-reduced-motion: reduce) { .jprog__cur { animation: none; opacity: .6; } .jprog__done { transition: none; } }
+.jprog__line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 12px; color: var(--ui-muted-foreground); }
+.jprog__line b { color: var(--foreground); font-weight: 600; }
+.jprog__time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.jprog__compact { font-size: 12px; color: var(--ui-muted-foreground); margin-top: 4px; }
+
+/* ---------- 资产库页（小说页「资产库」页签） ---------- */
+
+.lib { display: flex; flex-direction: column; gap: 16px; }
+.lib__hint { font-size: 12px; color: var(--ui-muted-foreground); line-height: 1.75; max-width: 720px; }
+.lib__bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap;
+  padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: calc(var(--ui-radius) + 2px); background: color-mix(in oklab, var(--ui-muted) 50%, transparent);
+}
+.lib__add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lib__add select { width: auto; }
+.lib__add input { width: 160px; }
+.lib__acts { display: flex; gap: 8px; }
+.lib__searchbox { position: relative; flex: 1 1 220px; min-width: 0; }
+.lib__searchbox > svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--ui-muted-foreground); pointer-events: none; }
+.lib__search { padding-left: 32px; }
+.lib__found { font-size: 12px; color: var(--ui-muted-foreground); }
+.lib__found b { color: var(--foreground); }
+
+/* ---------- 侧栏：搜索、小说 → 章节导航 ---------- */
+
+.hist__search {
+  width: 100%; margin-bottom: 10px; padding: 6px 10px; font-size: 14px;
+  border: 1px solid var(--input); border-radius: calc(var(--ui-radius) - 2px); background: transparent;
+}
+.hist__search:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent); }
+.hnovel { display: flex; flex-direction: column; gap: 4px; }
+.hchap { list-style: none; margin: 0 0 6px 10px; padding: 0 0 0 8px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.hchap__item {
+  display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+  border-radius: calc(var(--ui-radius) - 4px); cursor: pointer; font-size: 14px;
+  transition: background-color 150ms ease-out;
+}
+.hchap__item:hover { background: var(--secondary); }
+.hchap__item.is-on { background: var(--secondary); color: var(--foreground); font-weight: 600; }
+.hchap__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hchap__item .tag { font-size: 12px; }
+.hchap__item--new { color: var(--ui-muted-foreground); }
+
+.linkbtn {
+  border: none; background: none; padding: 0 2px; cursor: pointer;
+  color: var(--foreground); font-size: 12px; text-decoration: underline; text-underline-offset: 3px;
+}
+.linkbtn:hover { color: var(--ui-muted-foreground); }
+
+/* ---------- 小说页 ---------- */
+
+.novel { border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card); }
+.novel__head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 14px 18px 10px; }
+.novel__head h2 { font-size: 16px; font-weight: 600; }
+.novel__meta { flex: 1; font-size: 12px; color: var(--ui-muted-foreground); min-width: 0; }
+.novel__tabs { padding: 0 18px; overflow-x: auto; }
+.novel__body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.novel__body .form { border: none; padding: 0; background: none; }
+.novel__sec { gap: 12px; padding: 16px; }
+.novel__sec > h3 { font-size: 14px; font-weight: 600; }
+
+.plot, .cons, .life { display: flex; flex-direction: column; gap: 12px; }
+.plot__h { font-size: 14px; font-weight: 600; margin-top: 4px; }
+.plot__list, .cons__list, .life__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.plot__item { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 10px 12px; }
+.plot__item textarea { width: 100%; }
+.plot__title { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+
+/* 列表项：悬停抬描边 */
+.cons__item, .life__item, .plot__item {
+  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.cons__item:hover, .life__item:hover, .plot__item:hover {
+  border-color: color-mix(in oklab, var(--foreground) 18%, var(--border));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+.cons__item { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; padding: 9px 12px; }
+.cons__item .check { flex: 1 1 100%; }
+.cons__item.is-off { opacity: .55; }
+.cons__neg, .cons__kw { font-size: 12px; color: var(--ui-muted-foreground); }
+.cons__item .hrun__del { margin-left: auto; }
+
+.life__item { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.life__item--proposed { border-color: color-mix(in oklab, var(--warning) 55%, var(--border)); background: color-mix(in oklab, var(--warning) 8%, var(--card)); }
+.life__item--rejected { opacity: .55; }
+.life__top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.life__detail { font-size: 14px; }
+.life__quote { margin: 0; padding: 4px 10px; border-left: 3px solid var(--border); font-size: 12px; color: var(--ui-muted-foreground); }
+.life__acts { display: flex; gap: 6px; align-items: center; }
+
+/* ---------- 章节页 ---------- */
+
+.chap {
+  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card);
+  padding: 14px 18px; display: flex; flex-direction: column; gap: 12px;
+}
+.chap__head { display: flex; gap: 10px; align-items: center; }
+.chap__novel { font-size: 14px; color: var(--ui-muted-foreground); }
+.chap__title {
+  flex: 1; font-size: 16px; font-weight: 600; border: 1px solid transparent;
+  border-radius: calc(var(--ui-radius) - 4px); padding: 2px 6px; background: none;
+}
+.chap__title:hover, .chap__title:focus { border-color: var(--border); outline: none; }
+.chap__text summary { cursor: pointer; font-size: 14px; color: var(--ui-muted-foreground); }
+.chap__text .form { margin-top: 8px; border: none; padding: 0; background: none; }
+.chap__text textarea[readonly] { background: color-mix(in oklab, var(--ui-muted) 60%, transparent); color: var(--ui-muted-foreground); }
+.chap__convert { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.chap__convert [data-slot="button"], .chap__convert .btn { margin-left: auto; }
+.chap__digest { font-size: 12px; color: var(--ui-muted-foreground); display: flex; gap: 6px; align-items: baseline; }
+.chap__digest--failed { color: var(--destructive); }
+.chap__digest--done { color: var(--success); }
+
+.vbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--border); }
+.vbar__label { font-size: 12px; color: var(--ui-muted-foreground); margin-right: 4px; }
+.vbar__note { font-size: 12px; color: var(--ui-muted-foreground); }
+.vchip {
+  display: inline-flex; gap: 4px; align-items: baseline;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--card); cursor: pointer; font-family: var(--font-mono); font-size: 12px;
+  transition: border-color 150ms ease-out;
+}
+.vchip em { font-style: normal; font-family: inherit; font-size: 12px; color: var(--destructive); }
+.vchip:hover { border-color: color-mix(in oklab, var(--foreground) 30%, var(--border)); }
+.vchip.is-on { border-color: var(--primary); background: var(--secondary); }
+.vchip.is-adopted { font-weight: 650; }

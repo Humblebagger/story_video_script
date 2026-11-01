@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react'
+import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n/core'
 import { JOB_STATUS, label } from '../labels'
 import type { Job } from '../types'
 import { JobProgress } from './JobProgress'
@@ -15,6 +17,7 @@ interface Props {
 }
 
 export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: Props) {
+  const { t } = useI18n()
   const logRef = useRef<HTMLPreElement>(null)
   const running = job.status === 'queued' || job.status === 'running'
 
@@ -31,15 +34,11 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
         <code className="job__id">{job.id}</code>
         {running ? (
           <>
-            <span className="job__hint">
-              分钟级任务，可以离开本页——转换在后台继续，完成后桌面通知你
-            </span>
-            <button className="btn btn--sm btn--ghost" onClick={onBackground}>
-              放到后台
-            </button>
+            <span className="job__hint">{t('job.hint')}</span>
+            <Button variant="outline" size="sm" onClick={onBackground}>{t('job.background')}</Button>
           </>
         ) : (
-          <button className="btn btn--sm btn--ghost" onClick={onReset}>关闭任务面板</button>
+          <Button variant="outline" size="sm" onClick={onReset}>{t('job.dismiss')}</Button>
         )}
       </header>
 
@@ -50,18 +49,18 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
         <div className="job__partial">
           <span>
             {running
-              ? `已完成 ${job.partial_batches} 批，可以先审阅，整章跑完后自动换成完整产物`
-              : `转换失败，但前 ${job.partial_batches} 批已通过校验`}
+              ? t('job.partialRunning', { n: job.partial_batches })
+              : t('job.partialFailed', { n: job.partial_batches })}
           </span>
-          <button className="btn btn--sm" onClick={onPreview}>
-            {running ? `先审阅已完成的 ${job.partial_batches} 批` : `查看已通过的 ${job.partial_batches} 批`}
-          </button>
+          <Button size="sm" onClick={onPreview}>
+            {running ? t('job.previewRunning', { n: job.partial_batches }) : t('job.previewFailed', { n: job.partial_batches })}
+          </Button>
         </div>
       )}
 
       {job.status === 'failed' && job.error && (
         <div className="job__warn job__warn--err">
-          <b>✕ 转换失败，未通过的原因如下</b>
+          <b>{t('job.failedTitle')}</b>
           <pre className="job__err">{job.error}</pre>
         </div>
       )}
@@ -74,14 +73,18 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
 
       {job.quality_report && (
         <div className="job__warn">
-          <b>⚠ 质量告警（已择优降级交付）</b>
+          <b>{t('job.qualityTitle')}</b>
           <pre>{job.quality_report}</pre>
         </div>
       )}
 
       {!!job.log.length && (
         <pre className="job__log" ref={logRef}>
-          {job.log.join('\n')}
+          {job.log.map((line, i) => (
+            <span key={i} className={i === job.log.length - 1 ? 'job__logline--last' : undefined}>
+              {line}{i < job.log.length - 1 ? '\n' : ''}
+            </span>
+          ))}
         </pre>
       )}
     </section>

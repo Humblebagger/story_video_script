@@ -1,3 +1,6 @@
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useI18n } from '@/i18n/core'
 import { NARRATION_MODE } from '../labels'
 import {
   ART_STYLES, COLOR_TONES, STYLE_PREFIXES, TARGET_PLATFORMS, TTS_VOICES,
@@ -25,13 +28,14 @@ interface Props {
 
 /** 制作参数表单：小说级默认值。每章转换都用它（必要时按次覆写旁白模式） */
 export function ParamsForm({ value: p, onChange }: Props) {
+  const { t } = useI18n()
   const set = <K extends keyof NovelParams>(k: K, v: NovelParams[K]) =>
     onChange({ ...p, [k]: v })
 
   return (
     <div className="form__grid">
-      <Field label="画面风格前缀" wide>
-        <input
+      <Field label={t('params.stylePrefix')} wide>
+        <Input
           value={p.style_prefix}
           list="style-prefixes"
           onChange={(e) => set('style_prefix', e.target.value)}
@@ -41,23 +45,23 @@ export function ParamsForm({ value: p, onChange }: Props) {
         </datalist>
       </Field>
 
-      <Field label="艺术风格">
+      <Field label={t('params.artStyle')}>
         <SelectOrCustom
           value={p.art_style}
           options={ART_STYLES}
           onChange={(v) => set('art_style', v)}
-          placeholder="风格分类标识，如 ukiyo_e"
+          placeholder={t('params.artStylePh')}
         />
       </Field>
-      <Field label="色调">
+      <Field label={t('params.colorTone')}>
         <SelectOrCustom
           value={p.color_tone}
           options={COLOR_TONES}
           onChange={(v) => set('color_tone', v)}
-          placeholder="描述整体色彩倾向"
+          placeholder={t('params.colorTonePh')}
         />
       </Field>
-      <Field label="目标平台">
+      <Field label={t('params.platform')}>
         <SelectOrCustom
           value={p.target_platform}
           options={TARGET_PLATFORMS}
@@ -65,7 +69,7 @@ export function ParamsForm({ value: p, onChange }: Props) {
         />
       </Field>
 
-      <Field label="画幅">
+      <Field label={t('params.ratio')}>
         <select
           value={p.aspect_ratio}
           onChange={(e) => set('aspect_ratio', e.target.value as AspectRatio)}
@@ -73,7 +77,7 @@ export function ParamsForm({ value: p, onChange }: Props) {
           {RATIOS.map((r) => <option key={r}>{r}</option>)}
         </select>
       </Field>
-      <Field label="旁白模式">
+      <Field label={t('params.narration')}>
         <select
           value={p.narration_mode}
           onChange={(e) => set('narration_mode', e.target.value as NarrationMode)}
@@ -83,12 +87,12 @@ export function ParamsForm({ value: p, onChange }: Props) {
           ))}
         </select>
       </Field>
-      <Field label="TTS 音色">
+      <Field label={t('params.voice')}>
         <SelectOrCustom
           value={p.tts_voice}
           options={TTS_VOICES}
           onChange={(v) => set('tts_voice', v)}
-          placeholder="音色标识"
+          placeholder={t('params.voicePh')}
         />
       </Field>
     </div>
@@ -99,9 +103,9 @@ export function Field({ label, wide, children }: {
   label: string; wide?: boolean; children: React.ReactNode
 }) {
   return (
-    <label className={`field${wide ? ' field--wide' : ''}`}>
+    <Label className={`field${wide ? ' field--wide' : ''} flex-col items-stretch gap-1.5 font-normal`}>
       <span>{label}</span>
       {children}
-    </label>
+    </Label>
   )
 }

@@ -8,7 +8,8 @@ import type {
   PropAsset, ReferenceImage,
 } from '../types'
 
-const KIND_TITLE: Record<AssetKind, string> = {
+// oxlint-disable-next-line react/only-export-components -- 小说页资产库复用同一份分类名，不另抄一份
+export const KIND_TITLE: Record<AssetKind, string> = {
   characters: '角色 C', locations: '场景 S', props: '道具 P', creatures: '生物 A',
 }
 

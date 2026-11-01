@@ -428,6 +428,9 @@ const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { default: App } = await import('../src/App')
 const { notifyUnauthorized } = await import('../src/auth')
+const { NovelPage } = await import('../src/components/NovelPage')
+const { I18nProvider } = await import('../src/i18n')
+const { setCurrentLocale } = await import('../src/i18n/core')
 
 const doc = win.document as unknown as Document
 const container = doc.createElement('div')
@@ -775,6 +778,30 @@ must(has('＋ 新章节'), '应有「＋ 新章节」卡')
 await click(cards[0] as unknown as HTMLElement)
 must(!!container.querySelector('[data-step]'), '点卡片应进入章节工作流')
 console.log('11c. 小说页章节卡片 → 默认页签 / 状态徽章 / 点卡片进章节 ✓')
+
+// 11d. 英文：同一本小说单独渲染一次（App 之外包英文 Provider），页签与「新章节」按钮是英文，随后切回中文
+{
+  const enBox = doc.createElement('div')
+  doc.body.appendChild(enBox)
+  const enRoot = createRoot(enBox)
+  const enNovel = JSON.parse(JSON.stringify(shelf('alice')[0]))
+  await act(async () => {
+    enRoot.render(
+      <I18nProvider initial="en">
+        <NovelPage novel={enNovel} running={[]} onChanged={() => {}} onDeleted={() => {}}
+                   onOpenChapter={() => {}} onNewChapter={() => {}} />
+      </I18nProvider>)
+  })
+  await settle()
+  const enTabs = [...enBox.querySelectorAll('.tabs__btn')].map((b) => b.textContent ?? '')
+  must(enTabs.includes('Chapters') && enTabs.includes('Plot') && enTabs.includes('Constraints'), '英文页签：' + enTabs.join('|'))
+  must((enBox.textContent ?? '').includes('+ New chapter') && !(enBox.textContent ?? '').includes('新章节'), '「新章节」按钮应是英文')
+  must(!!enBox.querySelector('button[aria-label="More actions"]'), '标题右侧应有「更多操作」菜单')
+  await act(async () => { enRoot.unmount() })
+  enBox.remove()
+  setCurrentLocale('zh')
+}
+console.log('11d. 小说页英文 → 页签 / 新章节按钮 / 更多菜单 ✓')
 
 // 12. 换个账号：看不到 alice 的任何东西
 await click(findByText('button', '退出'))
