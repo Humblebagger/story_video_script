@@ -2,7 +2,9 @@
 import hashlib
 import json
 import re
+import os
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -24,6 +26,11 @@ def tf(n: int, fps: int = 30) -> str:
 
 def tc(sec: float, fps: int = 30) -> str:
     return tf(round(sec * fps), fps)
+
+
+def speech_key(sp: dict) -> str:
+    """配音在 media 里的键：同一个源文件不同倍速是不同的素材。"""
+    return sp["file"] if sp["speed"] == 1 else f"{sp['file']}@{sp['speed']}"
 
 
 def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> str:
@@ -79,9 +86,9 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
             f = round(sp["start"] * fps)
             i = next((k for k in range(len(clips)) if bounds[k] <= f < bounds[k + 1]), len(clips) - 1)
             d = max(1, round(sp["duration"] * fps))
-            ET.SubElement(clips[i], "asset-clip", ref=asset(sp["file"]), name=sp["line"], lane="-1",
+            ET.SubElement(clips[i], "asset-clip", ref=asset(speech_key(sp)), name=sp["line"], lane="-1",
                           offset=tf(f - bounds[i], fps), start="0s", duration=tf(d, fps))
-            use(sp["file"], d)
+            use(speech_key(sp), d)
         if ep.get("bgm") and clips:
             b = ET.SubElement(clips[0], "asset-clip", ref=asset(ep["bgm"]), name=f"BGM {ep['episode']}",
                               lane="-2", offset="0s", start="0s", duration=tf(bounds[-1], fps))
@@ -127,9 +134,15 @@ def _fast_voice(src: Path, speed: float, cache: Path, line: str, ffmpeg: str) ->
     if out.exists():
         return out
     cache.mkdir(parents=True, exist_ok=True)
-    tmp = cache / f"{key}.part.wav"
-    r = subprocess.run([ffmpeg, "-y", "-v", "error", "-i", str(src), "-filter:a", f"atempo={speed}",
-                        "-ar", "48000", str(tmp)], capture_output=True, text=True)
+    fd, name = tempfile.mkstemp(suffix=".wav", prefix=f"{key}.part.", dir=cache)
+    os.close(fd)
+    tmp = Path(name)
+    try:
+        r = subprocess.run([ffmpeg, "-y", "-v", "error", "-i", str(src), "-filter:a", f"atempo={speed}",
+                            "-ar", "48000", str(tmp)], capture_output=True, text=True)
+    except OSError as e:
+        tmp.unlink(missing_ok=True)
+        raise ExportError(f"预渲染配音 {line} 失败", str(e))
     if r.returncode != 0:
         tmp.unlink(missing_ok=True)
         raise ExportError(f"预渲染配音 {line} 失败", (r.stderr or "")[-4000:])
@@ -151,6 +164,8 @@ def export(root, *, title: str, tools: tuple) -> Path:
     def put(key: str, rel: str, disk: Path, *, video: bool) -> None:
         if key in media:
             return
+        if not disk.is_file():
+            raise ExportError(f"合成产物缺失（{rel}），请重新合成")
         media[key] = {"rel": rel, "seconds": mix.media_seconds(disk, ffprobe), "audio": True, "video": video}
         files[rel] = disk
 
@@ -158,19 +173,28 @@ def export(root, *, title: str, tools: tuple) -> Path:
         for sg in ep["segments"]:
             put(sg["file"], f"media/clips/{sg['clip']}.mp4", root / sg["file"], video=True)
         for sp in ep["speech"]:
+            key = speech_key(sp)
+            if key in media:
+                continue
             src = root / sp["file"]
+            if not src.is_file():
+                raise ExportError(f"合成产物缺失（{sp['file']}），请重新合成")
             disk = src if sp["speed"] == 1 else _fast_voice(src, sp["speed"], export_dir / "voice",
                                                             sp["line"], ffmpeg)
-            put(sp["file"], f"media/voice/{sp['line']}.wav", disk, video=False)
+            put(key, f"media/voice/{sp['line']}.wav", disk, video=False)
         if ep.get("bgm"):
             put(ep["bgm"], f"media/bgm/{ep['episode']}{Path(ep['bgm']).suffix}", root / ep["bgm"], video=False)
 
     xml = build_fcpxml(tl, media, event=title)
     text = readme(tl, title)
-    safe = re.sub(r'[\\/:*?"<>|\s]+', "_", title)[:80]
+    safe = re.sub(r'[\\/:*?"<>|\s]+', "_", title)[:80].strip(". _")
+    if not safe.strip("."):
+        safe = "storyboard-export"
     export_dir.mkdir(parents=True, exist_ok=True)
     out = export_dir / f"{safe}.zip"
-    tmp = export_dir / f"{safe}.zip.part"
+    fd, name = tempfile.mkstemp(suffix=".part", prefix=f"{safe}.zip.", dir=export_dir)
+    os.close(fd)
+    tmp = Path(name)
     try:
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as z:
             z.writestr(f"{safe}/project.fcpxml", xml)

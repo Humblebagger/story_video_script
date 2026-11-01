@@ -39,7 +39,7 @@ MEDIA = {
     "c.mp4": {"rel": "media/c.mp4", "seconds": 4.5, "audio": False, "video": True},
     "d.mp4": {"rel": "media/d.mp4", "seconds": 5.0, "audio": True, "video": True},
     "v1.wav": {"rel": "media/voice/v1.wav", "seconds": 3.0, "audio": True, "video": False},
-    "v2.wav": {"rel": "media/voice/v2.wav", "seconds": 2.1, "audio": True, "video": False},
+    "v2.wav@1.1": {"rel": "media/voice/v2.wav", "seconds": 2.1, "audio": True, "video": False},
     "bgm/E01.mp3": {"rel": "media/bgm/E01.mp3", "seconds": 30.0, "audio": True, "video": False},
 }
 

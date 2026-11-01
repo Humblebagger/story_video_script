@@ -157,6 +157,29 @@ def main() -> int:
         zs2 = export_fcpxml.export(slow_root, title="slow", tools=tools)
         assert zs2 == zs and cache[0].stat().st_mtime_ns == stamp, "提速缓存不重做"
         assert zs.stat().st_mtime_ns != zs_stamp and zipfile.is_zipfile(zs), "zip 被覆盖"
+        # 两句共用一个源 wav、倍速不同：各自一个文件、各自正确的时长
+        tlp = slow_root / "final" / "timeline.json"
+        tl_orig = tlp.read_text(encoding="utf-8")
+        tl2 = json.loads(tl_orig)
+        sp2 = dict(tl2["episodes"][0]["speech"][0], line="S1-L9", speed=1.0, duration=round(orig, 3))
+        tl2["episodes"][0]["speech"].append(sp2)
+        tlp.write_text(json.dumps(tl2, ensure_ascii=False), encoding="utf-8")
+        zd = export_fcpxml.export(slow_root, title="dup", tools=tools)
+        with zipfile.ZipFile(zd) as z:
+            z.extractall(slow_root / "unz2")
+        d2 = slow_root / "unz2" / "dup" / "media" / "voice"
+        assert abs(mix.media_seconds(d2 / f"{sp['line']}.wav", ffprobe) - orig / sp["speed"]) <= 0.05
+        assert abs(mix.media_seconds(d2 / "S1-L9.wav", ffprobe) - orig) <= 0.05
+        tlp.write_text(tl_orig, encoding="utf-8")
+        # 标题清洗：不出现绝对路径或 .. 目录
+        for bad in ["..", ".", "", "a/../b"]:
+            zb = export_fcpxml.export(slow_root, title=bad, tools=tools)
+            with zipfile.ZipFile(zb) as z:
+                for n in z.namelist():
+                    assert not n.startswith("/") and ".." not in n.split("/") and n.split("/")[0], (bad, n)
+            assert zb.parent == slow_root / "final" / "export" and not zb.name.startswith("."), zb
+        assert (slow_root / "final" / "export" / "storyboard-export.zip").is_file()
+        assert not list((slow_root / "final" / "export").glob("*.part"))
         (slow_root / "final" / "timeline.json").unlink()
         try:
             export_fcpxml.export(slow_root, title="slow", tools=tools)
