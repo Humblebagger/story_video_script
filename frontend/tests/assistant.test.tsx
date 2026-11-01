@@ -58,4 +58,136 @@ doc.body.appendChild(box)
   console.log('✓ 极简渲染')
 }
 
+// ---------- 面板 ----------
+const { I18nProvider } = await import('../src/i18n')
+const { TooltipProvider } = await import('../src/components/ui/tooltip')
+const { AssistantPanel } = await import('../src/components/assistant/AssistantPanel')
+const { setWhere: setW } = await import('../src/lib/assistantBridge')
+type Ev = { event: string; data: unknown }
+
+const realFetch = globalThis.fetch
+let history: unknown[] = []
+let script: Ev[] = []
+let hold: Promise<void> | null = null        // 设了就等它 resolve 再推 done（测「回答中」）
+let status = 200
+const calls: { method: string; url: string; body?: string }[] = []
+globalThis.fetch = (async (url: string, init?: RequestInit) => {
+  const method = init?.method ?? 'GET'
+  calls.push({ method, url: String(url), body: init?.body as string | undefined })
+  if (method === 'GET') return new Response(JSON.stringify({ messages: history }), { status: 200 })
+  if (method === 'DELETE') return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  if (status !== 200) return new Response(JSON.stringify({ detail: 'x' }), { status })
+  const enc = new TextEncoder()
+  const signal = init?.signal
+  const stream = new ReadableStream({
+    async start(ctl) {
+      for (const e of script) ctl.enqueue(enc.encode(`event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`))
+      if (hold) {
+        await new Promise<void>((res, rej) => { hold!.then(res); signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))) })
+          .catch((err) => { ctl.error(err) })
+      }
+      try { ctl.enqueue(enc.encode('event: done\ndata: {}\n\n')); ctl.close() } catch { /* 已出错 */ }
+    },
+  })
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+}) as typeof fetch
+
+const flush = async () => { for (let i = 0; i < 5; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)) }) }
+const panelBox = doc.createElement('div')
+doc.body.appendChild(panelBox)
+const gotos: unknown[] = []
+const mount = async () => {
+  const root = createRoot(panelBox as unknown as HTMLElement)
+  await act(async () => {
+    root.render(h(I18nProvider, null, h(TooltipProvider, null,
+      h(AssistantPanel, { novelId: 'n1', chapters: [{ id: 'c1', title: '第一章' }], onGoto: (g: unknown) => gotos.push(g) }))))
+  })
+  await flush()
+  return root
+}
+const $ = (id: string) => panelBox.querySelector(`[data-testid="${id}"]`) as HTMLElement | null
+const $$ = (id: string) => [...panelBox.querySelectorAll(`[data-testid="${id}"]`)] as HTMLElement[]
+const type = async (v: string) => {
+  const ta = $('assistant-input') as HTMLTextAreaElement
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta), 'value')!.set!
+    setter.call(ta, v)
+    ta.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+  })
+}
+const enter = async (composing = false) => {
+  await act(async () => {
+    $('assistant-input')!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: composing }) as unknown as Event)
+  })
+  await flush()
+}
+
+{
+  // 空对话：示例问题与当前位置
+  setW({ chapter_id: 'c1', step: 'review' })
+  let root = await mount()
+  must($$('assistant-example').length === 3, '三个示例问题')
+  must(($('assistant-where')?.textContent ?? '').includes('第一章'), '当前位置显示章节')
+
+  // 发送：工具行三种状态、逐字文字、跳转按钮
+  script = [
+    { event: 'tool_start', data: { id: 't1', name: 'film_status', args: {} } },
+    { event: 'tool_end', data: { id: 't1', ok: true, summary: '{}' } },
+    { event: 'tool_start', data: { id: 't2', name: 'shots_get', args: { chapter: '九' } } },
+    { event: 'tool_end', data: { id: 't2', ok: false, summary: '没有第九章' } },
+    { event: 'goto', data: { chapter_id: 'c1', step: 'render' } },
+    { event: 'token', data: { text: '还有' } },
+    { event: 'token', data: { text: ' **两段**' } },
+  ]
+  await type('还有哪些没出片？')
+  await enter(true)
+  must(!calls.some((c) => c.method === 'POST'), '输入法组字中 Enter 不发送')
+  await enter()
+  const post = calls.find((c) => c.method === 'POST')!
+  const body = JSON.parse(post.body!)
+  must(body.text === '还有哪些没出片？' && body.where.chapter_id === 'c1' && body.where.step === 'review', '带上位置')
+  must($$('assistant-tool').map((x) => x.dataset.state).join() === 'ok,err', '工具行状态')
+  must($('assistant-bot')?.querySelector('strong')?.textContent === '两段', '逐字拼接并渲染')
+  await act(async () => { $('assistant-goto')!.click() })
+  must(JSON.stringify(gotos[0]) === JSON.stringify({ chapter_id: 'c1', step: 'render' }), '跳转')
+  await act(async () => { $$('assistant-tool')[1].querySelector('button')!.click() })
+  must(($$('assistant-tool')[1].textContent ?? '').includes('没有第九章'), '工具行展开')
+
+  // 停止：标「已中断」
+  let release!: () => void
+  hold = new Promise<void>((r) => { release = r })
+  script = [{ event: 'token', data: { text: '正在' } }]
+  await type('慢问题')
+  await enter()
+  must(!!$('assistant-stop'), '回答中显示停止')
+  await act(async () => { $('assistant-stop')!.click() })
+  await flush()
+  must(!!$('assistant-interrupted'), '已中断')
+  release(); hold = null
+
+  // 清空：要确认
+  await act(async () => { $('assistant-clear')!.click() })
+  await flush()
+  const confirmBtn = ([...doc.querySelectorAll('[data-testid="confirm-ok"]')] as HTMLElement[])[0]
+  must(!!confirmBtn, '清空前弹确认')
+  await act(async () => { confirmBtn!.click() })
+  await flush()
+  must(calls.some((c) => c.method === 'DELETE') && !$('assistant-bot'), '清空后没有消息')
+  await act(async () => { root.unmount() })
+
+  // 历史回放 + 429
+  history = [{ role: 'user', text: '旧问题' }, { role: 'assistant', text: '旧回答', tools: [], goto: [] }]
+  root = await mount()
+  must($$('assistant-user')[0]?.textContent === '旧问题', '读历史')
+  status = 429
+  await type('再问')
+  await enter()
+  must(!!$('assistant-limit') && ($('assistant-input') as HTMLTextAreaElement).disabled, '429 禁用输入')
+  must($$('assistant-user').length === 1, '429 时不留下这条问题')
+  await act(async () => { root.unmount() })
+  status = 200; history = []
+  console.log('✓ 对话面板')
+}
+globalThis.fetch = realFetch
+
 console.log('assistant: ALL PASS')
