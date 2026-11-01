@@ -308,6 +308,14 @@ export const en: Messages = {
     ok: { saved: 'Saved', deleted: 'Deleted', updated: 'Updated', consAdded: 'Constraint added', confirmed: 'Confirmed', rejected: 'Rejected', recordAdded: 'Record added' },
     failed: '{what} failed',
     titleLabel: 'Novel title',
+    set: {
+      titleDesc: 'The name shown on the shelf and in the sidebar.',
+      ratio: 'Aspect ratio', ratioDesc: 'Frame ratio of the video; pick 9:16 for vertical short video.',
+      style: 'Art style', styleDesc: 'Sets the overall look. Click a card to switch; hover to replace its preview.',
+      narration: 'Narration', narrationDesc: 'A narrator reads the story, or it plays out through dialogue and visuals only.',
+      voice: 'Voice', voiceDesc: 'The voice used for narration and dubbing.',
+      more: 'More', moreDesc: 'Color tone, target platform, style prefix and narration detail.',
+    },
     params: {
       hint: 'Every chapter of this novel is generated with these settings. You can override the narration mode per generation; that choice is stored only on that version.',
       save: 'Save settings',

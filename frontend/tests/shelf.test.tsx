@@ -277,5 +277,34 @@ const setInput = async (el: HTMLElement, v: string) => {
   })
   must(!q('[data-testid="shelf-recent"]'), '没有小说时不显示最近的小说区')
 }
+{ // 小说设置页
+  const { NovelPage } = await import('../src/components/NovelPage')
+  const patches: Array<Record<string, unknown>> = []
+  g.fetch = async (_u: unknown, init?: { method?: string; body?: string }) => {
+    if (init?.method === 'PATCH') patches.push(JSON.parse(init.body ?? '{}'))
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+  const novel = {
+    id: 'n1', title: '药', created_at: '', updated_at: '', params: {}, chapters: [],
+    memory: { assets: { characters: [], scenes: [], props: [] }, numbering: { next_unit: 1, next_para: 1, next_episode: 1 },
+              lifecycle: [], plot: { outline: '', chapters: [] }, constraints: [] },
+  }
+  await act(async () => {
+    root.render(h(TooltipProvider, null, h(NovelPage as never, {
+      key: 'setpage', novel, running: [], onChanged: () => {}, onDeleted: () => {}, onOpenChapter: () => {}, onNewChapter: () => {},
+    })))
+  })
+  await click(qa('.tabs__btn').find((b) => b.textContent === '制作参数') ?? null)
+  const heads = qa('[data-testid^="set-"] h3').map((e) => e.textContent)
+  for (const w of ['画幅', '画面风格', '旁白', '音色', '更多']) must(heads.includes(w), `设置页应有「${w}」分区`)
+  must((q('[data-testid="set-save"]') as unknown as HTMLButtonElement).disabled, '没改动时保存不可点')
+  await click(q('[data-ratio="1:1"]'))
+  must(!(q('[data-testid="set-save"]') as unknown as HTMLButtonElement).disabled, '改了之后保存可点')
+  await click(q('[data-testid="set-save"]'))
+  await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+  must(patches.length === 1 && !('title' in patches[0]), '只应发出一次不带标题的 PATCH')
+  must(JSON.stringify(patches[0].params) === JSON.stringify({ ...DEFAULT_PARAMS, aspect_ratio: '1:1' }),
+       'params 应只有画幅变了')
+}
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

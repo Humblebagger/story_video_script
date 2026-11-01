@@ -306,6 +306,14 @@ export const zh = {
     ok: { saved: '已保存', deleted: '已删除', updated: '已更新', consAdded: '已新增限制', confirmed: '已确认', rejected: '已驳回', recordAdded: '已添加记录' },
     failed: '{what}失败',
     titleLabel: '小说标题',
+    set: {
+      titleDesc: '书架和侧栏里显示的名字。',
+      ratio: '画幅', ratioDesc: '成片的画面比例，竖屏短视频选 9:16。',
+      style: '画面风格', styleDesc: '决定整体画风，点卡片切换，悬停可换预览图。',
+      narration: '旁白', narrationDesc: '解说人念旁白，还是只靠台词与画面演绎。',
+      voice: '音色', voiceDesc: '旁白与配音使用的声音。',
+      more: '更多', moreDesc: '色调、目标平台、风格前缀与旁白细项。',
+    },
     params: {
       hint: '本书每一章转换时都用这套参数（转换时可单独覆写旁白模式，只记在那个版本里）。',
       save: '保存参数',

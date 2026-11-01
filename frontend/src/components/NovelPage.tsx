@@ -24,7 +24,12 @@ import {
 import { LIFECYCLE_STATUS, LIFECYCLE_TYPE, label } from '../labels'
 import type { ChapterSummary, JobSummary, LifecycleType, Novel, NovelParams } from '../types'
 import { NovelAssets } from './NovelAssets'
-import { DEFAULT_PARAMS, Field, ParamsForm } from './ParamsForm'
+import { MoreParams } from './params/MoreParams'
+import { NarrationPick } from './params/NarrationPick'
+import { RatioPicker } from './params/RatioPicker'
+import { StylePicker } from './params/StylePicker'
+import { VoicePicker } from './params/VoicePicker'
+import { DEFAULT_PARAMS, Field } from './ParamsForm'
 
 type Tab = 'chapters' | 'params' | 'plot' | 'constraints' | 'assets' | 'lifecycle'
 
@@ -207,6 +212,21 @@ export interface TabProps {
   run: (what: string, done: string, fn: () => Promise<unknown>) => Promise<void>
 }
 
+function SetRow({ label, desc, children, testId }: {
+  label: string; desc?: string; children: React.ReactNode; testId: string
+}) {
+  return (
+    <section data-testid={testId}
+             className="flex flex-col gap-3 border-b py-5 first:pt-0 last:border-b-0 sm:flex-row sm:gap-6">
+      <div className="shrink-0 sm:w-60">
+        <h3 className="text-sm font-medium">{label}</h3>
+        {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
+      </div>
+      <div className="min-w-0 flex-1">{children}</div>
+    </section>
+  )
+}
+
 function ParamsTab({ novel, busy, run }: TabProps) {
   const { t } = useI18n()
   const [title, setTitle] = useState(novel.title)
@@ -215,24 +235,36 @@ function ParamsTab({ novel, busy, run }: TabProps) {
     setTitle(novel.title)
     setParams({ ...DEFAULT_PARAMS, ...novel.params })
   }, [novel.id, novel.title, novel.params])
+  const saved = { ...DEFAULT_PARAMS, ...novel.params }
+  const dirty = title.trim() !== novel.title
+    || (Object.keys(params) as (keyof NovelParams)[]).some((k) => params[k] !== saved[k])
   return (
-    <Card className="novel__sec gap-4 p-4">
-      <div className="form">
-        <p className="lib__hint">{t('novel.params.hint')}</p>
-        <div className="form__grid">
-          <Field label={t('novel.titleLabel')} wide>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </Field>
-        </div>
-        <ParamsForm value={params} onChange={setParams} />
-        <div className="form__foot">
-          <span />
-          <Button disabled={busy || !title.trim()}
-                  onClick={() => void run(t('novel.params.save'), t('novel.ok.saved'), () => updateNovel(novel.id, {
-                    ...(title.trim() !== novel.title ? { title: title.trim() } : {}), params }))}>
-            {t('novel.params.save')}
-          </Button>
-        </div>
+    <Card className="novel__sec max-w-[720px] gap-0 p-5">
+      <p className="lib__hint mb-4">{t('novel.params.hint')}</p>
+      <SetRow testId="set-title" label={t('novel.titleLabel')} desc={t('novel.set.titleDesc')}>
+        <Input aria-label={t('novel.titleLabel')} value={title} onChange={(e) => setTitle(e.target.value)} />
+      </SetRow>
+      <SetRow testId="set-ratio" label={t('novel.set.ratio')} desc={t('novel.set.ratioDesc')}>
+        <RatioPicker value={params} onChange={setParams} />
+      </SetRow>
+      <SetRow testId="set-style" label={t('novel.set.style')} desc={t('novel.set.styleDesc')}>
+        <StylePicker value={params} onChange={setParams} />
+      </SetRow>
+      <SetRow testId="set-narration" label={t('novel.set.narration')} desc={t('novel.set.narrationDesc')}>
+        <NarrationPick value={params} onChange={setParams} />
+      </SetRow>
+      <SetRow testId="set-voice" label={t('novel.set.voice')} desc={t('novel.set.voiceDesc')}>
+        <VoicePicker value={params} onChange={setParams} />
+      </SetRow>
+      <SetRow testId="set-more" label={t('novel.set.more')} desc={t('novel.set.moreDesc')}>
+        <MoreParams value={params} onChange={setParams} />
+      </SetRow>
+      <div className="flex justify-end pt-5">
+        <Button disabled={busy || !title.trim() || !dirty} data-testid="set-save"
+                onClick={() => void run(t('novel.params.save'), t('novel.ok.saved'), () => updateNovel(novel.id, {
+                  ...(title.trim() !== novel.title ? { title: title.trim() } : {}), params }))}>
+          {t('novel.params.save')}
+        </Button>
       </div>
     </Card>
   )
