@@ -393,6 +393,23 @@ export async function filmFileUrl(nid: string, cid: string, vid: string, path: s
   return URL.createObjectURL(await res.blob())
 }
 
+/** 导出剪辑工程（FCPXML 工程包 zip）：带登录态取回后用临时 <a download> 存盘；失败抛带服务端 detail 的错误 */
+export async function exportFcpxml(nid: string, cid: string, vid: string): Promise<void> {
+  const res = await send(`${filmPath(nid, cid, vid)}/export.zip`)
+  const cd = res.headers.get('content-disposition') ?? ''
+  const m = /filename\*\s*=\s*utf-8''([^;]+)/i.exec(cd)
+  let name = 'project.zip'
+  if (m) { try { name = decodeURIComponent(m[1].trim()) || name } catch { /* 解码失败用默认名 */ } }
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  requestAnimationFrame(() => URL.revokeObjectURL(url))
+}
+
 /** 出片 409 里服务端重算的金额（确认金额对不上、或单段需要确认时附带）；不是这种错误返回 null */
 export function conflictCny(e: unknown): number | null {
   if (!(e instanceof ApiError) || e.status !== 409) return null

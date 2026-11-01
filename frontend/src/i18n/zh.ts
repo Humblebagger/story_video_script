@@ -328,6 +328,18 @@ export const zh = {
       recompose: '回到画布重新合成',
       failed: '下载失败：{reason}',
     },
+    export: {
+      button: '导出剪辑工程（FCPXML）',
+      hint: '可导入 Final Cut Pro、DaVinci Resolve',
+      busy: '正在打包…',
+      failed: '导出失败：{reason}',
+      reason: {
+        none: '还没有成片，请先合成',
+        stale: '成片已过期，请先重新合成',
+        no_timeline: '重新合成一次即可导出（会复用已有的配音与规整结果，不花钱）',
+        busy: '正在合成，完成后即可导出',
+      },
+    },
     empty: {
       board: '还没有分镜',
       boardHint: '先在第 2 步生成本章分镜',

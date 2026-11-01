@@ -841,6 +841,9 @@ export interface ComposePreview {
   /** 各集的选曲参考（分镜 music） */
   music: Record<string, { mood?: Mood; style_hint?: string; curve?: MusicSegment[] }>
   report: MixReport | null
+  /** 可否导出剪辑工程（FCPXML）；旧服务端没有这两个字段 */
+  exportable?: boolean
+  export_reason?: 'none' | 'stale' | 'no_timeline' | 'busy' | null
 }
 
 /* ---------- 小说汇总（GET /novels/{nid}/summary，backend/server/summary.py） ---------- */

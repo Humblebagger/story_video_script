@@ -330,6 +330,18 @@ export const en: Messages = {
       recompose: 'Back to canvas to remix',
       failed: 'Download failed: {reason}',
     },
+    export: {
+      button: 'Export editing project (FCPXML)',
+      hint: 'Imports into Final Cut Pro and DaVinci Resolve',
+      busy: 'Packing…',
+      failed: 'Export failed: {reason}',
+      reason: {
+        none: 'No final video yet. Compose first.',
+        stale: 'The final video is out of date. Compose again first.',
+        no_timeline: 'Compose once more to enable export (existing voices and normalised results are reused, no cost)',
+        busy: 'Composing in progress. Export is available when it finishes.',
+      },
+    },
     empty: {
       board: 'No storyboard yet',
       boardHint: 'Generate this chapter\'s storyboard in step 2 first',

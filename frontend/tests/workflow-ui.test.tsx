@@ -201,6 +201,70 @@ console.log('4. flashTarget ✓')
   console.log('5. ChapterWorkflow 跟步 ✓')
 }
 
+// 6. 下载页：导出剪辑工程按钮
+{
+  const { DownloadStep } = await import('../src/components/workflow/DownloadStep')
+  const { notice } = await import('../src/lib/notice')
+  const done = { clips: [], remaining_cny: 0, final: { state: 'done', files: ['final/E01.mp4'], report: null, error: null, detail: null } } as unknown as FilmSession
+  const cp = (o: Record<string, unknown>) => ({ lines: 0, final: done.final, ...o }) as never
+  const dl = (compose: never) => render(<DownloadStep version={{ nid: 'n1', cid: 'c1', vid: 'v1' }} film={done} compose={compose} onOpenFilm={() => {}} />)
+  const btn = () => q('[data-testid="export-fcpxml"]') as unknown as HTMLButtonElement
+  const realFetch = globalThis.fetch
+  const urls: string[] = []
+  let status = 200
+  globalThis.fetch = (async (u: string) => {
+    urls.push(String(u))
+    if (status !== 200) return new Response(JSON.stringify({ detail: '成片已过期' }), { status })
+    return new Response('zipdata', { status: 200, headers: { 'content-disposition': "attachment; filename=\"x.zip\"; filename*=utf-8''%E8%8D%AF.zip" } })
+  }) as never
+  const g2 = globalThis as unknown as { URL: { createObjectURL: (b: Blob) => string; revokeObjectURL: (u: string) => void } }
+  const origCreate = g2.URL.createObjectURL, origRevoke = g2.URL.revokeObjectURL
+  g2.URL.createObjectURL = () => 'blob:x'
+  const revoked: string[] = []
+  g2.URL.revokeObjectURL = (u) => { revoked.push(u) }
+  const names: string[] = []
+  const origCreateEl = win.document.createElement.bind(win.document)
+  win.document.createElement = ((tag: string) => {
+    const el = origCreateEl(tag)
+    if (tag === 'a') (el as unknown as { click: () => void }).click = () => { names.push((el as unknown as HTMLAnchorElement).download) }
+    return el
+  }) as never
+
+  await dl(cp({ exportable: true, export_reason: null }))
+  must(!btn().disabled && btn().textContent === '导出剪辑工程（FCPXML）', '可导出：按钮可点、文字正确')
+  must(text().includes('可导入 Final Cut Pro、DaVinci Resolve'), '可导出：旁边有说明')
+  must(btn().className.includes('border'), '导出按钮是 outline 样式')
+  await click(btn())
+  await settle(60)
+  must(urls.some((u) => u.endsWith('/render/export.zip')), '点了之后请求 export.zip')
+  must(names[0] === '药.zip', '文件名取 filename*（小写 utf-8 也认）并解码')
+  await settle(60)
+  must(revoked.length === 1, '下一帧回收 blob 地址')
+
+  status = 409
+  const before = notice.log.length
+  await click(btn())
+  await settle(60)
+  must(notice.log.length === before + 1 && notice.log[notice.log.length - 1].kind === 'err'
+       && notice.log[notice.log.length - 1].msg.includes('成片已过期'), '失败：notice.err 带后端 detail')
+  must(!btn().disabled, '失败后按钮恢复')
+
+  await dl(cp({ exportable: false, export_reason: 'no_timeline' }))
+  must(btn().disabled && text().includes('重新合成一次即可导出（会复用已有的配音与规整结果，不花钱）'), 'no_timeline：禁用并说明')
+  await dl(cp({ exportable: false, export_reason: 'stale' }))
+  must(btn().disabled && text().includes('成片已过期，请先重新合成'), 'stale：禁用并说明')
+  await dl(cp({ exportable: false, export_reason: 'busy' }))
+  must(btn().disabled && text().includes('正在合成'), 'busy：禁用并说明')
+  await dl(null as never)
+  must(btn().disabled, '没有 compose 数据：禁用')
+
+  globalThis.fetch = realFetch
+  g2.URL.createObjectURL = origCreate; g2.URL.revokeObjectURL = origRevoke
+  win.document.createElement = origCreateEl as never
+  await render(null)
+  console.log('6. 下载页导出按钮 ✓')
+}
+
 // 收尾：卸载并关掉 happy-dom 的窗口（清掉它的定时器），进程自然退出
 await act(async () => { root.unmount() })
 await win.happyDOM.close()
