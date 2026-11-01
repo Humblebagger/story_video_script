@@ -792,7 +792,7 @@ export const en: Messages = {
     blockComposing: 'Mixing is in progress. Wait for it to finish',
     blockInFlight: 'Some clips are queued or generating. Wait for them to finish',
     blockVoices: '{n} speaker(s) have no voice yet: {names}',
-    blockNoVideo: '{n} clip(s) have no usable video yet. Turn on "Use images for clips that failed" to fill in with keyframes',
+    blockNoVideo: '{n} clip(s) have no usable video yet. Turn on "Use still images for clips that are not ready" to fill in with keyframes',
     blockBudget: 'Voiceover costs about {cost}, which would exceed your limit of {budget}. Raise the limit in settings first',
     running: 'Mixing · {step}',
     stepStart: 'starting',
