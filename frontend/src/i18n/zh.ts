@@ -26,6 +26,22 @@ export const zh = {
   },
   theme: { label: '主题', system: '跟随系统', light: '浅色', dark: '深色' },
   lang: { label: '语言' },
+  style: {
+    ref: {
+      title: '风格参考图',
+      drop: '拖入或选择一张图（PNG / JPEG / WebP，≤ 8MB）',
+      replace: '替换',
+      remove: '删除',
+      note: '出片时每段会带上这张图来统一画风；换图不会让已出的片段过期。',
+      badType: '只收 PNG / JPEG / WebP',
+      tooBig: '图片超过 8MB，请压缩后再传',
+      uploaded: '风格参考图已上传',
+      removed: '风格参考图已删除',
+      confirmTitle: '删除风格参考图？',
+      confirmBody: '删除后，之后出片不再带这张图；已出的片段不受影响。',
+      aria: '风格参考图',
+    },
+  },
   confirm: {
     ok: '确定',
     leave: { title: '有未保存的修改', body: '离开后这些修改会丢失。', action: '离开' },

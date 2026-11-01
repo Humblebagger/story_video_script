@@ -355,5 +355,93 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   await act(async () => { r.unmount() })
 }
 
+// 6. 风格参考图：设置页上传框与概览缩略图
+{
+  const { StyleImageField } = await import('../src/components/params/StyleImageField')
+  const { NovelOverview } = await import('../src/components/NovelOverview')
+  const { notice } = await import('../src/lib/notice')
+  const { act, createElement: h } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { I18nProvider } = await import('../src/i18n')
+  const calls: string[] = []
+  const bodies: unknown[] = []
+  const metaOut = { hash: 'h1', mime: 'image/png', bytes: 3, updated_at: 't' }
+  g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
+    calls.push(`${init?.method ?? 'GET'} ${String(url).replace(/^.*\/novels/, '/novels')}`)
+    bodies.push(init?.body)
+    return { ok: true, status: 200, json: async () => metaOut, text: async () => JSON.stringify(metaOut),
+             blob: async () => new Blob(['x']) }
+  }
+  const box = win.document.createElement('div')
+  win.document.body.appendChild(box)
+  const r = createRoot(box as unknown as HTMLElement)
+  const q6 = (sel: string) => box.querySelector(sel) as unknown as HTMLElement | null
+  const qa6 = (sel: string) => [...box.querySelectorAll(sel)] as unknown as HTMLElement[]
+  const settle6 = async (ms = 30) => { await act(async () => { await new Promise((x) => setTimeout(x, ms)) }) }
+  const click6 = async (el: HTMLElement) => { await act(async () => { el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event) }) }
+  const show6 = async (el: unknown) => { await act(async () => { r.render(h(I18nProvider, { initial: 'zh' }, el as never) as never) }) }
+  const changed: unknown[] = []
+  const field = (meta: unknown, url: string | null) => h(StyleImageField, {
+    nid: 'n1', meta, url, onChanged: (m: unknown) => changed.push(m) } as never)
+  const choose = async (file: File) => {
+    const inp = q6('input[type="file"]') as unknown as HTMLInputElement
+    Object.defineProperty(inp, 'files', { value: [file], configurable: true })
+    await act(async () => { inp.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event) })
+    await settle6()
+  }
+
+  await show6(field(null, null))
+  must(!!q6('[data-testid="style-drop"]') && q6('[data-testid="style-drop"]')!.textContent!.includes('拖入或选择一张图'), '空态有虚线框与文字')
+  must(qa6('img').length === 0, '空态没有图')
+
+  await choose(new File(['abc'], 'a.png', { type: 'image/png' }))
+  must(calls.join() === 'PUT /novels/n1/style-image', '选择文件发 PUT：' + calls.join())
+  must((bodies[0] as File).name === 'a.png', '请求体就是这个文件')
+  must(changed.length === 1 && (changed[0] as typeof metaOut).hash === 'h1', 'onChanged(meta)')
+
+  calls.length = 0
+  await choose(new File(['abc'], 'a.gif', { type: 'image/gif' }))
+  must(calls.length === 0, 'gif 不发请求')
+  must(notice.log.at(-1)!.kind === 'err' && notice.log.at(-1)!.msg === '只收 PNG / JPEG / WebP', 'gif 提示：' + notice.log.at(-1)!.msg)
+  const big = new File(['x'], 'b.png', { type: 'image/png' })
+  Object.defineProperty(big, 'size', { value: 8 * 1024 * 1024 + 1 })
+  await choose(big)
+  must(calls.length === 0 && notice.log.at(-1)!.kind === 'err' && notice.log.at(-1)!.msg.includes('8MB'), '超过 8MB 不发请求并提示')
+
+  changed.length = 0
+  await show6(field(metaOut, 'blob:x'))
+  must(qa6('img').length === 1 && q6('img')!.getAttribute('src') === 'blob:x', '有图显示 img')
+  const btns = qa6('button').map((b) => b.textContent)
+  must(btns.includes('替换') && btns.includes('删除'), '替换与删除两个按钮')
+  await click6(qa6('button').find((b) => b.textContent === '删除')!)
+  must(calls.length === 0 && !!win.document.querySelector('[data-testid="confirm-dialog"]'), '删除先弹确认')
+  await click6(win.document.querySelector('[data-testid="confirm-dialog"] button:last-child') as unknown as HTMLElement)
+  await settle6(60)
+  must(calls.join() === 'DELETE /novels/n1/style-image', '确认后发 DELETE：' + calls.join())
+  must(changed.length === 1 && changed[0] === null, 'onChanged(null)')
+  await show6(null)
+
+  // 概览页缩略图
+  const secs: string[] = []
+  const novel = (si: unknown) => ({
+    id: 'n1', title: '药', created_at: '', updated_at: '', params: {}, style_image: si,
+    memory: { assets: { characters: [], locations: [], props: [], creatures: [] },
+              numbering: { next_unit: 1, next_para: 1, next_episode: 1 }, lifecycle: [],
+              plot: { outline: '', chapters: [] }, constraints: [] },
+    chapters: [] })
+  const ovw = (si: unknown) => h(NovelOverview, { novel: novel(si), summary: null, lastChapterId: null,
+    onOpenChapter: () => {}, onSection: (s: string) => secs.push(s), onDeleted: () => {} } as never)
+  const { TooltipProvider } = await import('../src/components/ui/tooltip')
+  await show6(h(TooltipProvider, null, ovw(metaOut) as never))
+  await settle6()
+  const th = q6('[data-testid="ovw-outline"] [data-testid="ovw-style"]')
+  must(!!th && th.tagName === 'BUTTON' && th.getAttribute('aria-label') === '风格参考图', '概览有风格图缩略图按钮')
+  await click6(th!)
+  must(secs.join() === 'settings', '点了进设置页')
+  await show6(h(TooltipProvider, null, ovw(null) as never))
+  must(!q6('[data-testid="ovw-style"]'), '没有风格图不显示')
+  await act(async () => { r.unmount() })
+}
+
 win.happyDOM.abort?.()
 console.log('chapter: ALL PASS')

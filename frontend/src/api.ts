@@ -9,7 +9,7 @@ import type { User } from './auth'
 import type {
   Chapter, Constraint, NovelSummaryData, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
-  FilmSession, FilmSettings, ComposePreview, VoicesInfo,
+  FilmSession, FilmSettings, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
   AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
 } from './types'
@@ -320,6 +320,24 @@ export function uploadKeyframe(nid: string, cid: string, vid: string, shotId: st
 export function deleteKeyframe(nid: string, cid: string, vid: string, shotId: string) {
   return req<{ deleted: string }>(`${keyframePath(nid, cid, vid)}/${enc(shotId)}`,
                                   { method: 'DELETE' })
+}
+
+/* ---------- 风格参考图（每部小说一张） ---------- */
+
+/** 带 token 取风格参考图，转成 blob URL（用完要 revoke）；没有图是 404 */
+export async function styleImageUrl(nid: string) {
+  const res = await send(`/novels/${enc(nid)}/style-image`)
+  return URL.createObjectURL(await res.blob())
+}
+
+/** 上传（或替换）风格参考图：PNG / JPEG / WebP，≤ 8MB */
+export function uploadStyleImage(nid: string, file: Blob) {
+  return req<StyleImageMeta>(`/novels/${enc(nid)}/style-image`, {
+    method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+}
+
+export function deleteStyleImage(nid: string) {
+  return req<unknown>(`/novels/${enc(nid)}/style-image`, { method: 'DELETE' })
 }
 
 /* ---------- 出片（视频生成会话） ---------- */

@@ -455,7 +455,11 @@ export interface Novel {
   params: Partial<NovelParams>
   memory: NovelMemory
   chapters: ChapterSummary[]
+  /** 风格参考图的元数据；没传过图为 null */
+  style_image?: StyleImageMeta | null
 }
+
+export interface StyleImageMeta { hash: string; mime: string; bytes: number; updated_at: string }
 
 /* ---------- 静帧预演（backend/render/keyframes.py） ---------- */
 

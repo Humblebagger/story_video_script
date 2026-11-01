@@ -25,6 +25,8 @@ import { MoreParams } from './params/MoreParams'
 import { NarrationPick } from './params/NarrationPick'
 import { RatioPicker } from './params/RatioPicker'
 import { StylePicker } from './params/StylePicker'
+import { StyleImageField } from './params/StyleImageField'
+import { useStyleImage } from '../useStyleImage'
 import { VoicePicker } from './params/VoicePicker'
 import { DEFAULT_PARAMS, Field } from './ParamsForm'
 
@@ -90,7 +92,7 @@ export function NovelPage({
           <ChaptersPage novel={novel} summary={summary ?? null} onOpenChapter={onOpenChapter}
                         onNewChapter={onNewChapter} onImport={onImportChapters} importing={importing} />
         )}
-        {section === 'settings' && <ParamsTab novel={novel} busy={busy} run={run} />}
+        {section === 'settings' && <ParamsTab novel={novel} busy={busy} run={run} onChanged={onChanged} />}
         {section === 'constraints' && <ConstraintsTab novel={novel} busy={busy} run={run} />}
         {ASSET_SECTIONS.includes(section) && (
           <NovelAssets key={section} nid={novel.id} assets={novel.memory.assets} onSaved={onChanged}
@@ -135,8 +137,9 @@ function SetRow({ label, desc, children, testId }: {
   )
 }
 
-function ParamsTab({ novel, busy, run }: TabProps) {
+function ParamsTab({ novel, busy, run, onChanged }: TabProps & { onChanged: () => void }) {
   const { t } = useI18n()
+  const styleUrl = useStyleImage(novel.id, novel.style_image?.hash)
   const [title, setTitle] = useState(novel.title)
   const [params, setParams] = useState<NovelParams>({ ...DEFAULT_PARAMS, ...novel.params })
   const prefixRef = useRef<HTMLInputElement>(null)
@@ -167,6 +170,9 @@ function ParamsTab({ novel, busy, run }: TabProps) {
       <SetRow testId="set-style" label={t('novel.set.style')} desc={t('novel.set.styleDesc')}>
         <StylePicker aria-label={t('novel.set.style')} value={params} onChange={setParams}
                      onCustom={() => { prefixRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); prefixRef.current?.focus() }} />
+      </SetRow>
+      <SetRow testId="set-style-image" label={t('style.ref.title')}>
+        <StyleImageField nid={novel.id} meta={novel.style_image} url={styleUrl} onChanged={() => onChanged()} />
       </SetRow>
       <SetRow testId="set-narration" label={t('novel.set.narration')} desc={t('novel.set.narrationDesc')}>
         <NarrationPick value={params} onChange={setParams} />

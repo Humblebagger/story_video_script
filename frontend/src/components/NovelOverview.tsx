@@ -14,6 +14,7 @@ import { notice } from '@/lib/notice'
 import { cn } from '@/lib/utils'
 import { useMotionPresets } from '@/motion'
 import { deleteNovel } from '../api'
+import { useStyleImage } from '../useStyleImage'
 import { label, NARRATION_MODE } from '../labels'
 import { ART_STYLES, TTS_VOICES } from '../presets'
 import type { Section } from '../section'
@@ -48,6 +49,7 @@ function Avatar({ c }: { c: CharacterAsset }) {
 export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, onSection, onDeleted }: Props) {
   const { t } = useI18n()
   const m = useMotionPresets()
+  const styleUrl = useStyleImage(novel.id, novel.style_image?.hash)
   const [ask, confirmUi] = useConfirm()
 
   const remove = async () => {
@@ -164,7 +166,15 @@ export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, on
 
       <motion.div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]" {...m.item(i++)}>
         <Card className="gap-3 p-5" data-testid="ovw-outline">
-          <h3 className="text-sm font-medium">{t('overview.outline')}</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-medium">{t('overview.outline')}</h3>
+            {novel.style_image && (
+              <button type="button" className="ovw__style" data-testid="ovw-style"
+                      aria-label={t('style.ref.aria')} onClick={() => onSection('settings')}>
+                {styleUrl && <img src={styleUrl} alt="" />}
+              </button>
+            )}
+          </div>
           {outline.length ? (
             <div className="flex flex-col gap-1.5 text-sm leading-relaxed">
               {outline.map((l, k) => <p key={k} data-testid="outline-line">{l}</p>)}

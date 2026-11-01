@@ -28,6 +28,22 @@ export const en: Messages = {
   },
   theme: { label: 'Theme', system: 'System', light: 'Light', dark: 'Dark' },
   lang: { label: 'Language' },
+  style: {
+    ref: {
+      title: 'Style reference image',
+      drop: 'Drop or choose an image (PNG / JPEG / WebP, up to 8MB)',
+      replace: 'Replace',
+      remove: 'Remove',
+      note: 'Every clip is rendered with this image to keep the look consistent; changing it does not make finished clips stale.',
+      badType: 'Only PNG / JPEG / WebP are accepted',
+      tooBig: 'The image is over 8MB; please compress it first',
+      uploaded: 'Style reference image uploaded',
+      removed: 'Style reference image removed',
+      confirmTitle: 'Remove the style reference image?',
+      confirmBody: 'Later renders will no longer use it; finished clips are unaffected.',
+      aria: 'Style reference image',
+    },
+  },
   confirm: {
     ok: 'Confirm',
     leave: { title: 'Unsaved changes', body: 'These changes will be lost if you leave.', action: 'Leave' },
