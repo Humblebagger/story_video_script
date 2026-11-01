@@ -66,6 +66,7 @@ from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import iterate_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -1369,6 +1370,8 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
         raise HTTPException(422, f"消息不能为空，且不超过 {_ASSISTANT_MAX} 字")
     lang = body.get("lang") if body.get("lang") in ("zh", "en") else "zh"
     raw = body.get("where") or {}
+    if not isinstance(raw, dict):
+        raise HTTPException(422, "where 不合法")
     if raw.get("step") is not None and raw.get("step") not in _ASSISTANT_STEPS:
         raise HTTPException(422, "where.step 不合法")
     where = {k: raw.get(k) for k in ("chapter_id", "version_id", "step") if isinstance(raw.get(k), str)}
@@ -1376,12 +1379,12 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
         raise HTTPException(429, "今天的助手消息已用完，明天再来")
     if not assistant_store.try_begin(user["id"], nid):
         raise HTTPException(409, "上一条还在回答")
+    root = str(auth.DATA_DIR)   # 整个数据根：用户目录、密钥文件等任何服务器路径都隐去
     try:
         model = _assistant_model()
     except Exception as e:
         assistant_store.end(user["id"], nid)
-        raise HTTPException(503, f"助手暂不可用：{e}")
-    root = str(auth.DATA_DIR)   # 整个数据根：用户目录、密钥文件等任何服务器路径都隐去
+        raise HTTPException(503, assistant_events._hide(f"助手暂不可用：{e}", root))
 
     def gen():
         cb = UsageCallback()
@@ -1402,7 +1405,35 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
             except Exception as e:  # 落账失败不影响对话
                 print(f"[usage] 助手落账失败：{e!r}", flush=True)
 
-    return StreamingResponse(gen(), media_type="text/event-stream",
+    class _Body:
+        """包一层异步迭代器：客户端提前断开（含 gen 还没开始）时 aclose 也保证释放锁。
+        不用 async 生成器：没开始的异步生成器 aclose 时不会进 finally。"""
+
+        def __init__(self):
+            self._it = gen()
+            self._aiter = iterate_in_threadpool(self._it)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            return await self._aiter.__anext__()
+
+        async def aclose(self):
+            try:
+                self._it.close()
+            except ValueError:   # 模型还在线程里跑：gen 自己的 finally 会在它结束时释放
+                pass
+            assistant_store.end(user["id"], nid)
+
+    class _Resp(StreamingResponse):
+        async def __call__(self, scope, receive, send):
+            try:
+                await super().__call__(scope, receive, send)
+            finally:   # 断开、取消、正常结束都走这里；aclose 幂等
+                await self.body_iterator.aclose()
+
+    return _Resp(_Body(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 

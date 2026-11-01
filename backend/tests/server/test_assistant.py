@@ -126,6 +126,25 @@ def main() -> int:
     assert c.delete(A, headers=H).status_code == 200
     print("10. 清空 ✓")
 
+    # 11. 客户端提前断开：读一块后关闭、或一块都没读就关闭，锁都要释放
+    import asyncio
+    user = {"id": uid}
+    for reads in (1, 0):
+        script[:] = [AIMessage("好。")]
+        app_mod._assistant_model = lambda: ScriptedChat(script=script)
+        resp = app_mod.assistant_send(nid, {"text": "断开", "lang": "zh"}, user)
+
+        async def drive(n=reads, it=resp.body_iterator):
+            for _ in range(n):
+                await it.__anext__()
+            await it.aclose()
+        asyncio.run(drive())
+        assert store.try_begin(uid, nid), f"读 {reads} 块后关闭，锁没释放"
+        store.end(uid, nid)
+    # where 不是对象 → 422
+    assert c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh", "where": "x"}).status_code == 422
+    print("11. 提前断开释放锁 ✓")
+
     print("\nALL PASS")
     return 0
 

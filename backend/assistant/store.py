@@ -7,6 +7,7 @@
 import os
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, Optional
@@ -54,18 +55,20 @@ def used_today(user_id: str, now: Optional[datetime] = None) -> int:
     return sum(1 for r in usage.read(since=start, user_id=user_id) if r.get("purpose") == PURPOSE)
 
 
-_busy: set = set()
+LEASE_SEC = 600          # 锁的租期：持有超过这么久视为泄漏，允许接管
+_busy: dict = {}         # (user_id, nid) -> 取锁时的 time.monotonic()
 _busy_lock = threading.Lock()
 
 
 def try_begin(user_id: str, nid: str) -> bool:
     with _busy_lock:
-        if (user_id, nid) in _busy:
+        since = _busy.get((user_id, nid))
+        if since is not None and time.monotonic() - since < LEASE_SEC:
             return False
-        _busy.add((user_id, nid))
+        _busy[(user_id, nid)] = time.monotonic()
         return True
 
 
 def end(user_id: str, nid: str) -> None:
     with _busy_lock:
-        _busy.discard((user_id, nid))
+        _busy.pop((user_id, nid), None)

@@ -80,6 +80,19 @@ def main() -> int:
     store.end(uid, nid)
     print("4. 并发锁 ✓")
 
+    # 5. 租约：新锁不能抢，过期的锁可接管，end 幂等
+    assert store.try_begin(uid, nid)
+    store._busy[(uid, nid)] -= store.LEASE_SEC - 5
+    assert not store.try_begin(uid, nid)
+    store._busy[(uid, nid)] -= 10
+    assert store.try_begin(uid, nid)
+    assert not store.try_begin(uid, nid)
+    store.end(uid, nid)
+    store.end(uid, nid)
+    assert store.try_begin(uid, nid)
+    store.end(uid, nid)
+    print("5. 租约 ✓")
+
     print("\nALL PASS")
     return 0
 
