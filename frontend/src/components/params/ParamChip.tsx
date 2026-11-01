@@ -8,11 +8,14 @@ interface Props {
   value: string
   children: ReactNode
   testId?: string
+  /** 受控打开（父组件要从外面打开浮层时用）；不传则自管 */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function ParamChip({ icon, label, value, children, testId }: Props) {
+export function ParamChip({ icon, label, value, children, testId, open, onOpenChange }: Props) {
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button type="button" data-testid={testId}
                 className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-background/60 px-3 text-sm outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:border-ring">

@@ -5,7 +5,7 @@ const win = new Window({ url: 'http://localhost:5173' })
 const g = globalThis as Record<string, unknown>
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement', 'Element', 'Node', 'Event',
                  'CustomEvent', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'getComputedStyle',
-                 'localStorage', 'sessionStorage', 'matchMedia', 'ResizeObserver', 'DOMRect', 'MutationObserver', 'FileReader']) {
+                 'localStorage', 'sessionStorage', 'matchMedia', 'ResizeObserver', 'DOMRect', 'MutationObserver', 'FileReader', 'NodeFilter']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k], writable: true, configurable: true,
   })
@@ -26,6 +26,7 @@ const { MoreParams } = await import('../src/components/params/MoreParams')
 const { getStyleImage, setStyleImage, clearStyleImage } = await import('../src/styleImages')
 const { notice } = await import('../src/lib/notice')
 const { ParamChip } = await import('../src/components/params/ParamChip')
+const { NewNovelComposer } = await import('../src/components/NewNovelComposer')
 const { StatusPill } = await import('../src/components/common/StatusPill')
 
 const container = win.document.createElement('div')
@@ -159,5 +160,59 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(!!chip && (chip.textContent ?? '').includes('画幅') && (chip.textContent ?? '').includes('9:16'), '胶囊显示标签与当前值')
   must(!q('#chip-body'), '未点开时不渲染浮层内容')
 }
+{ // NewNovelComposer
+  const calls: { title: string; params: P; chapters: { title: string; text: string }[] }[] = []
+  await act(async () => { root.render(h(NewNovelComposer as never, { disabled: false, onSubmit: (n: never) => calls.push(n) })) })
+  const submitBtn = () => q('[data-testid="composer-submit"]') as unknown as HTMLButtonElement
+  must(submitBtn().disabled, '标题为空时主按钮禁用')
+  must((doc.body.textContent ?? '').includes('先给小说起个名字'), '应提示先起名')
+  const area = q('[data-testid="composer-source"]')!
+  must(area.closest('.form__text') !== null, '原文框外层保留 form__text')
+  await setInput(area, '第一章 甲\n正文一\n第二章 乙\n正文二')
+  must(qa('[data-testid="chapter-chip"]').length === 2, '粘贴两章后应有 2 个章节标签')
+  must((submitBtn().textContent ?? '').includes('创建并导入 2 章'), '主按钮应写创建并导入 2 章')
+  await setInput(q('input[aria-label="小说标题"]')!, '药')
+  must(!submitBtn().disabled, '填了标题后主按钮可点')
+  await click(q('[data-narration="acted"]'))
+  await click(q('[data-testid="chip-ratio"]'))
+  await click(q('[data-ratio="16:9"]'))
+  await click(submitBtn())
+  must(calls.length === 1, '点主按钮应提交一次')
+  must(JSON.stringify(calls[0].params) === JSON.stringify({ ...DEFAULT_PARAMS, aspect_ratio: '16:9', narration_mode: 'none' }), '提交的参数应带上画幅与剧情演绎')
+  must(calls[0].chapters.length === 2 && calls[0].chapters[0].title === '第一章 甲' && calls[0].chapters[1].title === '第二章 乙', '应按章拆成两章')
+
+  // ⌘Enter 提交
+  await act(async () => {
+    q('input[aria-label="小说标题"]')!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }) as unknown as Event)
+  })
+  must(calls.length === 2, '⌘Enter 应提交')
+
+}
+{ // 拖放与折叠
+  await act(async () => { root.render(h(NewNovelComposer as never, { key: 'fresh', disabled: false, onSubmit: () => {} })) })
+  const card = q('.composer')!
+  const fire = (type: string, dt: unknown) => act(async () => {
+    const ev = new win.Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(ev, 'dataTransfer', { value: dt })
+    card.dispatchEvent(ev as unknown as Event)
+  })
+  await fire('dragenter', { files: [], types: ['Files'] })
+  must(card.getAttribute('data-drop') === 'on', '拖入时卡片带 data-drop=on')
+  const file = new win.File(['第一章\n内容'], '我的小说.txt')
+  await fire('drop', { files: [file], types: ['Files'] })
+  await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
+  must(card.getAttribute('data-drop') !== 'on', '松手后取消高亮')
+  must((q('input[aria-label="小说标题"]') as unknown as HTMLInputElement).value === '我的小说', '标题自动取文件名')
+  must(((q('[data-testid="composer-source"]') as unknown as HTMLTextAreaElement).value).includes('内容'), '原文框应有内容')
+
+  // 超过 4 章：4 个标签加 +N
+  const six = Array.from({ length: 6 }, (_, i) => `第${i + 1}章 题\n正文${i}`).join('\n')
+  await setInput(q('[data-testid="composer-source"]')!, six)
+  must(qa('[data-testid="chapter-chip"]').length === 4, '超过 4 章只显示 4 个标签')
+  must((q('[data-testid="chapter-more"]')?.textContent ?? '') === '+2', '应有 +2 折叠标签')
+  await click(q('[data-testid="chapter-more"]'))
+  must(qa('[data-testid="chapter-chip"]').length === 6, '点开显示全部')
+}
+
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

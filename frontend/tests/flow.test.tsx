@@ -543,11 +543,12 @@ console.log('0. 未登录挡在门外 / 密码二次确认 → 注册后进入 �
 
 // 1. 新建小说：导入原文按章节标记自动拆章
 const field = (name: string) => findByText('label', name).querySelector('input') as unknown as HTMLElement
-await type(field('小说标题'), '药', false)
-await type(container.querySelector('.form__text textarea') as unknown as HTMLElement,
+const titleInput = () => container.querySelector('input[aria-label="小说标题"]') as unknown as HTMLElement
+await type(titleInput(), '药', false)
+await type(container.querySelector('.form__text [data-testid="composer-source"]') as unknown as HTMLElement,
            '一\n他推门。\n二\n走进屋里。\n')
-must(has('识别出 2 章'), '应按「一 二」识别出两章')
-await click(findByText('button', '建小说并导入 2 章'))
+must(has('识别到 2 章'), '应按「一 二」识别出两章')
+await click(container.querySelector('[data-testid="composer-submit"]') as unknown as HTMLElement)
 await settle(150)
 must(shelf('alice')[0]?.chapters.length === 2, '应建出小说与两个章节')
 must(has('本章原文') && (primary()?.textContent ?? '').includes('生成分镜'), '建完应直接打开第一章')
@@ -908,8 +909,8 @@ must(has('bob') && !has('管理后台') && !btn('管理') && !btn('返回书架'
 console.log('12b. 管理入口 → 管理员进出后台 / 401 后换普通用户不落进后台 ✓')
 
 // 13. 从零建小说再设定人物——「先设定人物场景再去转换」是常见用法
-await type(field('小说标题'), '鲍勃的新书', false)
-await click(btn('建小说')!)       // 精确匹配：外壳里还有一个「新建小说」按钮
+await type(titleInput(), '鲍勃的新书', false)
+await click(container.querySelector('[data-testid="composer-submit"]') as unknown as HTMLElement)
 await settle(150)
 must(shelf('bob').length === 1 && has('《鲍勃的新书》'), '不导入原文也能建小说，建完打开小说页')
 await click(findByText('button', '资产库'))

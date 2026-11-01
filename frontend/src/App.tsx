@@ -17,8 +17,8 @@ import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
 import { Tour } from './components/common/Tour'
 import { useConfirm } from './components/common/ConfirmDialog'
-import type { NewNovel } from './components/NewNovelForm'
-import { NewNovelForm } from './components/NewNovelForm'
+import type { NewNovel } from './components/NewNovelComposer'
+import { NewNovelComposer } from './components/NewNovelComposer'
 import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { StoryboardView } from './components/StoryboardView'
@@ -640,7 +640,7 @@ export default function App() {
         ) : (
           <div className="main">
             {!novel && !doc && !job && (
-              <NewNovelForm disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
+              <NewNovelComposer disabled={busy || svcDown} onSubmit={(n) => void submitNovel(n)} />
             )}
             {novel && !chapter && (
               <NovelPage

@@ -9,3 +9,10 @@
 @media (prefers-reduced-motion: reduce) {
   .status-pill[data-tone="live"] .status-pill__dot { animation: none; }
 }
+
+/* 新建主卡片 */
+.composer { transition: border-color 0.15s, box-shadow 0.15s; }
+.dark .composer { box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 12%, transparent), 0 8px 32px -12px color-mix(in oklab, var(--primary) 30%, transparent); }
+.composer[data-drop="on"] { border-color: var(--primary); }
+.composer__drop { background: color-mix(in oklab, var(--card) 80%, transparent); color: var(--primary); backdrop-filter: blur(2px); }
+.composer .form__text textarea[data-slot] { min-height: 160px; max-height: 360px; line-height: 1.85; }
