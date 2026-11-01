@@ -5,6 +5,7 @@
  *  提示词可以手改（改的是拿去出图的那段文字，不动 IR），改动按版本记在本机浏览器里，复制 / 下载都用改后的。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { tr } from './i18n/core'
 import { deleteKeyframe, keyframeUrl, listKeyframes, renderKeyframes, uploadKeyframe } from './api'
 import type { KeyframePrompt, Storyboard, VersionRef } from './types'
 
@@ -45,7 +46,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
     let gone = false
     renderKeyframes(doc)
       .then((r) => { if (!gone) setPrompts(Object.fromEntries(r.keyframes.map((k) => [k.shot_id, k]))) })
-      .catch((e) => { if (!gone) setError(`关键帧提示词生成失败：${e instanceof Error ? e.message : e}`) })
+      .catch((e) => { if (!gone) setError(tr('keyframes.promptFailed', { error: e instanceof Error ? e.message : String(e) })) })
     return () => { gone = true }
   }, [doc])
 
@@ -69,7 +70,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
           put(s, url)
         }
       } catch (e) {
-        if (!gone) setError(`关键帧读取失败：${e instanceof Error ? e.message : e}`)
+        if (!gone) setError(tr('keyframes.readFailed', { error: e instanceof Error ? e.message : String(e) }))
       }
     })()
     return () => {
@@ -88,7 +89,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
       await uploadKeyframe(nid, cid, vid, shotId, file)
       put(shotId, URL.createObjectURL(file))
     } catch (e) {
-      setError(`上传失败：${e instanceof Error ? e.message : e}`)
+      setError(tr('keyframes.uploadFailed', { error: e instanceof Error ? e.message : String(e) }))
     } finally {
       setBusy(null)
     }
@@ -100,7 +101,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
       await deleteKeyframe(nid, cid, vid, shotId)
       put(shotId, null)
     } catch (e) {
-      setError(`删除失败：${e instanceof Error ? e.message : e}`)
+      setError(tr('keyframes.deleteFailed', { error: e instanceof Error ? e.message : String(e) }))
     }
   }, [nid, cid, vid, put])
 
@@ -110,8 +111,8 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
 
 /** 全部关键帧提示词导出成一份文本，方便整批拿去出图工具 */
 export function promptSheet(title: string, list: KeyframePrompt[]): string {
-  return [`# ${title} · 关键帧出图提示词（${list.length} 镜）`, '', ...list.flatMap((k) => [
+  return [tr('keyframes.sheetTitle', { title, n: list.length }), '', ...list.flatMap((k) => [
     `## ${k.shot_id}（${k.aspect_ratio}）`, k.prompt,
-    ...(k.negative_prompt ? [`负面：${k.negative_prompt}`] : []),
-    ...(k.reference_assets.length ? [`垫图：${k.reference_assets.join('、')}`] : []), ''])].join('\n')
+    ...(k.negative_prompt ? [tr('keyframes.negative', { text: k.negative_prompt })] : []),
+    ...(k.reference_assets.length ? [tr('keyframes.refs', { list: k.reference_assets.join(tr('common.listSep')) })] : []), ''])].join('\n')
 }

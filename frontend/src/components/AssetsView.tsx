@@ -1,7 +1,7 @@
 import { Lock, MapPin, Package, PawPrint, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { splitAliases } from '../edit'
-import { APPEARANCE_FIELDS, VOICE_FIELDS } from '../labels'
+import { appearanceFields, voiceFields } from '../labels'
 import type { AssetKind } from '../edit'
 import type {
   AssetVariant, Assets, CharacterAsset, CreatureAsset, LocationAsset, LocationAngle,
@@ -169,7 +169,7 @@ function CharacterCard({ c, editing, patch }: {
   if (!editing) {
     return (
       <>
-        {APPEARANCE_FIELDS.filter(([k]) => c.appearance?.[k]).map(([k, label]) => (
+        {appearanceFields().filter(([k]) => c.appearance?.[k]).map(([k, label]) => (
           <p className="acard__row" key={k}><span>{label}</span>{c.appearance![k]}</p>
         ))}
         {!!c.outfits?.length && (
@@ -181,7 +181,7 @@ function CharacterCard({ c, editing, patch }: {
             </div>
           </div>
         )}
-        {VOICE_FIELDS.filter(([k]) => c.voice?.[k]).map(([k, label]) => (
+        {voiceFields().filter(([k]) => c.voice?.[k]).map(([k, label]) => (
           <p className="acard__row" key={k}><span>{label}</span>{c.voice![k]}</p>
         ))}
         {c.persona_notes && <p className="acard__row"><span>性格</span>{c.persona_notes}</p>}
@@ -195,7 +195,7 @@ function CharacterCard({ c, editing, patch }: {
               onChange={(v) => patch({ aliases: v ? splitAliases(v) : undefined })} />
       </Row>
       <Row label="外貌">
-        <FixedMap map={c.appearance} fields={APPEARANCE_FIELDS}
+        <FixedMap map={c.appearance} fields={appearanceFields()}
                   onChange={(v) => patch({ appearance: v })} />
       </Row>
       {!!c.outfits?.length && (
@@ -222,7 +222,7 @@ function CharacterCard({ c, editing, patch }: {
                      hint="画这张卡时不要做什么，用 / 分隔：不要平滑笔触 / 不要加照片级细节 / 不要改画风" />
       </Row>
       <Row label="声音">
-        <FixedMap map={c.voice} fields={VOICE_FIELDS}
+        <FixedMap map={c.voice} fields={voiceFields()}
                   onChange={(v) => patch({ voice: v })} />
       </Row>
       <Row label="性格">

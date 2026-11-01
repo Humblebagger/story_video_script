@@ -4,52 +4,30 @@ import type {
   JobStatus, LifecycleEntry, LifecycleType, LocationAngle, Mood, NarrationMode, ShotSize, TimeOfDay,
   Transition, UnitKind,
 } from './types'
+import { localized, tr } from './i18n/core'
+import type { MsgKey } from './i18n/core'
+import { en } from './i18n/en'
+import { zh } from './i18n/zh'
 
-export const SHOT_SIZE: Record<ShotSize, string> = {
-  extreme_wide: '大远景', wide: '远景', full: '全景', medium: '中景',
-  medium_close: '中近景', close_up: '特写', extreme_close_up: '大特写', insert: '插入镜',
-}
+export const SHOT_SIZE: Record<ShotSize, string> = localized<ShotSize>(zh.enums.shotSize as Record<ShotSize, string>, en.enums.shotSize as Record<ShotSize, string>)
 
-export const CAMERA_MOVEMENT: Record<CameraMovement, string> = {
-  static: '固定', push_in: '推', pull_out: '拉', pan: '摇', tilt: '俯仰摇',
-  track: '移', follow: '跟', orbit: '环绕', crane: '升降', handheld: '手持', zoom: '变焦',
-}
+export const CAMERA_MOVEMENT: Record<CameraMovement, string> = localized<CameraMovement>(zh.enums.cameraMovement as Record<CameraMovement, string>, en.enums.cameraMovement as Record<CameraMovement, string>)
 
-export const CAMERA_ANGLE: Record<CameraAngle, string> = {
-  eye_level: '平视', high: '俯拍', low: '仰拍', overhead: '顶拍',
-  dutch: '斜角', pov: '主观视角', over_shoulder: '过肩',
-}
+export const CAMERA_ANGLE: Record<CameraAngle, string> = localized<CameraAngle>(zh.enums.cameraAngle as Record<CameraAngle, string>, en.enums.cameraAngle as Record<CameraAngle, string>)
 
-export const LOCATION_ANGLE: Record<LocationAngle, string> = {
-  front: '正面', reverse: '反打', side: '侧面', overhead: '顶视', establishing: '定场',
-}
+export const LOCATION_ANGLE: Record<LocationAngle, string> = localized<LocationAngle>(zh.enums.locationAngle as Record<LocationAngle, string>, en.enums.locationAngle as Record<LocationAngle, string>)
 
-export const TIME_OF_DAY: Record<TimeOfDay, string> = {
-  dawn: '黎明', day: '白天', dusk: '黄昏', night: '夜晚',
-}
+export const TIME_OF_DAY: Record<TimeOfDay, string> = localized<TimeOfDay>(zh.enums.timeOfDay as Record<TimeOfDay, string>, en.enums.timeOfDay as Record<TimeOfDay, string>)
 
-export const DIALOGUE_TYPE: Record<DialogueType, string> = {
-  dialogue: '台词', inner_monologue: '内心独白', voiceover: '画外音',
-}
+export const DIALOGUE_TYPE: Record<DialogueType, string> = localized<DialogueType>(zh.enums.dialogueType as Record<DialogueType, string>, en.enums.dialogueType as Record<DialogueType, string>)
 
-export const TRANSITION: Record<Transition, string> = {
-  cut: '硬切', dissolve: '叠化', fade_to_black: '淡出黑场',
-  match_cut: '匹配剪辑', whip_pan: '甩镜',
-}
+export const TRANSITION: Record<Transition, string> = localized<Transition>(zh.enums.transition as Record<Transition, string>, en.enums.transition as Record<Transition, string>)
 
-export const DERIVATION: Record<Derivation, string> = {
-  explicit: '原文明写', inferred: '系统补充', transition: '过渡镜',
-}
+export const DERIVATION: Record<Derivation, string> = localized<Derivation>(zh.enums.derivation as Record<Derivation, string>, en.enums.derivation as Record<Derivation, string>)
 
-export const UNIT_KIND: Record<UnitKind, string> = {
-  action: '动作', dialogue: '对白', psychology: '心理',
-  description: '描写', narration_meta: '叙述',
-}
+export const UNIT_KIND: Record<UnitKind, string> = localized<UnitKind>(zh.enums.unitKind as Record<UnitKind, string>, en.enums.unitKind as Record<UnitKind, string>)
 
-export const MOOD: Record<Mood, string> = {
-  calm: '平静', warm: '温暖', playful: '轻快', tense: '紧张', ominous: '不祥',
-  eerie: '诡异', sorrow: '悲恸', melancholy: '怅惘', triumph: '昂扬', epic: '史诗',
-}
+export const MOOD: Record<Mood, string> = localized<Mood>(zh.enums.mood as Record<Mood, string>, en.enums.mood as Record<Mood, string>)
 
 /** 情绪 → 色相，用于 BGM 曲线条与情绪标签的着色 */
 export const MOOD_HUE: Record<Mood, number> = {
@@ -57,50 +35,38 @@ export const MOOD_HUE: Record<Mood, number> = {
   eerie: 160, sorrow: 220, melancholy: 250, triumph: 42, epic: 12,
 }
 
-export const FIDELITY_MODE: Record<FidelityMode, string> = {
-  faithful: '忠实转换', pacing_optimized: '节奏优化', adapted: '改编',
-}
+export const FIDELITY_MODE: Record<FidelityMode, string> = localized<FidelityMode>(zh.enums.fidelityMode as Record<FidelityMode, string>, en.enums.fidelityMode as Record<FidelityMode, string>)
 
-export const NARRATION_MODE: Record<NarrationMode, string> = {
-  original_text: '原文照念', selective: '择要旁白', condensed: '压缩概述', none: '无旁白',
-}
+export const NARRATION_MODE: Record<NarrationMode, string> = localized<NarrationMode>(zh.enums.narrationMode as Record<NarrationMode, string>, en.enums.narrationMode as Record<NarrationMode, string>)
 
-export const JOB_STATUS: Record<JobStatus, string> = {
-  queued: '排队中', running: '转换中', succeeded: '已完成',
-  completed_with_warnings: '完成（质量告警）', failed: '失败',
-  draft_invalid: '草稿未过验证',
-}
+export const JOB_STATUS: Record<JobStatus, string> = localized<JobStatus>(zh.enums.jobStatus as Record<JobStatus, string>, en.enums.jobStatus as Record<JobStatus, string>)
 
-export const PHASE: Record<string, string> = {
-  starting: '准备中', generating: '生成分镜', regenerating: '整份重写',
-  checking: '校验中', repairing: '受限修复', merging: '合并终检', done: '收尾',
-}
+export const PHASE: Record<string, string> = localized(zh.enums.phase, en.enums.phase)
 
 /** 秒数 → 「3 分 05 秒」/「42 秒」 */
 export function fmtDuration(sec: number): string {
   const s = Math.max(0, Math.round(sec))
   const m = Math.floor(s / 60)
-  return m ? `${m} 分 ${String(s % 60).padStart(2, '0')} 秒` : `${s} 秒`
+  return m ? tr('time.minSec', { m, s: String(s % 60).padStart(2, '0') }) : tr('time.sec', { s })
 }
 
 /** 剩余时间只给到分钟粒度：按字数线性外推本就粗，精确到秒是假精确 */
 export function fmtEta(sec: number): string {
-  if (sec < 60) return '不到 1 分钟'
-  return `约 ${Math.round(sec / 60)} 分钟`
+  if (sec < 60) return tr('time.lessThanMin')
+  return tr('time.aboutMin', { m: Math.round(sec / 60) })
 }
 
-export const INTENSITY: Record<string, string> = { low: '弱', mid: '中', high: '强' }
+export const INTENSITY: Record<string, string> = localized(zh.enums.intensity, en.enums.intensity)
 
 /** 角色外貌与声音的键是 schema 写死的（additionalProperties: false），
  *  不能当自由键值表编辑——多一个键就是 schema 校验失败。顺序即界面展示顺序。 */
-export const APPEARANCE_FIELDS: [string, string][] = [
-  ['age', '年龄'], ['gender', '性别'], ['body', '体型'], ['face', '面容'],
-  ['hair', '发型'], ['eyes', '眼睛'], ['distinguishing_marks', '标志性特征'],
-]
+export const appearanceFields = (): [string, string][] => [
+  'age', 'gender', 'body', 'face', 'hair', 'eyes', 'distinguishing_marks',
+].map((k) => [k, tr(`labels.appearance.${k}` as MsgKey)])
 
-export const VOICE_FIELDS: [string, string][] = [
-  ['tts_voice', '音色'], ['tone', '语气'],
-]
+export const voiceFields = (): [string, string][] => [
+  'tts_voice', 'tone',
+].map((k) => [k, tr(`labels.voice.${k}` as MsgKey)])
 
 /** 找不到映射时原样回显英文，避免界面出现空白 */
 export function label<K extends string>(map: Record<K, string>, key?: string): string {
@@ -108,27 +74,13 @@ export function label<K extends string>(map: Record<K, string>, key?: string): s
   return (map as Record<string, string>)[key] ?? key
 }
 
-export const LIFECYCLE_TYPE: Record<LifecycleType, string> = {
-  deceased: '死亡', permanent_condition: '永久伤病/残疾', departed: '永久下线',
-}
+export const LIFECYCLE_TYPE: Record<LifecycleType, string> = localized<LifecycleType>(zh.enums.lifecycleType as Record<LifecycleType, string>, en.enums.lifecycleType as Record<LifecycleType, string>)
 
-export const LIFECYCLE_STATUS: Record<LifecycleEntry['status'], string> = {
-  proposed: '待确认', confirmed: '已确认', rejected: '已驳回',
-}
+export const LIFECYCLE_STATUS: Record<LifecycleEntry['status'], string> = localized<LifecycleEntry['status']>(zh.enums.lifecycleStatus as Record<LifecycleEntry['status'], string>, en.enums.lifecycleStatus as Record<LifecycleEntry['status'], string>)
 
 /** 出片的声音模式（设计文档 1.3 / 3.4） */
-export const AUDIO_MODE: Record<AudioMode, string> = {
-  tts_all: '全部配音（视频只出环境音，字一定对）',
-  dialogue_native: '台词原声（有口型，不保证逐字）',
-  all_native: '全部原声（最省事）',
-  silent: '无声（画面 + 字幕）',
-}
+export const AUDIO_MODE: Record<AudioMode, string> = localized<AudioMode>(zh.enums.audioMode as Record<AudioMode, string>, en.enums.audioMode as Record<AudioMode, string>)
 
-export const FILM_STATE: Record<FilmClipState, string> = {
-  planned: '未出片', queued: '排队中', running: '生成中', downloading: '下载中',
-  done: '已完成', failed: '失败', stale: '内容改过',
-}
+export const FILM_STATE: Record<FilmClipState, string> = localized<FilmClipState>(zh.enums.filmState as Record<FilmClipState, string>, en.enums.filmState as Record<FilmClipState, string>)
 
-export const ATTEMPT_STATE: Record<FilmAttempt['state'], string> = {
-  submitting: '提交中', running: '生成中', succeeded: '成功', failed: '失败',
-}
+export const ATTEMPT_STATE: Record<FilmAttempt['state'], string> = localized<FilmAttempt['state']>(zh.enums.attemptState as Record<FilmAttempt['state'], string>, en.enums.attemptState as Record<FilmAttempt['state'], string>)

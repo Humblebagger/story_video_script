@@ -3,6 +3,7 @@
  *  除注册/登录外的所有接口都要带 token；后端按 token 判定身份，
  *  各人只看得到自己的小说。会话结构：小说（长期记忆）→ 章节 → 版本（每次转换）。
  */
+import { tr } from './i18n/core'
 import { getToken, notifyUnauthorized } from './auth'
 import type { User } from './auth'
 import type {
@@ -51,7 +52,7 @@ async function send(path: string, init?: RequestInit): Promise<Response> {
   })
   if (res.status === 401 && token) {   // 没带 token 的 401（登录 / 注册失败）交给下面带服务端 detail 的错误
     notifyUnauthorized()          // 广播出去，让 App 退回登录页
-    throw new Error('未登录或登录已过期')
+    throw new Error(tr('api.unauthenticated'))
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '')

@@ -1,5 +1,6 @@
 /** 出片（视频生成）在画布上的纯计算：段在时间轴上的位置、横条文字与样式、总览主按钮、
  *  确认清单、轮询间隔、前置检查。useFilm 与画布组件只吃这里的结果；单测见 tests/film-lane.test.ts。 */
+import { tr } from './i18n/core'
 import { fmtClock } from './timeline'
 import type { TShot, Timeline } from './timeline'
 import type { FilmAttempt, FilmClip, FilmSession } from './types'
@@ -56,25 +57,25 @@ export function laneText(c: FilmClip, now: number): string {
   switch (laneKind(c)) {
     case 'busy': {
       const since = c.queued_at ? Math.max(0, (now - Date.parse(c.queued_at)) / 1000) : 0
-      return `生成中 · 已等 ${fmtClock(since)}`
+      return tr('film.busy', { wait: fmtClock(since) })
     }
     case 'done':
-      return `${shortId(c.id)} · 第 ${(c.chosen ?? 0) + 1} 次 · ${yuan(chosenAttempt(c)?.cost_cny ?? 0)}`
+      return tr('film.done', { id: shortId(c.id), n: (c.chosen ?? 0) + 1, cost: yuan(chosenAttempt(c)?.cost_cny ?? 0) })
     case 'failed':
-      return c.error ?? '失败'
+      return c.error ?? tr('film.failed')
     case 'stale':
-      return '内容改过 · 仍可播放旧版'
+      return tr('film.stale')
     default:
-      return `${shortId(c.id)} · ${c.duration}s · 约 ${yuan(c.estimate_cny)}`
+      return tr('film.planned', { id: shortId(c.id), sec: c.duration, cost: yuan(c.estimate_cny) })
   }
 }
 
 /** 横条悬停说明：所含镜头、被裁的参考图、截断、待核对、错误原文 */
 export function laneTitle(c: FilmClip): string {
-  const lines = [`${c.id} · ${c.shots.join('、')} · ${c.duration}s`]
-  if (c.dropped_refs.length) lines.push(`⚠ 参考图超出名额被裁：${c.dropped_refs.join('、')}`)
-  if (c.truncated) lines.push('✂ 超出单段上限，尾部被截断')
-  if (c.uncertain) lines.push('厂商那边可能还有这一段的任务，请到控制台核对')
+  const lines = [`${c.id} · ${c.shots.join(tr('common.listSep'))} · ${c.duration}s`]
+  if (c.dropped_refs.length) lines.push(tr('film.droppedRefs', { list: c.dropped_refs.join(tr('common.listSep')) }))
+  if (c.truncated) lines.push(tr('film.truncated'))
+  if (c.uncertain) lines.push(tr('film.uncertain'))
   if (c.error) lines.push(c.error)
   return lines.join('\n')
 }
@@ -129,10 +130,10 @@ export function precheck(s: FilmSession) {
 /** 首帧来源的中文说明 */
 export function firstFrameText(c: FilmClip): string {
   const f = c.first_frame
-  if (!f) return '不带首帧'
+  if (!f) return tr('film.noFirstFrame')
   if (f.startsWith('keyframe:')) {
-    return `关键帧 ${f.slice('keyframe:'.length)}${c.frame_mode === 'ref' ? '（占第一个参考位）' : ''}`
+    return tr('film.keyframe', { id: f.slice('keyframe:'.length) }) + (c.frame_mode === 'ref' ? tr('film.keyframeRefSlot') : '')
   }
-  if (f.startsWith('relay:')) return `接力上一段（${f.slice('relay:'.length)}）的尾帧`
+  if (f.startsWith('relay:')) return tr('film.relay', { id: f.slice('relay:'.length) })
   return f
 }

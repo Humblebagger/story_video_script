@@ -5,6 +5,7 @@
  *  取命中数 ≥2 且优先级最高的那套——宁可识别不出（回退全文/自定义），
  *  也不要把正文里的句子误判成章节标题。
  */
+import { tr } from './i18n/core'
 
 export interface Segment {
   /** 在原文中的字符区间 [start, end) */
@@ -21,13 +22,13 @@ interface Pattern {
 }
 
 const PATTERNS: Pattern[] = [
-  { name: '第N章', priority: 4,
+  { name: 'zh-chapter', priority: 4,
     re: /^[ \t　]*第\s*[0-9０-９一二三四五六七八九十百千零〇两]{1,12}\s*[章回节卷篇折]([ \t　].*)?$/ },
   { name: 'Chapter N', priority: 4,
     re: /^[ \t　]*chapter\s+[0-9ivxlcIVXLC]+\b.*$/i },
-  { name: '数字序号', priority: 3,
+  { name: 'number', priority: 3,
     re: /^[ \t　]*[0-9]{1,3}\s*[、.．]\s*\S.*$/ },
-  { name: '汉字序号', priority: 2,
+  { name: 'zh-numeral', priority: 2,
     re: /^[ \t　]*[一二三四五六七八九十百]{1,4}\s*[、．.]?[ \t　]*$/ },
 ]
 
@@ -56,7 +57,7 @@ export function parseChapters(text: string): Segment[] {
   // 首个标记之前的内容（前言/楔子）也算一段，否则选章节会悄悄丢掉它
   const first = lines[best.hits[0]].start
   if (text.slice(0, first).trim().length > 0) {
-    segments.push(mk(text, 0, first, '（开头）'))
+    segments.push(mk(text, 0, first, tr('chapters.prologue')))
   }
   best.hits.forEach((lineIdx, n) => {
     const start = lines[lineIdx].start

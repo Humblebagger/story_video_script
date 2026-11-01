@@ -8,6 +8,7 @@ import {
   ApiError, chooseFilmAttempt, conflictCny, createFilm, filmFileUrl, getFilm, muteFilmClip, patchFilm,
   runFilmClip, runFilmRest,
 } from './api'
+import { tr } from './i18n/core'
 import { needsConfirm, pollDelay } from './film'
 import type { FilmClip, FilmSession, FilmSettings, VersionRef } from './types'
 
@@ -42,7 +43,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const accept = useCallback((s: FilmSession, passedGate = false) => {
     setSession(s)
     setStatus('ready')
-    if (s.gate) setGate(s.gate.ok ? null : (s.gate.message ?? '分镜没通过完整性检查'))
+    if (s.gate) setGate(s.gate.ok ? null : (s.gate.message ?? tr('film.gateFailed')))
     else if (passedGate) setGate(null)
   }, [])
 
@@ -148,7 +149,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
         live.current[path] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setError(`读取片段文件失败：${msg(e)}`) })
+      .catch((e) => { if (gen.current === mine) setError(tr('film.readClipFailed', { error: msg(e) })) })
       .finally(() => asking.current.delete(path))
   }, [nid, cid, vid])
   useEffect(() => () => {

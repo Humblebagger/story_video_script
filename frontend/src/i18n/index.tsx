@@ -2,12 +2,14 @@
  *  没有 I18nProvider 时默认中文（测试直接渲染组件即为中文）。语言选择存在本机；首次按浏览器语言。 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { I18nContext, KEY, detectLocale, translate } from './core'
+import { I18nContext, KEY, detectLocale, setCurrentLocale, translate } from './core'
 import type { Ctx, Locale } from './core'
 
 /** 只导出组件（避免热更新警告）；useI18n / translate / LOCALES / 类型都从 '@/i18n/core' 取。 */
 export function I18nProvider({ children, initial }: { children: ReactNode; initial?: Locale }) {
   const [locale, set] = useState<Locale>(() => initial ?? detectLocale())
+  // 渲染阶段同步设置（不放 effect）：子组件在同一轮渲染里就要读到新语言
+  setCurrentLocale(locale)
   const setLocale = useCallback((l: Locale) => {
     try { localStorage.setItem(KEY, l) } catch { /* 只在本页生效 */ }
     set(l)

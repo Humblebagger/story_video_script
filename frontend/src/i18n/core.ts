@@ -26,6 +26,21 @@ export function translate(locale: Locale, key: MsgKey, vars?: Record<string, str
   return vars ? text.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : text
 }
 
+/** 模块级当前语言：给非组件代码（labels、compose、film…）用。I18nProvider 渲染时同步设置；没有 Provider 时为中文。 */
+let current: Locale = 'zh'
+export const currentLocale = () => current
+export function setCurrentLocale(l: Locale) { current = l }
+export const tr = (key: MsgKey, vars?: Record<string, string | number>) => translate(current, key, vars)
+
+/** 枚举标签表：属性是 getter，按当前语言取值；Object.keys / entries 照常可用 */
+export function localized<K extends string>(zhMap: Record<K, string>, enMap: Record<K, string>): Record<K, string> {
+  const out = {} as Record<K, string>
+  for (const k of Object.keys(zhMap) as K[]) {
+    Object.defineProperty(out, k, { enumerable: true, get: () => (current === 'en' ? enMap[k] : zhMap[k]) })
+  }
+  return out
+}
+
 export function detectLocale(): Locale {
   try {
     const v = localStorage.getItem(KEY)

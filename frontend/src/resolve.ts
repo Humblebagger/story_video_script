@@ -1,6 +1,7 @@
 /** 溯源索引：把 IR 里的引用（C/S/P/A 资产 ID、unit ID）解析成可读信息，
  *  并建立「原文句子 → 引用它的镜头」的反向索引——IR 的核心主张是每句可溯源，
  *  界面要能双向查证，而不是只把 JSON 铺开。 */
+import { tr } from './i18n/core'
 import type { Shot, SourceUnit, Storyboard } from './types'
 
 export interface ShotRef {
@@ -107,7 +108,7 @@ export function buildIndex(doc: Storyboard): Index {
     cardOptions,
     card: (id) => cardById.get(id),
     unit: (id) => units.get(id),
-    unitText: (id) => units.get(id)?.text ?? `（未找到 ${id}）`,
+    unitText: (id) => units.get(id)?.text ?? tr('resolve.unitMissing', { id }),
     shotsByUnit,
     narratedUnits,
     allShots,

@@ -158,5 +158,45 @@ must(body().includes('金额已变为 ¥90.00') && body().includes('会超过上
   '超上限禁用、金额变了提示')
 console.log('5. 花钱确认 ✓')
 
+// 非组件文字：tr / localized 跟着当前语言走
+const core = await import('../src/i18n/core')
+const labels = await import('../src/labels')
+core.setCurrentLocale('en')
+must(labels.label(labels.SHOT_SIZE, 'wide') === 'Wide', '枚举标签（英文）')
+must(core.tr('common.cancel') === 'Cancel', 'tr（英文）')
+must(Object.keys(labels.SHOT_SIZE).includes('close_up'), 'localized 可枚举')
+core.setCurrentLocale('zh')
+must(labels.label(labels.SHOT_SIZE, 'wide') === '远景', '枚举标签（中文）')
+
+// 英文语言包里不许有中文
+const cjk = /[一-鿿]/
+const leaves = (o: unknown, p = ''): [string, string][] => typeof o === 'string' ? [[p, o]]
+  : Object.entries(o as Record<string, unknown>).flatMap(([k, v]) => leaves(v, p ? `${p}.${k}` : k))
+const bad = leaves(en).filter(([, v]) => cjk.test(v))
+must(!bad.length, `英文包含中文：${bad.slice(0, 5).map(([k]) => k).join(', ')}`)
+
+// 静态检查：名单里的源文件除注释外不许有中文（Task 8 改成全量）
+const fs = await import('node:fs')
+const path = await import('node:path')
+const SRC = path.resolve(import.meta.dirname ?? '.', '../src')
+const I18N_FILES = [
+  'labels.ts', 'presets.ts', 'compose.ts', 'film.ts', 'api.ts', 'chapters.ts', 'useKeyframes.ts',
+  'useFilm.ts', 'useCompose.ts', 'edit.ts', 'resolve.ts', 'types.ts', 'theme.ts', 'auth.ts', 'notify.ts', 'main.tsx',
+]
+// 必须保持中文的数据字面量（正确性所需），按文件、按行形态放行：
+//  presets.ts：P('中文取值', 'presets.…') 的取值会写进分镜、发给模型，不能译；显示名走语言包
+//  chapters.ts：解析「第X章」之类中文章节标题的正则，换成别的字就认不出中文章节了
+const ALLOW: Record<string, RegExp> = {
+  'presets.ts': /^\s*P\('[^']*', 'presets\./,
+  'chapters.ts': /^\s*re: \/\^/,
+}
+const stripComments = (s: string) => s
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1')
+for (const f of I18N_FILES) {
+  const hits = stripComments(fs.readFileSync(path.join(SRC, f), 'utf8')).split('\n')
+    .map((l, i) => [i + 1, l] as const).filter(([, l]) => cjk.test(l) && !ALLOW[f]?.test(l))
+  must(!hits.length, `${f} 还有硬编码中文：第 ${hits.slice(0, 3).map(([n]) => n).join('、')} 行`)
+}
+
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

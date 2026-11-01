@@ -8,6 +8,7 @@
  *  报错分两份：读取的（loadError，只由 load 设和清）与操作的（actionError，下一次操作开始时才清），
  *  免得操作失败后紧跟的重读把原因清掉。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { tr } from './i18n/core'
 import { conflictCny, deleteBgm, filmFileUrl, getCompose, getVoices, putBgm, putVoices, startCompose } from './api'
 import { COMPOSE_POLL_MS, bgmType, composeKey, composing } from './compose'
 import type { ComposePreview, VoicesInfo } from './types'
@@ -103,7 +104,7 @@ export function useCompose(film: Film, dirty: boolean) {
         live.current[k] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setActionError(`读取成片文件失败：${msg(e)}`) })
+      .catch((e) => { if (gen.current === mine) setActionError(tr('compose.readFinalFailed', { error: msg(e) })) })
       .finally(() => asking.current.delete(k))
   }, [nid, cid, vid, stamp])
   const url = (path?: string | null) => (path ? files[`${stamp}|${path}`] : undefined)
@@ -171,7 +172,7 @@ export function useCompose(film: Film, dirty: boolean) {
     uploadBgm: (episode: string, file: File) => {
       const type = bgmType(file)
       if (!type) {
-        setActionError('BGM 只支持 mp3、wav、m4a、aac')
+        setActionError(tr('compose.bgmFormats'))
         return Promise.resolve()
       }
       return apply(() => putBgm(nid!, cid!, vid!, episode, file, type))
