@@ -9,11 +9,11 @@ from server import novels, pricing, usage
 
 
 def _pick_version(chapter: dict) -> Optional[str]:
-    """采用版优先，否则最新一个成功的版本（_version_summaries 已按时间倒序）。"""
+    """采用版优先，否则最新一个可采用的版本（_version_summaries 已按时间倒序）。"""
     if chapter.get("adopted_version"):
         return chapter["adopted_version"]
     for v in chapter.get("versions") or []:
-        if v.get("status") == "succeeded":
+        if v.get("status") in novels.ADOPTABLE:
             return v["id"]
     return None
 

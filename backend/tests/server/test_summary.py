@@ -55,6 +55,14 @@ def main() -> int:
     assert s["cost"]["render_cny"] is None and s["cost"]["budget_cny"] is None
     print("汇总: 两章 / 采用版 / 无版本章节 ✓")
 
+    # 1b. 未采用时，带警告完成的版本也算可用版本
+    c3 = novels.create_chapter(U, nid, "三", "原文三")["id"]
+    novels.create_version(U, nid, c3, "w1", {}, "原文三")
+    novels.update_version_state(U, nid, c3, "w1", "completed_with_warnings", result=doc)
+    w = summary.novel_summary(U, nid)["chapters"][2]
+    assert w["version"] == "w1" and w["shots"] == a["shots"]
+    print("汇总: 未采用时取带警告完成的版本 ✓")
+
     # 2. 出片会话：3 段 2 done，已花 1.2
     rd = novels.render_dir(U, nid, c1, "v1")
     rd.mkdir(parents=True)
