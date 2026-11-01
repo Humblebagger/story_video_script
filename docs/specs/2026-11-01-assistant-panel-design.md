@@ -80,7 +80,7 @@
 - `graph.py`：`build_agent(chat_model, tools, checkpointer)`。
   - 用 `langgraph.prebuilt.create_react_agent`。项目没有装 `langchain` 包，`langchain.agents.create_agent` 不可用，不为它加依赖。
   - 模型由 `pipeline.chat.build_chat_model` 创建，沿用重试与 `UsageCallback`。
-  - 每轮的 `recursion_limit` 设为 25（约 12 次工具调用）。超了就结束本轮，回一句「步骤太多，先停在这里」。
+  - 每轮的 `recursion_limit` 设为 37：每次工具循环占 3 步（`pre_model_hook`、模型、工具），约 12 次工具调用。超了就结束本轮，回一句「步骤太多，先停在这里」。
   - 发给模型的历史只取最近 20 条消息：用 `pre_model_hook` 裁剪，存档里保留全量。裁剪不能把工具调用和它的结果拆开。
 - `tools.py`：只读工具（第 4 节）。
   - 每个工具从 `RunnableConfig["configurable"]` 读 `user_id`、`novel_id`，由服务端注入，模型看不到也改不了。
