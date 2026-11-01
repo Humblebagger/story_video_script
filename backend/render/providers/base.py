@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol
 
-REF_ROLES = ("character", "creature", "location", "prop", "first_frame")
+REF_ROLES = ("character", "creature", "location", "prop", "first_frame", "style")
 
 
 class ProviderError(Exception):
@@ -55,6 +55,7 @@ class ClipRequest:
     audio: bool = True
     refs: list = field(default_factory=list)   # list[RefImage]，已按 max_refs 裁剪
     first_frame: Optional[str] = None          # 首帧图，格式同 RefImage.source
+    style_ref: Optional[str] = None            # 带上的风格图哈希（没带为 None）
 
 
 @dataclass

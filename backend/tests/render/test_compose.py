@@ -251,10 +251,133 @@ def part_clips(doc):
         print("9. 请求组装 ✓")
 
 
+def part_style(doc):
+    fake = FakeVideo()
+    style = {"source": "data:image/png;base64,AAAA", "hash": "h1"}
+    style2 = {"source": "data:image/png;base64,BBBB", "hash": "h2"}
+    rich = copy.deepcopy(doc)
+    for kind in ("characters", "props"):
+        for card in rich["assets"][kind]:
+            card["reference_images"] = [{"view": "front", "uri": f"https://img/{card['id']}.png"}]
+    for card in rich["assets"]["locations"]:
+        for a in card.get("angles") or []:
+            a["uri"] = f"https://img/{card['id']}-{a['angle']}.png"
+    kw = dict(provider="fake", model="fake-1", resolution="720p", audio_mode="tts_all",
+              rewrite=fake.rewrite_prompt)
+    sess = {"provider": "fake", "model": "fake-1", "resolution": "720p", "audio_mode": "tts_all"}
+
+    def fp(caps, d, st, kf=None):
+        return compose.build_clips(d, caps, keyframes=kf or {}, style=st, **kw)
+
+    def strip(cl):
+        return [{k: v for k, v in c.items() if k not in ("style", "style_hash")} for c in cl]
+
+    caps = fake.caps("fake-1")
+    caps_w = FakeVideo(frame_with_refs=True).caps("fake-1")
+    with tempfile.TemporaryDirectory() as d:
+        # 1. 不变性
+        for dd in (doc, rich):
+            base_ = compose.build_clips(dd, caps, keyframes={}, **kw)
+            none_ = fp(caps, dd, None)
+            assert strip(base_) == strip(none_) and base_ == none_
+            a, b, c = fp(caps, dd, None), fp(caps, dd, style), fp(caps, dd, style2)
+            assert [x["fingerprint"] for x in a] == [x["fingerprint"] for x in b] \
+                == [x["fingerprint"] for x in c]
+            # 9. 没有风格图
+            assert all(x["style"] is None and x["style_hash"] is None for x in a)
+        # 2. 有空位
+        big = FakeVideo(max_refs=8).caps("fake-1")
+        got = fp(big, rich, style)
+        used = [c for c in got if c["style"] == "used"]
+        assert used
+        some = next(c for c in used if any(r not in (compose.STYLE_ID,) for r in c["refs"]))
+        assert some["style_hash"] == "h1" and compose.STYLE_ID in some["refs"]
+        assert "画风参考" in some["prompt"]
+        # 带场景的段：风格图在主要角色之后、场景之前
+        idx = assets_index(rich)
+        locs = set(idx["locations"])
+        withloc = [c for c in used if any(r in locs for r in c["refs"])]
+        assert withloc
+        for c in withloc:
+            pos = c["refs"].index(compose.STYLE_ID)
+            li = min(i for i, r in enumerate(c["refs"]) if r in locs)
+            assert pos < li
+            assert all(r not in locs and r in idx["characters"] for r in c["refs"][:pos])
+        # 3. 满了，但有非主要角色：场景被挪走
+        c1, c2 = rich["assets"]["characters"][0]["id"], rich["assets"]["characters"][1]["id"]
+        loc = next(card for card in rich["assets"]["locations"] if card.get("angles"))
+        shot = {"id": "S1", "duration_sec": 3, "action": "甲", "characters": [{"ref": c1}],
+                "location_ref": loc["id"], "location_angle": loc["angles"][0]["angle"]}
+        mini = copy.deepcopy(rich)
+        mini["episodes"] = [{"id": mini["episodes"][0]["id"], "shots": [shot]}]
+        two = FakeVideo(max_refs=2).caps("fake-1")
+        got = fp(two, mini, style)[0]
+        assert got["style"] == "used" and got["refs"] == [c1, compose.STYLE_ID]
+        assert got["dropped_refs"] == [loc["id"]]
+        base0 = fp(two, mini, None)[0]
+        assert base0["refs"] == [c1, loc["id"]] and got["fingerprint"] == base0["fingerprint"]
+        # 4. 满了，全是主要角色
+        one = FakeVideo(max_refs=1).caps("fake-1")
+        got = fp(one, mini, style)[0]
+        assert got["style"] == "full" and got["refs"] == [c1]
+        assert compose.STYLE_ID not in got["refs"] and "画风参考" not in got["prompt"]
+        assert got["prompt"] == fp(one, mini, None)[0]["prompt"]
+        # 5/6. 首帧单用 / 同用
+        png = Path(d) / "S1.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 16)
+        no_refs = copy.deepcopy(mini)
+        for card in no_refs["assets"]["characters"] + no_refs["assets"]["props"]:
+            card["reference_images"] = []
+        for card in no_refs["assets"]["locations"]:
+            for a in card.get("angles") or []:
+                a["uri"] = ""
+        g = fp(caps, no_refs, style, {"S1": png})[0]
+        assert g["frame_mode"] == "frame" and g["style"] == "first_frame"
+        assert compose.STYLE_ID not in g["refs"]
+        g = fp(caps_w, mini, style, {"S1": png})[0]
+        assert g["frame_mode"] == "frame" and g["style"] == "used"
+        # 尾帧接力不受影响：同一份分镜，有无风格图，relay 判定一致
+        for dd, cc in ((doc, caps), (rich, caps_w)):
+            a, b = fp(cc, dd, None), fp(cc, dd, style)
+            assert [x["first_frame"] for x in a] == [x["first_frame"] for x in b]
+            assert any((x["first_frame"] or "").startswith("relay:") for x in b)
+            assert [x["frame_mode"] for x in a] == [x["frame_mode"] for x in b]
+        # 7. 关键帧占参考位：cap 少一
+        three = FakeVideo(max_refs=3).caps("fake-1")
+        s2 = copy.deepcopy(mini)
+        s2["episodes"][0]["shots"][0]["characters"] = [{"ref": c1}, {"ref": c2}]
+        s2["episodes"][0]["shots"][0]["location_ref"] = loc["id"]
+        g = fp(three, s2, style, {"S1": png})[0]
+        assert g["frame_mode"] == "ref"
+        assert len(g["refs"]) <= 2 and g["style"] in ("used", "full")
+        g0 = fp(three, s2, None, {"S1": png})[0]
+        if g["style"] == "used":
+            assert len(g["refs"]) == 2 and compose.STYLE_ID in g["refs"]
+        assert g["fingerprint"] == g0["fingerprint"]
+        # 8. 组装请求
+        row = {k: v for k, v in fp(two, mini, style)[0].items() if not k.startswith("_")}
+        rq, _ = compose.request_for(mini, sess, row, keyframes={}, relay_frame=None, caps=two,
+                                    rewrite=fake.rewrite_prompt, style=style)
+        st = [r for r in rq.refs if r.role == "style"]
+        assert len(st) == 1 and st[0].source == style["source"] and rq.style_ref == "h1"
+        rq2, _ = compose.request_for(mini, sess, row, keyframes={}, relay_frame=None, caps=two,
+                                     rewrite=fake.rewrite_prompt, style=style2)
+        assert rq2.style_ref == "h2"
+        rowf = {k: v for k, v in fp(one, mini, style)[0].items() if not k.startswith("_")}
+        rq3, _ = compose.request_for(mini, sess, rowf, keyframes={}, relay_frame=None, caps=one,
+                                     rewrite=fake.rewrite_prompt, style=style)
+        assert rq3.style_ref is None and all(r.role != "style" for r in rq3.refs)
+        rq4, _ = compose.request_for(mini, sess, row, keyframes={}, relay_frame=None, caps=two,
+                                     rewrite=fake.rewrite_prompt)
+        assert rq4.style_ref is None
+    print("10. 风格参考位 ✓")
+
+
 def main() -> int:
     doc = json.loads(YAO.read_text(encoding="utf-8"))
     part_prompt(doc)
     part_clips(doc)
+    part_style(doc)
     print("\nALL PASS")
     return 0
 

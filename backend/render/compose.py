@@ -17,6 +17,8 @@ from render.providers.base import ClipRequest, RefImage
 
 LEGACY = "legacy"          # 生产包写法：台词进提示词，只要音效
 AUDIO_MODES = ("tts_all", "dialogue_native", "all_native", "silent")
+STYLE_ID = "__style__"    # 风格参考图占用参考位时的占位 id
+STYLE_TEXT = "画风参考：沿用它的色调、线条与光影，不要照搬其中的人物或场景内容"
 FIRST = "__first__"        # 首帧图占用参考位时的占位 id
 
 
@@ -268,7 +270,8 @@ def pick_refs(clip: list, assets_idx: dict, max_refs: int) -> dict:
     found = [(i, sl, image_for(sl, assets_idx)) for i, sl in enumerate(slots)]
     ranked = sorted((x for x in found if x[2]), key=lambda x: (tier(x[1]), x[0]))
     keep = {i for i, _, _ in ranked[:max(max_refs, 0)]}
-    return {"kept": [{**sl, "source": src} for i, sl, src in found if i in keep],
+    return {"kept": [{**sl, "source": src, "main": tier(sl) == 0}
+                     for i, sl, src in found if i in keep],
             "dropped": [sl for i, sl, src in found if src and i not in keep],
             "missing": [sl for i, sl, src in found if not src]}
 
@@ -300,7 +303,8 @@ def fingerprint(**parts) -> str:
 
 
 def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
-                audio_mode: str, keyframes: dict, rewrite, cps: float = DEFAULT_SPEECH_CPS) -> list:
+                audio_mode: str, keyframes: dict, rewrite, cps: float = DEFAULT_SPEECH_CPS,
+                style: Optional[dict] = None) -> list:
     """分镜 → 出片段（session.json 的 clips，不含状态）。
 
     keyframes：镜头 id → 关键帧图路径。首帧：段首镜头有关键帧用关键帧；否则在本段没有参考图、
@@ -342,14 +346,34 @@ def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
                          refs=[_sha(sl["source"].encode("utf-8")) for sl in refs["kept"]],
                          first=first, keyframe=kf_hash, provider=provider, model=model,
                          resolution=resolution, audio_mode=audio_mode)
+        style_state, style_hash, slots = None, None, refs["kept"]
+        if style:
+            cap = caps.max_refs - (1 if frame_mode == "ref" else 0)
+            if frame_mode == "frame" and not caps.frame_with_refs:
+                style_state = "first_frame"
+            elif len(refs["kept"]) < cap or any(not sl.get("main") for sl in refs["kept"]):
+                if len(refs["kept"]) >= cap:
+                    refs = pick_refs(shots, idx, cap - 1)
+                    described = [describe(sl, idx) for sl in refs["missing"] + refs["dropped"]]
+                last_main = max((i for i, sl in enumerate(refs["kept"]) if sl.get("main")), default=-1)
+                slot = {"asset_id": STYLE_ID, "role": "style", "variant": None,
+                        "text": STYLE_TEXT, "source": style["source"]}
+                slots = refs["kept"][:last_main + 1] + [slot] + refs["kept"][last_main + 1:]
+                text, _ = neutral_prompt(shots, doc, idx, mode=audio_mode, slots=slots,
+                                         described=described, first_frame=frame_mode == "ref",
+                                         timing="playable", cps=cps)
+                prompt = rewrite(text)
+                style_state, style_hash = "used", style["hash"]
+            else:
+                style_state = "full"
         out.append({"id": c["id"], "episode": c["episode"],
                     "shots": [s.get("id") for s in shots],
                     "duration": c["duration"], "truncated": c["truncated"], "prompt": prompt,
-                    "refs": [sl["asset_id"] for sl in refs["kept"]],
+                    "refs": [sl["asset_id"] for sl in slots],
                     "dropped_refs": [sl["asset_id"] for sl in refs["dropped"]],
                     "missing_refs": [sl["asset_id"] for sl in refs["missing"]],
                     "first_frame": first, "frame_mode": frame_mode, "fingerprint": fp,
-                    "_slots": refs["kept"]})
+                    "style": style_state, "style_hash": style_hash, "_slots": slots})
         prev = c
     return out
 
@@ -369,14 +393,15 @@ class Stale(Exception):
 
 
 def request_for(doc: dict, session: dict, clip: dict, *, keyframes: dict, relay_frame,
-                caps, rewrite, cps: float = DEFAULT_SPEECH_CPS) -> tuple:
+                caps, rewrite, cps: float = DEFAULT_SPEECH_CPS,
+                style: Optional[dict] = None) -> tuple:
     """按已保存的分镜重建这一段的厂商请求。返回 (ClipRequest, 实际使用的首帧来源或 None)。
 
     relay_frame：上一段采用那次的尾帧文件（没有就是 None，此时不带首帧照常提交）。
     """
     built = build_clips(doc, caps, provider=session["provider"], model=session["model"],
                         resolution=session["resolution"], audio_mode=session["audio_mode"],
-                        keyframes=keyframes, rewrite=rewrite, cps=cps)
+                        keyframes=keyframes, rewrite=rewrite, cps=cps, style=style)
     c = next((b for b in built if b["id"] == clip["id"]), None)
     if c is None or c["fingerprint"] != clip["fingerprint"]:
         raise Stale(clip["id"])
@@ -393,5 +418,5 @@ def request_for(doc: dict, session: dict, clip: dict, *, keyframes: dict, relay_
     req = ClipRequest(prompt=c["prompt"], model=session["model"], duration=c["duration"],
                       resolution=session["resolution"], aspect=aspect,
                       audio=session["audio_mode"] != "silent" and caps.native_audio,
-                      refs=refs, first_frame=image)
+                      refs=refs, first_frame=image, style_ref=c["style_hash"])
     return req, used
