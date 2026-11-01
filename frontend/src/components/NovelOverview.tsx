@@ -8,6 +8,7 @@ import {
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
+import { assetThumb } from '@/lib/assetThumb'
 import { costText, fmtDuration } from '@/lib/fmt'
 import { notice } from '@/lib/notice'
 import { cn } from '@/lib/utils'
@@ -35,7 +36,7 @@ const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const OUTLINE_LINES = 4
 
 function Avatar({ c }: { c: CharacterAsset }) {
-  const uri = c.reference_images?.find((r) => r.uri && /^(https?:|data:|\/)/.test(r.uri))?.uri
+  const uri = assetThumb(c)
   return (
     <span className="ovw__avatar" data-testid="avatar" aria-hidden>
       {uri ? <img src={uri} alt="" /> : (c.name || c.id).slice(0, 1)}

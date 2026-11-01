@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { assetThumb } from '@/lib/assetThumb'
 import { notice } from '@/lib/notice'
 import { deleteMemoryCard, upsertMemoryCard } from '../api'
 import type { AssetKind } from '../edit'
@@ -24,6 +25,29 @@ function nextId(assets: Assets, kind: AssetKind): string {
     if (!used.has(id)) return id
   }
   return `${prefix}${Date.now()}`
+}
+
+type AnyCard = { id: string; name: string; aliases?: string[]; outfits?: unknown[]; states?: unknown[]
+  reference_images?: { uri?: string }[] }
+
+function AssetTile({ kind, card, onOpen }: { kind: AssetKind; card: AnyCard; onOpen: () => void }) {
+  const { t } = useI18n()
+  const url = assetThumb(card)
+  const meta = [
+    card.aliases?.length ? t('assets.grid.aliases', { n: card.aliases.length }) : '',
+    card.outfits?.length ? t('assets.grid.outfits', { n: card.outfits.length }) : '',
+    card.states?.length ? t('assets.grid.states', { n: card.states.length }) : '',
+  ].filter(Boolean).join(' · ')
+  return (
+    <button type="button" className="agrid__tile" data-testid="asset-tile" aria-label={card.name} onClick={onOpen}>
+      <span className="agrid__thumb" data-kind={kind}>
+        {url ? <img src={url} alt="" /> : <span aria-hidden>{(card.name || card.id).slice(0, 1)}</span>}
+      </span>
+      <span className="agrid__name" aria-hidden>{card.name}</span>
+      <span className="agrid__id" aria-hidden>{card.id}</span>
+      {meta && <span className="agrid__meta" aria-hidden>{meta}</span>}
+    </button>
+  )
 }
 
 interface Props {
@@ -55,6 +79,8 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
   }, [focusAdd])
   const [newName, setNewName] = useState('')
   const [query, setQuery] = useState('')
+  /** 单卡编辑的卡 ID；null 时（且有 kind）显示缩略图网格 */
+  const [open, setOpen] = useState<string | null>(null)
 
   // 换了小说（或上层重新取了长期记忆）且本地没有未保存的修改：跟上
   useEffect(() => {
@@ -100,6 +126,7 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
     setAssets((prev) => ({ ...prev, [newKind]: [...(prev[newKind] ?? []), card]
       .sort((a, b) => a.id.localeCompare(b.id)) }))
     setNewName('')
+    if (kind) setOpen(card.id)
     onSaved()
   })
 
@@ -109,6 +136,7 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
     void run(t('assets.whatDelete'), t('novel.ok.deleted'), async () => {
       await deleteMemoryCard(nid, kind, id)
       setAssets((prev) => ({ ...prev, [kind]: (prev[kind] ?? []).filter((c) => c.id !== id) }))
+      setOpen((cur) => (cur === id ? null : cur))
       setDirty((prev) => {
         const next = new Set(prev)
         next.delete(`${kind}:${id}`)
@@ -138,6 +166,8 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
     : scoped
   const shownCount = Object.values(shown).reduce((a, l) => a + (l?.length ?? 0), 0)
   const allCount = Object.values(scoped).reduce((a, l) => a + (l?.length ?? 0), 0)
+
+  const openCard = kind && open ? (assets[kind] ?? []).find((c) => c.id === open) ?? null : null
 
   return (
     <div className="lib">
@@ -191,13 +221,35 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
         <EmptyState title={t('assets.noMatch')}
                     action={<Button size="sm" variant="outline" onClick={() => setQuery('')}>{t('common.clearSearch')}</Button>} />
       )}
-      <AssetsView
-        assets={shown}
-        editing
-        hideEditNote
-        onChange={patchCard}
-        onDelete={(kind, id) => void removeCard(kind, id)}
-      />
+      {kind && !openCard && (
+        <div className="agrid" data-testid="asset-grid"
+             aria-label={t('assets.grid.aria', { kind: t(`assets.grid.kinds.${kind}`) })}>
+          {(shown[kind] ?? []).map((c) => <AssetTile key={c.id} kind={kind} card={c} onOpen={() => setOpen(c.id)} />)}
+        </div>
+      )}
+      {kind && openCard && (
+        <>
+          <Button size="sm" variant="ghost" className="agrid__back" onClick={() => setOpen(null)}>
+            {t('assets.grid.back', { kind: t(`assets.grid.kinds.${kind}`) })}
+          </Button>
+          <AssetsView
+            assets={{ [kind]: [openCard] } as Assets}
+            editing
+            hideEditNote
+            onChange={patchCard}
+            onDelete={(k, id) => void removeCard(k, id)}
+          />
+        </>
+      )}
+      {!kind && (
+        <AssetsView
+          assets={shown}
+          editing
+          hideEditNote
+          onChange={patchCard}
+          onDelete={(kind, id) => void removeCard(kind, id)}
+        />
+      )}
     </div>
   )
 }

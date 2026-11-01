@@ -501,6 +501,14 @@ export const en: Messages = {
     whatAdd: 'Create',
     whatDelete: 'Delete',
     okAdded: 'Card created',
+    grid: {
+      aria: '{kind} asset grid',
+      back: '← All {kind}',
+      aliases: '{n} aliases',
+      outfits: '{n} outfits',
+      states: '{n} forms',
+      kinds: { characters: 'characters', locations: 'locations', props: 'props', creatures: 'creatures' },
+    },
   },
   job: {
     dismiss: 'Close job panel',

@@ -499,6 +499,14 @@ export const zh = {
     whatAdd: '新建',
     whatDelete: '删除',
     okAdded: '已新建',
+    grid: {
+      aria: '{kind}资产网格',
+      back: '← 全部{kind}',
+      aliases: '{n} 个别名',
+      outfits: '{n} 套服装',
+      states: '{n} 种形态',
+      kinds: { characters: '角色', locations: '场景', props: '道具', creatures: '生物' },
+    },
   },
   job: {
     dismiss: '关闭任务面板',

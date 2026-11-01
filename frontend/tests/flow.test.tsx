@@ -768,6 +768,9 @@ await type(addName, '赵四', false)
 await click(findByText('button', '＋ 新建'))
 must(shelf('alice')[0].memory.assets.characters.some((c) => c.id === 'C03' && c.name === '赵四'),
      '新建卡应写回长期记忆并自动续号（C01、C02 已占用）')
+must(container.querySelectorAll('.acard').length === 1, '新建后直接进入新卡的单卡编辑')
+await click(findByText('button', '← 全部角色'))
+await click(container.querySelector('[data-testid="asset-tile"]') as unknown as HTMLElement)
 const nameInputs = [...container.querySelectorAll('.acard header input')] as unknown as HTMLElement[]
 await type(nameInputs[0], '华老栓（库中改名）', false)
 await click(findByText('button', '保存修改'))
@@ -970,6 +973,7 @@ must(shelf('bob')[0].memory.assets.characters.length === 2, '应建出两张角�
 console.log('13. 空小说 → 先建角色卡 ✓')
 
 // 14. 资产库搜索：按名称过滤，跨类别
+await click(findByText('button', '← 全部角色'))
 const search = container.querySelector('.lib__search') as unknown as HTMLElement
 await type(search, '赵老三', false)
 must(has('匹配') && has('赵老三') && !has('钱掌柜'), '搜索应只留下命中的卡')

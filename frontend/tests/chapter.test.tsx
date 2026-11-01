@@ -283,5 +283,76 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   await act(async () => { r.unmount() })
 }
 
+// 5. 资产分区缩略图网格
+{
+  const { NovelAssets } = await import('../src/components/NovelAssets')
+  const { act, createElement: h } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { I18nProvider } = await import('../src/i18n')
+  const puts: string[] = []
+  g.fetch = async (url: string, init?: { method?: string }) => {
+    puts.push(`${init?.method ?? 'GET'} ${String(url)}`)
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }
+  }
+  const box = win.document.createElement('div')
+  win.document.body.appendChild(box)
+  const r = createRoot(box as unknown as HTMLElement)
+  const assets = { characters: [
+    { id: 'C01', name: '华老栓', aliases: ['老栓'], reference_images: [{ uri: 'https://x/a.png' }] },
+    { id: 'C02', name: '康大叔', outfits: [{ id: 'o1', description: 'x' }] },
+    { id: 'C03', name: '夏瑜' },
+  ] }
+  const show = async (kind?: string) => {
+    await act(async () => {
+      r.render(h(I18nProvider, { initial: 'zh' }, h(NovelAssets, { nid: 'n1', assets, onSaved: () => {}, kind } as never)) as never)
+    })
+  }
+  const settle5 = async (ms = 30) => { await act(async () => { await new Promise((x) => setTimeout(x, ms)) }) }
+  const q5 = (sel: string) => box.querySelector(sel) as unknown as HTMLElement | null
+  const qa5 = (sel: string) => [...box.querySelectorAll(sel)] as unknown as HTMLElement[]
+  const click5 = async (el: HTMLElement | null) => {
+    must(!!el, '要点的元素不存在')
+    await act(async () => { el!.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event) })
+    await settle5()
+  }
+  const type5 = async (el: HTMLElement | null, v: string) => {
+    must(!!el, '要输入的元素不存在')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!.call(el, v)
+      el!.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+    })
+    await settle5()
+  }
+
+  await show('characters')
+  must(qa5('[data-testid="asset-grid"] [data-testid="asset-tile"]').length === 3, '网格里 3 张卡')
+  const tiles = () => qa5('[data-testid="asset-tile"]')
+  must(tiles()[0].querySelector('img') !== null && tiles()[1].querySelector('img') === null && tiles()[2].querySelector('img') === null, '只有有图的那张有 img')
+  must(tiles()[1].textContent!.includes('康') && tiles()[1].textContent!.includes('C02'), '无图显示首字与编号')
+  must(tiles()[0].textContent!.includes('1 个别名') && tiles()[1].textContent!.includes('1 套服装'), '别名与服装数')
+  must(tiles()[1].getAttribute('aria-label') === '康大叔', 'aria-label 是名字')
+
+  await type5(q5('.lib__search'), '康大叔')
+  must(tiles().length === 1, '搜索后只剩 1 张')
+  await type5(q5('.lib__search'), '')
+
+  await click5(tiles()[0])
+  must(!q5('[data-testid="asset-grid"]'), '点开后网格消失')
+  must(box.textContent!.includes('C01') && qa5('.acard').length === 1, '单卡编辑只渲染这一张')
+  const back = qa5('button').find((b) => b.textContent === '← 全部角色')
+  must(!!back, '有返回按钮')
+  await click5(back!)
+  must(qa5('[data-testid="asset-tile"]').length === 3, '返回后网格回来')
+
+  await type5(q5('.lib__add input'), '赵四')
+  await click5(qa5('button').find((b) => b.textContent!.includes('新建'))!)
+  must(!q5('[data-testid="asset-grid"]') && box.textContent!.includes('C04') && qa5('.acard').length === 1, '新建后直接进入新卡编辑')
+  must(puts.some((x) => x.startsWith('PUT') && x.includes('/C04')), '新卡已写回')
+
+  await show()
+  must(!q5('[data-testid="asset-grid"]'), '不传 kind 没有网格')
+  await act(async () => { r.unmount() })
+}
+
 win.happyDOM.abort?.()
 console.log('chapter: ALL PASS')
