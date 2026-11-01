@@ -91,6 +91,21 @@ def main() -> int:
         assert len(tts.calls) == 2 and sum(spent) > 0 and any("混音" in s for s in steps)
         print(f"2. 整章合成：成片 {mix.media_seconds(video, ffprobe):.2f} 秒、有音轨、字幕 2 条、缺段补位写进报告 ✓")
 
+        tl_path = root / "final" / "timeline.json"
+        tl = json.loads(tl_path.read_text(encoding="utf-8"))
+        ep_tl = tl["episodes"][0]
+        want = mix.plan_episode(DOC["episodes"][0], session(True)["clips"],
+                                {x["line"]: {"duration": x["duration"] * x["speed"], "file": x["file"]}
+                                 for x in ep_tl["speech"]})
+        assert [(x["clip"], x["start"], x["duration"]) for x in ep_tl["segments"]] == \
+            [(x["clip"], x["start"], x["duration"]) for x in want["segments"]]
+        assert tl["version"] == 1 and tl["fps"] == mix.FPS and tl["draft"] is True
+        assert all((root / x["file"]).is_file() for x in ep_tl["segments"])
+        assert [x["placeholder"] for x in ep_tl["segments"]] == [False, True]
+        assert len(ep_tl["speech"]) == 2 and all((root / x["file"]).is_file() for x in ep_tl["speech"])
+        assert ep_tl["bgm"] == "audio/bgm/E01.wav" and (root / ep_tl["bgm"]).is_file()
+        print("2b. 时间轴 timeline.json：段、配音、BGM 与计划一致，文件都在 ✓")
+
         work = sorted((root / "final" / "work").glob("*.mp4"))
         stamps = {w.name: w.stat().st_mtime_ns for w in work if ".joined" not in w.name}
         mix.compose(root, DOC, session(True), tts=tts, keyframes={}, bgm={"E01": bgm}, draft=True, tools=tools)
@@ -99,11 +114,13 @@ def main() -> int:
                 if ".joined" not in w.name} == stamps, "已规整的段复用"
         print("3. 重跑复用配音缓存与已规整的段 ✓")
 
+        tl_before = tl_path.read_bytes()
         try:
             mix.compose(root, DOC, session(True), tts=tts, keyframes={}, bgm={}, draft=False, tools=tools)
             raise AssertionError("关掉草稿合成时缺段应拒绝")
         except mix.MixError as e:
             assert "E01-C02" in str(e)
+        assert tl_path.read_bytes() == tl_before and not (root / "final" / ".next").exists(), "失败不动旧时间轴"
         print("4. 关掉草稿合成时缺段拒绝 ✓")
 
     print("\nALL PASS")

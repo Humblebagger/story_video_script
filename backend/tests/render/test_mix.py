@@ -52,6 +52,15 @@ def main() -> int:
     assert near(next(n for n in plan["notes"] if n["shot"] == "S3")["extend"], 3.0 / 1.15 - 2, 0.01)
     sub2 = next(x for x in plan["subs"] if x["line"] == "S2-L1")
     assert near(sub2["start"], 4.0) and near(sub2["end"], 6.0)
+    assert all(abs(x["duration"] - VOICED[x["line"]]["duration"] / x["speed"]) < 5e-4 + 1e-9 for x in plan["speech"]), \
+        "speech.duration 为提速后时长"
+    tdoc = mix.timeline_doc([{"plan": plan, "files": ["final/work/a.mp4", "final/work/b.mp4"],
+                              "placeholders": ["E01-C02"], "bgm": None}], size=(480, 854), draft=True)
+    assert tdoc["version"] == 1 and tdoc["fps"] == mix.FPS and tdoc["size"] == [480, 854] and tdoc["draft"] is True
+    assert tdoc["bgm_db"] == mix.BGM_DB and tdoc["episodes"][0]["bgm"] is None
+    tsegs = tdoc["episodes"][0]["segments"]
+    assert [x["file"] for x in tsegs] == ["final/work/a.mp4", "final/work/b.mp4"]
+    assert [x["placeholder"] for x in tsegs] == [False, True] and tsegs[1]["start"] == s2["start"]
     print("2. 对齐：念得完不动、超出 15% 内提速、更多就按 1.15 倍念并定格延长 ✓")
 
     native = mix.plan_episode(EP, CLIPS, {k: v for k, v in VOICED.items() if k != "S1-L1"})

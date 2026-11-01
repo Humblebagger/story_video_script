@@ -99,13 +99,24 @@ def plan_episode(ep: dict, clips: list, voiced: dict, cps: float = DEFAULT_SPEEC
                 subs.append({"start": at, "end": at + dur, "text": x["text"], "line": x["id"]})
                 if x["id"] in voiced:
                     speech.append({"line": x["id"], "file": str(voiced[x["id"]]["file"]), "start": at,
-                                   "speed": speed})
+                                   "speed": speed, "duration": round(dur, 3)})
                 at += dur
             t += eff
         segments.append({"clip": c["id"], "start": round(start, 3), "duration": round(t - start, 3),
                          "base": round(base, 3)})
     return {"episode": ep["id"], "total": round(t, 3), "segments": segments, "speech": speech,
             "subs": subs, "notes": notes}
+
+
+def timeline_doc(plans: list, *, size: tuple, draft: bool) -> dict:
+    """导出用的时间轴记录（final/timeline.json）。plans：每集 {"plan", "files", "placeholders", "bgm"}，
+    files 为各段规整后文件的会话内相对路径（与 plan["segments"] 一一对应）。不进合成指纹。"""
+    return {"version": 1, "fps": FPS, "size": list(size), "draft": draft, "bgm_db": BGM_DB,
+            "episodes": [{"episode": p["plan"]["episode"], "total": p["plan"]["total"],
+                          "segments": [dict(seg, file=f, placeholder=seg["clip"] in p["placeholders"])
+                                       for seg, f in zip(p["plan"]["segments"], p["files"])],
+                          "speech": p["plan"]["speech"], "bgm": p["bgm"]}
+                         for p in plans]}
 
 
 def _ts(sec: float) -> str:
@@ -301,6 +312,14 @@ def preview(root, doc: dict, s: dict, *, tts, bgm: dict, draft: bool, keyframes:
             "fingerprint": compose_fingerprint(root, doc, s, voices, bgm, draft, keyframes, cps)}
 
 
+def _rel(root: Path, f) -> str:
+    """会话内文件记相对 root 的 POSIX 路径；不在 root 下的（如外部 BGM）转不了，原样保留绝对路径。"""
+    try:
+        return Path(f).relative_to(root).as_posix()
+    except ValueError:
+        return str(f)
+
+
 def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft: bool, tools: tuple,
             on_cost=None, progress=None, cps: float = DEFAULT_SPEECH_CPS) -> dict:
     """合成整章：配音 → 每集规整、拼接、混音 → 字幕与报告。返回 {"files", "report"}（会话目录下的相对路径）。
@@ -345,7 +364,7 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
               "alignment": "段内镜头切换时刻由视频模型决定，台词按计划镜头起点放置，属近似对齐"}
     if s["audio_mode"] == "dialogue_native":
         report["warning"] = "台词由视频模型生成，不保证逐字"
-    files = []
+    files, tl_plans = [], []
     try:
         for ep in doc.get("episodes") or []:
             clips = by_ep.get(ep["id"]) or []
@@ -389,14 +408,21 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
             run(mix_cmd(str(joined), plan, bgm=str(music) if music else None, out=str(tmp), ffmpeg=ffmpeg),
                 f"混音 {ep['id']} ")
             tmp.replace(final)
+            tl_plans.append({
+                "plan": dict(plan, speech=[dict(x, file=_rel(root, x["file"])) for x in plan["speech"]]),
+                "files": [_rel(root, f) for f in segs], "placeholders": placeholders,
+                "bgm": _rel(root, music) if music else None})
             (nxt / f"{ep['id']}.srt").write_text(srt(plan["subs"]), encoding="utf-8")
             files += [f"final/{ep['id']}.mp4", f"final/{ep['id']}.srt"]
             report["episodes"].append({"episode": ep["id"], "seconds": plan["total"], "notes": plan["notes"],
                                        "placeholders": placeholders,
                                        "stale": [c["id"] for c in clips if c.get("state") == "stale"]})
+        (nxt / "timeline.json").write_text(
+            json.dumps(timeline_doc(tl_plans, size=size, draft=draft), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
         (nxt / "mix_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                                              encoding="utf-8")
-        for name in [Path(f).name for f in files] + ["mix_report.json"]:
+        for name in [Path(f).name for f in files] + ["mix_report.json", "timeline.json"]:
             (nxt / name).replace(out_dir / name)
     finally:
         shutil.rmtree(nxt, ignore_errors=True)
