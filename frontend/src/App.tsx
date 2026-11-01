@@ -23,6 +23,7 @@ import { NovelSidebar } from './components/NovelSidebar'
 import { StoryboardView } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
 import { toast } from 'sonner'
+import { notice } from './lib/notice'
 import { UnsavedBar } from './components/workflow/UnsavedBar'
 import { notify, primeNotifications } from './notify'
 import type {
@@ -123,11 +124,11 @@ export default function App() {
     const who = `${j.work_title ?? t('flow.toast.fallbackWho')} ${j.chapter ?? ''}`.trim()
     const view = { label: t('flow.view'), onClick: () => openFromToast.current(j) }
     if (j.status === 'failed') {
-      notify('转换失败', `${who}——失败原因见日志`)
+      notify(t('app.notify.failed'), t('app.notify.failedBody', { who }))
       toast.error(t('flow.toast.failed'), { description: who, action: view })
     } else {
-      const title = j.status === 'completed_with_warnings' ? '转换完成（质量告警）' : '转换完成'
-      notify(title, `${who} 已生成，点开即可审阅`)
+      const title = t(j.status === 'completed_with_warnings' ? 'app.notify.doneWarn' : 'app.notify.done')
+      notify(title, t('app.notify.doneBody', { who }))
       // 用户正在本章看着它跑完：产物会直接摆出来，章节工作流另有「分镜已生成」，这里不再弹一条
       const watching = !!j.chapter_id && j.chapter_id === openChapterId.current && attachedJob.current === j.id
       if (!watching) {
@@ -172,9 +173,9 @@ export default function App() {
       setDirty(false)
       setPreview({ done: p.batches_done, total: p.batches })
     } catch (e) {
-      if (previewFor.current === jobId) setAlert(`预览加载失败：${msg(e)}`)
+      if (previewFor.current === jobId) setAlert(t('app.err.preview', { msg: msg(e) }))
     }
-  }, [])
+  }, [t])
 
   // 预览开着时又跑完了一批：自动换成更新的预览
   useEffect(() => {
@@ -290,13 +291,13 @@ export default function App() {
       if (!v.result) {
         setVerification(v.verification ?? null)
         setAlert(v.status === 'failed'
-          ? `这一版转换失败：${(v.error ?? '').split('\n')[0]}`
-          : '这一版还没有产物（仍在转换或已中断）')
+          ? t('app.versionFailed', { msg: (v.error ?? '').split('\n')[0] })
+          : t('app.versionEmpty'))
       }
     } catch (e) {
-      setAlert(`打开版本失败：${msg(e)}`)
+      setAlert(t('app.err.version', { msg: msg(e) }))
     }
-  }, [reset])
+  }, [reset, t])
 
   const openNovel = async (nid: string) => {
     if (!(await confirmLeave())) return
@@ -305,7 +306,7 @@ export default function App() {
     try {
       setNovel(await getNovel(nid))
     } catch (e) {
-      setAlert(`打开小说失败：${msg(e)}`)
+      setAlert(t('app.err.novel', { msg: msg(e) }))
     }
   }
 
@@ -326,7 +327,7 @@ export default function App() {
         if (target) void openVersion(nid, cid, target)
       }
     } catch (e) {
-      setAlert(`打开章节失败：${msg(e)}`)
+      setAlert(t('app.err.chapter', { msg: msg(e) }))
     }
   }
 
@@ -378,7 +379,7 @@ export default function App() {
       setNovel(await getNovel(created.id))
       if (chapters.length) await openChapter(chapters[0].id, created.id)
     } catch (e) {
-      setAlert(`新建小说失败：${msg(e)}`)
+      setAlert(t('app.err.createNovel', { msg: msg(e) }))
     } finally {
       setBusy(false)
     }
@@ -387,12 +388,12 @@ export default function App() {
   const newChapter = async () => {
     if (!novel || !(await confirmLeave())) return
     try {
-      const c = await createChapter(novel.id, `第${novel.chapters.length + 1}章`)
+      const c = await createChapter(novel.id, t('app.chapterDefault', { n: novel.chapters.length + 1 }))
       await refreshNovels()
       await openChapter(c.id, novel.id)
       setNovel(await getNovel(novel.id))
     } catch (e) {
-      setAlert(`新建章节失败：${msg(e)}`)
+      notice.err(t('app.err.createChapter', { msg: msg(e) }))
     }
   }
 
@@ -419,13 +420,13 @@ export default function App() {
     if (!novel || !chapter) return
     try {
       const r = await adoptVersion(novel.id, chapter.id, vid)
-      setAlert(`已采用：资产库新增 ${r.added} 张、合并 ${r.merged} 张${
-        r.retracted ? `，撤回旧版独有的 ${r.retracted} 张` : ''}${
-        r.digest === 'running' ? '；章后整理已开始（人物状态提议与本章摘要）' : ''}`)
+      notice.ok(t('app.adopted', { added: r.added, merged: r.merged })
+        + (r.retracted ? t('app.adoptedRetracted', { n: r.retracted }) : '')
+        + (r.digest === 'running' ? t('app.adoptedDigest') : ''))
       await reloadOpen(novel.id, chapter.id)
       void refreshNovels()
     } catch (e) {
-      setAlert(`采用失败：${msg(e)}`)
+      notice.err(t('app.err.adopt', { msg: msg(e) }))
     }
   }
 
@@ -444,7 +445,7 @@ export default function App() {
         else { setDoc(null); setDocVid(null); setDirty(false) }
       }
     } catch (e) {
-      setAlert(`删除失败：${msg(e)}`)
+      notice.err(t('app.err.remove', { msg: msg(e) }))
     }
   }
 
@@ -459,7 +460,7 @@ export default function App() {
       await reloadOpen(novel.id)
       void refreshNovels()
     } catch (e) {
-      setAlert(`删除失败：${msg(e)}`)
+      notice.err(t('app.err.remove', { msg: msg(e) }))
     }
   }
 
@@ -469,7 +470,7 @@ export default function App() {
       await updateChapter(novel.id, chapter.id, patch)
       await reloadOpen(novel.id, chapter.id)
     } catch (e) {
-      setAlert(`保存章节失败：${msg(e)}`)
+      notice.err(t('app.err.saveText', { msg: msg(e) }))
     }
   }
 
@@ -484,7 +485,7 @@ export default function App() {
       // 用户会一路改到点渲染时才被 422 挡住，那时早忘了改过什么。
       setVerification(res.verification)
       if (res.status === 'draft_invalid') {
-        setAlert('已保存，但这份分镜没通过完整性检查，暂时不能采用、不能进渲染（详见下方报告）')
+        setAlert(t('app.savedInvalid'))
       }
       savedDoc.current = doc
       setDirty(false)
@@ -492,7 +493,7 @@ export default function App() {
       void reloadFlow()
       await reloadOpen(novel.id, chapter.id)
     } catch (e) {
-      setAlert(`保存失败：${msg(e)}`)
+      notice.err(t('app.err.save', { msg: msg(e) }))
     } finally {
       setSaving(false)
     }
@@ -503,14 +504,14 @@ export default function App() {
     setVerification(null)
     try {
       const parsed = JSON.parse(await f.text())
-      if (!parsed?.meta || !parsed?.episodes) throw new Error('不是分镜 IR：缺少 meta / episodes')
+      if (!parsed?.meta || !parsed?.episodes) throw new Error(t('app.err.notStoryboard'))
       clearWork()
       setChapter(null)
       setNovel(null)
       setDoc(parsed as Storyboard)    // 本地文件不入库，只能下载
       savedDoc.current = parsed as Storyboard
     } catch (e) {
-      setAlert(`读取失败：${msg(e)}`)
+      notice.err(t('app.err.read', { msg: msg(e) }))
     }
   }
 
@@ -583,7 +584,7 @@ export default function App() {
             onAdopt: (vid) => void adopt(vid),
             onDeleteVersion: (vid) => void removeVersion(vid),
             onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
-            notice: error ? `提交失败：${error}` : alert,
+            notice: error ? t('app.err.submit', { msg: error }) : alert,
           } : null}
         />
       )}
@@ -628,6 +629,7 @@ export default function App() {
             onOpenChapter={(cid) => void openChapter(cid)}
             onOpenJob={openJob}
             onNewChapter={() => void newChapter()}
+            onNewNovel={() => void newNovel()}
           />
         )}
       >
@@ -683,7 +685,7 @@ export default function App() {
                 flow={flow}
               />
             )}
-            {error && <p className="alert">提交失败：{error}</p>}
+            {error && <p className="alert">{t('app.err.submit', { msg: error })}</p>}
             {alert && <p className="alert">{alert}</p>}
             {job && (
               <JobPanel

@@ -55,97 +55,6 @@ h4, h5, h6 { font-weight: 600; }
 p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
-/* ---------- 布局 ---------- */
-
-.app { min-height: 100vh; }
-
-.svc { font-size: 12px; color: var(--muted); font-family: var(--mono); }
-.svc em { color: var(--danger); font-style: normal; }
-.svc--down { color: var(--danger); }
-
-.main {
-  min-width: 0;
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* ---------- 历史记录侧栏 ---------- */
-
-.hist {
-  position: sticky;
-  top: 57px;
-  max-height: calc(100vh - 57px);
-  overflow: auto;
-  border-right: 1px solid var(--line);
-  padding: 16px 14px;
-  background: var(--panel-2);
-}
-@media (max-width: 900px) {
-  .hist { position: static; max-height: none; border-right: none;
-          border-bottom: 1px solid var(--line); }
-}
-
-/* 新外壳里小说列表放在侧边栏中，不再自带吸顶、高度、右边线与底色 */
-[data-testid="app-shell"] .hist {
-  position: static; top: auto; max-height: none;
-  border-right: none; border-bottom: none; background: transparent;
-}
-
-.hist__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.hist__head h2 { font-size: 13px; color: var(--muted); letter-spacing: .04em; }
-.hist__empty { font-size: 12px; color: var(--faint); line-height: 1.8; }
-.hist__empty code { font-family: var(--mono); font-size: 11px; }
-
-.hist__list { list-style: none; margin: 0; padding: 0; display: flex;
-              flex-direction: column; gap: 6px; }
-
-.hrun {
-  padding: 9px 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--panel);
-  cursor: pointer;
-  transition: border-color .15s;
-}
-.hrun:hover { border-color: var(--line); }
-.hrun.is-on { border-color: var(--accent); background: var(--accent-soft); }
-
-.hrun__top { display: flex; align-items: baseline; gap: 6px; }
-.hrun__title { font-size: 13.5px; flex: 1; min-width: 0;
-               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hrun__del {
-  border: none; background: none; color: var(--faint);
-  cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px;
-}
-.hrun__del:hover { color: var(--danger); }
-.hrun__chapter {
-  font-size: 11.5px; color: var(--muted); margin-top: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.hrun__meta {
-  display: flex; flex-direction: column; gap: 1px;
-  font-size: 11px; color: var(--faint); margin-top: 4px;
-}
-.hrun__tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-
-.hist__list--run { margin-bottom: 10px; }
-.hrun--live { border-color: var(--accent); }
-.hrun--live .hrun__top { gap: 7px; }
-.hrun__last {
-  font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.5;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-
 .empty { color: var(--faint); padding: 32px 0; text-align: center; }
 
 .alert {
@@ -224,8 +133,5 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* 小说页约束清单 .cons 原先从分镜那条规则继承字号与颜色，留着保持原样（镜头卡里的 .cons 在 storyboard.css 里另写） */
 .cons { font-size: 12px; color: var(--muted); display: flex; gap: 7px; align-items: baseline; }
 
-@media (max-width: 720px) {
-  .main { padding: 14px; }
-}
 
 /* ---------- 时间轴画布已搬到 styles/canvas.css（成片泳道、出片与合成页在 styles/film.css） ---------- */

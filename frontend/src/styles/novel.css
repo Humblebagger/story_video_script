@@ -84,11 +84,6 @@
 .job__head > [data-slot="button"] { margin-left: auto; }
 .job__hint + [data-slot="button"] { margin-left: 0; }
 
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ui-muted-foreground); flex: none; }
-.dot--live { background: var(--primary); animation: dot-pulse 1.4s ease-in-out infinite; }
-@keyframes dot-pulse { 50% { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { .dot--live { animation: none; opacity: .7; } }
-
 .job__log, .job__err, .job__warn pre {
   margin: 0;
   padding: 10px 12px;
@@ -150,24 +145,6 @@
 .lib__found b { color: var(--foreground); }
 
 /* ---------- 侧栏：搜索、小说 → 章节导航 ---------- */
-
-.hist__search {
-  width: 100%; margin-bottom: 10px; padding: 6px 10px; font-size: 14px;
-  border: 1px solid var(--input); border-radius: calc(var(--ui-radius) - 2px); background: transparent;
-}
-.hist__search:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent); }
-.hnovel { display: flex; flex-direction: column; gap: 4px; }
-.hchap { list-style: none; margin: 0 0 6px 10px; padding: 0 0 0 8px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
-.hchap__item {
-  display: flex; align-items: center; gap: 6px; padding: 5px 8px;
-  border-radius: calc(var(--ui-radius) - 4px); cursor: pointer; font-size: 14px;
-  transition: background-color 150ms ease-out;
-}
-.hchap__item:hover { background: var(--secondary); }
-.hchap__item.is-on { background: var(--secondary); color: var(--foreground); font-weight: 600; }
-.hchap__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hchap__item .tag { font-size: 12px; }
-.hchap__item--new { color: var(--ui-muted-foreground); }
 
 .linkbtn {
   border: none; background: none; padding: 0 2px; cursor: pointer;

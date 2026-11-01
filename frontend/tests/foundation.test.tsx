@@ -219,8 +219,9 @@ const SRC = path.resolve(import.meta.dirname ?? '.', '../src')
 const I18N_FILES = [
   'labels.ts', 'presets.ts', 'compose.ts', 'film.ts', 'api.ts', 'chapters.ts', 'useKeyframes.ts',
   'useFilm.ts', 'useCompose.ts', 'edit.ts', 'resolve.ts', 'types.ts', 'theme.ts', 'auth.ts', 'notify.ts', 'main.tsx',
-  ...['NovelPage', 'NovelAssets', 'NewNovelForm', 'ParamsForm', 'CardPicker', 'SelectOrCustom', 'JobPanel', 'JobProgress']
+  ...['NovelPage', 'NovelAssets', 'NewNovelForm', 'ParamsForm', 'CardPicker', 'SelectOrCustom', 'JobPanel', 'JobProgress', 'NovelSidebar']
     .map((f) => `components/${f}.tsx`),
+  'App.tsx',
   ...fs.readdirSync(path.join(SRC, 'components/admin')).map((f) => `components/admin/${f}`),
 ]
 // 必须保持中文的数据字面量（正确性所需），按文件、按行形态放行：

@@ -1,7 +1,12 @@
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
+import { useI18n } from '@/i18n/core'
 import { JOB_STATUS, label } from '../labels'
 import type { JobSummary, Novel, NovelSummary } from '../types'
 import { JobProgress } from './JobProgress'
+import { EmptyState } from './common/EmptyState'
+import { Button } from './ui/button'
+import { Skeleton } from './ui/skeleton'
 
 interface Props {
   novels: NovelSummary[]
@@ -16,13 +21,16 @@ interface Props {
   onOpenChapter: (cid: string) => void
   onOpenJob: (job: JobSummary) => void
   onNewChapter: () => void
+  /** 书架为空时的引导按钮：和外壳里「新建小说」同一个入口 */
+  onNewNovel: () => void
 }
 
 /** 侧栏：小说（总会话）→ 章节（二级会话）。章节上标出采用版与在跑的转换 */
 export function NovelSidebar({
   novels, novel, chapterId, running, activeJobId, loading,
-  onOpenNovel, onOpenChapter, onOpenJob, onNewChapter,
+  onOpenNovel, onOpenChapter, onOpenJob, onNewChapter, onNewNovel,
 }: Props) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const shown = q ? novels.filter((n) => n.title.toLowerCase().includes(q)) : novels
@@ -31,7 +39,7 @@ export function NovelSidebar({
   return (
     <aside className="hist">
       <div className="hist__head">
-        <h2>小说</h2>
+        <h2>{t('shell.shelf.title')}</h2>
       </div>
 
       {!!running.length && (
@@ -44,28 +52,30 @@ export function NovelSidebar({
             >
               <div className="hrun__top">
                 <span className="dot dot--live" />
-                <b className="hrun__title">{j.work_title || '转换中'}</b>
+                <b className="hrun__title">{j.work_title || t('shell.shelf.converting')}</b>
               </div>
               {j.chapter && <p className="hrun__chapter">{j.chapter}</p>}
               {j.progress
                 ? <JobProgress progress={j.progress} compact />
-                : <p className="hrun__last">{j.last_log ?? '排队中…'}</p>}
+                : <p className="hrun__last">{j.last_log ?? t('shell.shelf.queued')}</p>}
             </li>
           ))}
         </ul>
       )}
 
       {novels.length > 5 && (
-        <input className="hist__search" value={query} placeholder="搜索小说"
+        <input className="hist__search" value={query} placeholder={t('shell.shelf.search')}
+               aria-label={t('shell.shelf.search')}
                onChange={(e) => setQuery(e.target.value)} />
       )}
-      {loading && <p className="hist__empty">读取中…</p>}
+      {loading && (
+        <div className="flex flex-col gap-2" data-testid="shelf-loading" aria-label={t('common.loading')}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-8" />)}
+        </div>
+      )}
       {!loading && !novels.length && (
-        <p className="hist__empty">
-          还没有小说。<br />
-          一部小说是一个总会话：长期记住资产库、人物状态、主线剧情与创作限制；
-          每一章是其中的一次转换。
-        </p>
+        <EmptyState title={t('shell.shelf.emptyTitle')}
+                    action={<Button size="sm" onClick={onNewNovel}><Plus />{t('shell.newNovel')}</Button>} />
       )}
 
       <ul className="hist__list">
@@ -79,8 +89,8 @@ export function NovelSidebar({
                   <b className="hrun__title">{n.title}</b>
                 </div>
                 <div className="hrun__meta">
-                  <span>{n.chapters} 章 · 已采用 {n.adopted}</span>
-                  <span>{Object.values(n.asset_counts).reduce((a, b) => a + b, 0)} 张卡</span>
+                  <span>{t('shell.shelf.chapterStats', { chapters: n.chapters, adopted: n.adopted })}</span>
+                  <span>{t('shell.shelf.cards', { n: Object.values(n.asset_counts).reduce((a, b) => a + b, 0) })}</span>
                 </div>
               </div>
               {open && novel && (
@@ -93,17 +103,17 @@ export function NovelSidebar({
                           onClick={() => onOpenChapter(c.id)}>
                         <span className="hchap__title">{c.title}</span>
                         {liveChapter.has(c.id)
-                          ? <span className="tag tag--nar">转换中…</span>
+                          ? <span className="tag tag--nar">{t('shell.shelf.chapterConverting')}</span>
                           : v
-                            ? <span className="tag" title={`采用版 ${v.id}`}>✓ 采用 v{
-                                c.versions.length - c.versions.indexOf(v)}</span>
+                            ? <span className="tag" title={t('shell.shelf.adoptedTitle', { id: v.id })}>{
+                                t('shell.shelf.adopted', { n: c.versions.length - c.versions.indexOf(v) })}</span>
                             : c.latest_status
                               ? <span className="tag tag--ghost">{label(JOB_STATUS, c.latest_status)}</span>
-                              : <span className="tag tag--ghost">未转换</span>}
+                              : <span className="tag tag--ghost">{t('shell.shelf.notConverted')}</span>}
                       </li>
                     )
                   })}
-                  <li className="hchap__item hchap__item--new" onClick={onNewChapter}>＋ 新章节</li>
+                  <li className="hchap__item hchap__item--new" onClick={onNewChapter}>{t('shell.shelf.newChapter')}</li>
                 </ul>
               )}
             </li>

@@ -517,6 +517,25 @@ must(!has('两次输入的密码不一致'), '改对后提示应消失')
 await click(findByText('button', '注册并进入'))
 await settle(400)
 must(has('新建小说'), '注册后应进入新建小说')
+const emptyShelf = container.querySelector('aside [data-testid="empty-state"]')
+must(!!emptyShelf && (emptyShelf.textContent ?? '').includes('还没有小说，从导入第一章开始')
+     && [...emptyShelf.querySelectorAll('button')].some((b) => b.textContent?.includes('新建小说')),
+     '书架为空时侧栏应显示空状态与「新建小说」按钮')
+must(!container.querySelector('[data-testid="shelf-loading"]'), '读完后不应再显示骨架屏')
+{
+  const { NovelSidebar } = await import('../src/components/NovelSidebar')
+  const probe = doc.createElement('div')
+  const pr = createRoot(probe)
+  await act(async () => {
+    pr.render(<NovelSidebar novels={[]} novel={null} chapterId={null} running={[]}
+      activeJobId={null} loading onOpenNovel={() => {}} onOpenChapter={() => {}} onOpenJob={() => {}}
+      onNewChapter={() => {}} onNewNovel={() => {}} />)
+  })
+  must(probe.querySelectorAll('[data-slot="skeleton"]').length === 3 && !probe.textContent?.includes('读取中'),
+       '读取中应显示 3 条骨架屏而不是文字')
+  must(!probe.querySelector('[data-testid="empty-state"]'), '读取中不显示空状态')
+  await act(async () => { pr.unmount() })
+}
 must(has('alice'), '顶栏应显示当前用户')
 must(![...container.querySelectorAll('button')].some((b) => b.textContent === '管理'),
      '普通用户不应看到「管理」入口')
