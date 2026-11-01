@@ -81,7 +81,7 @@ from render import voice as render_voice
 from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
-from server import audit, auth, library, novels, pricing, store, usage
+from server import audit, auth, library, novels, pricing, store, summary, usage
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -436,6 +436,12 @@ def novels_create(body: NovelBody, user: dict = Depends(novel_user)):
 @app.get("/novels/{nid}")
 def novels_get(nid: str, user: dict = Depends(novel_user)):
     return _novel_call(novels.get_novel, user["id"], nid)
+
+
+@app.get("/novels/{nid}/summary")
+def novels_summary(nid: str, user: dict = Depends(novel_user)):
+    """概览、费用表、左栏章节卡片用：花费与各章进度汇总（只读，读会话不重算指纹）。"""
+    return _novel_call(summary.novel_summary, user["id"], nid)
 
 
 @app.patch("/novels/{nid}")
