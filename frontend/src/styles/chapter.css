@@ -134,3 +134,6 @@
 .chead--compact .chead__money { font-size: 12px; color: var(--ui-muted-foreground); white-space: nowrap; }
 .chead--compact .chead__num { padding: 2px 6px; font-size: 12px; }
 .tlc__head { position: absolute; top: 12px; left: 12px; z-index: 2; max-width: calc(100% - 24px); }
+
+/* 导入原文、生成分镜、下载：居中卡片，主按钮在卡片右下角 */
+.chap-card { width: 100%; max-width: 880px; margin-inline: auto; display: flex; flex-direction: column; gap: 16px; }

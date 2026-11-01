@@ -9,9 +9,11 @@ import type { Fix, Primary } from '@/workflow'
 
 const yuan = (n?: number) => (n === undefined ? '—' : `¥${n.toFixed(2)}`)
 
-export function PrimaryBar({ primary, busy, onRun, onFix }: {
+export function PrimaryBar({ primary, busy, inline, onRun, onFix }: {
   primary: Primary
   busy?: boolean
+  /** 放进卡片底部右对齐的一行（不用固定定位）；原因提示在按钮左边 */
+  inline?: boolean
   onRun: () => void
   onFix: (fix: Fix) => void
 }) {
@@ -20,11 +22,12 @@ export function PrimaryBar({ primary, busy, onRun, onFix }: {
   if (primary.action === 'none') return null
   const text = t(primary.label, { amount: yuan(primary.cny), count: primary.count ?? 0 })
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex max-w-sm flex-col items-end gap-2">
+    <div className={inline ? 'mt-2 flex items-center justify-end gap-3'
+                           : 'pointer-events-none fixed bottom-6 right-6 z-30 flex max-w-sm flex-col items-end gap-2'}>
       <AnimatePresence>
         {primary.blocked && (
           <motion.div {...m.enter} role="status" data-testid="primary-reason"
-                      className="pointer-events-auto flex items-center gap-3 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg">
+                      className={`${inline ? '' : 'pointer-events-auto '}flex items-center gap-3 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg`}>
             <span>{t(primary.blocked.reason)}</span>
             {(primary.blocked.fix.step || primary.blocked.fix.target || primary.blocked.fix.openFilm) && (
               <Button size="sm" variant="outline" className="gap-1.5" data-testid="primary-fix"
@@ -35,7 +38,7 @@ export function PrimaryBar({ primary, busy, onRun, onFix }: {
           </motion.div>
         )}
       </AnimatePresence>
-      <Button size="lg" data-testid="primary-action" className="pointer-events-auto gap-2 shadow-xl"
+      <Button size="lg" data-testid="primary-action" className={inline ? 'gap-2' : 'pointer-events-auto gap-2 shadow-xl'}
               disabled={!!primary.blocked || busy} onClick={onRun}>
         {text}<ArrowRight className="size-4" />
       </Button>

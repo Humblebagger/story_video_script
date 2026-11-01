@@ -69,6 +69,8 @@ interface Props {
 }
 
 const BOARD: StepId[] = ['review', 'render', 'compose']
+/** 这三步是居中卡片版式，主按钮放在卡片右下角 */
+const CARD: StepId[] = ['import', 'storyboard', 'download']
 const LIVE = ['queued', 'running']
 const idx = (id: StepId) => STEPS.indexOf(id)
 const nextFrame = (fn: () => void) =>
@@ -215,34 +217,45 @@ export function ChapterWorkflow({
     nextFrame(openFilm)
   }
 
+  const inlineBar = CARD.includes(view)
+  const bar = <PrimaryBar primary={primary} busy={busy} inline={inlineBar} onRun={run} onFix={fix} />
   const finalFiles = input.film?.final?.files ?? []
   const workspace = (() => {
     switch (view) {
       case 'import':
         return (
-          <section className="chap">
-            <SourceStep title={title} text={text} locked={locked} onTitle={setTitle} onText={setText} onDelete={onDelete} />
-          </section>
+          <div className="chap-card">
+            <section className="chap">
+              <SourceStep title={title} text={text} locked={locked} onTitle={setTitle} onText={setText} onDelete={onDelete} />
+            </section>
+            {bar}
+          </div>
         )
       case 'storyboard':
         return (
           <>
-            <section className="chap">
-              <GenerateStep novel={novel} chars={chapter.text.trim().length} mode={mode} strict={strict}
-                            converting={converting} onMode={setMode} onStrict={setStrict}
-                            onEditSource={() => setView('import')}
-                            onOpenJob={liveJob ? () => onOpenJob(liveJob) : undefined} />
-            </section>
+            <div className="chap-card">
+              <section className="chap">
+                <GenerateStep novel={novel} chars={chapter.text.trim().length} mode={mode} strict={strict}
+                              converting={converting} onMode={setMode} onStrict={setStrict}
+                              onEditSource={() => setView('import')}
+                              onOpenJob={liveJob ? () => onOpenJob(liveJob) : undefined} />
+              </section>
+              {bar}
+            </div>
             {/* 打开的是没有产物的版本（失败等）时，它的复验报告仍在这里看得到 */}
             {!doc && storyboard}
           </>
         )
       case 'download':
         return docVid && input.film && finalFiles.length ? (
-          <section className="chap">
-            <DownloadStep version={{ nid: novel.id, cid: chapter.id, vid: docVid }} film={input.film}
-                          compose={input.compose} onOpenFilm={recompose} />
-          </section>
+          <div className="chap-card">
+            <section className="chap">
+              <DownloadStep version={{ nid: novel.id, cid: chapter.id, vid: docVid }} film={input.film}
+                            compose={input.compose} onOpenFilm={recompose} />
+            </section>
+            {bar}
+          </div>
         ) : (
           <EmptyState icon={<Film className="size-6" />} title={t('flow.empty.film')} hint={t('flow.empty.filmHint')}
                       action={<Button variant="outline" onClick={() => setView('compose')}>{t('flow.goNeeded', { n: 5 })}</Button>} />
@@ -286,7 +299,7 @@ export function ChapterWorkflow({
       <motion.div key={BOARD.includes(view) ? 'board' : view} {...m.enter} className="flex flex-col gap-4">
         {workspace}
       </motion.div>
-      <PrimaryBar primary={primary} busy={busy} onRun={run} onFix={fix} />
+      {!inlineBar && bar}
       <UnsavedBar show={boardDirty || textDirty} saving={saving || savingText}
                   onSave={() => void saveAll()} onUndo={undoAll} />
     </div>
