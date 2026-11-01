@@ -967,6 +967,16 @@ def delete_style_image(user_id: str, nid: str) -> None:
             old.unlink(missing_ok=True)
 
 
+# ---------- 助手对话 ----------
+
+def assistant_db(user_id: str, nid: str) -> Path:
+    """助手对话存档（每部小说一个 SQLite 文件，删小说时随目录一起删）。小说不存在或不属于该用户抛 NotFound。"""
+    d = _novel_dir(user_id, nid)
+    if not (d / "novel.json").exists():
+        raise NotFound("小说不存在")
+    return d / "assistant.sqlite"
+
+
 # ---------- 出片会话目录（会话状态、片段、成片；不进 IR） ----------
 
 def render_dir(user_id: str, nid: str, cid: str, vid: str) -> Path:

@@ -2,6 +2,7 @@ anthropic>=1.13,<2
 httpx2>=2,<3
 langchain-anthropic>=1.7,<2
 langgraph>=1.2,<2
+langgraph-checkpoint-sqlite>=3.1,<4
 jsonschema>=4.0
 fastapi>=0.115
 uvicorn>=0.30
