@@ -65,7 +65,7 @@ from urllib.parse import quote
 from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -75,7 +75,9 @@ from pipeline import __version__
 from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
 from pipeline import novel_memory, verification
-from pipeline.chat import ChatInvoker
+from pipeline.chat import ChatInvoker, UsageCallback, build_chat_model, replace_thinking
+from assistant import events as assistant_events, graph as assistant_graph, store as assistant_store
+from assistant import tools as assistant_tools
 from render import keyframes as keyframes_mod
 from render import plan as render_plan_mod
 from render import compose as render_compose
@@ -317,6 +319,17 @@ def list_jobs(user: dict = Depends(current_user)):
         "last_log": j["log"][-1] if j["log"] else None,
         "progress": _progress_view(j),
     } for j in sorted(jobs, key=lambda x: x.get("created_at") or "", reverse=True)]}
+
+
+def _jobs_view(user_id: str) -> list:
+    """在跑任务的摘要（与 /jobs 同形），给助手的 jobs_running 工具用。"""
+    with _lock:
+        jobs = [j for j in _jobs.values() if j.get("user_id") == user_id]
+    return [{"id": j["id"], "status": j["status"], "novel_id": j.get("novel_id"), "chapter": j.get("chapter"),
+             "progress": _progress_view(j), "last_log": j["log"][-1] if j["log"] else None} for j in jobs]
+
+
+assistant_tools.jobs_source = _jobs_view
 
 
 @app.get("/jobs/{job_id}")
@@ -1305,6 +1318,92 @@ def constraints_update(nid: str, kid: str, body: ConstraintBody,
 def constraints_delete(nid: str, kid: str, user: dict = Depends(novel_user)):
     _novel_call(novels.delete_constraint, user["id"], nid, kid)
     return {"deleted": kid}
+
+
+# ---------- 助手 ----------
+
+_ASSISTANT_STEPS = ("import", "storyboard", "review", "render", "compose", "download")
+_ASSISTANT_MAX = 2000
+
+
+def _assistant_model():
+    """助手用的聊天模型：关掉 thinking（工具循环里不处理 thinking 块）。测试里替换成假模型。"""
+    return build_chat_model(replace_thinking(load_settings()))
+
+
+def _assistant_db(user: dict, nid: str):
+    try:
+        return novels.assistant_db(user["id"], nid)
+    except novels.NotFound:
+        raise HTTPException(404, "小说不存在")
+
+
+@app.get("/novels/{nid}/assistant")
+def assistant_history(nid: str, user: dict = Depends(novel_user)):
+    _assistant_db(user, nid)
+    if not assistant_store.exists(user["id"], nid):
+        return {"messages": []}
+    with assistant_store.saver(user["id"], nid) as cp:
+        agent = assistant_graph.build_agent(assistant_graph.NullModel(), cp)
+        cfg = assistant_graph.run_config(user["id"], nid, {}, "zh")
+        return {"messages": assistant_events.history(agent, cfg)}
+
+
+@app.delete("/novels/{nid}/assistant")
+def assistant_clear(nid: str, user: dict = Depends(novel_user)):
+    _assistant_db(user, nid)
+    if not assistant_store.try_begin(user["id"], nid):
+        raise HTTPException(409, "助手正在回答，等它说完再清空")
+    try:
+        assistant_store.clear(user["id"], nid)
+    finally:
+        assistant_store.end(user["id"], nid)
+    return {"ok": True}
+
+
+@app.post("/novels/{nid}/assistant/messages")
+def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_user)):
+    _assistant_db(user, nid)
+    text = str(body.get("text") or "").strip()
+    if not text or len(text) > _ASSISTANT_MAX:
+        raise HTTPException(422, f"消息不能为空，且不超过 {_ASSISTANT_MAX} 字")
+    lang = body.get("lang") if body.get("lang") in ("zh", "en") else "zh"
+    raw = body.get("where") or {}
+    if raw.get("step") is not None and raw.get("step") not in _ASSISTANT_STEPS:
+        raise HTTPException(422, "where.step 不合法")
+    where = {k: raw.get(k) for k in ("chapter_id", "version_id", "step") if isinstance(raw.get(k), str)}
+    if assistant_store.used_today(user["id"]) >= assistant_store.daily_limit():
+        raise HTTPException(429, "今天的助手消息已用完，明天再来")
+    if not assistant_store.try_begin(user["id"], nid):
+        raise HTTPException(409, "上一条还在回答")
+    try:
+        model = _assistant_model()
+    except Exception as e:
+        assistant_store.end(user["id"], nid)
+        raise HTTPException(503, f"助手暂不可用：{e}")
+    root = str(auth.DATA_DIR)   # 整个数据根：用户目录、密钥文件等任何服务器路径都隐去
+
+    def gen():
+        cb = UsageCallback()
+        ok = False
+        try:
+            with assistant_store.saver(user["id"], nid) as cp:
+                agent = assistant_graph.build_agent(model, cp)
+                cfg = assistant_graph.run_config(user["id"], nid, where, lang, [cb])
+                for ev in assistant_events.stream(agent, cfg, text, hide=root):
+                    if ev["event"] == "done":
+                        ok = True
+                    yield assistant_events.sse(ev)
+        finally:
+            assistant_store.end(user["id"], nid)
+            try:
+                usage.record(user_id=user["id"], purpose=assistant_store.PURPOSE, model=load_settings().model,
+                             usage=cb.usage_totals(), ok=ok, novel_id=nid, chapter_id=where.get("chapter_id"))
+            except Exception as e:  # 落账失败不影响对话
+                print(f"[usage] 助手落账失败：{e!r}", flush=True)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ---------- 探针 ----------
