@@ -2,8 +2,9 @@
 import { toast } from 'sonner'
 
 const log: { kind: 'ok' | 'err'; msg: string }[] = []
+const push = (kind: 'ok' | 'err', msg: string) => { log.push({ kind, msg }); if (log.length > 50) log.splice(0, log.length - 50) }
 export const notice = {
-  ok(msg: string, description?: string) { log.push({ kind: 'ok', msg }); toast.success(msg, { description }) },
-  err(msg: string, description?: string) { log.push({ kind: 'err', msg }); toast.error(msg, { description, duration: 12000, closeButton: true }) },
+  ok(msg: string, description?: string) { push('ok', msg); toast.success(msg, { description }) },
+  err(msg: string, description?: string) { push('err', msg); toast.error(msg, { description, duration: 12000, closeButton: true }) },
   log,
 }

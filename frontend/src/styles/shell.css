@@ -12,7 +12,7 @@
 
 .hist { padding: 16px 14px; }
 .hist__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-.hist__head h2 { font-size: 12px; color: var(--muted-foreground); letter-spacing: .04em; font-weight: 600; }
+.hist__head h2 { font-size: 12px; color: var(--ui-muted-foreground); letter-spacing: .04em; font-weight: 600; }
 .hist__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .hist__list--run { margin-bottom: 10px; }
 
@@ -40,22 +40,22 @@
 
 .hrun__top { display: flex; align-items: center; gap: 6px; }
 .hrun__title { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hrun__chapter { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hrun__meta { display: flex; flex-direction: column; gap: 1px; font-size: 12px; color: var(--muted-foreground); margin-top: 3px; }
+.hrun__chapter { font-size: 12px; color: var(--ui-muted-foreground); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrun__meta { display: flex; flex-direction: column; gap: 1px; font-size: 12px; color: var(--ui-muted-foreground); margin-top: 3px; }
 .hrun__last {
-  font-size: 12px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.5;
+  font-size: 12px; color: var(--ui-muted-foreground); margin-top: 4px; line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 /* 删除按钮（约束清单等处） */
 .hrun__del {
-  border: none; background: none; color: var(--muted-foreground);
+  border: none; background: none; color: var(--ui-muted-foreground);
   cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; transition: opacity 150ms ease-out, color 150ms ease-out;
 }
 .hrun__del:hover { color: var(--destructive); }
 
 /* 生成中的小圆点：品牌色缓慢脉动，减少动态效果时不动 */
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground); flex: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ui-muted-foreground); flex: none; }
 .dot--live { background: var(--primary); animation: dot-pulse 2s ease-in-out infinite; }
 @keyframes dot-pulse { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .dot--live { animation: none; } }
@@ -74,4 +74,4 @@
   border-radius: 3px; background: var(--primary);
 }
 .hchap__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hchap__item--new { color: var(--muted-foreground); }
+.hchap__item--new { color: var(--ui-muted-foreground); }

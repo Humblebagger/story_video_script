@@ -87,14 +87,14 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
             e: String(novel.memory.numbering.next_episode).padStart(2, '0'),
           })}
         </span>
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" aria-label={t('novel.more')}>
               <MoreHorizontal aria-hidden />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem variant="destructive" onSelect={() => void remove()}>
+            <DropdownMenuItem variant="destructive" onSelect={() => { setTimeout(() => void remove(), 0) }}>
               <Trash2 aria-hidden />{t('novel.deleteNovel')}
             </DropdownMenuItem>
           </DropdownMenuContent>

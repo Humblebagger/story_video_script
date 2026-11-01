@@ -822,9 +822,16 @@ export function TimelineCanvas({
                  el.setPointerCapture?.(e.pointerId)
                  const move = (ev: PointerEvent) =>
                    setTy(base - ((ev.clientY - startY) / Math.max(1, track - thumb)) * -minTy)
-                 const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up) }
+                 const up = () => {
+                   el.removeEventListener('pointermove', move)
+                   el.removeEventListener('pointerup', up)
+                   el.removeEventListener('pointercancel', up)
+                   el.removeEventListener('lostpointercapture', up)
+                 }
                  el.addEventListener('pointermove', move)
                  el.addEventListener('pointerup', up)
+                 el.addEventListener('pointercancel', up)
+                 el.addEventListener('lostpointercapture', up)
                }}>
             <div className="tlc__vthumb" style={{ top: top - RULER, height: thumb }} />
           </div>

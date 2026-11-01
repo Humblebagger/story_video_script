@@ -613,7 +613,7 @@ export default function App() {
         adminOpen={adminOpen && user.role === 'admin'}
         onToggleAdmin={() => setAdminOpen((v) => !v)}
         onLogout={logout}
-        onNewNovel={newNovel}
+        onNewNovel={() => void newNovel()}
         onOpenLocal={() => fileRef.current?.click()}
         crumbs={adminOpen && user.role === 'admin' ? []
           : [novel?.title, chapter?.title, docVid ?? undefined].filter((x): x is string => !!x)}

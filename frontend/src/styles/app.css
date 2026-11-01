@@ -170,7 +170,7 @@
     outline: 2px solid var(--primary);
     outline-offset: 2px;
     box-shadow: 0 0 0 6px color-mix(in oklab, var(--primary) 18%, transparent);
-    animation: tour-glow 2s ease-in-out infinite;
+    animation: tour-glow 2s ease-in-out 3;
   }
   @keyframes tour-glow {
     50% { box-shadow: 0 0 0 10px color-mix(in oklab, var(--primary) 8%, transparent); }

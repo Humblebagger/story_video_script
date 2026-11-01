@@ -296,5 +296,16 @@ for (const f of I18N_FILES) {
   must(!hits.length, `${f} 还有硬编码中文：第 ${hits.slice(0, 3).map(([n]) => n).join('、')} 行`)
 }
 
+// 样式表里每个 var(--x) 都要有定义（--x: 声明，含 @theme），TSX 内联设的变量放行
+{
+  const styleDir = path.join(SRC, 'styles')
+  const css = fs.readdirSync(styleDir).filter((f) => f.endsWith('.css')).map((f) => fs.readFileSync(path.join(styleDir, f), 'utf8'))
+  const defined = new Set(css.flatMap((s) => [...s.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])))
+  const inline = new Set(['--mood'])
+  const used = new Set(css.flatMap((s) => [...s.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1])))
+  const bad = [...used].filter((v) => !defined.has(v) && !inline.has(v))
+  must(!bad.length, `样式表用了未定义的变量：${bad.join('、')}`)
+}
+
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

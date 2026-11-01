@@ -12,7 +12,7 @@ const GAP = 8
 const MARGIN = 16
 
 const targetOf = (id: TourId) => document.querySelector<HTMLElement>(`[data-tour="${id}"]`)
-const MODAL = '.tlc, [role="dialog"]:not([data-testid="tour-tip"]), [role="alertdialog"]'
+const MODAL = '.tlc, [role="dialog"]:not([data-testid="tour-tip"]), [role="alertdialog"], [role="menu"], [role="listbox"]'
 const visible = (el: HTMLElement | null) => {
   if (!el) return false
   const r = el.getBoundingClientRect()
@@ -49,7 +49,10 @@ export function Tour({ force }: { force?: boolean }) {
   useEffect(() => {
     if (!on) return
     find()
-    const timer = setInterval(find, 800)
+    const timer = setInterval(() => {
+      if (TOUR.every((id) => seen().includes(id))) { clearInterval(timer); return }
+      find()
+    }, 800)
     window.addEventListener('resize', find)
     return () => { clearInterval(timer); window.removeEventListener('resize', find) }
   }, [on, find])
@@ -91,7 +94,13 @@ export function Tour({ force }: { force?: boolean }) {
   useEffect(() => {
     if (!cur) return
     // 捕获阶段先收：这一下 Esc 只关提示，不再连带关掉画布或对话框
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); ok() } }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return
+      const a = document.activeElement as HTMLElement | null
+      if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return
+      if (document.querySelector('[role="menu"], [role="listbox"]')) return
+      e.preventDefault(); ok()
+    }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [cur, ok])

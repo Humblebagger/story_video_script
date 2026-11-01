@@ -108,6 +108,7 @@ const { AuditTab } = await import('../src/components/admin/AuditTab')
 const { AdminView } = await import('../src/components/admin/AdminView')
 const { notice } = await import('../src/lib/notice')
 const { I18nProvider } = await import('../src/i18n')
+const { setCurrentLocale } = await import('../src/i18n/core')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -317,6 +318,7 @@ must(tabNames.join(' ') === 'Overview Users Usage Jobs Audit', `英文页签，�
 must(text().includes('Active (7d)'), '英文概览')
 await act(async () => { root.unmount() })
 root = createRoot(container as unknown as HTMLElement)
+setCurrentLocale('zh')
 console.log('9. 英文页签 ✓')
 
 await remount(<AdminView me={me} onBack={() => {}} />)

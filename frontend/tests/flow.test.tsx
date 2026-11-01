@@ -816,11 +816,43 @@ console.log('11c. 小说页章节卡片 → 默认页签 / 状态徽章 / 点卡
   must(enTabs.includes('Chapters') && enTabs.includes('Plot') && enTabs.includes('Constraints'), '英文页签：' + enTabs.join('|'))
   must((enBox.textContent ?? '').includes('+ New chapter') && !(enBox.textContent ?? '').includes('新章节'), '「新章节」按钮应是英文')
   must(!!enBox.querySelector('button[aria-label="More actions"]'), '标题右侧应有「更多操作」菜单')
+  setCurrentLocale('zh')
   await act(async () => { enRoot.unmount() })
   enBox.remove()
-  setCurrentLocale('zh')
 }
 console.log('11d. 小说页英文 → 页签 / 新章节按钮 / 更多菜单 ✓')
+
+// 11e. 删除小说走更多菜单：取消确认后页面不被锁住（pointer-events 不为 none），小说还在
+{
+  const box = doc.createElement('div')
+  doc.body.appendChild(box)
+  const r = createRoot(box)
+  let deleted = 0
+  const n = JSON.parse(JSON.stringify(shelf('alice')[0]))
+  const before = shelf('alice').length
+  await act(async () => {
+    r.render(<I18nProvider initial="zh"><NovelPage novel={n} running={[]} onChanged={() => {}} onDeleted={() => { deleted++ }}
+                   onOpenChapter={() => {}} onNewChapter={() => {}} /></I18nProvider>)
+  })
+  await settle()
+  const trigger = box.querySelector('button[aria-label="更多操作"]') as unknown as HTMLElement
+  must(!!trigger, '应有「更多操作」按钮')
+  await act(async () => {
+    trigger.dispatchEvent(new win.KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }) as unknown as Event)
+  })
+  await settle()
+  const item = [...win.document.body.querySelectorAll('[role="menuitem"]')].find((e) => (e.textContent ?? '').includes('删除'))
+  must(!!item, '菜单里应有「删除」项')
+  await act(async () => { (item as unknown as HTMLElement).click() })
+  await settle(300)
+  must(!!confirmDialog(), '选删除后应弹出确认框')
+  await answer(false)
+  must(win.document.body.style.pointerEvents !== 'none', '取消确认后页面不应被锁住')
+  must(deleted === 0 && shelf('alice').length === before, '取消后小说还在')
+  await act(async () => { r.unmount() })
+  box.remove()
+}
+console.log('11e. 删除小说 → 取消确认后页面可点、小说还在 ✓')
 
 // 12. 换个账号：看不到 alice 的任何东西
 await click(findByText('button', '退出'))
