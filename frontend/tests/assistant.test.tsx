@@ -209,9 +209,15 @@ globalThis.fetch = realFetch
   await act(async () => { q('[data-testid="activity-tab-assistant"]')!.click() })
   must(tabs.join() === 'assistant', '点助手调 onTab')
 
-  await act(async () => { root.render(panel({ assistant: h('div', { 'data-testid': 'ast' }, '助手内容'), tab: 'assistant' })) })
+  // 带一个在跑的任务：动态页签里看得到它，助手页签里不该出现
+  const job = { id: 'j1', status: 'running', created_at: null, work_title: '药', chapter: '第一章', chars: 1,
+                log_lines: 0, last_log: null, progress: null } as unknown as import('../src/types').JobSummary
+  await act(async () => { root.render(panel({ running: [job], assistant: h('div', { 'data-testid': 'ast' }, '助手内容'), tab: 'activity' })) })
+  must(!!q('[data-testid="activity-running"]'), '动态页签列出在跑的任务')
+  await act(async () => { root.render(panel({ running: [job], assistant: h('div', { 'data-testid': 'ast' }, '助手内容'), tab: 'assistant' })) })
   must(!!q('aside.activity--wide'), '助手页签加宽')
-  must(!!q('[data-testid="ast"]') && !q('[data-testid="activity-empty"]') && !tbox.querySelector('.activity__title'), '渲染助手内容')
+  must(!!q('[data-testid="ast"]') && !q('[data-testid="activity-running"]') && !q('[data-testid="empty-state"]')
+       && !tbox.querySelector('.activity__title'), '助手页签只渲染助手内容')
   must(q('[data-testid="activity-tab-assistant"]')!.getAttribute('aria-selected') === 'true', '助手页签选中')
 
   await act(async () => { root.render(panel({ tab: 'assistant' })) })
