@@ -4,6 +4,7 @@
 done {} / error {message}。文字只从 messages 流取（逐字），工具起止从 updates 流取，避免重复。
 """
 import json
+from pathlib import Path
 from typing import Iterator, Optional
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
@@ -20,7 +21,12 @@ def text_of(msg) -> str:
 
 
 def _hide(text: str, hide: Optional[str]) -> str:
-    return text.replace(hide, "…") if hide else text
+    """隐去服务器目录：原写法与 resolve 后的写法都换掉（macOS 上 /var 与 /private/var 是同一处）。"""
+    if not hide:
+        return text
+    for r in sorted({hide, str(Path(hide).resolve())}, key=len, reverse=True):
+        text = text.replace(r, "…")
+    return text
 
 
 def stream(agent, config: dict, text: str, hide: Optional[str] = None) -> Iterator[dict]:

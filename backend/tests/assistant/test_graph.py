@@ -34,6 +34,12 @@ def main() -> int:
     tail = [HumanMessage("q"), call("plot_get", {}, "t1"), ToolMessage("x", tool_call_id="t1"), AIMessage("a")] * 6
     cut = graph.trim(tail)
     assert isinstance(cut[0], HumanMessage) and len(cut) <= graph.HISTORY
+    long_turn = [HumanMessage("旧"), AIMessage("旧答"), HumanMessage("本轮")]
+    for i in range(12):
+        long_turn += [call("plot_get", {}, f"x{i}"), ToolMessage("x", tool_call_id=f"x{i}")]
+    cut = graph.trim(long_turn)
+    assert cut[0].content == "本轮" and len(cut) == 25, "本轮工具调用很多时整轮保留"
+    assert graph.trim([]) == []
     print("1. 历史裁剪 ✓")
 
     # 2. 补全被打断的工具调用

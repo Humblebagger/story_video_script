@@ -18,11 +18,14 @@ LANG = {"zh": "简体中文", "en": "English"}
 
 
 def trim(messages: list) -> list:
-    """最近 HISTORY 条，并从前面丢到第一条是用户消息为止（不以孤立的工具结果开头）。"""
-    cut = list(messages[-HISTORY:])
-    while cut and not isinstance(cut[0], HumanMessage):
-        cut.pop(0)
-    return cut
+    """最近 HISTORY 条，并从前面丢到第一条是用户消息为止（不以孤立的工具结果开头）。
+    本轮工具调用多到最近 HISTORY 条里没有用户消息时，从本轮的用户消息起整轮保留（否则模型只收到系统提示）。"""
+    start = max(0, len(messages) - HISTORY)
+    while start < len(messages) and not isinstance(messages[start], HumanMessage):
+        start += 1
+    if start == len(messages):
+        start = next((i for i in range(len(messages) - 1, -1, -1) if isinstance(messages[i], HumanMessage)), 0)
+    return list(messages[start:])
 
 
 def close_dangling(messages: list) -> list:
