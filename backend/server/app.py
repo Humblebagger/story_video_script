@@ -45,6 +45,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   POST                …/versions/{vid}/render/run               批量出剩余各段（带确认金额，不一致 409）
   PUT / PATCH         …/render/clips/{clip}/chosen、…/clips/{clip}   采用某次 / 原声静音
   GET                 …/versions/{vid}/render/files/{path}      取片段与尾帧
+  GET                 …/versions/{vid}/render/export.zip        导出剪辑工程（FCPXML + 素材 + 字幕 + 说明；成片已合成且未过期才可）
 
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
@@ -81,6 +82,7 @@ from render import providers as render_providers
 from render import runner as render_runner
 from render import session as render_session
 from render import mix as render_mix
+from render import export_fcpxml as render_export_fcpxml
 from render import voice as render_voice
 from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
@@ -1069,6 +1071,18 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
         p["final"] = dict(f, stale=stale)
     else:
         p["final"] = None
+    fin = p["final"]
+    if fin and fin.get("state") in render_session.COMPOSE_BUSY:
+        reason = "busy"
+    elif not fin or not fin.get("files"):
+        reason = "none"
+    elif fin["stale"]:
+        reason = "stale"
+    elif not (Path(root) / "final" / "timeline.json").is_file():
+        reason = "no_timeline"
+    else:
+        reason = None
+    p["exportable"], p["export_reason"] = reason is None, reason
     rep = Path(root) / f["report"] if f and f.get("files") and f.get("report") else None
     try:
         p["report"] = json.loads(rep.read_text(encoding="utf-8")) if rep and rep.is_file() else None
@@ -1084,6 +1098,28 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
 def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: dict = Depends(novel_user)):
     """合成预览（配音条数、未缓存字数与费用、缺音色、缺视频的段、BGM、选曲参考）、当前成片状态与合成报告。"""
     return _compose_preview(user, nid, cid, vid, draft)[4]
+
+
+@app.get(_R + "/export.zip")
+def render_export(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+    """导出剪辑工程（FCPXML + 素材 + 字幕 + 说明）。只读本地文件、跑本地 ffmpeg，不花钱。"""
+    root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, True)
+    reason = p.get("export_reason")
+    if reason:
+        raise HTTPException(409, {"none": "还没有合成好的成片", "stale": "成片已过期，请先重新合成",
+                                  "no_timeline": "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）",
+                                  "busy": "正在合成，完成后再导出"}[reason])
+    tools = render_mix.tools()
+    if not tools:
+        raise HTTPException(503, "服务器没有安装 ffmpeg，无法导出")
+    novel = _novel_call(novels.get_novel, user["id"], nid)
+    chapter = next((c for c in novel["chapters"] if c["id"] == cid), {})
+    title = f"{novel['title']}-{chapter.get('title', cid)}-{vid[:8]}"
+    try:
+        path = render_export_fcpxml.export(root, title=title, tools=tools)
+    except render_export_fcpxml.ExportError as e:
+        raise HTTPException(409, _hide_root(str(e), root))
+    return FileResponse(path, media_type="application/zip", filename=path.name)
 
 
 def _hide_root(text: str, root) -> str:

@@ -7,10 +7,12 @@
 用法: python3 tests/server/test_compose.py
 """
 import copy
+import io
 import json
 import os
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,7 +25,7 @@ os.environ["STORYBOARD_TTS_PROVIDER"] = "fake"
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
-from render import mix, providers, voice, session as render_session  # noqa: E402
+from render import export_fcpxml, mix, providers, voice, session as render_session  # noqa: E402
 from render.providers.fake import FakeTts, FakeVideo  # noqa: E402
 from render.providers.tts_base import tts_cost  # noqa: E402
 from server import app as app_mod  # noqa: E402
@@ -81,6 +83,9 @@ def main() -> int:
     lines = voice.tts_lines(voice.speech_lines(DOC), "tts_all")
     assert p["lines"] == len(lines) and p["no_video"] and p["final"] is None and "tools" in p
     assert p["missing_voices"] == v["missing"]
+    assert p["exportable"] is False and p["export_reason"] == "none"
+    r = c.get(R + "/export.zip", headers=H)
+    assert r.status_code == 409 and "还没有" in r.json()["detail"]
     print("3. 合成预览 ✓")
 
     # 4. 拦截：没装 ffmpeg → 422；缺音色 → 422；补齐音色后金额要确认（409 带金额）
@@ -131,6 +136,57 @@ def main() -> int:
     assert c.get(R + "/compose", headers=H).json()["final"]["stale"] is True
     novels.update_version_result(uid, nid, cid, "v1", copy.deepcopy(DOC), verification={}, status="succeeded")
     print("5. 后台合成到完成、配音费计入已花、成片可取、分镜一改就过期 ✓")
+
+    # 5b. 导出：旧成片没有时间轴 → 409 重新合成；有时间轴 → zip；过期 409；别人 404；没 ffmpeg 503
+    p5 = c.get(R + "/compose", headers=H).json()
+    assert p5["exportable"] is False and p5["export_reason"] == "no_timeline"
+    r = c.get(R + "/export.zip", headers=H)
+    assert r.status_code == 409 and "重新合成" in r.json()["detail"]
+    (Path(root) / "final" / "timeline.json").write_text("{}", encoding="utf-8")
+    p5 = c.get(R + "/compose", headers=H).json()
+    assert p5["exportable"] is True and p5["export_reason"] is None
+    real_export = export_fcpxml.export
+
+    def fake_export(root_, *, title, tools):
+        assert tools == ("ffmpeg", "ffprobe") and "药" in title and "第一章" in title
+        d = Path(root_) / "final" / "export"
+        d.mkdir(parents=True, exist_ok=True)
+        z = d / "药-第一章.zip"
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("药/project.fcpxml", "<fcpxml/>")
+        return z
+    export_fcpxml.export = fake_export
+    try:
+        r = c.get(R + "/export.zip", headers=H)
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"] == "application/zip"
+        assert "filename*=utf-8''" in r.headers["content-disposition"].lower(), r.headers["content-disposition"]
+        assert any(n.endswith("project.fcpxml") for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist())
+        # 导出报错转 409 且不带服务器目录
+        def boom(root_, *, title, tools):
+            raise export_fcpxml.ExportError(f"缺文件 {root_}/final/x.mp4")
+        export_fcpxml.export = boom
+        r = c.get(R + "/export.zip", headers=H)
+        assert r.status_code == 409 and str(root) not in r.json()["detail"], r.text
+        export_fcpxml.export = fake_export
+        # 没装 ffmpeg
+        mix.tools = lambda: None
+        assert c.get(R + "/export.zip", headers=H).status_code == 503
+        mix.tools = lambda: ("ffmpeg", "ffprobe")
+        # 别的用户看不到
+        uid2 = auth.register("bob", "secret2")["id"]
+        H2 = {"Authorization": f"Bearer {auth.issue_token(uid2)}"}
+        assert c.get(R + "/export.zip", headers=H2).status_code == 404
+        # 分镜一改成片过期
+        novels.update_version_result(uid, nid, cid, "v1", edited, verification={}, status="succeeded")
+        p5 = c.get(R + "/compose", headers=H).json()
+        assert p5["exportable"] is False and p5["export_reason"] == "stale"
+        assert c.get(R + "/export.zip", headers=H).status_code == 409
+        novels.update_version_result(uid, nid, cid, "v1", copy.deepcopy(DOC), verification={}, status="succeeded")
+    finally:
+        export_fcpxml.export = real_export
+        (Path(root) / "final" / "timeline.json").unlink()
+    print("5b. 导出：无时间轴 409、zip 下载、报错隐去目录、无 ffmpeg 503、他人 404、过期 409 ✓")
 
     # 6. 合成失败：错误与 ffmpeg 输出记下；意外异常也落到失败
     def broken(*a, **kw):
