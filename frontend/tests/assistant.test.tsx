@@ -1,6 +1,6 @@
 /** 助手：SSE 解析、极简渲染、位置与跳转存储；面板交互（Task 6 追加）。跑法：npm test */
 import { parseSse } from '../src/lib/sse'
-import { getWhere, onStepRequest, requestStep, setWhere, takeStep } from '../src/lib/assistantBridge'
+import { cancelStep, getWhere, onStepRequest, requestStep, setWhere, takeStep } from '../src/lib/assistantBridge'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
 
@@ -26,6 +26,12 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   must(hits === 1, '通知订阅者')
   must(takeStep('c1') === null, '别的章取不到')
   must(takeStep('c2') === 'render' && takeStep('c2') === null, '只取一次')
+  requestStep('c3', 'compose')
+  cancelStep('c2')
+  must(takeStep('c3') === 'compose', '撤别的章不影响')
+  requestStep('c3', 'compose')
+  cancelStep('c3')
+  must(takeStep('c3') === null, '打开没成功：请求撤掉')
   off()
   console.log('✓ 位置与跳转')
 }
@@ -69,6 +75,8 @@ const realFetch = globalThis.fetch
 let history: unknown[] = []
 let script: Ev[] = []
 let hold: Promise<void> | null = null        // 设了就等它 resolve 再推 done（测「回答中」）
+let after: Ev[] = []                          // hold 放行之后、done 之前再推的事件
+const signals: AbortSignal[] = []
 let status = 200
 const calls: { method: string; url: string; body?: string }[] = []
 globalThis.fetch = (async (url: string, init?: RequestInit) => {
@@ -79,12 +87,14 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
   if (status !== 200) return new Response(JSON.stringify({ detail: 'x' }), { status })
   const enc = new TextEncoder()
   const signal = init?.signal
+  if (signal) signals.push(signal)
   const stream = new ReadableStream({
     async start(ctl) {
       for (const e of script) ctl.enqueue(enc.encode(`event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`))
       if (hold) {
         await new Promise<void>((res, rej) => { hold!.then(res); signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))) })
           .catch((err) => { ctl.error(err) })
+        try { for (const e of after) ctl.enqueue(enc.encode(`event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`)) } catch { /* 已出错 */ }
       }
       try { ctl.enqueue(enc.encode('event: done\ndata: {}\n\n')); ctl.close() } catch { /* 已出错 */ }
     },
@@ -96,11 +106,11 @@ const flush = async () => { for (let i = 0; i < 5; i++) await act(async () => { 
 const panelBox = doc.createElement('div')
 doc.body.appendChild(panelBox)
 const gotos: unknown[] = []
-const mount = async () => {
+const mount = async (novelId = 'n1') => {
   const root = createRoot(panelBox as unknown as HTMLElement)
   await act(async () => {
     root.render(h(I18nProvider, null, h(TooltipProvider, null,
-      h(AssistantPanel, { novelId: 'n1', chapters: [{ id: 'c1', title: '第一章' }], onGoto: (g: unknown) => gotos.push(g) }))))
+      h(AssistantPanel, { novelId, chapters: [{ id: 'c1', title: '第一章' }], onGoto: (g: unknown) => gotos.push(g) }))))
   })
   await flush()
   return root
@@ -188,6 +198,41 @@ const enter = async (composing = false, keyCode = 13) => {
   await act(async () => { root.unmount() })
   status = 200; history = []
   console.log('✓ 对话面板')
+
+  // 回答中卸载面板（关面板、切到动态）：不中断；重新挂上时接着显示后来流进来的文字
+  let go!: () => void
+  hold = new Promise<void>((r) => { go = r })
+  script = [{ event: 'token', data: { text: '前半' } }]
+  after = [{ event: 'token', data: { text: '后半' } }]
+  root = await mount('n2')
+  await type('长问题')
+  await enter()
+  must(($('assistant-bot')?.textContent ?? '').includes('前半') && !!$('assistant-stop'), '回答中')
+  const sig = signals[signals.length - 1]
+  await act(async () => { root.unmount() })
+  go(); await flush()
+  must(!sig.aborted, '卸载面板不中断请求')
+  root = await mount('n2')
+  must(($('assistant-bot')?.textContent ?? '') === '前半后半', '重新挂上：接着流进来的文字都在')
+  must(!$('assistant-interrupted') && !$('assistant-stop') && !!$('assistant-send'), '回答已正常结束')
+  must(calls.filter((c) => c.method === 'GET' && c.url.includes('n2')).length === 1, '重新挂上不重读历史（不覆盖本地对话）')
+  await act(async () => { root.unmount() })
+  hold = null; after = []
+
+  // 换到别的小说：正在跑的回答中断并丢掉
+  const { keepOnlyAssistant, getSession } = await import('../src/lib/assistantSession')
+  hold = new Promise<void>(() => {})
+  script = [{ event: 'token', data: { text: '慢' } }]
+  root = await mount('n3')
+  await type('问')
+  await enter()
+  const sig3 = signals[signals.length - 1]
+  await act(async () => { keepOnlyAssistant('n1') })
+  await flush()
+  must(sig3.aborted && !getSession('n3').msgs.length && !getSession('n2').msgs.length, '换小说中断并丢掉别的会话')
+  await act(async () => { root.unmount() })
+  hold = null
+  console.log('✓ 面板卸载不中断回答')
 }
 globalThis.fetch = realFetch
 

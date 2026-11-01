@@ -25,7 +25,8 @@ import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { ActivityPanel } from './components/shell/ActivityPanel'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
-import { requestStep } from './lib/assistantBridge'
+import { cancelStep, requestStep } from './lib/assistantBridge'
+import { keepOnlyAssistant } from './lib/assistantSession'
 import type { DoneJob } from './components/shell/ActivityPanel'
 import { ProjectNav } from './components/shell/ProjectNav'
 import { readLastChapter, writeLastChapter } from './lastChapter'
@@ -283,6 +284,9 @@ export default function App() {
     health().then((h) => { setSvc(h); setSvcDown(false) }).catch(() => setSvcDown(true))
   }, [user?.id])
 
+  // 助手：换到别的小说（或回书架）时中断并丢掉上一部的对话；同一部小说里关面板、切页签都不中断
+  useEffect(() => { keepOnlyAssistant(novel?.id ?? null) }, [novel?.id])
+
   useEffect(() => {
     if (!user) return
     // 缓存的用户信息可能已过期，向服务端确认一次
@@ -350,8 +354,8 @@ export default function App() {
   }
 
   /** 打开章节：给了 vid 就直接打开那一版；否则本章有转换在跑就接上任务面板，再否则摆出采用版（没有就最新一版） */
-  const openChapter = async (cid: string, nid = novel?.id, jobId?: string, vid?: string) => {
-    if (!nid || !(await confirmLeave())) return
+  const openChapter = async (cid: string, nid = novel?.id, jobId?: string, vid?: string): Promise<boolean> => {
+    if (!nid || !(await confirmLeave())) return false
     clearWork()
     try {
       const [n, c] = await Promise.all([
@@ -367,8 +371,10 @@ export default function App() {
         const target = vid ?? c.adopted_version ?? c.versions[0]?.id
         if (target) void openVersion(nid, cid, target)
       }
+      return true
     } catch (e) {
       setAlert(t('app.err.chapter', { msg: msg(e) }))
+      return false
     }
   }
 
@@ -605,6 +611,7 @@ export default function App() {
   }
 
   const resetSignedOut = () => {
+    keepOnlyAssistant(null)   // 退出登录：中断助手回答，丢掉所有对话
     clearWork()
     setAdminOpen(false)
     setUser(null)
@@ -740,8 +747,11 @@ export default function App() {
                            <AssistantPanel novelId={novel.id}
                                            chapters={novel.chapters.map((c) => ({ id: c.id, title: c.title }))}
                                            onGoto={(g) => {
-                                             if (g.chapter_id !== chapter?.id) void openChapter(g.chapter_id)
+                                             // 先登记再打开（工作台挂载时取走）；没打开成（离开被取消、读取失败）就撤掉，免得下次进这章才生效
                                              requestStep(g.chapter_id, g.step)
+                                             if (g.chapter_id !== chapter?.id) {
+                                               void openChapter(g.chapter_id).then((ok) => { if (!ok) cancelStep(g.chapter_id) })
+                                             }
                                            }} />
                          ) : undefined}
                          onOpenDone={(d) => openFromToast.current(d)}

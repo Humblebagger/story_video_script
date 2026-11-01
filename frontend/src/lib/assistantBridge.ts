@@ -35,6 +35,11 @@ export function takeStep(chapter_id: string): AssistantStep | null {
   return s
 }
 
+/** 撤掉发给这一章、还没被取走的跳转请求（打开章节没成功时） */
+export function cancelStep(chapter_id: string): void {
+  if (wanted?.chapter_id === chapter_id) wanted = null
+}
+
 export function onStepRequest(cb: () => void): () => void {
   wantSubs.add(cb)
   return () => { wantSubs.delete(cb) }

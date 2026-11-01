@@ -1,18 +1,22 @@
 /** 助手对话（右侧面板的「助手」页签）：历史、流式回答、工具调用折叠行、跳转按钮、停止、清空、示例问题。
+ *  对话状态与正在跑的流在 assistantSession（模块级），面板只是视图：卸载（关面板、切页签）不中断回答。
  *  当前位置读 assistantBridge；跳转交给 onGoto（App 打开章节并切步骤）。 */
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronRight, Loader2, Send, Square, X } from 'lucide-react'
-import { ApiError, clearAssistant, getAssistant, streamAssistant } from '@/api'
+import { toast } from 'sonner'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { useWhere } from '@/lib/assistantBridge'
+import {
+  ASSISTANT_MAX as MAX, clearAssistantSession, loadAssistant, retryAssistant, sendAssistant, setDraft, stopAssistant,
+  useAssistantSession,
+} from '@/lib/assistantSession'
+import type { SendOpts } from '@/lib/assistantSession'
 import { MiniMd } from '@/lib/miniMd'
-import type { AssistantGoto, AssistantMsg, AssistantTool } from '@/types'
-
-const MAX = 2000
+import type { AssistantGoto, AssistantTool } from '@/types'
 
 export function AssistantPanel({ novelId, chapters, onGoto }: {
   novelId: string
@@ -22,20 +26,11 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
   const { t, locale } = useI18n()
   const where = useWhere()
   const [ask, confirmUi] = useConfirm()
-  const [msgs, setMsgs] = useState<AssistantMsg[]>([])
-  const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [limited, setLimited] = useState(false)
+  const { msgs, busy, limited, draft: text } = useAssistantSession(novelId)
   const [open, setOpen] = useState<Record<string, boolean>>({})
-  const abort = useRef<AbortController | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    let live = true
-    setMsgs([])
-    getAssistant(novelId).then((r) => { if (live) setMsgs(r.messages) }).catch(() => {})
-    return () => { live = false; abort.current?.abort() }
-  }, [novelId])
+  useEffect(() => { loadAssistant(novelId) }, [novelId])
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight }) }, [msgs])
 
   const title = (cid?: string) => chapters.find((c) => c.id === cid)?.title ?? ''
@@ -43,54 +38,18 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
     ? [title(where.chapter_id), where.step ? t(`flow.steps.${where.step}` as MsgKey) : ''].filter(Boolean).join(' · ')
     : t('assistant.whereOverview')
 
-  /** 改最后一条助手消息 */
-  const patchLast = (fn: (m: AssistantMsg) => AssistantMsg) =>
-    setMsgs((ms) => ms.map((m, i) => (i === ms.length - 1 ? fn(m) : m)))
-
-  const sendText = async (raw: string) => {
-    const q = raw.trim()
-    if (!q || busy || limited || q.length > MAX) return
-    setText('')
-    setBusy(true)
-    setMsgs((ms) => [...ms, { role: 'user', text: q }, { role: 'assistant', text: '', tools: [], goto: [] }])
-    const ctl = new AbortController()
-    abort.current = ctl
-    try {
-      await streamAssistant(novelId, { text: q, lang: locale, where }, (e) => {
-        if (e.event === 'token') patchLast((m) => ({ ...m, text: m.text + e.data.text }))
-        else if (e.event === 'tool_start') {
-          const tool: AssistantTool = { ...e.data, ok: null, summary: '' }
-          patchLast((m) => ({ ...m, tools: [...(m.tools ?? []), tool] }))
-        } else if (e.event === 'tool_end') {
-          patchLast((m) => ({ ...m, tools: (m.tools ?? []).map((x) => (x.id === e.data.id ? { ...x, ok: e.data.ok, summary: e.data.summary } : x)) }))
-        } else if (e.event === 'goto') patchLast((m) => ({ ...m, goto: [...(m.goto ?? []), e.data] }))
-        else if (e.event === 'error') patchLast((m) => ({ ...m, error: e.data.message }))
-      }, ctl.signal)
-    } catch (err) {
-      if (ctl.signal.aborted) patchLast((m) => ({ ...m, interrupted: true }))
-      else if (err instanceof ApiError && err.status === 429) {
-        setLimited(true)
-        setMsgs((ms) => ms.slice(0, -2))
-        setText(q)
-      } else if (err instanceof ApiError && err.status === 409) patchLast((m) => ({ ...m, error: t('assistant.busy') }))
-      else patchLast((m) => ({ ...m, error: err instanceof Error ? err.message : String(err) }))
-    } finally {
-      setBusy(false)
-      abort.current = null
-    }
-  }
-
-  const retry = () => {
-    const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
-    if (!lastUser) return
-    setMsgs((ms) => ms.slice(0, -2))
-    void sendText(lastUser.text)
-  }
+  const opts = (): SendOpts => ({ lang: locale, where, busyText: t('assistant.busy'), cutOffText: t('assistant.cutOff') })
+  const setText = (v: string) => setDraft(novelId, v)
+  const sendText = (raw: string) => { void sendAssistant(novelId, raw, opts()) }
+  const retry = () => retryAssistant(novelId, opts())
 
   const clear = async () => {
     if (!(await ask({ title: t('assistant.clearTitle'), body: t('assistant.clearBody'), action: t('assistant.clear'), danger: true }))) return
-    await clearAssistant(novelId)
-    setMsgs([])
+    try {
+      await clearAssistantSession(novelId)
+    } catch (e) {
+      toast.error(t('assistant.clearFailed', { msg: e instanceof Error ? e.message : String(e) }))
+    }
   }
 
   const toolLabel = (x: AssistantTool) => {
@@ -115,7 +74,7 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
             <p className="text-sm text-muted-foreground">{t('assistant.empty')}</p>
             {[t('assistant.example1'), t('assistant.example2'), t('assistant.example3')].map((q) => (
               <Button key={q} variant="outline" size="sm" className="h-auto whitespace-normal text-left"
-                      data-testid="assistant-example" onClick={() => void sendText(q)}>{q}</Button>
+                      data-testid="assistant-example" onClick={() => sendText(q)}>{q}</Button>
             ))}
           </div>
         )}
@@ -151,17 +110,17 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
         ))}
         {limited && <p className="text-xs text-muted-foreground" data-testid="assistant-limit">{t('assistant.limit')}</p>}
       </div>
-      <form className="assistant__input" onSubmit={(e) => { e.preventDefault(); void sendText(text) }}>
+      <form className="assistant__input" onSubmit={(e) => { e.preventDefault(); sendText(text) }}>
         <Textarea value={text} disabled={limited} placeholder={t('assistant.placeholder')} maxLength={MAX}
                   data-testid="assistant-input" aria-label={t('assistant.placeholder')}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
                     // Safari 确认输入法候选的回车 isComposing 已是 false，只能靠 keyCode 229 认出来
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void sendText(text) }
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); sendText(text) }
                   }} />
         {busy ? (
           <Button type="button" size="icon" variant="outline" aria-label={t('assistant.stop')} data-testid="assistant-stop"
-                  onClick={() => abort.current?.abort()}>
+                  onClick={() => stopAssistant(novelId)}>
             <Square className="size-4" />
           </Button>
         ) : (

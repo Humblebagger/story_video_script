@@ -134,6 +134,8 @@ export const en: Messages = {
     limit: 'You have used all assistant messages for today. Try again tomorrow.',
     busy: 'Still answering the previous message',
     tooLong: 'At most {n} characters',
+    cutOff: 'The connection dropped before the answer finished',
+    clearFailed: 'Could not clear: {msg}',
     tool: {
       novel_overview: 'Checked novel overview', chapter_status: 'Checked chapter status', shots_get: 'Checked shots',
       assets_find: 'Checked asset cards', plot_get: 'Checked main plot', film_status: 'Checked render status',

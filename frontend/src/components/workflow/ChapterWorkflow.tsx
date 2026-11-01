@@ -137,8 +137,10 @@ export function ChapterWorkflow({
     setWhere({ chapter_id: chapter.id, version_id: vid ?? undefined, step: view })
   }, [chapter.id, vid, view])
   useEffect(() => () => setWhere({}), [])
+  // 助手要的那一步：出片状态落地前先记着，落地后的「停到该做的那一步」不能把它盖掉
+  const asked = useRef<StepId | null>(null)
   useEffect(() => {
-    const take = () => { const s = takeStep(chapter.id); if (s) setView(s) }
+    const take = () => { const s = takeStep(chapter.id); if (s) { asked.current = s; setView(s) } }
     take()
     return onStepRequest(take)
   }, [chapter.id])
@@ -151,6 +153,7 @@ export function ChapterWorkflow({
   const genJobNow = liveJob?.id ?? liveJobId ?? undefined
   // 出片状态有读取在路上时值可能是旧的：跟步与提示等它落地
   const settled = ready && !flow.pending
+  const hasVersions = chapter.versions.length > 0
   useEffect(() => {
     const now = { render: renderDone, compose: composeDone }
     const before = seen.current
@@ -168,9 +171,16 @@ export function ChapterWorkflow({
       genJob = undefined
     }
     if (!settled) { seen.current = { ...before, awaitingGen, genJob }; return }
+    const want = asked.current
+    // 这一版落地了（或这章根本没有版本、正在生成）：助手的请求只管到这里。
+    // 版本还没摆出来时出片状态也算「已读到」，那时不能清，否则版本一到就被「该做的那一步」盖掉
+    if (vid || !hasVersions || converting) asked.current = null
     if (vid && before.vid !== vid) {
-      // 换了版本（含进章节后第一次打开版本、生成完摆出新版本）：等同重新进章节，停到这一版该做的那一步
-      setView(followCur)
+      // 换了版本（含进章节后第一次打开版本、生成完摆出新版本）：等同重新进章节，停到这一版该做的那一步；
+      // 助手刚请求了某一步就停在那一步
+      setView(want ?? followCur)
+    } else if (want) {
+      // 已落地时收到的请求 take 里已经切过去了，这里不再往前跟
     } else if (idx(followCur) > idx(before.cur) && idx(followCur) > idx(view)) {
       // 只往前跟，且不把视图往回拉
       setView(followCur)
@@ -180,7 +190,7 @@ export function ChapterWorkflow({
       if (!before.compose && now.compose) toast.success(t('flow.done.compose'))
     }
     seen.current = { cur: followCur, vid, ...now, awaitingGen, genJob }
-  }, [followCur, view, vid, settled, converting, live, shots, genDone, renderDone, composeDone, genJobNow, t])
+  }, [followCur, view, vid, settled, converting, live, shots, genDone, renderDone, composeDone, genJobNow, hasVersions, t])
 
   const saveText = async () => {
     setSavingText(true)

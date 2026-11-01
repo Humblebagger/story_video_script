@@ -132,6 +132,8 @@ export const zh = {
     limit: '今天的助手消息已用完，明天再来',
     busy: '上一条还在回答',
     tooLong: '最多 {n} 字',
+    cutOff: '连接断了，回答没有收完',
+    clearFailed: '清空失败：{msg}',
     tool: {
       novel_overview: '查了小说总览', chapter_status: '查了章节状态', shots_get: '查了镜头',
       assets_find: '查了资产卡', plot_get: '查了主线剧情', film_status: '查了出片状态',

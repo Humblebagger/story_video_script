@@ -155,7 +155,7 @@ console.log('4. flashTarget ✓')
   const flowOf = (f: FilmSession | null, loaded = true) =>
     ({ film: f, compose: null, finalStale: false, reload: async () => {}, loaded, pending: false })
   let films = 0
-  const wf = (p: { docVid: string; dirty?: boolean; flow: ReturnType<typeof flowOf> }) => (
+  const wf = (p: { docVid: string | null; dirty?: boolean; flow: ReturnType<typeof flowOf> }) => (
     <ChapterWorkflow novel={novel} chapter={chapter} docVid={p.docVid} doc={null} dirty={!!p.dirty} saving={false}
                      verificationFailed={false} converting={false} disabled={false} running={[]} liveJobId={null}
                      onOpenJob={() => {}} onConvert={() => {}} onOpenVersion={() => {}} onAdopt={() => {}}
@@ -199,6 +199,20 @@ console.log('4. flashTarget ✓')
   must(on('render'), '换到没出过片的版本：重新停到 ④，不停在灰掉的 ⑥ 或用户之前看的步骤')
   await render(null)
   console.log('5. ChapterWorkflow 跟步 ✓')
+
+  // 5b. 助手跳进还没打开的章：版本与出片状态后到，也停在请求的那一步，不被「该做的那一步」盖掉；之后照常跟步
+  const { requestStep } = await import('../src/lib/assistantBridge')
+  requestStep('c1', 'review')
+  await render(wf({ docVid: null, flow: flowOf(null) }))           // 刚打开：版本还没摆出来
+  must(on('review'), '挂载时取走跳转请求')
+  await render(wf({ docVid: 'v1', flow: flowOf(null, false) }))    // 版本到了，出片状态在读
+  must(on('review'), '出片状态没读到：停在请求的那一步')
+  await render(wf({ docVid: 'v1', flow: flowOf(full) }))           // 落地：该做的是 ⑥
+  must(on('review'), '落地后仍停在请求的那一步')
+  await render(wf({ docVid: 'v2', flow: flowOf(null) }))
+  must(on('render'), '请求用过即清：之后换版本照常停到该做的那一步')
+  await render(null)
+  console.log('5b. 助手跳转进未打开的章 ✓')
 }
 
 // 6. 下载页：导出剪辑工程按钮
