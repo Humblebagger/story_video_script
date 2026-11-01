@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { CircleHelp, ImageOff, Maximize2, Pause, Play, Redo2, SkipBack, SkipForward, Undo2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { buildIndex } from '../resolve'
 import { chosenAttempt, clipOffset, clipSpans, laneKind, laneText, laneTitle, spanAt } from '../film'
 import { useFilm } from '../useFilm'
 import { FilmPanel } from './FilmPanel'
+import { ChapterHeadContext } from './workflow/chapterHead'
 import { buildTimeline, fitText, fmtClock, previewFrom, shotSpan, speechAt, textPx, litFraction, shotIndexAt } from '../timeline'
 import { applyOp } from '../timelineOps'
 import type { TimelineOp } from '../timelineOps'
@@ -111,6 +112,7 @@ export function TimelineCanvas({
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
 }: Props) {
   const { t: tt } = useI18n()
+  const head = useContext(ChapterHeadContext)
   const kf = useKeyframes(doc, version)
   const idx = useMemo(() => buildIndex(doc), [doc])
   const editable = !!onChange
@@ -479,6 +481,7 @@ export function TimelineCanvas({
   return (
     <div className="tlc">
       <div className="tlc__main" ref={box}>
+      {head && <div className="tlc__head" onPointerDown={(e) => e.stopPropagation()}>{head}</div>}
       <div className="tlc__bar rounded-full border bg-card/80 px-2 py-1.5 shadow-xl backdrop-blur-md"
            onPointerDown={(e) => e.stopPropagation()}>
         {editable && (

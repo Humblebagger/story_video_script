@@ -259,6 +259,7 @@ export const en: Messages = {
       render: 'Render', compose: 'Voice & mix', download: 'Download',
     },
     stepsLabel: 'Chapter progress',
+    head: { estimate: 'Estimate', spent: 'Spent', cap: 'Cap', noFilm: 'You only pay when you render', shots: '{n} shots', about: '~{d}' },
     needs: 'Finish step {n} first',
     goNeeded: 'Go to step {n}',
     fix: 'Fix it',

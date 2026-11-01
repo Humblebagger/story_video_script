@@ -257,6 +257,7 @@ export const zh = {
       render: '出片', compose: '配音合成', download: '下载成片',
     },
     stepsLabel: '章节进度',
+    head: { estimate: '预估', spent: '已花', cap: '上限', noFilm: '出片时才会花钱', shots: '{n} 镜', about: '约 {d}' },
     needs: '需要先完成第 {n} 步',
     goNeeded: '去第 {n} 步',
     fix: '去修复',

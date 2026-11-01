@@ -97,3 +97,40 @@
   .focus__list { position: static; max-height: none; }
   .focus__back { display: inline-flex; }
 }
+
+/* ---------- 章节头部 ---------- */
+.chead {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--ui-radius); background: var(--card);
+}
+.chead__main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.chead__text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.chead__num {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600;
+  padding: 4px 8px; border-radius: calc(var(--ui-radius) - 2px);
+  background: var(--ui-accent); color: var(--ui-accent-foreground); white-space: nowrap;
+}
+.chead__title { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.chead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 12px; color: var(--ui-muted-foreground); }
+.chead__mono, .chead__value, .chead__money { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.chead__cost { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.chead__cells { display: flex; gap: 8px; }
+.chead__cell {
+  display: flex; flex-direction: column; gap: 2px; min-width: 88px; padding: 6px 10px;
+  border-radius: calc(var(--ui-radius) - 2px); background: var(--ui-muted);
+}
+.chead__label { font-size: 11px; color: var(--ui-muted-foreground); }
+.chead__value { font-size: 18px; font-weight: 600; }
+@media (max-width: 759px) {
+  .chead__cost { align-items: stretch; width: 100%; }
+  .chead__cells { width: 100%; }
+  .chead__cell { flex: 1; }
+}
+.chead--compact {
+  display: inline-flex; flex-wrap: nowrap; gap: 8px; padding: 4px 10px; border-radius: 999px;
+  background: color-mix(in oklab, var(--card) 80%, transparent); backdrop-filter: blur(8px);
+}
+.chead--compact .chead__title { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.chead--compact .chead__money { font-size: 12px; color: var(--ui-muted-foreground); white-space: nowrap; }
+.chead--compact .chead__num { padding: 2px 6px; font-size: 12px; }
+.tlc__head { position: absolute; top: 12px; left: 12px; z-index: 2; max-width: calc(100% - 24px); }

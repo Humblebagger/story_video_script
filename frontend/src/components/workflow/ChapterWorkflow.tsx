@@ -14,11 +14,14 @@ import { useI18n } from '@/i18n/core'
 import { flashTarget } from '@/lib/flash'
 import { useMedia } from '@/lib/useMedia'
 import { useMotionPresets } from '@/motion'
+import { playableSeconds } from '@/timeline'
 import { useTopbarSlot } from '@/components/shell/topbarSlot'
 import type { Chapter, JobSummary, NarrationMode, Novel, Storyboard } from '@/types'
 import type { useChapterFlow } from '@/useChapterFlow'
 import { currentStep, primaryFor, stepDone, stepStates, STEPS } from '@/workflow'
 import type { Fix, FlowInput, StepId } from '@/workflow'
+import { ChapterHeader } from './ChapterHeader'
+import { ChapterHeadContext } from './chapterHead'
 import { DownloadStep } from './DownloadStep'
 import { GenerateStep } from './GenerateStep'
 import { PrimaryBar } from './PrimaryBar'
@@ -259,9 +262,17 @@ export function ChapterWorkflow({
 
   // 步骤条在顶栏中间的插槽里；拿不到插槽（单测等）时留在章节页原位
   const stepper = <Stepper states={stepStates(input)} view={view} onView={setView} compact={!!slot && narrowBar} />
+  const headShots = doc ? doc.episodes.reduce((n, e) => n + e.shots.length, 0) : version?.shots ?? null
+  const headSeconds = doc ? doc.episodes.reduce((n, e) => n + e.shots.reduce((a, sh) => a + playableSeconds(sh), 0), 0) : null
+  const headProps = {
+    num: Math.max(1, novel.chapters.findIndex((c) => c.id === chapter.id) + 1), title: chapter.title,
+    shots: headShots, seconds: headSeconds, step: cur, live: converting, film: ready ? flow.film : null,
+  }
   return (
+    <ChapterHeadContext.Provider value={<ChapterHeader compact {...headProps} />}>
     <div className="flex flex-col gap-4 pb-28">
       {slot && createPortal(stepper, slot)}
+      <ChapterHeader {...headProps} />
       {(!slot || view !== 'import') && (
         <section className="chap">
           {!slot && stepper}
@@ -279,5 +290,6 @@ export function ChapterWorkflow({
       <UnsavedBar show={boardDirty || textDirty} saving={saving || savingText}
                   onSave={() => void saveAll()} onUndo={undoAll} />
     </div>
+    </ChapterHeadContext.Provider>
   )
 }

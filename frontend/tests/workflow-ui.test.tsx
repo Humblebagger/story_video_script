@@ -150,7 +150,7 @@ console.log('4. flashTarget ✓')
     versions: [vs('v2'), vs('v1')], digest: null } as Chapter
   const novel = { id: 'n1', title: '药', created_at: '', updated_at: '', params: {}, memory: {}, chapters: [] } as unknown as Novel
   const doneClip = { ...clip('c1'), state: 'done' } as unknown as FilmClip
-  const full = { clips: [doneClip], remaining_cny: 0,
+  const full = { clips: [doneClip], remaining_cny: 0, spent_cny: 0, budget_cny: 20,
     final: { state: 'done', files: ['final/E01.mp4'], report: null, error: null, detail: null } } as unknown as FilmSession
   const flowOf = (f: FilmSession | null, loaded = true) =>
     ({ film: f, compose: null, finalStale: false, reload: async () => {}, loaded, pending: false })
@@ -166,6 +166,7 @@ console.log('4. flashTarget ✓')
   const on = (id: string) => !!q(`[data-step="${id}"][aria-current="step"]`)
   await render(null)
   await render(wf({ docVid: 'v1', flow: flowOf(full) }))
+  must(q('[data-testid="chapter-head"]')?.textContent?.includes('一') === true, '章节头部写着章节标题')
   must(on('download') && !!q('[data-testid="download-step"]'), '整条链都完成：进章节停在 ⑥')
   await click(qa('[data-testid="download-step"] button').find((b) => (b.textContent ?? '').includes('回到画布重新合成')))
   must(on('compose') && !!q('[data-testid="board"]'), '「回到画布重新合成」先回到 ⑤（分镜视图挂上）')

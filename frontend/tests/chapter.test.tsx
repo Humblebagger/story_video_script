@@ -247,5 +247,41 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   await act(async () => { root2.unmount() })
 }
 
+// 4. 章节头部
+{
+  const { ChapterHeader } = await import('../src/components/workflow/ChapterHeader')
+  const { ChapterHeadContext } = await import('../src/components/workflow/chapterHead')
+  const { act, createElement: h, useContext } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { I18nProvider } = await import('../src/i18n')
+  const box = win.document.createElement('div')
+  win.document.body.appendChild(box)
+  const r = createRoot(box as unknown as HTMLElement)
+  const show = async (node: unknown) => {
+    await act(async () => { r.render(h(I18nProvider, { initial: 'zh' }, node as never) as never) })
+  }
+  const base = { num: 3, title: '第三章', shots: 45, seconds: 285, step: 'review' as const, live: false }
+  await show(h(ChapterHeader, { ...base, film: null }))
+  const txt = () => box.textContent ?? ''
+  must(txt().includes('EP·03') && txt().includes('第三章'), '编号与标题')
+  must(txt().includes('45 镜') && txt().includes('4:45') && txt().includes('检查修改'), '状态行')
+  const tiles = () => Array.from(box.querySelectorAll('[data-testid="cost-tile"]'))
+  must(tiles().length === 3 && tiles().every((x) => x.textContent?.includes('—')), '没有出片会话：三格都是破折号')
+  must(txt().includes('出片时才会花钱'), '说明出片时才花钱')
+  const film = { budget_cny: 20, spent_cny: 3.66, clips: [{ estimate_cny: 2.5 }, { estimate_cny: 2.94 }] } as unknown as FilmSession
+  await show(h(ChapterHeader, { ...base, film }))
+  must(tiles().map((x) => x.querySelector('.chead__value')?.textContent).join() === '¥5.44,¥3.66,¥20.00', '三格金额')
+  must(!txt().includes('出片时才会花钱'), '有会话时不再说明')
+  await show(h(ChapterHeader, { ...base, film, compact: true }))
+  const c = box.querySelector('[data-testid="chapter-head-compact"]')
+  must(!!c && c.textContent === 'EP·03第三章¥3.66 / ¥20.00', '精简头部一行')
+  await show(h(ChapterHeader, { ...base, film: null, compact: true }))
+  must(box.querySelector('[data-testid="chapter-head-compact"]')?.textContent === 'EP·03第三章', '精简头部无会话省略金额')
+  const Probe = () => h('div', null, useContext(ChapterHeadContext))
+  await show(h(ChapterHeadContext.Provider, { value: h('span', { id: 'x' }) }, h(Probe)))
+  must(!!box.querySelector('#x'), 'Context 读得到')
+  await act(async () => { r.unmount() })
+}
+
 win.happyDOM.abort?.()
 console.log('chapter: ALL PASS')
