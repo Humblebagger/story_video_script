@@ -36,6 +36,9 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
 静帧预演的关键帧图（在别处出图后上传，挂在版本上、不进 IR）：
   GET                 /novels/{nid}/chapters/{cid}/versions/{vid}/keyframes            已有关键帧的镜头
   GET/PUT/DELETE      /novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}  取图 / 上传（原始图片体）/ 删
+  GET                 /novels/{nid}/style-image   取小说的风格参考图
+  PUT                 /novels/{nid}/style-image   上传（原始图片体，PNG / JPEG / WebP，≤ 8MB，替换删旧）
+  DELETE              /novels/{nid}/style-image   删（没有也成功）
 出片（视频生成，状态在 chapters/<cid>/render/<vid>/session.json，后台线程提交/轮询/下载）：
   POST/GET/PATCH      …/versions/{vid}/render/session           建立（过验证门）/ 查询（标过期）/ 改设置
   POST                …/versions/{vid}/render/clips/{clip}/run  出这一段（试段或重做）
@@ -748,6 +751,27 @@ def keyframes_delete(nid: str, cid: str, vid: str, shot_id: str,
                      user: dict = Depends(novel_user)):
     _novel_call(novels.delete_keyframe, user["id"], nid, cid, vid, shot_id)
     return {"deleted": shot_id}
+
+
+_STYLE = "/novels/{nid}/style-image"
+
+
+@app.get(_STYLE)
+def style_image_get(nid: str, user: dict = Depends(novel_user)):
+    path, kind = _novel_call(novels.style_image_file, user["id"], nid)
+    return FileResponse(path, media_type=kind)
+
+
+@app.put(_STYLE)
+async def style_image_put(nid: str, request: Request, user: dict = Depends(novel_user)):
+    return _novel_call(novels.save_style_image, user["id"], nid,
+                       request.headers.get("content-type", ""), await request.body())
+
+
+@app.delete(_STYLE)
+def style_image_delete(nid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.delete_style_image, user["id"], nid)
+    return {"deleted": True}
 
 
 # ---------- 出片（视频生成）：会话在 chapters/<cid>/render/<vid>/，不进 IR ----------

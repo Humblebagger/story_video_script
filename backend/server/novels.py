@@ -12,6 +12,7 @@
 
 设计见 docs/specs/2026-10-12-novel-sessions-and-timeline-canvas-design.md。
 """
+import hashlib
 import json
 import re
 import secrets
@@ -191,7 +192,7 @@ def list_novels(user_id: str) -> list:
 def get_novel(user_id: str, nid: str) -> dict:
     novel = _load_novel(user_id, nid)
     memory = {k: v for k, v in novel["memory"].items() if k != "asset_origin"}
-    return {**novel, "memory": memory,
+    return {**novel, "memory": memory, "style_image": novel.get("style_image"),
             "chapters": [_chapter_summary(user_id, nid, c) for c in _chapters(user_id, nid)]}
 
 
@@ -901,6 +902,56 @@ def keyframe_file(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> t
 def delete_keyframe(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> None:
     path, _ = keyframe_file(user_id, nid, cid, vid, shot_id)
     path.unlink()
+
+
+# ---------- 小说级风格参考图：一部小说一张，出片时占一个参考位 ----------
+
+def _style_dir(user_id: str, nid: str) -> Path:
+    return _novel_dir(user_id, nid) / "style"
+
+
+def save_style_image(user_id: str, nid: str, content_type: str, data: bytes) -> dict:
+    """小说级风格参考图：一部小说一张，替换时删旧文件。出片时占一个参考位。"""
+    ext = KEYFRAME_TYPES.get((content_type or "").split(";")[0].strip())
+    if not ext:
+        raise NovelError("风格参考图只收 PNG / JPEG / WebP 图片")
+    if not data or len(data) > KEYFRAME_MAX_BYTES:
+        raise NovelError(f"图片为空或超过 {KEYFRAME_MAX_BYTES // 1024 // 1024}MB")
+    with _lock:
+        novel = _load_novel(user_id, nid)          # 不存在或不属于该用户抛 NotFound
+        root = _style_dir(user_id, nid)
+        root.mkdir(parents=True, exist_ok=True)
+        for old in root.glob("style.*"):
+            old.unlink()
+        (root / f"style.{ext}").write_bytes(data)
+        meta = {"hash": hashlib.sha256(data).hexdigest(),
+                "mime": content_type.split(";")[0].strip(),
+                "bytes": len(data), "updated_at": now_iso()}
+        novel["style_image"] = meta
+        _save_novel(user_id, novel)
+    return meta
+
+
+def style_image_file(user_id: str, nid: str) -> tuple:
+    """(文件路径, content-type)；没有图则抛 NotFound。"""
+    _load_novel(user_id, nid)
+    root = _style_dir(user_id, nid)
+    for path in root.glob("style.*") if root.exists() else []:
+        kind = next((t for t, e in KEYFRAME_TYPES.items() if e == path.suffix[1:]), None)
+        if kind:
+            return path, kind
+    raise NotFound("这部小说还没有风格参考图")
+
+
+def delete_style_image(user_id: str, nid: str) -> None:
+    with _lock:
+        novel = _load_novel(user_id, nid)
+        root = _style_dir(user_id, nid)
+        for old in root.glob("style.*") if root.exists() else []:
+            old.unlink()
+        if novel.get("style_image") is not None:
+            novel["style_image"] = None
+            _save_novel(user_id, novel)
 
 
 # ---------- 出片会话目录（会话状态、片段、成片；不进 IR） ----------

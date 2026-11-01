@@ -111,7 +111,6 @@
   - `DELETE /novels/{nid}/style-image`：删除。没有也返回成功。
   - 小说详情接口返回的 novel 里带上 `style_image` 元数据，前端靠它判断有没有图、拿缩略图。
 - **出片会话**：建会话、刷新片段时（`session.py` 调 `compose.build_clips` 的地方），读取这部小说的风格图，作为新参数 `style={"source": data_uri, "hash": …} | None` 传入。读不到文件时当作没有风格图，不报错。
-- **审计**：上传、删除风格图记一条审计，写法沿用现有的 `audit` 记录方式。
 - **不改**：转换（分镜生成）流程不用风格图；`style_prefix` 照旧。
 
 ## 6. 前端
