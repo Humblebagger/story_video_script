@@ -79,7 +79,7 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
     <section className="novel">
       {confirmUi}
       <header className="novel__head">
-        <h2>《{novel.title}》</h2>
+        <h2>{t('common.bookTitle', { title: novel.title })}</h2>
         <span className="novel__meta">
           {t('novel.meta', {
             n: novel.chapters.length, a: novel.chapters.filter((c) => c.adopted_version).length,
@@ -304,7 +304,7 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
   const add = () => run(t('novel.cons.whatAdd'), t('novel.ok.consAdded'), async () => {
     await addConstraint(novel.id, {
       text: text.trim(), negative_prompt: neg.trim(),
-      keywords: keywords.split(/[,，、\s]+/).filter(Boolean),
+      keywords: keywords.split(/[,\uff0c\u3001\s]+/).filter(Boolean),  // 半角逗号、全角逗号、顿号、空白
     })
     setText('')
     setNeg('')
@@ -405,7 +405,7 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
               )}
             </div>
             {e.detail && <p className="life__detail">{e.detail}</p>}
-            {e.evidence_quote && <blockquote className="life__quote">「{e.evidence_quote}」</blockquote>}
+            {e.evidence_quote && <blockquote className="life__quote">{t('common.quote', { text: e.evidence_quote })}</blockquote>}
             <div className="life__acts">
               {e.status !== 'confirmed' && (
                 <Button size="sm" disabled={busy}

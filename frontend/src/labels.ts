@@ -1,4 +1,4 @@
-/** 枚举值 → 中文标签。IR 里存英文枚举（机器消费），界面上一律显示中文。 */
+/** 枚举值 → 界面标签。IR 里存英文枚举（机器消费），界面按当前语言显示（中英文表在 i18n/zh.ts、en.ts 的 enums 下）。 */
 import type {
   AudioMode, CameraAngle, CameraMovement, Derivation, DialogueType, FidelityMode, FilmAttempt, FilmClipState,
   JobStatus, LifecycleEntry, LifecycleType, LocationAngle, Mood, NarrationMode, ShotSize, TimeOfDay,

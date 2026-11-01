@@ -189,7 +189,7 @@ function CharacterCard({ c, editing, patch }: {
   return (
     <>
       <Row label={t('assetView.alias')}>
-        <Text value={(c.aliases ?? []).join('、')} placeholder={t('assetView.aliasPh')}
+        <Text value={(c.aliases ?? []).join(t('common.listSep'))} placeholder={t('assetView.aliasPh')}
               onChange={(v) => patch({ aliases: v ? splitAliases(v) : undefined })} />
       </Row>
       <Row label={t('assetView.appearance')}>
@@ -355,7 +355,7 @@ function CreatureCard({ c, editing, patch }: {
   return (
     <>
       <Row label={t('assetView.alias')}>
-        <Text value={(c.aliases ?? []).join('、')} placeholder={t('assetView.aliasPh')}
+        <Text value={(c.aliases ?? []).join(t('common.listSep'))} placeholder={t('assetView.aliasPh')}
               onChange={(v) => patch({ aliases: v ? splitAliases(v) : undefined })} />
       </Row>
       <Row label={t('assetView.species')}><Text value={c.species} onChange={(v) => patch({ species: v })} /></Row>

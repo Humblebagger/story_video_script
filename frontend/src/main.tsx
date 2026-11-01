@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/geist-mono'
-import './styles/app.css' // 旧样式 index.css 由 app.css 以 legacy 层引入
+import './styles/app.css'
 import App from './App.tsx'
 import { initTheme } from './theme'
 import { BRAND } from './brand'

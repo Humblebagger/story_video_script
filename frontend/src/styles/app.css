@@ -1,11 +1,12 @@
 /* Inkreel 设计变量：深浅两套。Tailwind 主题映射到这些变量，shadcn 组件直接用。
- * 与旧样式 index.css 的 :root 重名的变量（muted / accent / radius）一律加 ui- 前缀，避免互相覆盖。
+ * muted / accent / radius 带 ui- 前缀（当初为避开旧样式表的同名变量，沿用至今）。
  * 品牌：墨色底 + 琥珀到品红的一道渐变；每屏最多一种强调。 */
-/* 层序：旧样式（index.css）放在 legacy 层——压过 Tailwind 的重置（base），又让位给组件与工具类。 */
-@layer theme, base, legacy, components, utilities;
+/* 层序：Tailwind 重置与元素基础规则在 base，各页样式在 components，工具类最后。
+ * controls.css（多处共用的控件）排在各页样式之前：同层后写的赢，各页的局部改写照常生效。 */
+@layer theme, base, components, utilities;
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "../index.css" layer(legacy);
+@import "./controls.css" layer(components);
 @import "./storyboard.css" layer(components);
 @import "./views.css" layer(components);
 @import "./canvas.css" layer(components);
@@ -17,6 +18,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  color-scheme: light;
   --ui-radius: 0.75rem;
   --background: oklch(0.985 0.003 80);
   --foreground: oklch(0.2 0.012 270);
@@ -52,6 +54,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.155 0.012 275);
   --foreground: oklch(0.95 0.006 80);
   --card: oklch(0.195 0.014 275);
@@ -126,7 +129,21 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  body { @apply bg-background text-foreground font-sans antialiased; }
+  /* 字体：Inter，中文回落系统字体（见 --font-sans） */
+  body { @apply bg-background text-foreground font-sans antialiased; font-size: 15px; line-height: 1.65; }
+  h1, h2, h3 { font-weight: 650; }
+  /* Tailwind 重置把标题都变成正文粗细，这里补回 */
+  h4, h5, h6 { font-weight: 600; }
+  /* 裸的原生控件（画布、出片、合成等面板）也给框：Tailwind 重置会去掉边框与底色。
+   * shadcn 控件带 data-slot，不受影响；放在 base 层，组件层里带 class 的控件规则一律优先。 */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([data-slot]),
+  select:not([data-slot]),
+  textarea:not([data-slot]) {
+    padding: 7px 10px;
+    border: 1px solid var(--input);
+    border-radius: calc(var(--ui-radius) - 4px);
+    background: color-mix(in oklab, var(--ui-muted) 40%, transparent);
+  }
 }
 
 /* 品牌渐变：文字与细线用，克制 */

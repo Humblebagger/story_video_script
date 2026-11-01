@@ -37,25 +37,6 @@
 }
 .form__chapters { margin: 6px 0 0; padding-left: 20px; font-size: 12px; color: var(--ui-muted-foreground); max-height: 160px; overflow: auto; }
 
-/* 原生下拉与 Input 同外观（Task 8 统一进 controls.css） */
-:is(.field, .soc, .lib__add, .life__new) select {
-  height: 36px;
-  width: 100%;
-  padding: 0 10px;
-  border: 1px solid var(--input);
-  border-radius: calc(var(--ui-radius) - 2px);
-  background: transparent;
-  color: var(--foreground);
-  font-size: 14px;
-  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
-}
-:is(.field, .soc, .lib__add, .life__new) select:focus-visible {
-  outline: none; border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent);
-}
-.dark :is(.field, .soc, .lib__add, .life__new) select { background: color-mix(in oklab, var(--input) 30%, transparent); }
-.field > span { font-size: 12px; color: var(--ui-muted-foreground); }
-
 /* 预设下拉 + 自定义兜底 */
 .soc { display: flex; flex-direction: column; gap: 6px; }
 
@@ -211,7 +192,7 @@
 .chap__text .form { margin-top: 8px; border: none; padding: 0; background: none; }
 .chap__text textarea[readonly] { background: color-mix(in oklab, var(--ui-muted) 60%, transparent); color: var(--ui-muted-foreground); }
 .chap__convert { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
-.chap__convert [data-slot="button"], .chap__convert .btn { margin-left: auto; }
+.chap__convert [data-slot="button"] { margin-left: auto; }
 .chap__digest { font-size: 12px; color: var(--ui-muted-foreground); display: flex; gap: 6px; align-items: baseline; }
 .chap__digest--failed { color: var(--destructive); }
 .chap__digest--done { color: var(--success); }
@@ -219,13 +200,3 @@
 .vbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--border); }
 .vbar__label { font-size: 12px; color: var(--ui-muted-foreground); margin-right: 4px; }
 .vbar__note { font-size: 12px; color: var(--ui-muted-foreground); }
-.vchip {
-  display: inline-flex; gap: 4px; align-items: baseline;
-  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
-  background: var(--card); cursor: pointer; font-family: var(--font-mono); font-size: 12px;
-  transition: border-color 150ms ease-out;
-}
-.vchip em { font-style: normal; font-family: inherit; font-size: 12px; color: var(--destructive); }
-.vchip:hover { border-color: color-mix(in oklab, var(--foreground) 30%, var(--border)); }
-.vchip.is-on { border-color: var(--primary); background: var(--secondary); }
-.vchip.is-adopted { font-weight: 650; }

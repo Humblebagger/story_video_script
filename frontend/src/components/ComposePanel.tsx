@@ -91,7 +91,7 @@ function Voices({ c }: { c: Compose }) {
         <tbody>
           {v.speakers.map((sp) => (
             <tr key={sp.key} className={sp.voice ? '' : 'is-missing'}>
-              <td>{sp.name}{sp.hint && <span className="film__dim">（{sp.hint}）</span>}</td>
+              <td>{sp.name}{sp.hint && <span className="film__dim">{t('common.paren', { text: sp.hint })}</span>}</td>
               <td>
                 <select aria-label={t('compose.panel.voiceAria', { name: sp.name })} value={sp.chosen ?? ''} disabled={locked(c)}
                         onChange={(e) => void c.setVoice(sp.key, e.target.value)}>

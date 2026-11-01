@@ -91,7 +91,7 @@ function DetachButton({ card, shot, onChange }: {
 const AT_MAX = 24
 function atToken(text: string, caret: number): { from: number; query: string } | null {
   const head = text.slice(0, caret)
-  const at = Math.max(head.lastIndexOf('@'), head.lastIndexOf('＠'))  // 中文输入法给的是全角
+  const at = Math.max(head.lastIndexOf('@'), head.lastIndexOf('\uff20'))  // 全角 @：中文输入法给的是全角
   if (at < 0) return null
   const query = head.slice(at + 1)
   if (query.length > AT_MAX || /\s/.test(query)) return null

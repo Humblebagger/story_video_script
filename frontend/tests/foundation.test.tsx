@@ -33,20 +33,20 @@ must(translate('en', 'nope.missing' as never) === 'nope.missing', '缺键回落�
 must(translate('en', 'money.confirm', { action: 'Go', amount: '¥1.00' }) === 'Go (¥1.00)', '确认按钮文案（英文）')
 console.log('1. 语言包 ✓')
 
-// 1b. 新旧设计变量不重名：app.css 与 index.css 在 :root / .dark 里定义的自定义属性不能有交集（否则互相覆盖）
-const cssVars = (file: string) => {
-  const css = readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-  const names = new Set<string>()
-  for (const b of css.matchAll(/(?:^|\n)\s*(?::root(?:\.dark)?|\.dark)\s*\{([^}]*)\}/g))
-    for (const d of b[1].matchAll(/(--[\w-]+)\s*:/g)) names.add(d[1])
-  return names
+// 1b. 旧样式表 index.css 已删除；styles/*.css 不许再引用旧变量
+{
+  const fs = await import('node:fs')
+  const dir = new URL('../src/styles/', import.meta.url)
+  must(!fs.existsSync(new URL('../src/index.css', import.meta.url)), '旧样式表 src/index.css 应已删除')
+  const oldVar = /var\(--(bg|panel|panel-2|text|muted|faint|line|line-2|accent|accent-soft|explicit|inferred|transition|danger|warn-bg|radius|mono)\)/
+  const styles = fs.readdirSync(dir).filter((f) => f.endsWith('.css'))
+  must(styles.length >= 8, `读到 styles/*.css（${styles.length}）`)
+  for (const f of styles) {
+    const m = readFileSync(new URL(f, dir), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').match(oldVar)
+    must(!m, `styles/${f} 还在用旧变量 ${m?.[0]}`)
+  }
 }
-const uiVars = cssVars('../src/styles/app.css')
-const legacyVars = cssVars('../src/index.css')
-must(uiVars.size > 20 && legacyVars.size > 10, `读到两边的变量（${uiVars.size} / ${legacyVars.size}）`)
-const clash = [...uiVars].filter((n) => legacyVars.has(n))
-must(clash.length === 0, `新旧设计变量重名：${clash.join(', ')}`)
-console.log('1b. 设计变量不重名 ✓')
+console.log('1b. 旧样式表已删、无旧变量 ✓')
 
 // 2. 主题：偏好存本机，实际深浅写到 <html class="dark">
 theme.setPref('dark')
@@ -212,21 +212,23 @@ const leaves = (o: unknown, p = ''): [string, string][] => typeof o === 'string'
 const bad = leaves(en).filter(([, v]) => cjk.test(v))
 must(!bad.length, `英文包含中文：${bad.slice(0, 5).map(([k]) => k).join(', ')}`)
 
-// 静态检查：名单里的源文件除注释外不许有中文（Task 8 改成全量）
+// 静态检查：src/ 下全部 .ts / .tsx（中文语言包 i18n/zh.ts 除外）除注释外不许有中文与全角标点
 const fs = await import('node:fs')
 const path = await import('node:path')
 const SRC = path.resolve(import.meta.dirname ?? '.', '../src')
-const I18N_FILES = [
-  'labels.ts', 'presets.ts', 'compose.ts', 'film.ts', 'api.ts', 'chapters.ts', 'useKeyframes.ts',
-  'useFilm.ts', 'useCompose.ts', 'edit.ts', 'resolve.ts', 'types.ts', 'theme.ts', 'auth.ts', 'notify.ts', 'main.tsx',
-  ...['NovelPage', 'NovelAssets', 'NewNovelForm', 'ParamsForm', 'CardPicker', 'SelectOrCustom', 'JobPanel', 'JobProgress', 'NovelSidebar']
-    .map((f) => `components/${f}.tsx`),
-  'App.tsx',
-  ...['TimelineCanvas', 'CanvasPanels', 'FilmPanel', 'ComposePanel'].map((f) => `components/${f}.tsx`),
-  ...['StoryboardView', 'EpisodeView', 'ShotCard', 'AssetsView', 'SourceView', 'RenderView', 'VerificationPanel']
-    .map((f) => `components/${f}.tsx`),
-  ...fs.readdirSync(path.join(SRC, 'components/admin')).map((f) => `components/admin/${f}`),
-]
+const walk = (d: string): string[] => fs.readdirSync(path.join(SRC, d), { withFileTypes: true }).flatMap((e) => {
+  const rel = d ? `${d}/${e.name}` : e.name
+  return e.isDirectory() ? walk(rel) : /\.tsx?$/.test(e.name) ? [rel] : []
+})
+const I18N_FILES = walk('').filter((f) => f !== 'i18n/zh.ts')
+must(I18N_FILES.length > 60 && I18N_FILES.includes('components/ui/dialog.tsx'), `全量扫描源文件（${I18N_FILES.length}）`)
+const cjkWide = /[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/
+// src/ 下不许再有含独立单词 btn 的 className（旧按钮类已换成 Button）
+for (const f of I18N_FILES) {
+  const hits = fs.readFileSync(path.join(SRC, f), 'utf8').split('\n')
+    .map((l, i) => [i + 1, l] as const).filter(([, l]) => /className=(?:"[^"]*|\{[^}]*)(?<![\w-])btn(?![\w-])/.test(l))
+  must(!hits.length, `${f} 还在用旧按钮类 btn：第 ${hits.map(([n]) => n).join('、')} 行`)
+}
 // 必须保持中文的数据字面量（正确性所需），按文件、按行形态放行：
 //  presets.ts：P('中文取值', 'presets.…') 的取值会写进分镜、发给模型，不能译；显示名走语言包
 //  chapters.ts：解析「第X章」之类中文章节标题的正则，换成别的字就认不出中文章节了
@@ -236,11 +238,14 @@ const ALLOW: Record<string, RegExp> = {
   // 制作参数默认值：逐字对齐后端 ConvertParams，会写进分镜、发给模型，不能译
   'components/ParamsForm.tsx': /^\s*(style_prefix|color_tone|target_platform): '/,
 }
+// 语言菜单里「中文」两个字是有意保留的（不论界面是什么语言，都用本语言写自己的名字）
+const PRESTRIP: Record<string, (s: string) => string> = { 'i18n/core.ts': (s) => s.replace(/'中文'/g, "''") }
 const stripComments = (s: string) => s
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1')
 for (const f of I18N_FILES) {
-  const hits = stripComments(fs.readFileSync(path.join(SRC, f), 'utf8')).split('\n')
-    .map((l, i) => [i + 1, l] as const).filter(([, l]) => cjk.test(l) && !ALLOW[f]?.test(l))
+  const raw = fs.readFileSync(path.join(SRC, f), 'utf8')
+  const hits = stripComments(PRESTRIP[f]?.(raw) ?? raw).split('\n')
+    .map((l, i) => [i + 1, l] as const).filter(([, l]) => cjkWide.test(l) && !ALLOW[f]?.test(l))
   must(!hits.length, `${f} 还有硬编码中文：第 ${hits.slice(0, 3).map(([n]) => n).join('、')} 行`)
 }
 

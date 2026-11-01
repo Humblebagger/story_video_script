@@ -74,5 +74,4 @@
   border-radius: 3px; background: var(--primary);
 }
 .hchap__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hchap__item .tag { font-size: 12px; }
 .hchap__item--new { color: var(--muted-foreground); }

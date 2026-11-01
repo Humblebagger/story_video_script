@@ -112,7 +112,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
 /** 全部关键帧提示词导出成一份文本，方便整批拿去出图工具 */
 export function promptSheet(title: string, list: KeyframePrompt[]): string {
   return [tr('keyframes.sheetTitle', { title, n: list.length }), '', ...list.flatMap((k) => [
-    `## ${k.shot_id}（${k.aspect_ratio}）`, k.prompt,
+    tr('keyframes.sheetShot', { id: k.shot_id, ratio: k.aspect_ratio }), k.prompt,
     ...(k.negative_prompt ? [tr('keyframes.negative', { text: k.negative_prompt })] : []),
     ...(k.reference_assets.length ? [tr('keyframes.refs', { list: k.reference_assets.join(tr('common.listSep')) })] : []), ''])].join('\n')
 }

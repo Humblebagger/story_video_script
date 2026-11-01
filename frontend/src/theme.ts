@@ -1,5 +1,5 @@
 /** 主题：跟随系统 / 浅色 / 深色。偏好存在本机（读写失败就当跟随系统），实际深浅写到 <html class="dark">。
- *  旧样式（index.css）与 shadcn 组件都看这个 class。 */
+ *  样式表与 shadcn 组件都看这个 class。 */
 import { useSyncExternalStore } from 'react'
 
 export type ThemePref = 'system' | 'light' | 'dark'

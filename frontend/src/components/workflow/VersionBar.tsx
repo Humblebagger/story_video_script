@@ -1,5 +1,6 @@
 /** 版本条（每次生成一个版本，标出采用版；采用此版 / 删除此版）与章后整理的结果（含「重跑」）。②–⑥ 都显示。 */
 import { useI18n } from '@/i18n/core'
+import { Button } from '@/components/ui/button'
 import { JOB_STATUS, label } from '@/labels'
 import type { Chapter, VersionSummary } from '@/types'
 
@@ -53,15 +54,16 @@ export function VersionBar({ chapter, versionId, onOpenVersion, onAdopt, onDelet
           ))}
           {current && current.id !== chapter.adopted_version && (
             <>
-              <button className="btn btn--sm" disabled={!ADOPTABLE.includes(current.status)}
+              <Button size="sm" className="disabled:pointer-events-auto disabled:cursor-not-allowed"
+                      disabled={!ADOPTABLE.includes(current.status)}
                       title={ADOPTABLE.includes(current.status) ? t('flow.chapter.adoptHint')
                         : t('flow.chapter.adoptBlocked')}
                       onClick={() => onAdopt(current.id)}>
                 {t('flow.chapter.adopt')}
-              </button>
-              <button className="btn btn--sm btn--ghost" onClick={() => onDeleteVersion(current.id)}>
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDeleteVersion(current.id)}>
                 {t('flow.chapter.removeVersion')}
-              </button>
+              </Button>
             </>
           )}
           {current && current.id === chapter.adopted_version && (

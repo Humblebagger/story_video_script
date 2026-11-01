@@ -5,6 +5,7 @@ import { JOB_STATUS, label } from '../labels'
 import type { JobSummary, Novel, NovelSummary } from '../types'
 import { JobProgress } from './JobProgress'
 import { EmptyState } from './common/EmptyState'
+import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
 
@@ -103,13 +104,13 @@ export function NovelSidebar({
                           onClick={() => onOpenChapter(c.id)}>
                         <span className="hchap__title">{c.title}</span>
                         {liveChapter.has(c.id)
-                          ? <span className="tag tag--nar">{t('shell.shelf.chapterConverting')}</span>
+                          ? <Badge variant="secondary" className="bg-accent text-accent-foreground">{t('shell.shelf.chapterConverting')}</Badge>
                           : v
-                            ? <span className="tag" title={t('shell.shelf.adoptedTitle', { id: v.id })}>{
-                                t('shell.shelf.adopted', { n: c.versions.length - c.versions.indexOf(v) })}</span>
+                            ? <Badge variant="secondary" title={t('shell.shelf.adoptedTitle', { id: v.id })}>{
+                                t('shell.shelf.adopted', { n: c.versions.length - c.versions.indexOf(v) })}</Badge>
                             : c.latest_status
-                              ? <span className="tag tag--ghost">{label(JOB_STATUS, c.latest_status)}</span>
-                              : <span className="tag tag--ghost">{t('shell.shelf.notConverted')}</span>}
+                              ? <Badge variant="outline" className="border-dashed text-muted-foreground">{label(JOB_STATUS, c.latest_status)}</Badge>
+                              : <Badge variant="outline" className="border-dashed text-muted-foreground">{t('shell.shelf.notConverted')}</Badge>}
                       </li>
                     )
                   })}

@@ -39,7 +39,7 @@ export function updateAsset(
 
 /** 别名等以顿号/斜杠/逗号分隔的列表 */
 export function splitAliases(v: string): string[] {
-  return v.split(/[、,，/]/).map((s) => s.trim()).filter(Boolean)
+  return v.split(/[\u3001,\uff0c/]/).map((s) => s.trim()).filter(Boolean)  // 顿号、半角逗号、全角逗号、斜杠
 }
 
 export function updateShot(
