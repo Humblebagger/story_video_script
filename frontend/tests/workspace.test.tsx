@@ -187,5 +187,91 @@ const novels: NS[] = [
   console.log('4. Stepper 紧凑形态 ✓')
 }
 
+// 5. ProjectNav：九个导航项、数量、待确认提示点、章节卡片、搜索、收起态
+{
+  const { ProjectNav } = await import('../src/components/shell/ProjectNav')
+  const { SidebarCollapsedContext } = await import('../src/components/shell/topbarSlot')
+  type N = import('../src/types').Novel
+  const mkNovel = (nch: number, pending = 0): N => ({
+    id: 'n1', title: '药', created_at: '', updated_at: '', params: {},
+    memory: {
+      assets: { characters: [{ id: 'C01', name: '甲' }, { id: 'C02', name: '乙' }, { id: 'C03', name: '丙' }],
+                locations: [{ id: 'S01', name: '屋' }], props: [], creatures: [] },
+      numbering: { next_unit: 1, next_para: 1, next_episode: 1 },
+      lifecycle: Array.from({ length: pending }, (_, i) => ({ id: 'L' + i, status: 'proposed' })) as never,
+      plot: { outline: '', chapters: [] }, constraints: [],
+    },
+    chapters: Array.from({ length: nch }, (_, i) => ch({
+      id: 'c' + (i + 1), title: i === 0 ? '第一章' : `章${i + 1}`, order: i + 1,
+      versions: [ok], adopted_version: 'v1' })),
+  }) as unknown as N
+  const sums = {
+    cost: { llm_usd: 0, render_cny: null, budget_cny: null }, unpriced: [],
+    chapters: [
+      sum({ id: 'c1' }),                                                              // download 6/6
+      sum({ id: 'c2', duration_s: 65, film: { done: 0, total: 3, failed: 0, running: 0 } }), // render 3/6
+    ],
+  }
+  const calls: string[] = []
+  const nav = (novel: N, o: Record<string, unknown> = {}, collapsed = false) => wrap(h(SidebarCollapsedContext.Provider,
+    { value: collapsed }, h(ProjectNav, {
+      novel, section: 'overview', chapterId: 'c2', summary: sums, running: [],
+      onSection: (s: string) => calls.push('sec:' + s), onOpenChapter: (id: string) => calls.push('open:' + id),
+      onNewChapter: () => calls.push('new'), ...o })))
+
+  await render(nav(mkNovel(2, 2)))
+  const items = qa('[data-testid="nav-item"]')
+  must(items.length === 9, '9 个导航项')
+  const sec = (k: string) => q(`[data-section="${k}"]`)!
+  must(sec('characters').textContent!.includes('3') && sec('locations').textContent!.includes('1'), '资产数量取自各类长度')
+  must(sec('props').hasAttribute('data-empty') && sec('creatures').hasAttribute('data-empty'), '0 个的项带 data-empty')
+  must(!sec('characters').hasAttribute('data-empty'), '有数量的不带 data-empty')
+  must(qa('[data-testid="nav-badge"]').length === 1 && !!sec('memory').querySelector('[data-testid="nav-badge"]'),
+       '待确认的人物状态：剧情与记忆上有提示点')
+  must(sec('overview').getAttribute('aria-current') === 'page' && !sec('chapters').hasAttribute('aria-current'), '当前项 aria-current')
+  await click(sec('props'))
+  must(calls.join() === 'sec:props', '空项也能点')
+
+  const cards = qa('[data-testid="chapter-card"]')
+  must(cards.length === 2, '每章一张卡片')
+  must((cards[0].textContent ?? '').includes('01') && (cards[0].textContent ?? '').includes('第一章')
+       && (cards[0].textContent ?? '').includes('下载成片'), '卡片：编号、标题、步骤名')
+  must((cards[1].textContent ?? '').includes('出片') && (cards[1].textContent ?? '').includes('1:05'), '卡片：步骤名与时长')
+  const w = (c: HTMLElement) => (c.querySelector('[data-testid="chapter-progress"]') as unknown as HTMLElement).style.width
+  must(w(cards[0]) === '100%', 'download 是 6/6：' + w(cards[0]))
+  must(w(cards[1]) === '50%', 'render 是 3/6：' + w(cards[1]))
+  must(cards[1].getAttribute('aria-current') === 'true' && !cards[0].hasAttribute('aria-current'), '当前章节 aria-current')
+  must(!q('[data-testid="chapter-card"] [data-tone="live"]'), '没在生成就没有 live')
+  await click(cards[0])
+  must(calls.join() === 'sec:props,open:c1', '点卡片调 onOpenChapter')
+  await click(q('[data-testid="nav-new-chapter"]'))
+  must(calls[calls.length - 1] === 'new', '＋ 调 onNewChapter')
+  must(!q('[data-testid="nav-search"]'), '章节不多于 8 个没有搜索框')
+
+  await render(nav(mkNovel(2), { section: null, running: [{ id: 'j', chapter_id: 'c1' }] }))
+  must(!!qa('[data-testid="chapter-card"]')[0].querySelector('[data-tone="live"]'), '生成中的章节有 live')
+  must(qa('[data-testid="nav-item"]').every((x) => !x.hasAttribute('aria-current')), '章节里没有高亮的导航项')
+  must(!q('[data-testid="nav-badge"]'), '没有待确认就没有提示点')
+
+  await render(nav(mkNovel(9)))
+  const inp = q('[data-testid="nav-search"]') as unknown as HTMLInputElement
+  must(!!inp, '超过 8 章出现搜索框')
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!.call(inp, '章9')
+    inp.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+  })
+  await settle()
+  must(qa('[data-testid="chapter-card"]').length === 1, '搜索过滤章节')
+
+  await render(null)                                  // 卸载，清掉上面搜索框里的输入
+  await render(nav(mkNovel(2, 1), {}, true))
+  must(qa('[data-testid="nav-item"]').length === 9 && !sec('characters').textContent!.includes('角色'), '收起只剩图标')
+  must(sec('characters').getAttribute('aria-label') === '角色', '收起时名字放进 aria-label 与提示')
+  must(!!q('[data-testid="chapter-card"]') && !(q('[data-testid="chapter-card"]')!.textContent ?? '').includes('第一章')
+       && (q('[data-testid="chapter-card"]')!.textContent ?? '').includes('01'), '收起时章节只剩编号方块')
+  await render(null)
+  console.log('5. ProjectNav ✓')
+}
+
 win.happyDOM.abort?.()
 console.log('workspace: ALL PASS')

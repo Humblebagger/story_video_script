@@ -310,10 +310,9 @@ const setInput = async (el: HTMLElement, v: string) => {
   }
   await act(async () => {
     root.render(h(TooltipProvider, null, h(NovelPage as never, {
-      key: 'setpage', novel, running: [], onChanged: () => {}, onDeleted: () => {}, onOpenChapter: () => {}, onNewChapter: () => {},
+      key: 'setpage', novel, section: 'settings', onChanged: () => {}, onDeleted: () => {}, onOpenChapter: () => {}, onNewChapter: () => {},
     })))
   })
-  await click(qa('.tabs__btn').find((b) => b.textContent === '制作参数') ?? null)
   const heads = qa('[data-testid^="set-"] h3').map((e) => e.textContent)
   for (const w of ['画幅', '画面风格', '旁白', '音色', '更多']) must(heads.includes(w), `设置页应有「${w}」分区`)
   must((q('[data-testid="set-save"]') as unknown as HTMLButtonElement).disabled, '没改动时保存不可点')
@@ -340,11 +339,11 @@ const setInput = async (el: HTMLElement, v: string) => {
   const page = async (novel: ReturnType<typeof mk>, key: string) => {
     await act(async () => {
       root.render(h(TooltipProvider, null, h(NovelPage as never, {
-        key, novel, running: [], onChanged: () => {}, onDeleted: () => {}, onOpenChapter: () => {}, onNewChapter: () => {},
+        key, novel, section: 'settings', onChanged: () => {}, onDeleted: () => {}, onOpenChapter: () => {}, onNewChapter: () => {},
       })))
     })
   }
-  const toParams = async () => click(qa('.tabs__btn').find((b) => b.textContent === '制作参数') ?? null)
+  const toParams = async () => {}     // 设置分区由 section 直接给出，不再有页签
   const titleBox = () => q('input[aria-label="小说标题"]') as unknown as HTMLInputElement
   const save = () => q('[data-testid="set-save"]') as unknown as HTMLButtonElement
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Boxes, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,17 +31,24 @@ interface Props {
   assets: Assets
   /** 写回后端之后通知上层刷新小说（侧栏卡数等） */
   onSaved: () => void
+  /** 只显示并新建这一类（分区页用）；不传则显示全部类别并可选类别 */
+  kind?: AssetKind
+  /** 每递增一次就聚焦「新卡名称」输入框（分区标题行的「＋ 新卡片」用） */
+  focusAdd?: number
 }
 
 /** 小说长期记忆里的资产库：各章采用版写入，也可手工新建、改、删。
  *  转换本书任何一章时都整份注入为【已有资产库】——角色不换脸、场景不改建。 */
-export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
+export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: Props) {
   const { t } = useI18n()
   const [ask, confirmUi] = useConfirm()
   const [assets, setAssets] = useState<Assets>(initial)
   const [dirty, setDirty] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [newKind, setNewKind] = useState<AssetKind>('characters')
+  const [pickedKind, setNewKind] = useState<AssetKind>('characters')
+  const newKind = kind ?? pickedKind
+  const nameRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (focusAdd) nameRef.current?.focus() }, [focusAdd])
   const [newName, setNewName] = useState('')
   const [query, setQuery] = useState('')
 
@@ -119,13 +126,14 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
                    .map((x) => x?.name)]
     return bag.some((v) => typeof v === 'string' && v.toLowerCase().includes(q))
   }
+  const scoped: Assets = kind ? ({ [kind]: assets[kind] ?? [] } as Assets) : assets
   const shown: Assets = q
-    ? Object.fromEntries((Object.entries(assets) as [AssetKind, Record<string, unknown>[]][])
+    ? Object.fromEntries((Object.entries(scoped) as [AssetKind, Record<string, unknown>[]][])
         .map(([k, list]) => [k, (list ?? []).filter(hit)])
         .filter(([, list]) => (list as unknown[]).length)) as Assets
-    : assets
+    : scoped
   const shownCount = Object.values(shown).reduce((a, l) => a + (l?.length ?? 0), 0)
-  const allCount = Object.values(assets).reduce((a, l) => a + (l?.length ?? 0), 0)
+  const allCount = Object.values(scoped).reduce((a, l) => a + (l?.length ?? 0), 0)
 
   return (
     <div className="lib">
@@ -133,12 +141,13 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
       <p className="lib__hint">{t('assets.hint')}</p>
       <div className="lib__bar">
         <div className="lib__add">
-          <select value={newKind} onChange={(e) => setNewKind(e.target.value as AssetKind)}>
+          {!kind && <select value={newKind} onChange={(e) => setNewKind(e.target.value as AssetKind)}>
             {(Object.keys(KIND_TITLE) as AssetKind[]).map((k) => (
               <option key={k} value={k}>{KIND_TITLE[k]}</option>
             ))}
-          </select>
+          </select>}
           <Input
+            ref={nameRef}
             value={newName}
             placeholder={t('assets.newName')}
             onChange={(e) => setNewName(e.target.value)}

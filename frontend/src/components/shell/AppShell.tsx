@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { useMotionPresets } from '@/motion'
-import { TopbarSlotContext } from './topbarSlot'
+import { SidebarCollapsedContext, TopbarSlotContext } from './topbarSlot'
 
 export interface AppShellProps {
   username: string
@@ -41,8 +41,10 @@ export interface AppShellProps {
   onToggleActivity?: () => void
   /** 服务状态：down 为连不上；model 为当前模型；noKey 为没配密钥 */
   service: { down: boolean; model?: string; noKey?: boolean }
-  /** 侧边栏中部（小说列表） */
+  /** 侧边栏中部（小说列表或项目导航） */
   sidebar: ReactNode
+  /** 侧边栏内容自己处理收起形态（读 useSidebarCollapsed）：为 true 时收起也不隐藏内容 */
+  sidebarHandlesCollapse?: boolean
   /** 内容区的切换键：变了就播一次进场动画 */
   viewKey: string
   children: ReactNode
@@ -91,7 +93,9 @@ export function AppShell(p: AppShellProps) {
             </Button>
           </Tip>
         </div>
-        <div className={cn('min-h-0 flex-1 overflow-y-auto px-2', collapsed && 'invisible')}>{p.sidebar}</div>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto px-2', collapsed && !p.sidebarHandlesCollapse && 'invisible')}>
+          <SidebarCollapsedContext.Provider value={collapsed}>{p.sidebar}</SidebarCollapsedContext.Provider>
+        </div>
         <div className={cn('space-y-1 border-t border-sidebar-border', collapsed ? 'flex flex-col items-center py-3' : 'p-3')}>
           {p.isAdmin && (
             <Tip on={collapsed} label={adminLabel}>

@@ -15,6 +15,7 @@
 @import "./novel.css" layer(components);
 @import "./shell.css" layer(components);
 @import "./shelf.css" layer(components);
+@import "./workspace.css" layer(components);
 
 @custom-variant dark (&:where(.dark, .dark *));
 

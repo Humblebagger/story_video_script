@@ -23,6 +23,8 @@ import type { NewNovel } from './components/NewNovelComposer'
 import { ShelfHome } from './components/ShelfHome'
 import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
+import { ProjectNav } from './components/shell/ProjectNav'
+import type { Section } from './section'
 import { StoryboardView } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
 import { toast } from 'sonner'
@@ -62,6 +64,8 @@ export default function App() {
   const [novel, setNovel] = useState<Novel | null>(null)
   const [chapter, setChapter] = useState<Chapter | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 小说层当前分区（左栏项目导航选中的那项） */
+  const [section, setSection] = useState<Section>('overview')
   /** 右侧动态面板开关（面板本身在后续任务里做；这里先接铃铛） */
   const [, setActivityOpen] = useState(false)
 
@@ -318,7 +322,9 @@ export default function App() {
     clearWork()
     setChapter(null)
     try {
-      setNovel(await getNovel(nid))
+      const n = await getNovel(nid)
+      setSection(n.memory.lifecycle.some((e) => e.status === 'proposed') ? 'memory' : 'overview')
+      setNovel(n)
     } catch (e) {
       setAlert(t('app.err.novel', { msg: msg(e) }))
     }
@@ -362,6 +368,17 @@ export default function App() {
     } else openJob(j as unknown as JobSummary)
   }
 
+  /** 左栏点分区：在章节里就先离开章节（未保存走 confirmLeave），回到小说层的那个分区 */
+  const gotoSection = async (sec: Section) => {
+    if (chapter) {
+      if (!(await confirmLeave())) return
+      clearWork()
+      setChapter(null)
+      if (novel) void reloadOpen(novel.id)
+    }
+    setSection(sec)
+  }
+
   const undo = () => {
     if (savedDoc.current) { setDoc(savedDoc.current); setDirty(false) }
   }
@@ -390,6 +407,7 @@ export default function App() {
       const chapters = []
       for (const c of n.chapters) chapters.push(await createChapter(created.id, c.title, c.text))
       await refreshNovels()
+      setSection('overview')
       setNovel(await getNovel(created.id))
       if (chapters.length) await openChapter(chapters[0].id, created.id)
     } catch (e) {
@@ -648,7 +666,19 @@ export default function App() {
         onToggleActivity={() => setActivityOpen((v) => !v)}
         service={{ down: svcDown, model: svc?.model, noKey: !!svc && !svc.api_key_configured }}
         viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
-        sidebar={adminOpen && user.role === 'admin' ? null : (
+        sidebarHandlesCollapse={!!novel}
+        sidebar={adminOpen && user.role === 'admin' ? null : novel ? (
+          <ProjectNav
+            novel={novel}
+            section={chapter ? null : section}
+            chapterId={chapter?.id ?? null}
+            summary={summary.data}
+            running={running}
+            onSection={(sec) => void gotoSection(sec)}
+            onOpenChapter={(cid) => void openChapter(cid)}
+            onNewChapter={() => void newChapter()}
+          />
+        ) : (
           <NovelSidebar
             novels={novels}
             novel={novel}
@@ -679,7 +709,7 @@ export default function App() {
                 onChanged={() => { void reloadOpen(novel.id); void refreshNovels() }}
                 onDeleted={() => { setNovel(null); void refreshNovels() }}
                 onOpenChapter={(cid) => void openChapter(cid)}
-                running={running}
+                section={section}
                 onNewChapter={() => void newChapter()}
               />
             )}

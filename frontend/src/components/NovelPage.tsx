@@ -1,6 +1,5 @@
-import { motion } from 'motion/react'
 import { useEffect, useId, useRef, useState } from 'react'
-import { BookOpen, MoreHorizontal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -10,19 +9,18 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Progress } from '@/components/ui/progress'
-import { EmptyState } from '@/components/common/EmptyState'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import type { MsgKey } from '@/i18n/core'
 import { notice } from '@/lib/notice'
-import { cn } from '@/lib/utils'
-import { useMotionPresets } from '@/motion'
 import {
   addConstraint, addLifecycle, deleteConstraint, deleteLifecycle, deleteNovel, setOutline,
   setSynopsis, updateConstraint, updateLifecycle, updateNovel,
 } from '../api'
 import { LIFECYCLE_STATUS, LIFECYCLE_TYPE, label } from '../labels'
-import type { ChapterSummary, JobSummary, LifecycleType, Novel, NovelParams } from '../types'
+import type { LifecycleType, Novel, NovelParams } from '../types'
+import type { AssetKind } from '../edit'
+import type { Section } from '../section'
 import { NovelAssets } from './NovelAssets'
 import { MoreParams } from './params/MoreParams'
 import { NarrationPick } from './params/NarrationPick'
@@ -31,27 +29,26 @@ import { StylePicker } from './params/StylePicker'
 import { VoicePicker } from './params/VoicePicker'
 import { DEFAULT_PARAMS, Field } from './ParamsForm'
 
-type Tab = 'chapters' | 'params' | 'plot' | 'constraints' | 'assets' | 'lifecycle'
-
 interface Props {
   novel: Novel
   /** 改完之后让上层重新取小说（侧栏、章节列表都跟着变） */
   onChanged: () => void
   onDeleted: () => void
   onOpenChapter: (cid: string) => void
-  /** 后台在跑的转换：章节卡片据此显示「生成中」与进度 */
-  running: JobSummary[]
+  /** 左栏项目导航选中的分区：主区按它渲染 */
+  section: Section
   onNewChapter: () => void
 }
+
+const ASSET_SECTIONS: Section[] = ['characters', 'locations', 'props', 'creatures']
 
 const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** 小说页 = 总会话：制作参数默认值 + 长期记忆（主线剧情、创作限制、资产库、人物生命周期） */
-export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running, onNewChapter }: Props) {
+export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, section, onNewChapter }: Props) {
   const { t } = useI18n()
   const [ask, confirmUi] = useConfirm()
-  const pending = novel.memory.lifecycle.filter((e) => e.status === 'proposed').length
-  const [tab, setTab] = useState<Tab>(pending ? 'lifecycle' : 'chapters')
+  const [addCard, setAddCard] = useState(0)
   const [busy, setBusy] = useState(false)
 
   const run = async (what: string, done: string, fn: () => Promise<unknown>) => {
@@ -73,12 +70,6 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
     void deleteNovel(novel.id).then(onDeleted)
       .catch((e) => notice.err(t('novel.failed', { what: t('novel.deleteNovel') }), err(e)))
   }
-
-  const tabs: [Tab, string][] = [
-    ['chapters', t('novel.chapters')], ['params', t('novel.tabs.params')], ['plot', t('novel.tabs.plot')],
-    ['constraints', t('novel.tabs.constraints')], ['assets', t('novel.tabs.assets')],
-    ['lifecycle', pending ? t('novel.tabs.lifecyclePending', { n: pending }) : t('novel.tabs.lifecycle')],
-  ]
 
   return (
     <section className="novel">
@@ -105,104 +96,38 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
-      <div className="novel__tabs">
-        <nav className="inline-flex rounded-lg bg-muted p-1" aria-label={t('novel.tabsLabel')}>
-          {tabs.map(([id, name]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={tab === id}
-              className={cn(
-                'tabs__btn whitespace-nowrap rounded-md border-0 px-3 py-1.5 text-sm text-muted-foreground',
-                'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
-                tab === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
-              )}
-              onClick={() => setTab(id)}
-            >
-              {name}
-            </button>
-          ))}
-        </nav>
-      </div>
-      <div className="novel__body">
-        {tab === 'chapters' && (
-          <ChaptersTab novel={novel} running={running}
-                       onOpenChapter={onOpenChapter} onNewChapter={onNewChapter} />
+      <div className="novel__body" data-section={section}>
+        <div className="sechead">
+          <h3>{t(`nav.${section}` as MsgKey)}</h3>
+          {section === 'chapters' && (
+            <Button size="sm" data-tour="import" onClick={onNewChapter}>{t('novel.newChapter')}</Button>
+          )}
+          {ASSET_SECTIONS.includes(section) && (
+            <Button size="sm" data-testid="new-card" onClick={() => setAddCard((n) => n + 1)}>{t('nav.newCard')}</Button>
+          )}
+        </div>
+        {section === 'overview' && <p className="secplaceholder">{t('nav.overviewHint')}</p>}
+        {section === 'chapters' && <p className="secplaceholder">{t('nav.chaptersHint')}</p>}
+        {section === 'settings' && <ParamsTab novel={novel} busy={busy} run={run} />}
+        {section === 'constraints' && <ConstraintsTab novel={novel} busy={busy} run={run} />}
+        {ASSET_SECTIONS.includes(section) && (
+          <NovelAssets nid={novel.id} assets={novel.memory.assets} onSaved={onChanged}
+                       kind={section as AssetKind} focusAdd={addCard} />
         )}
-        {tab === 'params' && <ParamsTab novel={novel} busy={busy} run={run} />}
-        {tab === 'plot' && <PlotTab novel={novel} busy={busy} run={run} />}
-        {tab === 'constraints' && <ConstraintsTab novel={novel} busy={busy} run={run} />}
-        {tab === 'assets' && (
-          <NovelAssets nid={novel.id} assets={novel.memory.assets} onSaved={onChanged} />
-        )}
-        {tab === 'lifecycle' && (
-          <LifecycleTab novel={novel} busy={busy} run={run} onOpenChapter={onOpenChapter} />
+        {section === 'memory' && (
+          <div className="flex flex-col gap-8">
+            <section aria-label={t('nav.memoryPlot')}>
+              <h4 className="mb-3 text-sm font-medium">{t('nav.memoryPlot')}</h4>
+              <PlotTab novel={novel} busy={busy} run={run} />
+            </section>
+            <section aria-label={t('nav.memoryLife')}>
+              <h4 className="mb-3 text-sm font-medium">{t('nav.memoryLife')}</h4>
+              <LifecycleTab novel={novel} busy={busy} run={run} onOpenChapter={onOpenChapter} />
+            </section>
+          </div>
         )}
       </div>
     </section>
-  )
-}
-
-/** 章节卡片网格：状态一眼可见，整卡可点进入该章 */
-function ChaptersTab({ novel, running, onOpenChapter, onNewChapter }: {
-  novel: Novel
-  running: JobSummary[]
-  onOpenChapter: (cid: string) => void
-  onNewChapter: () => void
-}) {
-  const { t } = useI18n()
-  const m = useMotionPresets()
-  if (!novel.chapters.length) {
-    return (
-      <EmptyState icon={<BookOpen className="size-5" />} title={t('novel.empty')}
-                  action={<Button data-tour="import" onClick={onNewChapter}>{t('novel.newChapter')}</Button>} />
-    )
-  }
-  const badge = (c: ChapterSummary, live: JobSummary | undefined) => {
-    if (live) {
-      return (
-        <Badge variant="secondary">
-          <span className="size-1.5 animate-pulse motion-reduce:animate-none rounded-full bg-primary" aria-hidden />
-          {t('novel.status.running')}
-        </Badge>
-      )
-    }
-    if (c.adopted_version) return <Badge>{t('novel.status.adopted')}</Badge>
-    if (c.latest_status === 'failed') return <Badge variant="destructive">{t('novel.status.failed')}</Badge>
-    if (c.versions.length) return <Badge variant="outline">{t('novel.status.generated')}</Badge>
-    return <Badge variant="outline" className="text-muted-foreground">{t('novel.status.none')}</Badge>
-  }
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {novel.chapters.map((c, i) => {
-        const live = running.find((j) => j.chapter_id === c.id)
-        const p = live?.progress
-        return (
-          <motion.div key={c.id} {...m.item(i)}>
-            <Card role="button" tabIndex={0} data-testid="chapter-card"
-                  className="h-full cursor-pointer gap-3 p-4 transition-[border-color,box-shadow] duration-150 hover:border-foreground/20 hover:shadow-sm"
-                  onClick={() => onOpenChapter(c.id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChapter(c.id) } }}>
-              <div className="flex items-start justify-between gap-2">
-                <b className="text-base">{c.title}</b>
-                {badge(c, live)}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {t('novel.chars', { n: c.chars })} · {t('novel.versions', { n: c.versions.length })}
-              </p>
-              {p && p.total_chars > 0 && <Progress value={(p.done_chars / p.total_chars) * 100} />}
-            </Card>
-          </motion.div>
-        )
-      })}
-      <motion.div {...m.item(novel.chapters.length)}>
-        <Card role="button" tabIndex={0} data-tour="import" onClick={onNewChapter}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewChapter() } }}
-              className="h-full min-h-24 cursor-pointer items-center justify-center border-dashed p-4 text-sm text-muted-foreground hover:bg-accent">
-          {t('novel.newChapter')}
-        </Card>
-      </motion.div>
-    </div>
   )
 }
 

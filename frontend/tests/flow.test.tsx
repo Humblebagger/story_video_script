@@ -553,7 +553,8 @@ await settle(150)
 must(shelf('alice')[0]?.chapters.length === 2, '应建出小说与两个章节')
 must(has('本章原文') && (primary()?.textContent ?? '').includes('生成分镜'), '建完应直接打开第一章')
 must(onStep('storyboard'), '新章节有原文、还没有版本：应停在 ② 生成分镜')
-must(!!container.querySelector('.hnovel.is-open') && has('未转换'), '侧栏应展开小说并列出章节')
+must(container.querySelectorAll('[data-testid="chapter-card"]').length === 2 && !!container.querySelector('[data-testid="nav-item"]'),
+     '左栏应换成项目导航并列出章节卡片')
 console.log('1. 新建小说 → 导入原文自动拆章 / 打开第一章 ✓')
 
 // 2. 转换本章 → 任务面板
@@ -567,15 +568,15 @@ console.log('2. 转换本章 → 任务面板（转换中）✓')
 await click(findByText('button', '放到后台'))
 must(!has('放到后台'), '放到后台后不应还停在任务面板')
 must(has('本章原文'), '放到后台后应回到章节页')
-must(has('批 1/1（8 字符）：调用 LLM…'), '侧栏必须留着在跑的任务及其最新日志')
+must(!!container.querySelector('[data-testid="chapter-card"] [data-tone="live"]'), '左栏的章节卡片必须标出这一章在生成')
 must(has('生成中…'), '章节上要标出正在转换')
 must(primary().disabled && (primary().textContent ?? '').includes('生成中…'), '生成中主按钮显示「生成中…」且不能再点')
 console.log('3. 放到后台 → 回到章节页，任务留在侧栏 ✓')
 
-// 4. 点侧栏的在跑任务：必须能回到任务面板
-await click(findByText('li', '批 1/1（8 字符）：调用 LLM…'))
-must(has('放到后台'), '点侧栏在跑任务应能回到任务面板')
-console.log('4. 点侧栏 → 回到任务面板 ✓')
+// 4. 点左栏在生成的章节卡片：必须能回到任务面板
+await click(container.querySelector('[data-testid="chapter-card"]') as unknown as HTMLElement)
+must(has('放到后台'), '点左栏在生成的章节卡片应能回到任务面板')
+console.log('4. 点左栏章节卡片 → 回到任务面板 ✓')
 
 // 4b. 进度可见：任务面板给出批次/尝试/阶段与剩余时间，侧栏给单行摘要
 jobs.get('job1')!.progress = {
@@ -588,12 +589,11 @@ must(has('批 2/3 · 第 2 次尝试（最多 3）'), '任务面板应显示批�
 must(has('已用 2 分 05 秒'), '应显示已用时间')
 must(has('预计还需约 2 分钟'), '应显示预计剩余时间（分钟粒度）')
 must(!!container.querySelector('[role="progressbar"]'), '应有进度条')
-must(has('批 2/3 · 受限修复 · 还需约 2 分钟'), '侧栏应显示单行进度摘要')
 jobs.get('job1')!.progress = { ...jobs.get('job1')!.progress as object,
                                done_chars: 0, eta_sec: null, batch: 1 }
 await settle(1600)
 must(has('第一批完成后估算剩余时间'), '第一批完成前不给剩余时间，要说明原因')
-console.log('4b. 进度可见 → 批次/尝试/阶段 + 已用/剩余时间，侧栏单行摘要 ✓')
+console.log('4b. 进度可见 → 批次/尝试/阶段 + 已用/剩余时间 ✓')
 
 // 4c. 分批先看：已完成的批次先给人审阅，只读；又跑完一批时预览自动刷新
 must(!has('先审阅已完成的'), '还没有完成的批次时不该出现预览入口')
@@ -615,13 +615,14 @@ await click(findByText('button', '放到后台'))
 finishJob('job1')
 await settle(3600)          // 等一次巡检（在跑时 3s 一轮）
 must(notifications.some((n) => n.title === '转换完成'), '后台跑完必须弹桌面通知')
-must(!has('批 1/1（8 字符）：调用 LLM…'), '跑完后不应还挂在「在跑」列表里')
-must(has('✓ 采用 v1'), '首个成功版本应自动采用，侧栏标出采用版')
+must(!container.querySelector('[data-testid="chapter-card"] [data-tone="live"]'), '跑完后章节卡片不应还标着在生成')
+must(has('v1 ★'), '首个成功版本应自动采用')
 console.log('5. 后台跑完 → 桌面通知 / 自动采用 ✓（共', notifications.length, '条）')
 
 // 6. 打开章节：摆出采用版
 const chapterItem = (i: number) =>
-  container.querySelectorAll('.hchap__item')[i] as unknown as HTMLElement
+  container.querySelectorAll('[data-testid="chapter-card"]')[i] as unknown as HTMLElement
+const navItem = (sec: string) => container.querySelector(`[data-section="${sec}"]`) as unknown as HTMLElement
 await click(chapterItem(0))
 must(has('E01-SH001') && has('推门'), '打开章节应摆出采用版的分镜')
 must(onStep('render'), '有采用版、还没有出片会话：进章节应停在 ④ 出片')
@@ -726,23 +727,23 @@ must(onStep('render'), '生成完成后应自动跟到 ④ 出片（新版本没
 await click(findByText('button', '采用此版'))
 await settle(120)
 must(shelf('alice')[0].chapters[0].adopted_version === 'job3', '采用应写回后端')
-must(has('v3 ★') && has('已采用'), '版本条应改标 v3 为采用版')
+must(has('v3 ★'), '版本条应改标 v3 为采用版')
 console.log('9b. 新版本 → 改采用 ✓')
 
 // 10. 小说页：章后整理的人物状态提议高亮待确认，确认后才进后续章节的转换
-await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
-must(has('《药》') && has('人物生命周期（1 待确认）'), '小说页要突出待确认的提议')
+await click(navItem('memory'))
+must(has('《药》') && !!container.querySelector('[data-testid="nav-badge"]'), '左栏「剧情与记忆」上要有待确认的提示点')
 must(has('他推门。') && has('模型提议'), '提议要附原文证据')
-// 页签文案里也有「待确认」，按钮要按全文匹配
 await click([...container.querySelectorAll('.life__acts button')]
   .find((b) => b.textContent === '确认') as unknown as HTMLElement)
 must(shelf('alice')[0].memory.lifecycle[0].status === 'confirmed', '确认应写回后端')
-must(!has('1 待确认'), '确认后不再提示待确认')
+must(!container.querySelector('[data-testid="nav-badge"]'), '确认后提示点消失')
 console.log('10. 小说页 → 人物生命周期提议附证据 / 确认 ✓')
 
 // 11. 资产库并入小说页：新建 / 编辑
-await click(findByText('button', '资产库'))
-must(has('华老栓') && has('C01'), '资产库应列出采用版写入的卡片')
+await click(navItem('characters'))
+must(has('华老栓') && has('C01'), '角色分区应列出采用版写入的卡片')
+must(!container.querySelector('.lib__add select'), '分区页只显示这一类，没有类别选择')
 const addName = container.querySelector('.lib__add input') as unknown as HTMLElement
 await type(addName, '赵四', false)
 await click(findByText('button', '＋ 新建'))
@@ -755,7 +756,7 @@ must(shelf('alice')[0].memory.assets.characters[0].name === '华老栓（库中�
 console.log('11. 小说页资产库 → 新建（自动续号）/ 编辑并保存 ✓')
 
 // 11b. 创作限制与主线剧情
-await click(findByText('button', '创作限制'))
+await click(navItem('constraints'))
 await type(field('规则（给模型看）'), '不出现血腥画面', false)
 await type(field('负面提示词（可空，逗号分隔）'), '血迹，伤口特写', false)
 await type(field('扫描关键词（可空，逗号分隔）'), '血，伤口', false)
@@ -778,26 +779,28 @@ must(shelf('alice')[0].memory.constraints.length === 2, '取消后不删除')
 await click(delBtn())
 await answer(true)
 must(shelf('alice')[0].memory.constraints.length === 1, '确认后才删除')
-await click(findByText('button', '主线剧情'))
+await click(navItem('memory'))
 must(has('老栓推门进屋。') && has('自动'), '逐章摘要应列出（采用后自动生成）')
 await type(container.querySelector('.plot textarea') as unknown as HTMLElement, '华老栓买药救子。')
 await click(findByText('button', '保存梗概'))
 must(shelf('alice')[0].memory.plot.outline === '华老栓买药救子。', '全书梗概应写回')
 console.log('11b. 创作限制（负面提示词/关键词/停用）/ 主线剧情（梗概 + 逐章摘要）✓')
 
-// 11c. 小说页默认是「章节」卡片：含章节标题与「已采用」，点卡片进入章节
-await click(container.querySelector('.hchap__item') as unknown as HTMLElement)     // 先进章节，再回小说页以重新挂载
-await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
-const tabOn = container.querySelector('.tabs__btn.is-on')
-must((tabOn?.textContent ?? '') === '章节', '小说页无待确认提议时默认停在「章节」页签')
+// 11c. 章节卡片在左栏：含编号、标题与所在步骤，点卡片进入章节；回到小说层默认是概览
+await click(navItem('overview'))
+must(navItem('overview').getAttribute('aria-current') === 'page', '回到小说层，概览项高亮')
 const cards = [...container.querySelectorAll('[data-testid="chapter-card"]')]
-must(cards.length === 2 && (cards[0].textContent ?? '').includes('一')
-     && (cards[0].textContent ?? '').includes('已采用')
-     && (cards[1].textContent ?? '').includes('未生成'), '章节卡片应含标题、「已采用」与「未生成」')
-must(has('＋ 新章节'), '应有「＋ 新章节」卡')
+must(cards.length === 2 && (cards[0].textContent ?? '').includes('01') && (cards[0].textContent ?? '').includes('一')
+     && (cards[0].textContent ?? '').includes('出片')
+     && (cards[1].textContent ?? '').includes('生成分镜'), '章节卡片应含编号、标题与所在步骤')
+must(!!container.querySelector('[data-testid="nav-new-chapter"]'), '章节标题旁应有「＋」')
 await click(cards[0] as unknown as HTMLElement)
 must(!!container.querySelector('[data-step]'), '点卡片应进入章节工作流')
-console.log('11c. 小说页章节卡片 → 默认页签 / 状态徽章 / 点卡片进章节 ✓')
+must(cards[0].getAttribute('aria-current') === 'true', '打开的章节在左栏高亮')
+await click(navItem('settings'))
+must(!container.querySelector('[data-step]') && navItem('settings').getAttribute('aria-current') === 'page',
+     '在章节里点导航项，离开章节回到小说层的那个分区')
+console.log('11c. 左栏章节卡片 → 步骤名 / 点卡片进章节 / 点导航项回小说层 ✓')
 
 // 11d. 英文：同一本小说单独渲染一次（App 之外包英文 Provider），页签与「新章节」按钮是英文，随后切回中文
 {
@@ -808,20 +811,19 @@ console.log('11c. 小说页章节卡片 → 默认页签 / 状态徽章 / 点卡
   await act(async () => {
     enRoot.render(
       <I18nProvider initial="en">
-        <NovelPage novel={enNovel} running={[]} onChanged={() => {}} onDeleted={() => {}}
+        <NovelPage novel={enNovel} section="chapters" onChanged={() => {}} onDeleted={() => {}}
                    onOpenChapter={() => {}} onNewChapter={() => {}} />
       </I18nProvider>)
   })
   await settle()
-  const enTabs = [...enBox.querySelectorAll('.tabs__btn')].map((b) => b.textContent ?? '')
-  must(enTabs.includes('Chapters') && enTabs.includes('Plot') && enTabs.includes('Constraints'), '英文页签：' + enTabs.join('|'))
+  must((enBox.querySelector('.sechead h3')?.textContent ?? '') === 'Source & chapters', '英文分区标题')
   must((enBox.textContent ?? '').includes('+ New chapter') && !(enBox.textContent ?? '').includes('新章节'), '「新章节」按钮应是英文')
   must(!!enBox.querySelector('button[aria-label="More actions"]'), '标题右侧应有「更多操作」菜单')
   setCurrentLocale('zh')
   await act(async () => { enRoot.unmount() })
   enBox.remove()
 }
-console.log('11d. 小说页英文 → 页签 / 新章节按钮 / 更多菜单 ✓')
+console.log('11d. 小说页英文 → 分区标题 / 新章节按钮 / 更多菜单 ✓')
 
 // 11e. 删除小说走更多菜单：取消确认后页面不被锁住（pointer-events 不为 none），小说还在
 {
@@ -832,7 +834,7 @@ console.log('11d. 小说页英文 → 页签 / 新章节按钮 / 更多菜单 �
   const n = JSON.parse(JSON.stringify(shelf('alice')[0]))
   const before = shelf('alice').length
   await act(async () => {
-    r.render(<I18nProvider initial="zh"><NovelPage novel={n} running={[]} onChanged={() => {}} onDeleted={() => { deleted++ }}
+    r.render(<I18nProvider initial="zh"><NovelPage novel={n} section="overview" onChanged={() => {}} onDeleted={() => { deleted++ }}
                    onOpenChapter={() => {}} onNewChapter={() => {}} /></I18nProvider>)
   })
   await settle()
@@ -913,7 +915,7 @@ await type(titleInput(), '鲍勃的新书', false)
 await click(container.querySelector('[data-testid="composer-submit"]') as unknown as HTMLElement)
 await settle(150)
 must(shelf('bob').length === 1 && has('《鲍勃的新书》'), '不导入原文也能建小说，建完打开小说页')
-await click(findByText('button', '资产库'))
+await click(navItem('characters'))
 const cardInput = container.querySelector('.lib__add input') as unknown as HTMLElement
 for (const name of ['赵老三', '钱掌柜']) {
   await type(cardInput, name, false)
@@ -951,7 +953,7 @@ await type(p3, 'pw123456', false)
 await click(container.querySelector('button[type="submit"]') as unknown as HTMLElement)
 await settle(400)
 must(has('药'), 'alice 应已重新登录并看到自己的小说')
-await click(container.querySelector('.hnovel .hrun') as unknown as HTMLElement)
+await click(container.querySelector('[data-testid="shelf-card"]') as unknown as HTMLElement)
 await click(chapterItem(0))
 await click(findByText('button', '编辑分镜'))
 

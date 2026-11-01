@@ -159,3 +159,8 @@ export function chapterStage(ch: ChapterSummary, sum: ChapterSum | undefined, co
   if (!film || film.total <= 0 || film.done < film.total) return 'render'
   return sum.final === 'fresh' ? 'download' : 'compose'
 }
+
+/** 章节进度细线的比例：已完成步数 / 6（停在 download 即 6/6，停在第 n 步即完成了前 n 步） */
+export function stageFraction(stage: StepId): number {
+  return stage === 'download' ? 1 : STEPS.indexOf(stage) / STEPS.length
+}
