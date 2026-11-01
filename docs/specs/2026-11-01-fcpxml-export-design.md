@@ -114,7 +114,7 @@
   - 配音的 `offset` 等于计划起点，`lane="-1"`。
   - BGM 带 `-14dB`，长度等于本集总长。
   - 所有 `asset` 的 `src` 都在 `names` 里，没有绝对路径。
-- **DTD 校验**：仓库放一份 FCPXML 1.10 的公开 DTD，测试里用 `xmllint --dtdvalid` 校验生成结果。没有 `xmllint` 时跳过并打印提示。
+- **结构校验（见实施计划实施裁定 1）**：不放 DTD；测试里写 `check_structure(xml)` 按 FCPXML 1.10 要求逐条检查生成结果。
 - **合成**：现有的 `test_mix_e2e`（真跑 ffmpeg）在合成后断言 `final/timeline.json` 存在，且内容与 `plan_episode` 一致、引用的文件都存在。中途失败时 `final/` 里不出现新的 timeline。
 - **导出端到端**：在 `test_mix_e2e` 合成之后调 `export`。
   - zip 里有 `project.fcpxml`、README、每个被引用的文件。
