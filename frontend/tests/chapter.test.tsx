@@ -204,7 +204,39 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   await view({ focusShot: { id: 'SH003', n: 2 } })
   must(selected() === 'SH003', '同一镜再次定位')
 
+  // 在章节页里：本步主按钮由通栏按钮接管（每屏一个主按钮）
+  const { StepPrimaryContext } = await import('../src/components/workflow/chapterHead')
+  const claims: boolean[] = []
+  let ran = 0
+  let fixed = 0
+  const step = (primary: unknown) => ({
+    primary, busy: false, run: () => { ran += 1 }, fix: () => { fixed += 1 },
+    claim: (on: boolean) => { claims.push(on) },
+  })
+  const inStep = async (primary: unknown, o: Record<string, unknown> = {}) => {
+    await act(async () => {
+      root.render(h(I18nProvider, { initial: 'zh' }, h(TooltipProvider, null,
+        h(StepPrimaryContext.Provider, { value: step(primary) as never },
+          h(ShotFocusView, { ...base, ...o } as never)))) as never)
+    })
+    await settle()
+  }
+  await inStep({ action: 'openFilm', label: 'flow.primary.tryOne', cny: 1.5 })
+  must(claims[claims.length - 1] === true, '挂上时接管主按钮')
+  must(prim().textContent === '先试一段（约 ¥1.50）', `通栏按钮换成本步主按钮：${prim().textContent}`)
+  await click(prim())
+  must(ran === 1 && canvas === 1, '点了走本步动作而不是看画布')
+  await inStep({ action: 'goto', goto: 'render', label: 'flow.primary.next',
+                 blocked: { reason: 'flow.block.converting', fix: { step: 'review' } } })
+  must(prim().disabled && !!q('[data-testid="focus-reason"]'), '被拦时禁用并写原因')
+  await click(q('.focus__fix'))
+  must(fixed === 1, '去修复')
+  await inStep({ action: 'openFilm', label: 'flow.primary.viewFilm' }, { dirty: true, canSave: true })
+  must(prim().textContent === '保存修改', '有未保存修改时仍是保存')
+  await inStep({ action: 'none', label: 'flow.primary.next' })
+  must(prim().textContent === '在画布中查看', '本步没有主按钮时回到看画布')
   await act(async () => { root.render(null as never) })
+  must(claims[claims.length - 1] === false, '卸下时交还主按钮')
 }
 
 // ---------- 3. 分镜视图的页签 ----------

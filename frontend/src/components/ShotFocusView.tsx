@@ -1,9 +1,11 @@
 /** 镜头三栏视图：左栏按集分组的镜头列表，中栏选中镜头的完整编辑，右栏关键帧 / 成片段与原文出处。 */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { motion } from 'motion/react'
 import { ChevronDown } from 'lucide-react'
+import { StepPrimaryContext } from '@/components/workflow/chapterHead'
 import { useI18n } from '@/i18n/core'
+import { primaryArgs } from '@/lib/fmt'
 import { useMedia } from '@/lib/useMedia'
 import { useMotionPresets } from '@/motion'
 import { filmFileUrl } from '../api'
@@ -128,6 +130,16 @@ export function ShotFocusView({
   ].filter(Boolean).join(' · ')
   const ratio = (doc.meta?.video?.aspect_ratio ?? '16:9').replace(':', ' / ')
   const showSave = dirty && canSave
+  // 在章节页里时，本步的主按钮（去出片、出剩余各段……）由这里的通栏按钮接管；画布入口在视图顶部
+  const step = useContext(StepPrimaryContext)
+  const claim = step?.claim
+  useEffect(() => {
+    if (!claim) return
+    claim(true)
+    return () => claim(false)
+  }, [claim])
+  const stepAct = !showSave && step && step.primary.action !== 'none' && step.primary.action !== 'save'
+    ? step : null
 
   return (
     <div className="focus">
@@ -230,12 +242,31 @@ export function ShotFocusView({
                 </ul>
               ) : <p className="focus__none">{t('board.focus.noSource')}</p>}
             </div>
-            <button
-              type="button" className="focus__primary" data-testid="focus-primary" disabled={saving && showSave}
-              onClick={showSave ? onSave : onOpenCanvas}
-            >
-              {t(showSave ? 'board.focus.saveEdits' : 'board.focus.openCanvas')}
-            </button>
+            {stepAct?.primary.blocked && (
+              <div className="focus__reason" role="status" data-testid="focus-reason">
+                <span>{t(stepAct.primary.blocked.reason)}</span>
+                {(stepAct.primary.blocked.fix.step || stepAct.primary.blocked.fix.target || stepAct.primary.blocked.fix.openFilm) && (
+                  <button type="button" className="focus__fix" onClick={() => stepAct.fix(stepAct.primary.blocked!.fix)}>
+                    {t('flow.fix')}
+                  </button>
+                )}
+              </div>
+            )}
+            {stepAct ? (
+              <button
+                type="button" className="focus__primary" data-testid="focus-primary"
+                disabled={!!stepAct.primary.blocked || stepAct.busy} onClick={stepAct.run}
+              >
+                {t(stepAct.primary.label, primaryArgs(stepAct.primary))}
+              </button>
+            ) : (
+              <button
+                type="button" className="focus__primary" data-testid="focus-primary" disabled={saving && showSave}
+                onClick={showSave ? onSave : onOpenCanvas}
+              >
+                {t(showSave ? 'board.focus.saveEdits' : 'board.focus.openCanvas')}
+              </button>
+            )}
           </motion.aside>
         </>
       )}

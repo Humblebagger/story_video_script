@@ -4,10 +4,10 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ArrowRight, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { primaryArgs } from '@/lib/fmt'
 import { useMotionPresets } from '@/motion'
 import type { Fix, Primary } from '@/workflow'
 
-const yuan = (n?: number) => (n === undefined ? '—' : `¥${n.toFixed(2)}`)
 
 export function PrimaryBar({ primary, busy, inline, onRun, onFix }: {
   primary: Primary
@@ -20,7 +20,7 @@ export function PrimaryBar({ primary, busy, inline, onRun, onFix }: {
   const { t } = useI18n()
   const m = useMotionPresets()
   if (primary.action === 'none') return null
-  const text = t(primary.label, { amount: yuan(primary.cny), count: primary.count ?? 0 })
+  const text = t(primary.label, primaryArgs(primary))
   return (
     <div className={inline ? 'mt-2 flex flex-wrap items-center justify-end gap-3'
                            : 'pointer-events-none fixed bottom-6 right-6 z-30 flex max-w-sm flex-col items-end gap-2'}>

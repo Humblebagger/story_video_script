@@ -1142,7 +1142,8 @@ must((container.querySelector('[data-testid="focus-primary"]')?.textContent ?? '
 await click(barBtn('撤销'))
 await settle(500)
 must(!bar(), '撤销后提示条消失')
-must((container.querySelector('[data-testid="focus-primary"]')?.textContent ?? '') === '在画布中查看', '撤销后主按钮回到「在画布中查看」')
+must((container.querySelector('[data-testid="focus-primary"]')?.textContent ?? '') === '下一步', '撤销后通栏按钮回到本步主按钮「下一步」')
+must(!container.querySelector('[data-testid="primary-action"]'), '镜头视图挂着时不再有右下角的固定主按钮（每屏一个）')
 console.log('16b. 镜头视图编辑 → 未保存提示条 / 撤销复原 ✓')
 
 // 17. 服务端验证结果必须在界面上看得见

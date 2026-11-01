@@ -16,3 +16,8 @@ export function fmtDuration(s: number | null | undefined): string | null {
   const n = Math.round(s)
   return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`
 }
+
+/** 主按钮文案的插值参数：金额没有时写「—」 */
+export function primaryArgs(p: { cny?: number; count?: number }) {
+  return { amount: p.cny === undefined ? '—' : cny(p.cny), count: p.count ?? 0 }
+}

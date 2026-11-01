@@ -84,6 +84,14 @@
   width: 100%; padding: 10px; border: 0; border-radius: var(--ui-radius); font-size: 14px; cursor: pointer;
   background: var(--primary); color: var(--primary-foreground);
 }
+.focus__reason {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;
+  font-size: 13px; color: var(--ui-muted-foreground);
+}
+.focus__fix {
+  flex-shrink: 0; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--ui-radius);
+  background: transparent; color: var(--foreground); font-size: 13px; cursor: pointer;
+}
 .focus__primary:disabled { opacity: .5; cursor: not-allowed; }
 .focus__primary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 

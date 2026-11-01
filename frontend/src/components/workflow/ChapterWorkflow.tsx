@@ -2,7 +2,7 @@
  *  进章节、换版本（读到这一版的出片状态后）停在「该做的那一步」；之后只有该做的那一步往后走、且越过正在看的步骤时才跟着跳
  *  （用户手点的步骤保持；未保存的修改不算进跟步，保存或撤销不会让视图跳走），并对刚完成的步骤弹一句结果。
  *  原文与分镜的未保存修改共用底部的未保存提示条（保存 / 撤销两样都管）。 */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'motion/react'
@@ -22,7 +22,7 @@ import type { useChapterFlow } from '@/useChapterFlow'
 import { currentStep, primaryFor, stepDone, stepStates, STEPS } from '@/workflow'
 import type { Fix, FlowInput, StepId } from '@/workflow'
 import { ChapterHeader } from './ChapterHeader'
-import { ChapterHeadContext } from './chapterHead'
+import { ChapterHeadContext, StepPrimaryContext } from './chapterHead'
 import { DownloadStep } from './DownloadStep'
 import { GenerateStep } from './GenerateStep'
 import { PrimaryBar } from './PrimaryBar'
@@ -220,6 +220,9 @@ export function ChapterWorkflow({
   }
 
   const inlineBar = CARD.includes(view)
+  // 镜头三栏视图挂着时，它的通栏按钮就是这一屏的主按钮
+  const [claimed, setClaimed] = useState(false)
+  const claim = useCallback((on: boolean) => setClaimed(on), [])
   const bar = <PrimaryBar primary={primary} busy={busy} inline={inlineBar} onRun={run} onFix={fix} />
   const finalFiles = input.film?.final?.files ?? []
   const workspace = (() => {
@@ -285,6 +288,7 @@ export function ChapterWorkflow({
   }
   return (
     <ChapterHeadContext.Provider value={<ChapterHeader compact {...headProps} />}>
+    <StepPrimaryContext.Provider value={{ primary, busy, run, fix, claim }}>
     <div className="flex flex-col gap-4 pb-28">
       {slot && createPortal(stepper, slot)}
       <ChapterHeader {...headProps} />
@@ -301,10 +305,11 @@ export function ChapterWorkflow({
       <motion.div key={BOARD.includes(view) ? 'board' : view} {...m.enter} className="flex flex-col gap-4">
         {workspace}
       </motion.div>
-      {!inlineBar && bar}
+      {!inlineBar && !(claimed && BOARD.includes(view)) && bar}
       <UnsavedBar show={boardDirty || textDirty} saving={saving || savingText}
                   onSave={() => void saveAll()} onUndo={undoAll} />
     </div>
+    </StepPrimaryContext.Provider>
     </ChapterHeadContext.Provider>
   )
 }
