@@ -13,7 +13,6 @@ export const en: Messages = {
     retry: 'Retry',
     loading: 'Loading…',
     help: 'What is this?',
-    bookTitle: '{title}',
     quote: '“{text}”',
     paren: ' ({text})',
     clearSearch: 'Clear search',
@@ -150,6 +149,7 @@ export const en: Messages = {
   },
   app: {
     imported: 'Imported {n} chapters',
+    importPartial: 'Import stopped after {n}/{total} chapters: {msg}. The created chapters are already listed; import only the rest',
     chapterDefault: 'Chapter {n}',
     notify: {
       failed: 'Generation failed',
@@ -303,7 +303,6 @@ export const en: Messages = {
       doneWarn: 'Generation finished (quality warnings)',
       fallbackWho: 'Storyboard',
     },
-    novelTitle: '“{title}”',
     source: { chars: 'Chapter text · {n} chars', edit: 'Edit text' },
     progress: 'View progress',
     download: {
@@ -355,17 +354,10 @@ export const en: Messages = {
     },
   },
   novel: {
-    chapters: 'Chapters',
-    chars: '{n} chars',
-    versions: '{n} versions',
-    status: { running: 'Generating', adopted: 'Adopted', failed: 'Failed', generated: 'Generated', none: 'Not generated' },
     newChapter: '+ New chapter',
     empty: 'No chapters yet. Start by importing the first one',
-    meta: '{n} chapters · {a} adopted · next chapter starts at u{u} / E{e}',
     more: 'More actions',
     deleteNovel: 'Delete novel',
-    tabsLabel: 'Novel tabs',
-    tabs: { params: 'Settings', plot: 'Plot', constraints: 'Constraints', assets: 'Assets', lifecycle: 'Character states', lifecyclePending: 'Character states ({n} to confirm)' },
     ok: { saved: 'Saved', deleted: 'Deleted', updated: 'Updated', consAdded: 'Constraint added', confirmed: 'Confirmed', rejected: 'Rejected', recordAdded: 'Record added' },
     failed: '{what} failed',
     titleLabel: 'Novel title',

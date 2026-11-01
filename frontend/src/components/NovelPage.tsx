@@ -42,6 +42,7 @@ interface Props {
   lastChapterId?: string | null
   onSection?: (s: Section) => void
   onImportChapters?: (chapters: { title: string; text: string }[]) => void
+  importing?: boolean
 }
 
 const ASSET_SECTIONS: Section[] = ['characters', 'locations', 'props', 'creatures']
@@ -53,7 +54,7 @@ const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** 小说页 = 总会话：制作参数默认值 + 长期记忆（主线剧情、创作限制、资产库、人物生命周期） */
 export function NovelPage({
   novel, onChanged, onDeleted, onOpenChapter, section, onNewChapter,
-  summary, lastChapterId, onSection = noop, onImportChapters = noop,
+  summary, lastChapterId, onSection = noop, onImportChapters = noop, importing,
 }: Props) {
   const { t } = useI18n()
   const [addCard, setAddCard] = useState(0)
@@ -87,12 +88,12 @@ export function NovelPage({
         )}
         {section === 'chapters' && (
           <ChaptersPage novel={novel} summary={summary ?? null} onOpenChapter={onOpenChapter}
-                        onNewChapter={onNewChapter} onImport={onImportChapters} />
+                        onNewChapter={onNewChapter} onImport={onImportChapters} importing={importing} />
         )}
         {section === 'settings' && <ParamsTab novel={novel} busy={busy} run={run} />}
         {section === 'constraints' && <ConstraintsTab novel={novel} busy={busy} run={run} />}
         {ASSET_SECTIONS.includes(section) && (
-          <NovelAssets nid={novel.id} assets={novel.memory.assets} onSaved={onChanged}
+          <NovelAssets key={section} nid={novel.id} assets={novel.memory.assets} onSaved={onChanged}
                        kind={section as AssetKind} focusAdd={addCard} />
         )}
         {section === 'memory' && (

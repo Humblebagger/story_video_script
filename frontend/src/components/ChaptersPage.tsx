@@ -19,10 +19,11 @@ interface Props {
   onNewChapter: () => void
   /** 导入整本：已按章节标记拆好，逐章新建 */
   onImport: (chapters: { title: string; text: string }[]) => void
+  importing?: boolean
 }
 
 /** 原文与章节：章节表格（编号、标题、字数、版本数、步骤、操作）、新章节、导入整本 .txt */
-export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onImport }: Props) {
+export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onImport, importing }: Props) {
   const { t } = useI18n()
   const m = useMotionPresets()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -42,7 +43,7 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
     <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" data-testid="new-chapter" onClick={onNewChapter}>{t('novel.newChapter')}</Button>
-        <Button size="sm" variant="outline" data-tour="import" data-testid="import-txt"
+        <Button size="sm" variant="outline" data-tour="import" data-testid="import-txt" disabled={importing}
                 onClick={() => fileRef.current?.click()}>
           <FileUp aria-hidden />{t('chaptersPage.importWhole')}
         </Button>

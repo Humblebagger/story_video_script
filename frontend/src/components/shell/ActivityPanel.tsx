@@ -91,10 +91,18 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose }: {
             <ul className="space-y-2">
               {done.map((j) => (
                 <li key={j.id} data-testid="activity-done"
-                    className={`activity__item${onOpenDone ? ' activity__item--click' : ''}`}
-                    onClick={onOpenDone ? () => onOpenDone(j) : undefined}>
-                  <p className="truncate text-sm">{name(j)}</p>
-                  <div><StatusPill tone={TONE[j.status] ?? 'idle'}>{label(JOB_STATUS, j.status)}</StatusPill></div>
+                    className={`activity__item${onOpenDone ? ' activity__item--click' : ''}`}>
+                  {onOpenDone ? (
+                    <button type="button" className="block w-full text-left" onClick={() => onOpenDone(j)}>
+                      <p className="truncate text-sm">{name(j)}</p>
+                      <div><StatusPill tone={TONE[j.status] ?? 'idle'}>{label(JOB_STATUS, j.status)}</StatusPill></div>
+                    </button>
+                  ) : (
+                    <>
+                      <p className="truncate text-sm">{name(j)}</p>
+                      <div><StatusPill tone={TONE[j.status] ?? 'idle'}>{label(JOB_STATUS, j.status)}</StatusPill></div>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

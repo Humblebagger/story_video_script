@@ -122,6 +122,8 @@ const INVALID = {
 let nextSaveVerdict: { status: string; verification: unknown } | null = null
 /** 置位后下一次 /render/plan 返回 422 验证拦截 */
 let blockNextRender = false
+/** 非空时，新建标题等于它的章节返回 500（演导入中途失败） */
+let failChapterTitle = ''
 
 const DOC = {
   meta: { schema_version: '0.4', title: '药', fidelity_mode: 'faithful',
@@ -373,6 +375,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   }
   if (seg[2] === 'chapters' && seg.length === 3 && method === 'POST') {
     const b = body()
+    if (failChapterTitle && String(b.title).includes(failChapterTitle)) return err(500, '服务器开小差')
     const c: StubChapter = { id: `c${++ids}`, title: b.title, text: b.text ?? '',
       order: n.chapters.length + 1, adopted_version: null, versions: [], digest: null }
     n.chapters.push(c)
@@ -619,6 +622,22 @@ must(!container.querySelector('[data-testid="chapter-card"] [data-tone="live"]')
 must(has('v1 ★'), '首个成功版本应自动采用')
 console.log('5. 后台跑完 → 桌面通知 / 自动采用 ✓（共', notifications.length, '条）')
 
+// 5b. 后台跑完：铃铛亮点，动态面板的「最近完成」可用键盘操作（按钮），关闭后焦点回铃铛
+const bell = () => doc.querySelector('[data-testid="activity-bell"]') as unknown as HTMLElement
+const doneItems = () => [...doc.querySelectorAll('[data-testid="activity-done"]')]
+must(!!doc.querySelector('[data-testid="activity-dot"]'), '后台跑完后铃铛应有新完成提示点')
+await click(bell())
+must(doneItems().length >= 1 && doneItems().every((x) => !!x.querySelector('button')), '最近完成的项应是可聚焦的按钮')
+must(!doc.querySelector('[data-testid="activity-dot"]'), '打开面板后提示点消失')
+await act(async () => {
+  doc.querySelector('[data-testid="activity-panel"]')!.dispatchEvent(
+    new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event)
+})
+await settle(400)
+must(doc.activeElement === (bell() as unknown as Element),
+     '关闭动态面板后焦点应回到铃铛')
+console.log('5b. 动态面板 → 提示点 / 完成项可键盘操作 / 关闭后焦点回铃铛 ✓')
+
 // 6. 打开章节：摆出采用版
 const chapterItem = (i: number) =>
   container.querySelectorAll('[data-testid="chapter-card"]')[i] as unknown as HTMLElement
@@ -802,6 +821,24 @@ must(!container.querySelector('[data-step]') && navItem('settings').getAttribute
      '在章节里点导航项，离开章节回到小说层的那个分区')
 console.log('11c. 左栏章节卡片 → 步骤名 / 点卡片进章节 / 点导航项回小说层 ✓')
 
+// 11c2. 整本导入中途失败：已建好的章节要显示出来并说清楚成功了几章；导入进行中按钮禁用
+{
+  const { notice } = await import('../src/lib/notice')
+  await click(navItem('chapters'))
+  const before = shelf('alice')[0].chapters.length
+  failChapterTitle = '炸'
+  const fileInput = container.querySelector('[data-testid="import-file"]') as unknown as HTMLInputElement
+  const file = new win.File(['第一章 甲\n甲文\n第二章 炸\n乙文\n第三章 丙\n丙文'], '三章.txt', { type: 'text/plain' })
+  Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+  await act(async () => { fileInput.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event) })
+  await settle(200)
+  failChapterTitle = ''
+  must(shelf('alice')[0].chapters.length === before + 1, '第 2 章失败：服务端只建出了第 1 章')
+  must(container.querySelectorAll('[data-testid="chapter-row"]').length === before + 1, '已建好的章节应出现在章节表里')
+  must(notice.log.at(-1)?.kind === 'err' && notice.log.at(-1)!.msg.includes('1/3'), '应说明导入了 1/3 章：' + notice.log.at(-1)?.msg)
+  console.log('11c2. 整本导入中途失败 → 已建章节刷新显示 / 提示成功章数 ✓')
+}
+
 // 11d. 英文：同一本小说单独渲染一次（App 之外包英文 Provider），页签与「新章节」按钮是英文，随后切回中文
 {
   const enBox = doc.createElement('div')
@@ -858,6 +895,9 @@ console.log('11d. 小说页英文 → 分区标题 / 新章节按钮 / 更多菜
 console.log('11e. 删除小说 → 取消确认后页面可点、小说还在 ✓')
 
 // 12. 换个账号：看不到 alice 的任何东西
+await click(bell())
+must(doneItems().length >= 1, '退出前 alice 的「最近完成」里有内容')
+await click(bell())
 await click(findByText('button', '退出'))
 await settle(100)
 must(!container.querySelector('[data-testid="auth-dialog"]'), '已有账号时退出后不该自动弹出注册')
@@ -878,6 +918,10 @@ await settle(400)
 must(has('bob') && !has('alice'), '顶栏应换成新用户')
 must(!has('药') && !has('华老栓'), 'bob 不该看到 alice 的小说')
 must(has('还没有小说'), 'bob 的书架应为空')
+must(!doc.querySelector('[data-testid="activity-dot"]'), '换账号后不该带着上一个人的新完成提示点')
+await click(bell())
+must(doneItems().length === 0, '换账号后「最近完成」不该留着 alice 的任务')
+await click(bell())
 console.log('12. 换账号 → 小说与长期记忆完全隔离 ✓')
 
 // 12b. 管理入口：管理员能进能出；401 / 退出后换成普通用户，不能落进后台
@@ -934,6 +978,14 @@ must(has('换个关键词试试'), '无命中时应给出提示')
 await type(search, '', false)
 must(has('赵老三') && has('钱掌柜'), '清空搜索应恢复全部')
 console.log('14. 资产库搜索 → 按名称跨类别过滤 ✓')
+
+// 14b. 四类资产各自独立：在角色里搜索的关键词，换到场景后不能还留着
+await type(search, '赵老三', false)
+await click(navItem('locations'))
+must((container.querySelector('.lib__search') as unknown as HTMLInputElement).value === '', '换到场景后搜索框应是空的')
+await click(navItem('characters'))
+must((container.querySelector('.lib__search') as unknown as HTMLInputElement).value === '', '回到角色也是新的状态')
+console.log('14b. 资产分区切换 → 搜索框各自重置 ✓')
 
 // 15. 分镜里 @ 挂卡：形象锁定落到结构化引用，正文只留自然语句
 await click(findByText('button', '退出'))

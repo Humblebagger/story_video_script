@@ -48,7 +48,11 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
   const [pickedKind, setNewKind] = useState<AssetKind>('characters')
   const newKind = kind ?? pickedKind
   const nameRef = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (focusAdd) nameRef.current?.focus() }, [focusAdd])
+  const seenAdd = useRef(focusAdd)
+  useEffect(() => {
+    if (focusAdd && focusAdd !== seenAdd.current) nameRef.current?.focus()
+    seenAdd.current = focusAdd
+  }, [focusAdd])
   const [newName, setNewName] = useState('')
   const [query, setQuery] = useState('')
 

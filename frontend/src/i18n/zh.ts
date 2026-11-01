@@ -11,7 +11,6 @@ export const zh = {
     retry: '重试',
     loading: '读取中…',
     help: '这是什么？',
-    bookTitle: '《{title}》',
     quote: '「{text}」',
     paren: '（{text}）',
     clearSearch: '清空搜索',
@@ -148,6 +147,7 @@ export const zh = {
   },
   app: {
     imported: '已导入 {n} 章',
+    importPartial: '导入了 {n}/{total} 章后中断：{msg}。已建好的章节已在列表里，请只补导剩下的',
     chapterDefault: '第{n}章',
     notify: {
       failed: '转换失败',
@@ -301,7 +301,6 @@ export const zh = {
       doneWarn: '转换完成（质量告警）',
       fallbackWho: '分镜',
     },
-    novelTitle: '《{title}》',
     source: { chars: '本章原文 · {n} 字', edit: '修改原文' },
     progress: '查看进度',
     download: {
@@ -353,17 +352,10 @@ export const zh = {
     },
   },
   novel: {
-    chapters: '章节',
-    chars: '{n} 字',
-    versions: '{n} 个版本',
-    status: { running: '生成中', adopted: '已采用', failed: '失败', generated: '已生成', none: '未生成' },
     newChapter: '＋ 新章节',
     empty: '还没有章节，从导入第一章开始',
-    meta: '{n} 章 · 已采用 {a} 章 · 下一章从 u{u} / E{e} 起编',
     more: '更多操作',
     deleteNovel: '删除小说',
-    tabsLabel: '小说页签',
-    tabs: { params: '制作参数', plot: '主线剧情', constraints: '创作限制', assets: '资产库', lifecycle: '人物生命周期', lifecyclePending: '人物生命周期（{n} 待确认）' },
     ok: { saved: '已保存', deleted: '已删除', updated: '已更新', consAdded: '已新增限制', confirmed: '已确认', rejected: '已驳回', recordAdded: '已添加记录' },
     failed: '{what}失败',
     titleLabel: '小说标题',

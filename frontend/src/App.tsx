@@ -69,6 +69,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   /** 小说层当前分区（左栏项目导航选中的那项） */
   const [section, setSection] = useState<Section>('overview')
+  const [importing, setImporting] = useState(false)
   /** 右侧动态面板开关；recentDone 为最近完成的任务（只在内存，最多 20 条）；activityDot 为面板关着时的新完成提示 */
   const [activityOpen, setActivityOpen] = useState(false)
   const [recentDone, setRecentDone] = useState<DoneJob[]>([])
@@ -239,8 +240,8 @@ export default function App() {
         const done = jobs.find((x) => x.id === id)
         if (done) {
           announce(done); finished = true
-          const { id: did, status, work_title, chapter, novel_id, chapter_id } = done
-          setRecentDone((r) => [{ id: did, status, work_title, chapter, novel_id, chapter_id },
+          const { id: did, status, work_title, chapter: chapterName, novel_id, chapter_id } = done
+          setRecentDone((r) => [{ id: did, status, work_title, chapter: chapterName, novel_id, chapter_id },
             ...r.filter((x) => x.id !== did)].slice(0, 20))
           if (!activityOpenRef.current) setActivityDot(true)
         }
@@ -350,6 +351,7 @@ export default function App() {
     try {
       const [n, c] = await Promise.all([
         novel?.id === nid ? Promise.resolve(novel) : getNovel(nid), getChapter(nid, cid)])
+      if (novel?.id !== nid) setSection(n.memory.lifecycle.some((e) => e.status === 'proposed') ? 'memory' : 'overview')
       setNovel(n)
       openChapterId.current = c.id
       writeLastChapter(nid, c.id)
@@ -441,15 +443,24 @@ export default function App() {
   /** 导入整本：在当前小说里按已拆好的章节逐章新建，停留在「原文与章节」页 */
   const importChapters = async (list: { title: string; text: string }[]) => {
     if (!novel || !list.length) return
+    if (importing) return
     const nid = novel.id
+    let made = 0
+    setImporting(true)
     try {
-      await createChapters(nid, list)
-      await refreshNovels()
-      setNovel(await getNovel(nid))
-      bumpSummary()
-      notice.ok(t('app.imported', { n: list.length }))
+      for (const c of list) { await createChapter(nid, c.title, c.text); made++ }
+      notice.ok(t('app.imported', { n: made }))
     } catch (e) {
-      notice.err(t('app.err.createChapter', { msg: msg(e) }))
+      const m = msg(e)
+      notice.err(made
+        ? t('app.importPartial', { n: made, total: list.length, msg: m })
+        : t('app.err.createChapter', { msg: m }))
+    } finally {
+      // 已建出的章节无论成败都要显示出来，否则重试会重复建
+      if (made) {
+        try { void refreshNovels(); setNovel(await getNovel(nid)); bumpSummary() } catch { /* 刷新失败不覆盖上面的提示 */ }
+      }
+      setImporting(false)
     }
   }
 
@@ -460,6 +471,7 @@ export default function App() {
       await refreshNovels()
       await openChapter(c.id, novel.id)
       setNovel(await getNovel(novel.id))
+      bumpSummary()
     } catch (e) {
       notice.err(t('app.err.createChapter', { msg: msg(e) }))
     }
@@ -525,6 +537,7 @@ export default function App() {
       action: t('confirm.delete'), danger: true }))) return
     try {
       await deleteChapter(novel.id, chapter.id)
+      bumpSummary()
       clearWork()
       setChapter(null)
       await reloadOpen(novel.id)
@@ -593,6 +606,8 @@ export default function App() {
     setChapter(null)
     setNovels([])
     setRunning([])
+    setRecentDone([]); setActivityDot(false); setActivityOpen(false); setSection('overview')
+    prevRunning.current = new Set()
   }
   resetRef.current = resetSignedOut
 
@@ -704,7 +719,10 @@ export default function App() {
         activity={activityOpen ? (
           <ActivityPanel running={running} done={recentDone} onOpen={openJob}
                          onOpenDone={(d) => openFromToast.current(d)}
-                         onClose={() => setActivityOpen(false)} />
+                         onClose={() => {
+                           setActivityOpen(false)
+                           document.querySelector<HTMLElement>('[data-testid="activity-bell"]')?.focus()
+                         }} />
         ) : null}
         service={{ down: svcDown, model: svc?.model, noKey: !!svc && !svc.api_key_configured }}
         viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
@@ -756,7 +774,7 @@ export default function App() {
                 summary={summary.data}
                 lastChapterId={readLastChapter(novel.id)}
                 onSection={(sec) => void gotoSection(sec)}
-                onImportChapters={(list) => void importChapters(list)}
+                onImportChapters={(list) => void importChapters(list)} importing={importing}
               />
             )}
             {novel && chapter && (
