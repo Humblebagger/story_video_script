@@ -16,6 +16,19 @@ export const en: Messages = {
   },
   theme: { label: 'Theme', system: 'System', light: 'Light', dark: 'Dark' },
   lang: { label: 'Language' },
+  confirm: {
+    ok: 'Confirm',
+    leave: { title: 'Unsaved changes', body: 'These changes will be lost if you leave.', action: 'Leave' },
+    delete: 'Delete',
+    version: { title: 'Delete this version?', body: 'This cannot be undone.' },
+    chapter: { title: 'Delete "{title}"?', body: 'All its versions will be deleted, and asset cards, summaries and character states it wrote into long-term memory will be rolled back.' },
+    novel: { title: 'Delete "{title}"?', body: 'All chapters, versions and long-term memory will be deleted. This cannot be undone.' },
+    constraint: { title: 'Delete this constraint?' },
+    record: { title: 'Delete this record?' },
+    asset: { title: 'Delete asset card {id}?', body: 'If an existing storyboard references it, re-checking that storyboard will report a missing asset.' },
+    regen: { title: 'Generate without saving?', body: 'This version has unsaved changes. When generation finishes, the canvas will switch to the new version.', action: 'Generate anyway' },
+    user: { title: 'Are you sure you want to {label}?' },
+  },
   shell: {
     newNovel: 'New novel',
     openLocal: 'Open local JSON',
@@ -140,7 +153,6 @@ export const en: Messages = {
     unsaved: 'You have unsaved changes',
     unsavedSave: 'Save',
     unsavedUndo: 'Undo',
-    leave: 'You have unsaved changes. Leave anyway?',
     done: {
       storyboard: 'Storyboard ready — {shots} shots',
       render: 'All clips rendered. Next: voice & mix',

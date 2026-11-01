@@ -15,6 +15,7 @@ import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
 import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
+import { useConfirm } from './components/common/ConfirmDialog'
 import type { NewNovel } from './components/NewNovelForm'
 import { NewNovelForm } from './components/NewNovelForm'
 import { NovelPage } from './components/NovelPage'
@@ -37,6 +38,7 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export default function App() {
   const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
   const [adminOpen, setAdminOpen] = useState(false)
   /** 登录成功后、首页淡出期间暂存的用户；淡出完才真正进应用 */
@@ -265,7 +267,8 @@ export default function App() {
     return () => clearTimeout(t)
   }, [novel, chapter, reloadOpen])
 
-  const confirmLeave = () => !(dirty || textDirty) || confirm(t('flow.leave'))
+  const confirmLeave = async () => !(dirty || textDirty) || ask({
+    title: t('confirm.leave.title'), body: t('confirm.leave.body'), action: t('confirm.leave.action'), danger: true })
 
   const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
     reset()
@@ -296,7 +299,7 @@ export default function App() {
   }, [reset])
 
   const openNovel = async (nid: string) => {
-    if (!confirmLeave()) return
+    if (!(await confirmLeave())) return
     clearWork()
     setChapter(null)
     try {
@@ -308,7 +311,7 @@ export default function App() {
 
   /** 打开章节：给了 vid 就直接打开那一版；否则本章有转换在跑就接上任务面板，再否则摆出采用版（没有就最新一版） */
   const openChapter = async (cid: string, nid = novel?.id, jobId?: string, vid?: string) => {
-    if (!nid || !confirmLeave()) return
+    if (!nid || !(await confirmLeave())) return
     clearWork()
     try {
       const [n, c] = await Promise.all([
@@ -339,7 +342,7 @@ export default function App() {
     if (nid && cid) {
       if (j.status === 'failed') void openChapter(cid, nid, j.id)
       // 已经在这一章：和点版本条一样只换版本；否则和侧栏打开别的章节一样
-      else if (novel?.id === nid && chapter?.id === cid) { if (confirmLeave()) void openVersion(nid, cid, j.id) }
+      else if (novel?.id === nid && chapter?.id === cid) { void confirmLeave().then((ok) => { if (ok) void openVersion(nid, cid, j.id) }) }
       else void openChapter(cid, nid, undefined, j.id)
     } else openJob(j as unknown as JobSummary)
   }
@@ -357,8 +360,8 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', h)
   }, [anyDirty])
 
-  const newNovel = () => {
-    if (!confirmLeave()) return
+  const newNovel = async () => {
+    if (!(await confirmLeave())) return
     clearWork()
     setNovel(null)
     setChapter(null)
@@ -382,7 +385,7 @@ export default function App() {
   }
 
   const newChapter = async () => {
-    if (!novel || !confirmLeave()) return
+    if (!novel || !(await confirmLeave())) return
     try {
       const c = await createChapter(novel.id, `第${novel.chapters.length + 1}章`)
       await refreshNovels()
@@ -427,7 +430,9 @@ export default function App() {
   }
 
   const removeVersion = async (vid: string) => {
-    if (!novel || !chapter || !confirm('删除这个版本？该操作不可撤销。')) return
+    if (!novel || !chapter) return
+    if (!(await ask({ title: t('confirm.version.title'), body: t('confirm.version.body'),
+      action: t('confirm.delete'), danger: true }))) return
     try {
       await deleteVersion(novel.id, chapter.id, vid)
       await reloadOpen(novel.id, chapter.id)
@@ -445,7 +450,8 @@ export default function App() {
 
   const removeChapter = async () => {
     if (!novel || !chapter) return
-    if (!confirm(`删除「${chapter.title}」及其全部版本？它写进长期记忆的资产卡、摘要与人物状态会一并撤回。`)) return
+    if (!(await ask({ title: t('confirm.chapter.title', { title: chapter.title }), body: t('confirm.chapter.body'),
+      action: t('confirm.delete'), danger: true }))) return
     try {
       await deleteChapter(novel.id, chapter.id)
       clearWork()
@@ -573,7 +579,7 @@ export default function App() {
             novel, chapter, versionId: docVid, job, converting,
             disabled: submitting || svcDown,
             onConvert: (opts) => convert(opts, true),
-            onOpenVersion: (vid) => { if (confirmLeave()) void openVersion(novel.id, chapter.id, vid) },
+            onOpenVersion: (vid) => { void confirmLeave().then((ok) => { if (ok) void openVersion(novel.id, chapter.id, vid) }) },
             onAdopt: (vid) => void adopt(vid),
             onDeleteVersion: (vid) => void removeVersion(vid),
             onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
@@ -586,6 +592,7 @@ export default function App() {
 
   return (
     <>
+      {confirmUi}
       <input
         ref={fileRef}
         type="file"
@@ -659,7 +666,7 @@ export default function App() {
                 onOpenJob={openJob}
                 onConvert={convert}
                 onOpenVersion={(vid) => {
-                  if (confirmLeave()) void openVersion(novel.id, chapter.id, vid)
+                  void confirmLeave().then((ok) => { if (ok) void openVersion(novel.id, chapter.id, vid) })
                 }}
                 onAdopt={(vid) => void adopt(vid)}
                 onDeleteVersion={(vid) => void removeVersion(vid)}

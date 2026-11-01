@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { EmptyState } from '@/components/common/EmptyState'
+import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
 import { useMotionPresets } from '@/motion'
 import {
@@ -34,6 +35,7 @@ const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** 小说页 = 总会话：制作参数默认值 + 长期记忆（主线剧情、创作限制、资产库、人物生命周期） */
 export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running, onNewChapter }: Props) {
   const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const pending = novel.memory.lifecycle.filter((e) => e.status === 'proposed').length
   const [tab, setTab] = useState<Tab>(pending ? 'lifecycle' : 'chapters')
   const [alert, setAlert] = useState<string | null>(null)
@@ -52,8 +54,9 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
     }
   }
 
-  const remove = () => {
-    if (!confirm(`删除《${novel.title}》？全部章节、版本与长期记忆都会删掉，不可撤销。`)) return
+  const remove = async () => {
+    if (!(await ask({ title: t('confirm.novel.title', { title: novel.title }), body: t('confirm.novel.body'),
+      action: t('confirm.delete'), danger: true }))) return
     void deleteNovel(novel.id).then(onDeleted).catch((e) => setAlert(`删除失败：${err(e)}`))
   }
 
@@ -64,6 +67,7 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
 
   return (
     <section className="novel">
+      {confirmUi}
       <header className="novel__head">
         <h2>《{novel.title}》</h2>
         <span className="novel__meta">
@@ -71,7 +75,7 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
           · 下一章从 u{String(novel.memory.numbering.next_unit).padStart(4, '0')} /
           E{String(novel.memory.numbering.next_episode).padStart(2, '0')} 起编
         </span>
-        <button className="btn btn--sm btn--ghost" onClick={remove}>删除小说</button>
+        <button className="btn btn--sm btn--ghost" onClick={() => void remove()}>删除小说</button>
       </header>
       <nav className="tabs">
         {tabs.map(([id, name]) => (
@@ -252,6 +256,8 @@ export function PlotTab({ novel, busy, run }: TabProps) {
 }
 
 export function ConstraintsTab({ novel, busy, run }: TabProps) {
+  const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const [text, setText] = useState('')
   const [neg, setNeg] = useState('')
   const [keywords, setKeywords] = useState('')
@@ -267,6 +273,7 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
   })
   return (
     <div className="cons">
+      {confirmUi}
       <p className="lib__hint">
         限制约束的是画面怎么呈现，不能让原文句子消失：原文写到的仍要由镜头或旁白承载，
         只是改用侧面、遮挡、空镜或交给旁白。负面提示词由程序直接并进产物；
@@ -284,8 +291,11 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
             {c.negative_prompt && <span className="cons__neg">负面提示词：{c.negative_prompt}</span>}
             {!!c.keywords.length && <span className="cons__kw">扫描关键词：{c.keywords.join('、')}</span>}
             <button className="hrun__del" title="删除这条限制"
-                    onClick={() => confirm('删除这条限制？')
-                      && void run('删除限制', () => deleteConstraint(novel.id, c.id))}>
+                    onClick={async () => {
+                      if (await ask({ title: t('confirm.constraint.title'), action: t('confirm.delete'), danger: true })) {
+                        void run('删除限制', () => deleteConstraint(novel.id, c.id))
+                      }
+                    }}>
               ×
             </button>
           </li>
@@ -319,6 +329,8 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
 function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
   onOpenChapter: (cid: string) => void
 }) {
+  const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const chars = novel.memory.assets.characters ?? []
   const names = Object.fromEntries(chars.map((c) => [c.id, c.name]))
   const titles = Object.fromEntries(novel.chapters.map((c) => [c.id, c.title]))
@@ -331,6 +343,7 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
 
   return (
     <div className="life">
+      {confirmUi}
       <p className="lib__hint">
         主线人物不可逆的状态变化（死亡、永久伤病/残疾、永久下线）。采用一章后由模型提议，
         每条都附原文逐字证据，程序核过才列出来；<b>确认后</b>才会注入后续章节的转换，
@@ -371,8 +384,11 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
                 </button>
               )}
               <button className="btn btn--sm btn--ghost" disabled={busy}
-                      onClick={() => confirm('删除这条记录？')
-                        && void run('删除', () => deleteLifecycle(novel.id, e.id))}>
+                      onClick={async () => {
+                        if (await ask({ title: t('confirm.record.title'), action: t('confirm.delete'), danger: true })) {
+                          void run('删除', () => deleteLifecycle(novel.id, e.id))
+                        }
+                      }}>
                 删除
               </button>
             </div>

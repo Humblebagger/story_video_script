@@ -5,6 +5,8 @@
  */
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/common/ConfirmDialog'
+import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { JOB_STATUS, NARRATION_MODE, label } from '../labels'
 import type { Chapter, Job, NarrationMode, Novel } from '../types'
@@ -75,6 +77,8 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
 
 export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }) {
   const { novel, chapter, versionId, job, converting } = bench
+  const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const [mode, setMode] = useState<NarrationMode | ''>('')
   const [strict, setStrict] = useState(false)
   // 版本按时间正序编号 v1 v2 …（接口按时间倒序给）
@@ -84,6 +88,7 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
 
   return (
     <div className="tlc__tasks">
+      {confirmUi}
       {bench.notice && <p className="tlc__notice">{bench.notice}</p>}
       <section>
         <h4>生成</h4>
@@ -111,8 +116,9 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
               严格模式
             </label>
             <Button size="sm" className="self-start" disabled={bench.disabled || !chapter.text.trim()}
-                    onClick={() => {
-                      if (dirty && !confirm('本版有未保存的修改，生成完成后画布会换成新版本。先不保存直接生成？')) return
+                    onClick={async () => {
+                      if (dirty && !(await ask({ title: t('confirm.regen.title'), body: t('confirm.regen.body'),
+                        action: t('confirm.regen.action') }))) return
                       bench.onConvert({ ...(mode ? { narration_mode: mode } : {}), strict })
                     }}>
               重新生成（新版本）

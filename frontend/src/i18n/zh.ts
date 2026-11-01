@@ -14,6 +14,19 @@ export const zh = {
   },
   theme: { label: '主题', system: '跟随系统', light: '浅色', dark: '深色' },
   lang: { label: '语言' },
+  confirm: {
+    ok: '确定',
+    leave: { title: '有未保存的修改', body: '离开后这些修改会丢失。', action: '离开' },
+    delete: '删除',
+    version: { title: '删除这个版本？', body: '该操作不可撤销。' },
+    chapter: { title: '删除「{title}」？', body: '它的全部版本会删掉；写进长期记忆的资产卡、摘要与人物状态会一并撤回。' },
+    novel: { title: '删除《{title}》？', body: '全部章节、版本与长期记忆都会删掉，不可撤销。' },
+    constraint: { title: '删除这条限制？' },
+    record: { title: '删除这条记录？' },
+    asset: { title: '删除资产卡 {id}？', body: '已有分镜若引用了它，那份分镜再检查会报「引用不存在的资产」。' },
+    regen: { title: '先不保存直接生成？', body: '本版有未保存的修改，生成完成后画布会换成新版本。', action: '直接生成' },
+    user: { title: '确定要{label}？' },
+  },
   shell: {
     newNovel: '新建小说',
     openLocal: '打开本地 JSON',
@@ -138,7 +151,6 @@ export const zh = {
     unsaved: '有未保存的修改',
     unsavedSave: '保存',
     unsavedUndo: '撤销',
-    leave: '当前修改尚未保存，确定离开？',
     done: {
       storyboard: '分镜已生成，共 {shots} 镜',
       render: '所有段都出好了，下一步配音合成',

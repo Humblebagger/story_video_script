@@ -158,6 +158,43 @@ must(body().includes('金额已变为 ¥90.00') && body().includes('会超过上
   '超上限禁用、金额变了提示')
 console.log('5. 花钱确认 ✓')
 
+// 5b. 危险确认 useConfirm：取消得 false、确定得 true、连续两次 ask 时前一次得 false
+const { useConfirm } = await import('../src/components/common/ConfirmDialog')
+const answers: boolean[] = []
+function Asker() {
+  const [ask, ui] = useConfirm()
+  return (
+    <I18nProvider initial="zh">
+      <button data-testid="ask1" onClick={() => void ask({ title: '删除这个？', body: '不可撤销', action: '删除', danger: true }).then((v) => answers.push(v))}>问一次</button>
+      <button data-testid="ask2" onClick={() => {
+        void ask({ title: '第一问' }).then((v) => answers.push(v))
+        void ask({ title: '第二问' }).then((v) => answers.push(v))
+      }}>连问</button>
+      {ui}
+    </I18nProvider>
+  )
+}
+const byId = (id: string) => win.document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+await act(async () => { root.render(<Asker />) })
+await settle()
+must(!byId('confirm-dialog'), '没问之前没有确认框')
+await click(byId('ask1')!)
+must(!!byId('confirm-dialog') && body().includes('删除这个？') && body().includes('不可撤销'), '问一次：确认框出现')
+must(byId('confirm-ok')!.textContent === '删除', '确认按钮文字')
+await click(byId('confirm-cancel')!)
+must(answers.join() === 'false', '取消得 false')
+await settle(300)
+await click(byId('ask1')!)
+await click(byId('confirm-ok')!)
+must(answers.join() === 'false,true', '确定得 true')
+await settle(300)
+answers.length = 0
+await click(byId('ask2')!)
+must(answers.join() === 'false' && body().includes('第二问'), '连续两次：第一次得 false，弹的是第二问')
+await click(byId('confirm-ok')!)
+must(answers.join() === 'false,true', '第二问确定得 true')
+console.log('5b. 危险确认 useConfirm ✓')
+
 // 非组件文字：tr / localized 跟着当前语言走
 const core = await import('../src/i18n/core')
 const labels = await import('../src/labels')

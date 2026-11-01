@@ -1,4 +1,7 @@
 import { Fragment, useState } from 'react'
+import { useConfirm } from '@/components/common/ConfirmDialog'
+import { useI18n } from '@/i18n/core'
+import { notice } from '@/lib/notice'
 import { adminPatchUser, adminResetPassword, adminUser, adminUsers } from '../../api'
 import type { User } from '../../auth'
 import type { AdminUserRow } from '../../types'
@@ -86,7 +89,8 @@ export function Users({ me }: { me: User }) {
 function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: () => void }) {
   const { data, error, reload } = useLoad(() => adminUser(id), [id])
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const [cap, setCap] = useState('')
   const [pwd, setPwd] = useState('')
 
@@ -95,17 +99,16 @@ function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: ()
   const u = data.user
   const self = u.id === me.id
 
-  const act = async (label: string, fn: () => Promise<unknown>, ask = true) => {
-    if (ask && !window.confirm(`确定要${label}？`)) return
+  const act = async (label: string, fn: () => Promise<unknown>, needConfirm = true, danger = false) => {
+    if (needConfirm && !(await ask({ title: t('confirm.user.title', { label }), action: label, danger }))) return
     setBusy(true)
-    setMsg(null)
     try {
       await fn()
-      setMsg(`已${label}`)
+      notice.ok(`已${label}`)
       reload()
       onChanged()
     } catch (e) {
-      setMsg(errText(e))
+      notice.err(errText(e))
     } finally {
       setBusy(false)
     }
@@ -113,6 +116,7 @@ function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: ()
 
   return (
     <div className="adm__detail" onClick={(e) => e.stopPropagation()}>
+      {confirmUi}
       <dl className="adm__kv">
         <dt>用户 ID</dt><dd>{u.id}</dd>
         <dt>密码登录</dt><dd>{u.has_password ? '已设置' : '未设置'}</dd>
@@ -121,7 +125,7 @@ function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: ()
       <div className="adm__acts">
         <button className="btn btn--sm btn--ghost" disabled={busy || self}
                 onClick={() => void act(u.disabled ? '启用该账号' : '停用该账号',
-                  () => adminPatchUser(u.id, { disabled: !u.disabled }))}>
+                  () => adminPatchUser(u.id, { disabled: !u.disabled }), true, !u.disabled)}>
           {u.disabled ? '启用' : '停用'}
         </button>
         <button className="btn btn--sm btn--ghost" disabled={busy || self}
@@ -134,10 +138,10 @@ function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: ()
                  onChange={(e) => setCap(e.target.value)} />
           <button className="btn btn--sm btn--ghost" disabled={busy}
                   onClick={() => {
-                    const t = cap.trim()
-                    const n = t === '' ? null : Number(t)
+                    const s = cap.trim()
+                    const n = s === '' ? null : Number(s)
                     if (n !== null && (!Number.isFinite(n) || n < 0)) {
-                      setMsg('请输入不小于 0 的金额，留空表示不限')
+                      notice.err('请输入不小于 0 的金额，留空表示不限')
                       return
                     }
                     void act('修改月上限', () => adminPatchUser(u.id, { monthly_cap_usd: n }), false)
@@ -156,7 +160,6 @@ function UserDetail({ id, me, onChanged }: { id: string; me: User; onChanged: ()
         </span>
       </div>
       {self && <p className="adm__note">不能停用自己，也不能修改自己的角色。</p>}
-      {msg && <p className="adm__msg">{msg}</p>}
       <h4 className="adm__h">近 30 天每日金额</h4>
       <LineChart height={100}
                  points={data.daily.map((d) => ({ label: d.day.slice(5), value: d.cost_usd }))} />

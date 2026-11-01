@@ -8,17 +8,18 @@ import { Window } from 'happy-dom'
 const win = new Window({ url: 'http://localhost:5173' })
 const g = globalThis as Record<string, unknown>
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement',
-                 'Element', 'Node', 'Event', 'CustomEvent', 'getComputedStyle',
-                 'localStorage', 'sessionStorage']) {
+                 'Element', 'Node', 'Event', 'CustomEvent', 'KeyboardEvent', 'getComputedStyle',
+                 'localStorage', 'sessionStorage', 'PointerEvent', 'MouseEvent', 'matchMedia', 'ResizeObserver',
+                 'DOMRect', 'MutationObserver']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k],
     writable: true, configurable: true,
   })
 }
 g.IS_REACT_ACT_ENVIRONMENT = true
-const confirms: string[] = []
-;(win as unknown as Record<string, unknown>).confirm = (m: string) => { confirms.push(m); return true }
-g.confirm = (win as unknown as Record<string, unknown>).confirm
+g.requestAnimationFrame = (cb: (t: number) => void) =>
+  setTimeout(() => cb(performance.now()), 16) as unknown as number
+g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 
 /* ---------- 桩后端 ---------- */
 const calls: string[] = []
@@ -103,6 +104,7 @@ const { UsageTab } = await import('../src/components/admin/UsageTab')
 const { JobsTab } = await import('../src/components/admin/JobsTab')
 const { AuditTab } = await import('../src/components/admin/AuditTab')
 const { AdminView } = await import('../src/components/admin/AdminView')
+const { notice } = await import('../src/lib/notice')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -123,6 +125,13 @@ const click = async (el: Element) => {
   await act(async () => { el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event) })
   await settle()
 }
+const confirmDialog = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')
+async function answer(ok: boolean) {
+  const btn = win.document.body.querySelector<HTMLElement>(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)
+  must(!!btn, '应弹出确认框')
+  await click(btn!)
+}
+const lastNotice = () => notice.log[notice.log.length - 1]
 const type = async (el: Element, value: string) => {
   await act(async () => {
     const input = el as unknown as HTMLInputElement
@@ -167,7 +176,12 @@ console.log('2. 用户：排序 / 搜索 / 金额 ✓')
 await click(container.querySelector('tbody tr.adm__row')!)
 must(text().includes('药 / 第一章') && text().includes('转换'), '详情显示最近用量与标题')
 await click(button('停用'))
-must(confirms.some((c) => c.includes('停用')), '停用应先确认')
+must((confirmDialog()?.textContent ?? '').includes('停用'), '停用应先确认')
+must(!calls.some((c) => c.startsWith('PATCH /admin/users/u-bob {"disabled"')), '确认前不发请求')
+await answer(false)
+must(!calls.some((c) => c.startsWith('PATCH /admin/users/u-bob {"disabled"')), '取消后不发请求')
+await click(button('停用'))
+await answer(true)
 must(calls.some((c) => c === 'PATCH /admin/users/u-bob {"disabled":true}'), '应请求停用')
 must(!!container.querySelector('tbody tr.adm__row .adm__bad'), '列表刷新为已停用（该行显示已停用）')
 await type(container.querySelector('input[placeholder^="月上限"]')!, '')
@@ -175,6 +189,7 @@ await click(button('设上限'))
 must(calls.some((c) => c === 'PATCH /admin/users/u-bob {"monthly_cap_usd":null}'), '空上限 = 不限')
 await type(container.querySelector('input[type=password]')!, 'goodpass1')
 await click(button('重置密码'))
+await answer(true)
 must(calls.some((c) => c.startsWith('POST /admin/users/u-bob/password')), '应请求重置密码')
 await type(container.querySelector('.adm__search')!, 'root')
 await click(container.querySelector('tbody tr.adm__row')!)
@@ -191,11 +206,11 @@ const before = patches()
 await type(container.querySelector('input[placeholder^="月上限"]')!, 'abc')
 await click(button('设上限'))
 must(patches() === before, '非数字上限不应请求')
-must(text().includes(hint), '非数字应提示')
+must(lastNotice().kind === 'err' && lastNotice().msg.includes(hint), '非数字应提示')
 await type(container.querySelector('input[placeholder^="月上限"]')!, '-5')
 await click(button('设上限'))
 must(patches() === before, '负数上限不应请求')
-must(text().includes(hint), '负数应提示')
+must(lastNotice().kind === 'err' && lastNotice().msg.includes(hint), '负数应提示')
 console.log('3b. 月上限非数字 / 负数拒绝 ✓')
 
 // 4. 用量：默认按用户；切分组与范围会重新请求；每千字成本；价格表保存

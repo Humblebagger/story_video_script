@@ -10,7 +10,8 @@ const win = new Window({ url: 'http://localhost:5173' })
 const g = globalThis as Record<string, unknown>
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement',
                  'Element', 'Node', 'Event', 'CustomEvent', 'KeyboardEvent', 'getComputedStyle',
-                 'localStorage', 'sessionStorage']) {
+                 'localStorage', 'sessionStorage', 'PointerEvent', 'MouseEvent', 'matchMedia', 'ResizeObserver',
+                 'DOMRect', 'MutationObserver']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k],
     writable: true, configurable: true,
@@ -335,10 +336,17 @@ must(!!container.querySelector('.tlc__panel .cons'), '剧情页可切到创作�
 await click(tab('任务'))
 must(has('已采用：资产库新增 3 张'), '上层的提示在画布里也看得到')
 // 撤销过的资产改动让本版仍算「未保存」：转换前要确认（会被新版本换掉）
-const asked: string[] = []
-g.confirm = (q: string) => { asked.push(q); return true }
+const confirmDialog = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')
+async function answer(ok: boolean) {
+  const btn = win.document.body.querySelector<HTMLElement>(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)
+  must(!!btn, '应弹出确认框')
+  await click(btn!)
+}
 await click(button('重新生成（新版本）'))
-must(asked.length === 1 && calls.some((c) => c.startsWith('convert:')), '有未保存修改时先确认，再在画布里发起重新生成')
+must((confirmDialog()?.textContent ?? '').includes('先不保存直接生成'), '有未保存修改时先确认')
+must(!calls.some((c) => c.startsWith('convert:')), '确认前不发起重新生成')
+await answer(true)
+must(calls.some((c) => c.startsWith('convert:')), '确认后在画布里发起重新生成')
 const chips = [...container.querySelectorAll('.tlc__vers .vchip')] as unknown as HTMLButtonElement[]
 must(chips.length === 2 && chips[1].disabled && chips[0].textContent!.includes('★'), '版本条：v1 采用版、v2 正在看')
 await click(chips[0])

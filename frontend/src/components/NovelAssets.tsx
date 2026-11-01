@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useConfirm } from '@/components/common/ConfirmDialog'
+import { useI18n } from '@/i18n/core'
 import { deleteMemoryCard, upsertMemoryCard } from '../api'
 import type { AssetKind } from '../edit'
 import type { Assets } from '../types'
@@ -32,6 +34,8 @@ interface Props {
 /** 小说长期记忆里的资产库：各章采用版写入，也可手工新建、改、删。
  *  转换本书任何一章时都整份注入为【已有资产库】——角色不换脸、场景不改建。 */
 export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
+  const { t } = useI18n()
+  const [ask, confirmUi] = useConfirm()
   const [assets, setAssets] = useState<Assets>(initial)
   const [dirty, setDirty] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -87,8 +91,9 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
     onSaved()
   })
 
-  const removeCard = (kind: AssetKind, id: string) => {
-    if (!confirm(`删除资产卡 ${id}？\n\n注意：已有分镜若引用了它，那份产物再校验会报「引用不存在的资产」。`)) return
+  const removeCard = async (kind: AssetKind, id: string) => {
+    if (!(await ask({ title: t('confirm.asset.title', { id }), body: t('confirm.asset.body'),
+      action: t('confirm.delete'), danger: true }))) return
     void run('删除', async () => {
       await deleteMemoryCard(nid, kind, id)
       setAssets((prev) => ({ ...prev, [kind]: (prev[kind] ?? []).filter((c) => c.id !== id) }))
@@ -123,6 +128,7 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
 
   return (
     <div className="lib">
+      {confirmUi}
       <p className="lib__hint">
         各章采用版的资产卡自动并进这里；转换本书任何一章都整份注入为【已有资产库】，
         模型须沿用其 ID 与描述。也可以先把人物场景设定好再去转换。

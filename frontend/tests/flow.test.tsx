@@ -37,7 +37,6 @@ class FakeNotification {
 }
 ;(win as unknown as Record<string, unknown>).Notification = FakeNotification
 g.Notification = FakeNotification
-g.confirm = () => true
 
 // localStorage：happy-dom 提供，但要确保 App 启动时是干净的未登录态
 win.localStorage.clear()
@@ -453,6 +452,13 @@ const click = async (el: HTMLElement) => {
   await act(async () => { el.click() })
   await settle()
 }
+const confirmDialog = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')
+async function answer(ok: boolean) {
+  const b = win.document.body.querySelector<HTMLElement>(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)
+  must(!!b, '应弹出确认框')
+  await click(b!)
+  await settle(300)          // 确认框有退场动画
+}
 /** 章节工作流：点步骤条上的某一步；右下角的主按钮 */
 const goStep = (id: string) => click(container.querySelector(`[data-step="${id}"]`) as unknown as HTMLElement)
 const primary = () => container.querySelector('[data-testid="primary-action"]') as unknown as HTMLButtonElement
@@ -654,7 +660,12 @@ await click(findByText('button', '资产卡'))
 await type([...container.querySelectorAll('.acard header input')][0] as HTMLElement, '华老栓（改）', false)
 await type([...container.querySelectorAll('.amap__row input')]
   .find((e) => (e as HTMLInputElement).value === '五十余岁') as unknown as HTMLElement, '六十岁上下', false)
-console.log('8b. 未保存提示条 → 撤销回到原样 / 再改 ✓')
+// 有未保存的修改时离开：先弹确认；取消就留在原处，修改还在
+await click(findByText('button', '新建小说'))
+must((confirmDialog()?.textContent ?? '').includes('有未保存的修改'), '离开未保存的画布前应确认')
+await answer(false)
+must(!confirmDialog(), '确认框应关闭'); must(!!bar(), '取消离开：留在原处，未保存提示条还在')
+console.log('8b. 未保存提示条 → 撤销回到原样 / 再改 / 取消离开 ✓')
 
 // 9. 保存并核对：内容改了，ID 与镜头引用逐字未变（用提示条里的「保存」）
 //    先回看 ③：保存后「该做的那一步」从 ③ 回到 ④，不算往后走，视图不能被拉走
@@ -732,6 +743,18 @@ must(k?.text === '不出现血腥画面' && JSON.stringify(k.keywords) === '["�
 must(has('负面提示词：血迹，伤口特写'), '限制应列在页面上')
 await click(container.querySelector('.cons__item input[type="checkbox"]') as unknown as HTMLElement)
 must(shelf('alice')[0].memory.constraints[0].enabled === false, '可以停用一条限制')
+// 删除一条限制：取消不删，确认才删
+await type(field('规则（给模型看）'), '临时规则', false)
+await click(findByText('button', '＋ 新增限制'))
+must(shelf('alice')[0].memory.constraints.length === 2, '新增了第二条限制')
+const delBtn = () => [...container.querySelectorAll('.hrun__del')].pop() as unknown as HTMLElement
+await click(delBtn())
+must((confirmDialog()?.textContent ?? '').includes('删除这条限制'), '删除限制前应确认')
+await answer(false)
+must(shelf('alice')[0].memory.constraints.length === 2, '取消后不删除')
+await click(delBtn())
+await answer(true)
+must(shelf('alice')[0].memory.constraints.length === 1, '确认后才删除')
 await click(findByText('button', '主线剧情'))
 must(has('老栓推门进屋。') && has('自动'), '逐章摘要应列出（采用后自动生成）')
 await type(container.querySelector('.plot textarea') as unknown as HTMLElement, '华老栓买药救子。')
