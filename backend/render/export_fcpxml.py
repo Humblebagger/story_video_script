@@ -2,9 +2,13 @@
 import xml.etree.ElementTree as ET
 
 
-def tc(sec: float, fps: int = 30) -> str:
-    n = round(sec * fps)
+def tf(n: int, fps: int = 30) -> str:
+    """帧数 -> FCPXML 时间写法。"""
     return "0s" if n == 0 else f"{n}/{fps}s"
+
+
+def tc(sec: float, fps: int = 30) -> str:
+    return tf(round(sec * fps), fps)
 
 
 def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> str:
@@ -35,23 +39,31 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
     ev = ET.SubElement(lib, "event", name=event)
     for ep in timeline["episodes"]:
         proj = ET.SubElement(ev, "project", name=ep["episode"])
-        seq = ET.SubElement(proj, "sequence", format="r1", duration=tc(ep["total"], fps), tcStart="0s",
+        segs = ep["segments"]
+        # 段边界按帧累计取整：相邻段首尾相接，不留缝也不重叠
+        bounds = [round(sg["start"] * fps) for sg in segs]
+        total_f = round(ep["total"] * fps)
+        bounds.append(max(total_f, bounds[-1]) if bounds else total_f)
+        seq = ET.SubElement(proj, "sequence", format="r1", duration=tf(bounds[-1], fps), tcStart="0s",
                             tcFormat="NDF", audioLayout="stereo", audioRate="48k")
         spine = ET.SubElement(seq, "spine")
         clips = []
-        for seg in ep["segments"]:
+        for i, seg in enumerate(segs):
             c = ET.SubElement(spine, "asset-clip", ref=asset(seg["file"]), name=seg["clip"],
-                              offset=tc(seg["start"], fps), start="0s", duration=tc(seg["duration"], fps),
+                              offset=tf(bounds[i], fps), start="0s", duration=tf(bounds[i + 1] - bounds[i], fps),
                               format="r1", tcFormat="NDF")
-            clips.append((seg, c))
+            clips.append(c)
         for sp in ep["speech"]:
-            seg, parent = next(((s, c) for s, c in clips if s["start"] <= sp["start"] < s["start"] + s["duration"]),
-                               clips[-1])
-            ET.SubElement(parent, "asset-clip", ref=asset(sp["file"]), name=sp["line"], lane="-1",
-                          offset=tc(sp["start"] - seg["start"], fps), start="0s", duration=tc(sp["duration"], fps))
+            if not clips:
+                raise ValueError(f"{ep['episode']} 有配音但没有视频段")
+            f = round(sp["start"] * fps)
+            i = next((k for k in range(len(clips)) if bounds[k] <= f < bounds[k + 1]), len(clips) - 1)
+            ET.SubElement(clips[i], "asset-clip", ref=asset(sp["file"]), name=sp["line"], lane="-1",
+                          offset=tf(f - bounds[i], fps), start="0s",
+                          duration=tf(max(1, round(sp["duration"] * fps)), fps))
         if ep.get("bgm") and clips:
-            b = ET.SubElement(clips[0][1], "asset-clip", ref=asset(ep["bgm"]), name=f"BGM {ep['episode']}",
-                              lane="-2", offset="0s", start="0s", duration=tc(ep["total"], fps))
+            b = ET.SubElement(clips[0], "asset-clip", ref=asset(ep["bgm"]), name=f"BGM {ep['episode']}",
+                              lane="-2", offset="0s", start="0s", duration=tf(bounds[-1], fps))
             ET.SubElement(b, "adjust-volume", amount=f"{timeline['bgm_db']}dB")
     ET.indent(root)
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n' + ET.tostring(root, encoding="unicode") + "\n"

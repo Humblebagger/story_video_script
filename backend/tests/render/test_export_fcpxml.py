@@ -3,6 +3,7 @@
 
 用法: python3 tests/render/test_export_fcpxml.py
 """
+import random
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -20,7 +21,7 @@ def frames(t: str) -> int:
     return 0 if t == "0s" else int(t.split("/")[0])
 
 
-def check_structure(xml: str) -> list[str]:
+def check_structure(xml: str, size=None) -> list[str]:
     errs: list[str] = []
     try:
         root = ET.fromstring(xml.split("<!DOCTYPE fcpxml>", 1)[-1])
@@ -39,6 +40,8 @@ def check_structure(xml: str) -> list[str]:
     fmt = fmts[0]
     if fmt.get("frameDuration") != "1/30s":
         errs.append("frameDuration 不是 1/30s")
+    if size is not None and (fmt.get("width"), fmt.get("height")) != (str(size[0]), str(size[1])):
+        errs.append("width/height 与 size 不一致")
     fmt_ids = {fmt.get("id")}
     asset_ids = set()
     for a in res.findall("asset"):
@@ -46,6 +49,8 @@ def check_structure(xml: str) -> list[str]:
             if a.get(k) is None:
                 errs.append(f"asset 缺 {k}")
         asset_ids.add(a.get("id"))
+        if a.get("hasVideo") == "1" and a.get("format") not in fmt_ids:
+            errs.append("asset 的 format 引用不存在")
         mr = a.find("media-rep")
         if mr is None or mr.get("kind") != "original-media":
             errs.append("asset 缺 media-rep original-media")
@@ -63,6 +68,8 @@ def check_structure(xml: str) -> list[str]:
         errs.append("library 下应恰好一个 event")
         return errs
     for proj in events[0].findall("project"):
+        if not proj.get("name") or len(proj.findall("sequence")) != 1:
+            errs.append("project 缺名字或 sequence 不是恰好一个")
         seq = proj.find("sequence")
         if seq is None or seq.get("format") not in fmt_ids:
             errs.append("sequence 缺失或 format 引用不存在")
@@ -73,6 +80,9 @@ def check_structure(xml: str) -> list[str]:
             continue
         pos = 0
         for i, c in enumerate(spine.findall("asset-clip")):
+            if c.get("offset") is None or c.get("duration") is None:
+                errs.append("主线片段缺 offset 或 duration")
+                continue
             if c.get("ref") not in asset_ids:
                 errs.append("主线 ref 不存在")
             if i == 0 and c.get("offset") != "0s":
@@ -119,10 +129,10 @@ MEDIA = {
 
 def main() -> None:
     xml = build_fcpxml(TL, MEDIA)
-    assert check_structure(xml) == [], check_structure(xml)
+    assert check_structure(xml, TL["size"]) == [], check_structure(xml, TL["size"])
+    assert check_structure(xml, [1, 2])
     root = ET.fromstring(xml.split("<!DOCTYPE fcpxml>", 1)[1])
     f = root.find("resources/format")
-    assert (f.get("width"), f.get("height")) == ("720", "1280")
     projs = root.findall("library/event/project")
     assert [p.get("name") for p in projs] == ["E01", "E02"]
     seg2 = projs[0].findall("sequence/spine/asset-clip")[1]
@@ -139,6 +149,29 @@ def main() -> None:
     assert bad != xml and check_structure(bad)
     bad = xml.replace('src="media/a.mp4"', 'src="/abs/x.mp4"', 1)
     assert bad != xml and check_structure(bad)
+
+    # 随机时间轴：起点与时长都不对齐到帧，主线仍须首尾相接、总长等于各段之和
+    rnd = random.Random(7)
+    for n in range(200):
+        eps = []
+        for e in range(rnd.randint(1, 3)):
+            t, segs, files = 0.0, [], {}
+            for k in range(rnd.randint(1, 7)):
+                d = round(rnd.uniform(0.7, 8), 3)
+                segs.append(seg(f"C{k}", round(t, 3), d, f"s{k}.mp4"))
+                t += d
+            speech = [{"line": f"L{j}", "file": f"v{j}.wav", "start": round(rnd.uniform(0, t), 3), "speed": 1.0,
+                       "duration": round(rnd.uniform(0.01, 4), 3)} for j in range(rnd.randint(0, 4))]
+            eps.append({"episode": f"E{e}", "total": round(t, 3), "segments": segs, "speech": speech,
+                        "bgm": "b.mp3" if rnd.random() < 0.5 else None})
+        tl = {**TL, "episodes": eps}
+        md = {p: {"rel": f"media/{p}", "seconds": 9.0, "audio": True, "video": p.endswith(".mp4")}
+              for p in [f"s{k}.mp4" for k in range(8)] + [f"v{j}.wav" for j in range(4)] + ["b.mp3"]}
+        x = build_fcpxml(tl, md)
+        assert check_structure(x, tl["size"]) == [], (n, check_structure(x, tl["size"]))
+        r0 = ET.fromstring(x.split("<!DOCTYPE fcpxml>", 1)[1])
+        for sq in r0.iter("sequence"):
+            assert frames(sq.get("duration")) == sum(frames(c.get("duration")) for c in sq.findall("spine/asset-clip"))
 
     r = readme(TL, "测试")
     assert "Final Cut" in r and "DaVinci" in r and "srt" in r and "LUFS" in r
