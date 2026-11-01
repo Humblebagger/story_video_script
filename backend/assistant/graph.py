@@ -12,7 +12,7 @@ from assistant.tools import TOOLS
 from server import novels
 
 HISTORY = 20                  # 发给模型的最近消息数（存档保留全量）
-RECURSION_LIMIT = 25          # 约 12 次工具调用
+RECURSION_LIMIT = 37          # 约 12 次工具调用（pre_model_hook 自成一个节点，每轮工具循环占 3 步）
 PROMPT = (Path(__file__).resolve().parent.parent / "prompts" / "assistant.md").read_text(encoding="utf-8")
 LANG = {"zh": "简体中文", "en": "English"}
 

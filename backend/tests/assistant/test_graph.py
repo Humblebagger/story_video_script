@@ -122,6 +122,21 @@ def main() -> int:
     assert evs[-2]["event"] == "token" and "步骤太多" in evs[-2]["data"]["text"] and evs[-1]["event"] == "done"
     print("9. 步数上限 ✓")
 
+    # 10. 历史：被停掉的工具调用标「（已中断）」不再转圈；几条 AI 文字空行隔开；工具结果隐去服务器目录
+    from types import SimpleNamespace
+    from assistant import tools as tools_mod
+    archive = [HumanMessage("q"),
+               AIMessage("我查一下。", tool_calls=[{"name": "plot_get", "args": {}, "id": "h1"}]),
+               ToolMessage(f"错在 {_TMP.name}/u/x.mp4", tool_call_id="h1", name="plot_get"),
+               AIMessage("再看看。", tool_calls=[{"name": "film_status", "args": {}, "id": "h2"}])]
+    fake = SimpleNamespace(get_state=lambda cfg: SimpleNamespace(values={"messages": archive}))
+    h = events.history(fake, {}, hide=_TMP.name)
+    assert h[1]["text"] == "我查一下。\n\n再看看。", h[1]["text"]
+    assert h[1]["tools"][0]["ok"] is True and _TMP.name not in h[1]["tools"][0]["summary"]
+    assert h[1]["tools"][1]["ok"] is False and h[1]["tools"][1]["summary"] == events.INTERRUPTED
+    assert _TMP.name not in tools_mod._dump({"error": f"{auth.DATA_DIR}/u/clip.mp4 坏了"})
+    print("10. 历史中断与隐去路径 ✓")
+
     print("\nALL PASS")
     return 0
 

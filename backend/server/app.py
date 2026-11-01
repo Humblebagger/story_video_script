@@ -52,6 +52,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
 """
 import hashlib
 import os
+import re
 import copy
 import json
 import sys
@@ -64,6 +65,7 @@ from pathlib import Path
 from urllib.parse import quote
 from typing import Optional
 
+import anyio
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.concurrency import iterate_in_threadpool
@@ -1328,8 +1330,12 @@ _ASSISTANT_MAX = 2000
 
 
 def _assistant_model():
-    """助手用的聊天模型：关掉 thinking（工具循环里不处理 thinking 块）。测试里替换成假模型。"""
-    return build_chat_model(replace_thinking(load_settings()))
+    """助手用的聊天模型：关掉 thinking（工具循环里不处理 thinking 块）。测试里替换成假模型。
+
+    build_chat_model 故意设 max_retries=0（流水线的重试交给 with_retry）；助手不能套 with_retry——
+    create_react_agent 要在模型上 bind_tools，RunnableRetry 没有这个方法——所以改回让 SDK 自己重试
+    瞬时故障（529 过载、网关抖动、连接断开），否则一次抖动整轮就失败。"""
+    return build_chat_model(replace_thinking(load_settings())).model_copy(update={"max_retries": 2})
 
 
 def _assistant_db(user: dict, nid: str):
@@ -1337,6 +1343,24 @@ def _assistant_db(user: dict, nid: str):
         return novels.assistant_db(user["id"], nid)
     except novels.NotFound:
         raise HTTPException(404, "小说不存在")
+
+
+_VERSION_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")   # 用 fullmatch：$ 会放过结尾的换行
+
+
+def _assistant_where(user_id: str, nid: str, raw: dict) -> dict:
+    """只留可信的位置：chapter_id 须是这部小说的章；version_id 须形如编号且章节留下了；step 已校验。
+    where 每次模型调用都进系统提示，不收原样的长串。"""
+    where: dict = {}
+    if isinstance(raw.get("step"), str):
+        where["step"] = raw["step"]
+    cid = raw.get("chapter_id")
+    if isinstance(cid, str) and any(c["id"] == cid for c in novels.get_novel(user_id, nid)["chapters"]):
+        where["chapter_id"] = cid
+        vid = raw.get("version_id")
+        if isinstance(vid, str) and _VERSION_ID.fullmatch(vid):
+            where["version_id"] = vid
+    return where
 
 
 @app.get("/novels/{nid}/assistant")
@@ -1347,18 +1371,19 @@ def assistant_history(nid: str, user: dict = Depends(novel_user)):
     with assistant_store.saver(user["id"], nid) as cp:
         agent = assistant_graph.build_agent(assistant_graph.NullModel(), cp)
         cfg = assistant_graph.run_config(user["id"], nid, {}, "zh")
-        return {"messages": assistant_events.history(agent, cfg)}
+        return {"messages": assistant_events.history(agent, cfg, hide=str(auth.DATA_DIR))}
 
 
 @app.delete("/novels/{nid}/assistant")
 def assistant_clear(nid: str, user: dict = Depends(novel_user)):
     _assistant_db(user, nid)
-    if not assistant_store.try_begin(user["id"], nid):
+    token = assistant_store.try_begin(user["id"], nid)
+    if not token:
         raise HTTPException(409, "助手正在回答，等它说完再清空")
     try:
         assistant_store.clear(user["id"], nid)
     finally:
-        assistant_store.end(user["id"], nid)
+        assistant_store.end(user["id"], nid, token)
     return {"ok": True}
 
 
@@ -1374,16 +1399,17 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
         raise HTTPException(422, "where 不合法")
     if raw.get("step") is not None and raw.get("step") not in _ASSISTANT_STEPS:
         raise HTTPException(422, "where.step 不合法")
-    where = {k: raw.get(k) for k in ("chapter_id", "version_id", "step") if isinstance(raw.get(k), str)}
+    where = _assistant_where(user["id"], nid, raw)
     if assistant_store.used_today(user["id"]) >= assistant_store.daily_limit():
         raise HTTPException(429, "今天的助手消息已用完，明天再来")
-    if not assistant_store.try_begin(user["id"], nid):
+    token = assistant_store.try_begin(user["id"], nid)
+    if not token:
         raise HTTPException(409, "上一条还在回答")
     root = str(auth.DATA_DIR)   # 整个数据根：用户目录、密钥文件等任何服务器路径都隐去
     try:
         model = _assistant_model()
     except Exception as e:
-        assistant_store.end(user["id"], nid)
+        assistant_store.end(user["id"], nid, token)
         raise HTTPException(503, assistant_events._hide(f"助手暂不可用：{e}", root))
 
     def gen():
@@ -1398,7 +1424,7 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
                         ok = True
                     yield assistant_events.sse(ev)
         finally:
-            assistant_store.end(user["id"], nid)
+            assistant_store.end(user["id"], nid, token)
             try:
                 usage.record(user_id=user["id"], purpose=assistant_store.PURPOSE, model=load_settings().model,
                              usage=cb.usage_totals(), ok=ok, novel_id=nid, chapter_id=where.get("chapter_id"))
@@ -1412,6 +1438,7 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
         def __init__(self):
             self._it = gen()
             self._aiter = iterate_in_threadpool(self._it)
+            self._closed = False
 
         def __aiter__(self):
             return self
@@ -1420,11 +1447,18 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
             return await self._aiter.__anext__()
 
         async def aclose(self):
-            try:
-                self._it.close()
-            except ValueError:   # 模型还在线程里跑：gen 自己的 finally 会在它结束时释放
-                pass
-            assistant_store.end(user["id"], nid)
+            if self._closed:
+                return
+            self._closed = True
+            # 先放锁（已裁定）：下一条消息不必排在旧回答后面；凭据保证迟到的 end 不误放新锁
+            assistant_store.end(user["id"], nid, token)
+            # 关生成器会等 LangGraph 正在跑的模型节点结束（可能几十秒），放到线程里，别卡住事件循环；
+            # shield：请求被取消时也把关闭做完（gen 的 finally 要落账）
+            with anyio.CancelScope(shield=True):
+                try:
+                    await anyio.to_thread.run_sync(self._it.close)
+                except ValueError:   # 模型还在线程里跑：gen 自己的 finally 会在它结束时落账
+                    pass
 
     class _Resp(StreamingResponse):
         async def __call__(self, scope, receive, send):

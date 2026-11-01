@@ -93,6 +93,18 @@ def main() -> int:
     store.end(uid, nid)
     print("5. 租约 ✓")
 
+    # 6. 凭据：迟到的 end（旧凭据）不放掉后来那一轮的锁
+    old = store.try_begin(uid, nid)
+    store.end(uid, nid, old)
+    new = store.try_begin(uid, nid)
+    assert new and new != old
+    store.end(uid, nid, old)
+    assert not store.try_begin(uid, nid), "旧凭据放掉了新锁"
+    store.end(uid, nid, new)
+    assert store.try_begin(uid, nid)
+    store.end(uid, nid)
+    print("6. 凭据 ✓")
+
     print("\nALL PASS")
     return 0
 

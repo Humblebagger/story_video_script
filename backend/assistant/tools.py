@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import ToolException, tool
 
 from render import session
-from server import novels, summary
+from server import auth, novels, summary
 from server.library import KINDS
 
 MAX_CHARS = 4000
@@ -38,7 +38,9 @@ def _ctx(config: RunnableConfig) -> tuple:
 
 
 def _dump(obj) -> str:
-    s = json.dumps(obj, ensure_ascii=False)
+    """工具结果的唯一出口（模型、存档、历史看到的都是它）：隐去服务器目录（片段报错、任务日志里可能带）。"""
+    from assistant.events import _hide
+    s = _hide(json.dumps(obj, ensure_ascii=False), str(auth.DATA_DIR))
     if len(s) > MAX_CHARS:
         tail = "（已截断）"
         s = s[:MAX_CHARS - len(tail)] + tail

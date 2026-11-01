@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 from langgraph.errors import GraphRecursionError
 
 TOO_MANY = "步骤太多，先停在这里。可以换个更具体的问法再问我。"
+INTERRUPTED = "（已中断）"
 
 
 def text_of(msg) -> str:
@@ -64,8 +65,10 @@ def sse(ev: dict) -> str:
     return f"event: {ev['event']}\ndata: {json.dumps(ev['data'], ensure_ascii=False)}\n\n"
 
 
-def history(agent, config: dict) -> list:
-    """存档 → [{role, text, tools?, goto?}]：一条用户消息之后、下一条用户消息之前的都算一条助手回答。"""
+def history(agent, config: dict, hide: Optional[str] = None) -> list:
+    """存档 → [{role, text, tools?, goto?}]：一条用户消息之后、下一条用户消息之前的都算一条助手回答。
+    同一回答里几条 AI 消息的文字用空行隔开；没有结果的工具调用（被停掉、步骤超限）标成失败「（已中断）」，
+    免得界面上一直转圈。"""
     msgs = agent.get_state(config).values.get("messages") or []
     out: list = []
     cur = None
@@ -78,14 +81,20 @@ def history(agent, config: dict) -> list:
             cur = {"role": "assistant", "text": "", "tools": [], "goto": []}
             out.append(cur)
         if isinstance(m, AIMessage):
-            cur["text"] += text_of(m)
+            t = text_of(m)
+            if t:
+                cur["text"] += ("\n\n" if cur["text"] else "") + t
             for tc in m.tool_calls or []:
                 cur["tools"].append({"id": tc["id"], "name": tc["name"], "args": tc["args"], "ok": None, "summary": ""})
         elif isinstance(m, ToolMessage):
             for t in cur["tools"]:
                 if t["id"] == m.tool_call_id:
                     t["ok"] = m.status != "error"
-                    t["summary"] = text_of(m)[:200]
+                    t["summary"] = _hide(text_of(m), hide)[:200]
             if m.status != "error" and m.name == "goto" and m.artifact:
                 cur["goto"].append(m.artifact)
+    for entry in out:
+        for t in entry.get("tools") or []:
+            if t["ok"] is None:
+                t["ok"], t["summary"] = False, INTERRUPTED
     return out

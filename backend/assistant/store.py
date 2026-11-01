@@ -60,15 +60,18 @@ _busy: dict = {}         # (user_id, nid) -> 取锁时的 time.monotonic()
 _busy_lock = threading.Lock()
 
 
-def try_begin(user_id: str, nid: str) -> bool:
+def try_begin(user_id: str, nid: str) -> Optional[float]:
+    """取锁：成功返回凭据（取锁时刻，非零），已被占用返回 None。"""
     with _busy_lock:
         since = _busy.get((user_id, nid))
         if since is not None and time.monotonic() - since < LEASE_SEC:
-            return False
-        _busy[(user_id, nid)] = time.monotonic()
-        return True
+            return None
+        token = _busy[(user_id, nid)] = time.monotonic()
+        return token
 
 
-def end(user_id: str, nid: str) -> None:
+def end(user_id: str, nid: str, token: Optional[float] = None) -> None:
+    """放锁。带 token 时只放自己那把：早放锁之后迟到的 end 不会把后来那一轮的锁放掉。"""
     with _busy_lock:
-        _busy.pop((user_id, nid), None)
+        if token is None or _busy.get((user_id, nid)) == token:
+            _busy.pop((user_id, nid), None)
