@@ -212,10 +212,11 @@ console.log('4. flashTarget ✓')
   const realFetch = globalThis.fetch
   const urls: string[] = []
   let status = 200
+  let disposition = "attachment; filename=\"x.zip\"; filename*=utf-8''%E8%8D%AF.zip"
   globalThis.fetch = (async (u: string) => {
     urls.push(String(u))
     if (status !== 200) return new Response(JSON.stringify({ detail: '成片已过期' }), { status })
-    return new Response('zipdata', { status: 200, headers: { 'content-disposition': "attachment; filename=\"x.zip\"; filename*=utf-8''%E8%8D%AF.zip" } })
+    return new Response('zipdata', { status: 200, headers: { 'content-disposition': disposition } })
   }) as never
   const g2 = globalThis as unknown as { URL: { createObjectURL: (b: Blob) => string; revokeObjectURL: (u: string) => void } }
   const origCreate = g2.URL.createObjectURL, origRevoke = g2.URL.revokeObjectURL
@@ -239,7 +240,17 @@ console.log('4. flashTarget ✓')
   must(urls.some((u) => u.endsWith('/render/export.zip')), '点了之后请求 export.zip')
   must(names[0] === '药.zip', '文件名取 filename*（小写 utf-8 也认）并解码')
   await settle(60)
-  must(revoked.length === 1, '下一帧回收 blob 地址')
+  must(revoked.length === 0, '点击后不能立刻回收 blob 地址')
+  await settle(1100)
+  must(revoked.length === 1, '1 秒后回收 blob 地址')
+
+  // 纯 ASCII 标题：服务端只带 filename="…"（也可能同时带 filename*），大小写不敏感
+  disposition = 'attachment; FILENAME="My_Novel-Ch_1-ab12cd34.zip"'
+  await click(btn())
+  await settle(60)
+  must(names[names.length - 1] === 'My_Novel-Ch_1-ab12cd34.zip', '只有 filename= 时取其值')
+  await settle(1100)
+  disposition = "attachment; filename=\"x.zip\"; filename*=utf-8''%E8%8D%AF.zip"
 
   status = 409
   const before = notice.log.length

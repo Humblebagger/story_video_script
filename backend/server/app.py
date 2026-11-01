@@ -61,6 +61,7 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import quote
 from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -1119,7 +1120,10 @@ def render_export(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)
         path = render_export_fcpxml.export(root, title=title, tools=tools)
     except render_export_fcpxml.ExportError as e:
         raise HTTPException(409, _hide_root(str(e), root))
-    return FileResponse(path, media_type="application/zip", filename=path.name)
+    # 不让 Starlette 按名字猜：任何名字都同时给 ASCII 兜底的 filename= 和 UTF-8 的 filename*=
+    ascii_name = path.name.encode("ascii", "replace").decode("ascii").replace('"', "").replace("\\", "").replace("?", "_")
+    cd = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(path.name)}"
+    return FileResponse(path, media_type="application/zip", headers={"Content-Disposition": cd})
 
 
 def _hide_root(text: str, root) -> str:

@@ -147,11 +147,13 @@ def main() -> int:
     assert p5["exportable"] is True and p5["export_reason"] is None
     real_export = export_fcpxml.export
 
+    zname = ["药-第一章.zip"]
+
     def fake_export(root_, *, title, tools):
         assert tools == ("ffmpeg", "ffprobe") and "药" in title and "第一章" in title
         d = Path(root_) / "final" / "export"
         d.mkdir(parents=True, exist_ok=True)
-        z = d / "药-第一章.zip"
+        z = d / zname[0]
         with zipfile.ZipFile(z, "w") as zf:
             zf.writestr("药/project.fcpxml", "<fcpxml/>")
         return z
@@ -160,7 +162,16 @@ def main() -> int:
         r = c.get(R + "/export.zip", headers=H)
         assert r.status_code == 200, r.text
         assert r.headers["content-type"] == "application/zip"
-        assert "filename*=utf-8''" in r.headers["content-disposition"].lower(), r.headers["content-disposition"]
+        cd = r.headers["content-disposition"]
+        assert "filename*=utf-8''" in cd.lower() and 'filename="' in cd, cd
+        assert "%E8%8D%AF-%E7%AC%AC%E4%B8%80%E7%AB%A0.zip" in cd, cd
+        # 纯 ASCII 名字也要同时带 filename= 与 filename*=
+        zname[0] = "My_Novel-Chapter_1-ab12cd34.zip"
+        r = c.get(R + "/export.zip", headers=H)
+        assert r.status_code == 200, r.text
+        assert r.headers["content-disposition"] == (
+            'attachment; filename="My_Novel-Chapter_1-ab12cd34.zip"; '
+            "filename*=UTF-8''My_Novel-Chapter_1-ab12cd34.zip"), r.headers["content-disposition"]
         assert any(n.endswith("project.fcpxml") for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist())
         # 导出报错转 409 且不带服务器目录
         def boom(root_, *, title, tools):

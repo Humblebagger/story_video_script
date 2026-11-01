@@ -33,11 +33,14 @@ def check_structure(xml: str, size=None) -> list[str]:
         errs.append("width/height 与 size 不一致")
     fmt_ids = {fmt.get("id")}
     asset_ids = set()
+    asset_dur = {}
     for a in res.findall("asset"):
         for k in ("id", "name", "start", "duration", "hasVideo", "hasAudio"):
             if a.get(k) is None:
                 errs.append(f"asset 缺 {k}")
         asset_ids.add(a.get("id"))
+        if a.get("duration") is not None and TIME_RE.match(a.get("duration")):
+            asset_dur[a.get("id")] = frames(a.get("duration"))
         if a.get("hasVideo") == "1" and a.get("format") not in fmt_ids:
             errs.append("asset 的 format 引用不存在")
         mr = a.find("media-rep")
@@ -68,6 +71,7 @@ def check_structure(xml: str, size=None) -> list[str]:
             errs.append("缺 spine")
             continue
         pos = 0
+        bgm_seen, bgm_end = False, 0
         for i, c in enumerate(spine.findall("asset-clip")):
             if c.get("offset") is None or c.get("duration") is None:
                 errs.append("主线片段缺 offset 或 duration")
@@ -84,6 +88,22 @@ def check_structure(xml: str, size=None) -> list[str]:
                     errs.append("连接片段缺 lane")
                 if k.get("ref") not in asset_ids:
                     errs.append("连接片段 ref 不存在")
+                elif frames(k.get("duration")) > asset_dur.get(k.get("ref"), 0):
+                    errs.append(f"连接片段 {k.get('name')} 比素材还长")
+            # BGM 轨（lane -2）：首尾相接、从 0 开始，总长等于本集总长（循环铺满）
+            bg = [k for k in c.findall("asset-clip") if k.get("lane") == "-2"]
+            if bg:
+                p2 = 0
+                for k in bg:
+                    if frames(k.get("offset")) != p2:
+                        errs.append(f"BGM offset 不连续: {k.get('offset')} != {p2}")
+                    p2 = frames(k.get("offset")) + frames(k.get("duration"))
+                if i != 0:
+                    errs.append("BGM 应挂在第一段上")
+                bgm_end = p2
+                bgm_seen = True
+        if bgm_seen and bgm_end != pos:
+            errs.append(f"BGM 总长 {bgm_end} != 本集总帧数 {pos}")
         if frames(seq.get("duration")) != pos:
             errs.append(f"sequence duration {seq.get('duration')} != 总帧数 {pos}")
     return errs

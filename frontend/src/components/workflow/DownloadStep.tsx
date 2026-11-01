@@ -2,7 +2,7 @@
  *  下载走带登录态的请求拿 blob，再用临时 <a download> 存盘。失败时在对应卡片下方说原因。 */
 import { useState } from 'react'
 import { Download, FileText, Film, Loader2, PackageOpen, RotateCcw } from 'lucide-react'
-import { exportFcpxml, filmFileUrl } from '@/api'
+import { downloadUrl, exportFcpxml, filmFileUrl } from '@/api'
 import { Button } from '@/components/ui/button'
 import { finalEpisodes } from '@/compose'
 import { useI18n } from '@/i18n/core'
@@ -32,14 +32,7 @@ export function DownloadStep({ version, film, compose, onOpenFilm }: {
     setErrors((x) => { const next = { ...x }; delete next[key]; return next })
     try {
       const url = await filmFileUrl(version.nid, version.cid, version.vid, path)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = path.split('/').pop() ?? path
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      // 立刻回收会让 Firefox / Safari 中断下载：等它接手后再收
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      downloadUrl(url, path.split('/').pop() ?? path)
     } catch (e) {
       setErrors((x) => ({ ...x, [key]: msg(e) }))
     } finally {

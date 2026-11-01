@@ -61,6 +61,23 @@ def main() -> None:
     assert len(bgm) == 1 and bgm[0].get("offset") == "0s" and bgm[0].get("duration") == "435/30s"
     assert bgm[0].find("adjust-volume").get("amount") == "-14dB"
     assert projs[1].findall(".//asset-clip/asset-clip") == []
+    # BGM 比本集长：只有一段；素材时长是实测值
+    a_bgm = next(a for a in root.findall("resources/asset") if a.find("media-rep").get("src") == "media/bgm/E01.mp3")
+    assert a_bgm.get("duration") == "900/30s"
+
+    # BGM 比本集短：首尾相接地循环，总长等于本集总长，最后一段裁短，素材时长仍是实测值
+    md2 = {**MEDIA, "bgm/E01.mp3": {**MEDIA["bgm/E01.mp3"], "seconds": 4.0}}
+    x2 = build_fcpxml(TL, md2)
+    assert check_structure(x2, TL["size"]) == [], check_structure(x2, TL["size"])
+    r2 = ET.fromstring(x2.split("<!DOCTYPE fcpxml>", 1)[1])
+    bg2 = [k for k in r2.findall("library/event/project")[0].find("sequence/spine/asset-clip")
+           if k.tag == "asset-clip" and k.get("lane") == "-2"]
+    assert [(k.get("offset"), k.get("duration")) for k in bg2] == [
+        ("0s", "120/30s"), ("120/30s", "120/30s"), ("240/30s", "120/30s"), ("360/30s", "75/30s")], bg2
+    assert all(k.find("adjust-volume").get("amount") == "-14dB" for k in bg2)
+    a2 = next(a for a in r2.findall("resources/asset") if a.find("media-rep").get("src") == "media/bgm/E01.mp3")
+    assert a2.get("duration") == "120/30s"
+    assert len({k.get("ref") for k in bg2}) == 1
 
     bad = xml.replace('offset="186/30s"', 'offset="187/30s"', 1)
     assert bad != xml and check_structure(bad)
@@ -94,12 +111,16 @@ def main() -> None:
                         "bgm": "b.mp3" if rnd.random() < 0.5 else None})
         tl = {**TL, "episodes": eps}
         md = {p: {"rel": f"media/{p}", "seconds": 9.0, "audio": True, "video": p.endswith(".mp4")}
-              for p in [f"s{k}.mp4" for k in range(8)] + [f"v{j}.wav" for j in range(4)] + ["b.mp3"]}
+              for p in [f"s{k}.mp4" for k in range(8)] + [f"v{j}.wav" for j in range(4)]}
+        md["b.mp3"] = {"rel": "media/b.mp3", "seconds": round(rnd.uniform(0.5, 20), 3), "audio": True, "video": False}
         x = build_fcpxml(tl, md)
         assert check_structure(x, tl["size"]) == [], (n, check_structure(x, tl["size"]))
         r0 = ET.fromstring(x.split("<!DOCTYPE fcpxml>", 1)[1])
         for sq in r0.iter("sequence"):
             assert frames(sq.get("duration")) == sum(frames(c.get("duration")) for c in sq.findall("spine/asset-clip"))
+            bg = [k for k in sq.iter("asset-clip") if k.get("lane") == "-2"]
+            if bg:
+                assert sum(frames(k.get("duration")) for k in bg) == frames(sq.get("duration")), n
 
     r = readme(TL, "测试")
     assert "Final Cut" in r and "DaVinci" in r and "srt" in r and "LUFS" in r

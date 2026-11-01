@@ -393,21 +393,35 @@ export async function filmFileUrl(nid: string, cid: string, vid: string, path: s
   return URL.createObjectURL(await res.blob())
 }
 
-/** 导出剪辑工程（FCPXML 工程包 zip）：带登录态取回后用临时 <a download> 存盘；失败抛带服务端 detail 的错误 */
-export async function exportFcpxml(nid: string, cid: string, vid: string): Promise<void> {
-  const res = await send(`${filmPath(nid, cid, vid)}/export.zip`)
-  const cd = res.headers.get('content-disposition') ?? ''
-  const m = /filename\*\s*=\s*utf-8''([^;]+)/i.exec(cd)
-  let name = 'project.zip'
-  if (m) { try { name = decodeURIComponent(m[1].trim()) || name } catch { /* 解码失败用默认名 */ } }
-  const url = URL.createObjectURL(await res.blob())
+/** 从 Content-Disposition 取文件名：优先 filename*（RFC 5987，utf-8 编码），没有再取 filename="…"；都取不到返回 null */
+export function dispositionName(cd: string): string | null {
+  const star = /filename\*\s*=\s*utf-8''([^;]+)/i.exec(cd)
+  if (star) {
+    try {
+      const v = decodeURIComponent(star[1].trim())
+      if (v) return v
+    } catch { /* 解码失败退回 filename= */ }
+  }
+  const plain = /filename\s*=\s*"([^"]+)"/i.exec(cd)
+  return plain ? plain[1] : null
+}
+
+/** 把 blob 地址存成文件：临时 <a download> 点一下，1 秒后回收（立刻回收会让 Firefox / Safari 中断下载） */
+export function downloadUrl(url: string, name: string): void {
   const a = document.createElement('a')
   a.href = url
   a.download = name
   document.body.appendChild(a)
   a.click()
   a.remove()
-  requestAnimationFrame(() => URL.revokeObjectURL(url))
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** 导出剪辑工程（FCPXML 工程包 zip）：带登录态取回后存盘；失败抛带服务端 detail 的错误 */
+export async function exportFcpxml(nid: string, cid: string, vid: string): Promise<void> {
+  const res = await send(`${filmPath(nid, cid, vid)}/export.zip`)
+  const name = dispositionName(res.headers.get('content-disposition') ?? '') ?? 'project.zip'
+  downloadUrl(URL.createObjectURL(await res.blob()), name)
 }
 
 /** 出片 409 里服务端重算的金额（确认金额对不上、或单段需要确认时附带）；不是这种错误返回 null */

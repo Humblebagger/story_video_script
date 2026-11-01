@@ -39,6 +39,7 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
     root = ET.Element("fcpxml", version="1.10")
     res = ET.SubElement(root, "resources")
     ET.SubElement(res, "format", id="r1", frameDuration=f"1/{fps}s", width=str(w), height=str(h))
+    bgms: set[str] = set()
     ids, els, used = {}, {}, {}      # used：素材被时间轴用到的最大结束帧，素材时长不得短于它
 
     def asset(path: str) -> str:
@@ -90,12 +91,19 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
                           offset=tf(f - bounds[i], fps), start="0s", duration=tf(d, fps))
             use(speech_key(sp), d)
         if ep.get("bgm") and clips:
-            b = ET.SubElement(clips[0], "asset-clip", ref=asset(ep["bgm"]), name=f"BGM {ep['episode']}",
-                              lane="-2", offset="0s", start="0s", duration=tf(bounds[-1], fps))
-            ET.SubElement(b, "adjust-volume", amount=f"{timeline['bgm_db']}dB")
-            use(ep["bgm"], bounds[-1])
+            # 成片里 BGM 是 -stream_loop 循环再裁到总长：工程里也首尾相接地重复，最后一段裁到总长
+            bgms.add(ep["bgm"])
+            bl = max(1, round(media[ep["bgm"]]["seconds"] * fps))
+            aid = asset(ep["bgm"])
+            for k in range(-(-bounds[-1] // bl)):
+                b = ET.SubElement(clips[0], "asset-clip", ref=aid, name=f"BGM {ep['episode']}",
+                                  lane="-2", offset=tf(k * bl, fps), start="0s",
+                                  duration=tf(min(bl, bounds[-1] - k * bl), fps))
+                ET.SubElement(b, "adjust-volume", amount=f"{timeline['bgm_db']}dB")
     for path, a in els.items():
-        a.set("duration", tf(max(round(media[path]["seconds"] * fps), used.get(path, 0)), fps))
+        # BGM 素材时长就是实测值（循环铺满，不拉长）；其余素材不得短于用到的帧数
+        n = round(media[path]["seconds"] * fps)
+        a.set("duration", tf(n if path in bgms else max(n, used.get(path, 0)), fps))
     ET.indent(root)
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n' + ET.tostring(root, encoding="unicode") + "\n"
 
