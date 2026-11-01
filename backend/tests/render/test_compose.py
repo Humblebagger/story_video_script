@@ -4,6 +4,7 @@
 用法: python3 tests/render/test_compose.py
 """
 import copy
+import re
 import json
 import sys
 import tempfile
@@ -314,6 +315,7 @@ def part_style(doc):
         got = fp(two, mini, style)[0]
         assert got["style"] == "used" and got["refs"] == [c1, compose.STYLE_ID]
         assert got["dropped_refs"] == [loc["id"]]
+        assert "【描述】场景：" in got["prompt"], "被挪走的场景改用文字描述"
         base0 = fp(two, mini, None)[0]
         assert base0["refs"] == [c1, loc["id"]] and got["fingerprint"] == base0["fingerprint"]
         # 4. 满了，全是主要角色
@@ -342,24 +344,33 @@ def part_style(doc):
             assert [x["first_frame"] for x in a] == [x["first_frame"] for x in b]
             assert any((x["first_frame"] or "").startswith("relay:") for x in b)
             assert [x["frame_mode"] for x in a] == [x["frame_mode"] for x in b]
-        # 7. 关键帧占参考位：cap 少一
-        three = FakeVideo(max_refs=3).caps("fake-1")
+        # 7. 关键帧占参考位：cap 少一，风格图照常参与排序（无条件断言）
+        four = FakeVideo(max_refs=4).caps("fake-1")
         s2 = copy.deepcopy(mini)
-        s2["episodes"][0]["shots"][0]["characters"] = [{"ref": c1}, {"ref": c2}]
-        s2["episodes"][0]["shots"][0]["location_ref"] = loc["id"]
-        g = fp(three, s2, style, {"S1": png})[0]
-        assert g["frame_mode"] == "ref"
-        assert len(g["refs"]) <= 2 and g["style"] in ("used", "full")
-        g0 = fp(three, s2, None, {"S1": png})[0]
-        if g["style"] == "used":
-            assert len(g["refs"]) == 2 and compose.STYLE_ID in g["refs"]
+        sh1 = dict(shot, characters=[{"ref": c1}, {"ref": c2}])
+        sh2 = {"id": "S2", "duration_sec": 3, "action": "乙", "characters": [{"ref": c1}]}
+        s2["episodes"][0]["shots"] = [sh1, sh2]
+        g = fp(four, s2, style, {"S1": png})[0]
+        g0 = fp(four, s2, None, {"S1": png})[0]
+        assert g["frame_mode"] == "ref" and g["style"] == "used"
+        assert g["refs"] == [c1, compose.STYLE_ID, loc["id"]] and g["dropped_refs"] == [c2]
+        assert len(g["refs"]) <= four.max_refs - 1
         assert g["fingerprint"] == g0["fingerprint"]
+        row7 = {k: v for k, v in g.items() if not k.startswith("_")}
+        rq7, _ = compose.request_for(s2, sess, row7, keyframes={"S1": png}, relay_frame=None,
+                                     caps=four, rewrite=fake.rewrite_prompt, style=style)
+        assert rq7.refs[0].role == "first_frame" and rq7.refs[0].source.startswith("data:image/png")
+        assert [r.asset_id for r in rq7.refs] == [compose.FIRST, c1, compose.STYLE_ID, loc["id"]]
+        assert any(r.role == "style" and r.source == style["source"] for r in rq7.refs)
+        order = re.findall(r"\[参考([^\]]+)\]", rq7.prompt)
+        assert order == [r.asset_id for r in rq7.refs], "请求图片顺序与提示词占位符编号一致"
         # 8. 组装请求
         row = {k: v for k, v in fp(two, mini, style)[0].items() if not k.startswith("_")}
         rq, _ = compose.request_for(mini, sess, row, keyframes={}, relay_frame=None, caps=two,
                                     rewrite=fake.rewrite_prompt, style=style)
         st = [r for r in rq.refs if r.role == "style"]
         assert len(st) == 1 and st[0].source == style["source"] and rq.style_ref == "h1"
+        assert re.findall(r"\[参考([^\]]+)\]", rq.prompt) == [r.asset_id for r in rq.refs]
         rq2, _ = compose.request_for(mini, sess, row, keyframes={}, relay_frame=None, caps=two,
                                      rewrite=fake.rewrite_prompt, style=style2)
         assert rq2.style_ref == "h2"
