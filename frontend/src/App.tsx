@@ -15,6 +15,7 @@ import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
 import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
+import { Tour } from './components/common/Tour'
 import { useConfirm } from './components/common/ConfirmDialog'
 import type { NewNovel } from './components/NewNovelForm'
 import { NewNovelForm } from './components/NewNovelForm'
@@ -594,6 +595,7 @@ export default function App() {
   return (
     <>
       {confirmUi}
+      <Tour />
       <input
         ref={fileRef}
         type="file"

@@ -174,6 +174,10 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
           {shownCount === 0 && ` ${t('assets.tryOther')}`}
         </p>
       )}
+      {q && shownCount === 0 && !!allCount && (
+        <EmptyState title={t('assets.noMatch')}
+                    action={<Button size="sm" variant="outline" onClick={() => setQuery('')}>{t('common.clearSearch')}</Button>} />
+      )}
       <AssetsView
         assets={shown}
         editing

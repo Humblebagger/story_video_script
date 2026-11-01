@@ -150,7 +150,7 @@ function ChaptersTab({ novel, running, onOpenChapter, onNewChapter }: {
   if (!novel.chapters.length) {
     return (
       <EmptyState icon={<BookOpen className="size-5" />} title={t('novel.empty')}
-                  action={<Button onClick={onNewChapter}>{t('novel.newChapter')}</Button>} />
+                  action={<Button data-tour="import" onClick={onNewChapter}>{t('novel.newChapter')}</Button>} />
     )
   }
   const badge = (c: ChapterSummary, live: JobSummary | undefined) => {
@@ -191,7 +191,7 @@ function ChaptersTab({ novel, running, onOpenChapter, onNewChapter }: {
         )
       })}
       <motion.div {...m.item(novel.chapters.length)}>
-        <Card role="button" tabIndex={0} onClick={onNewChapter}
+        <Card role="button" tabIndex={0} data-tour="import" onClick={onNewChapter}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewChapter() } }}
               className="h-full min-h-24 cursor-pointer items-center justify-center border-dashed p-4 text-sm text-muted-foreground hover:bg-accent">
           {t('novel.newChapter')}

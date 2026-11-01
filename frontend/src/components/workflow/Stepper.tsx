@@ -33,7 +33,7 @@ export function Stepper({ states, view, onView }: {
     return () => document.removeEventListener('keydown', onKey)
   }, [hint])
   return (
-    <nav aria-label={t('flow.stepsLabel')} className="relative">
+    <nav aria-label={t('flow.stepsLabel')} data-tour="steps" className="relative">
       <ol className="flex flex-wrap items-center gap-1">
         {states.map((s, i) => (
           <li key={s.id} className="flex items-center gap-1">

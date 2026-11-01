@@ -72,7 +72,7 @@ export function AppShell(p: AppShellProps) {
         <div className={cn('pb-2', collapsed ? 'flex justify-center px-0' : 'px-3')}>
           <Tip on={collapsed} label={t('shell.newNovel')}>
             <Button className={collapsed ? '' : 'w-full justify-start gap-2'} size={collapsed ? 'icon' : 'default'}
-                    aria-label={collapsed ? t('shell.newNovel') : undefined} onClick={p.onNewNovel}>
+                    data-tour="new-novel" aria-label={collapsed ? t('shell.newNovel') : undefined} onClick={p.onNewNovel}>
               <Plus className="size-4" />{!collapsed && t('shell.newNovel')}
             </Button>
           </Tip>

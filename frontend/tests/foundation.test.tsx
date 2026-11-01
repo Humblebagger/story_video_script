@@ -212,6 +212,41 @@ const leaves = (o: unknown, p = ''): [string, string][] => typeof o === 'string'
 const bad = leaves(en).filter(([, v]) => cjk.test(v))
 must(!bad.length, `英文包含中文：${bad.slice(0, 5).map(([k]) => k).join(', ')}`)
 
+// 6. 新手引导：目标在页面上才显示、一次一条、看过的记进本机、跳过全部
+{
+  const tour = await import('../src/tour')
+  const { Tour } = await import('../src/components/common/Tour')
+  win.localStorage.removeItem('inkreel.tour')
+  const host = win.document.createElement('div')
+  host.innerHTML = '<button data-tour="new-novel">新建</button>'
+  win.document.body.appendChild(host)
+  const rect = () => ({ width: 100, height: 30, top: 10, left: 10, right: 110, bottom: 40, x: 10, y: 10, toJSON() {} })
+  const stub = (el: Element) => { (el as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = rect }
+  stub(host.firstElementChild!)
+  const tc = win.document.createElement('div')
+  win.document.body.appendChild(tc)
+  const troot = createRoot(tc as unknown as HTMLElement)
+  const tip = () => win.document.body.querySelector('[data-testid="tour-tip"]')
+  await act(async () => { troot.render(<I18nProvider><Tour force /></I18nProvider>) })
+  await settle()
+  must(!!tip(), '目标在页面上就显示提示')
+  must(host.firstElementChild!.hasAttribute('data-tour-on'), '目标被高亮')
+  await click(tip()!.querySelectorAll('button')[1])
+  must(tour.seen().includes('new-novel'), '看过的记进本机')
+  must(!tip(), '看过的不再显示')
+  must(!host.firstElementChild!.hasAttribute('data-tour-on'), '高亮摘掉')
+  const imp = win.document.createElement('button')
+  imp.setAttribute('data-tour', 'import'); stub(imp); host.appendChild(imp)
+  await act(async () => { await new Promise((r) => setTimeout(r, 900)) })
+  must(!!tip(), '新目标出现后显示下一条')
+  await click(tip()!.querySelectorAll('button')[0])
+  must(['new-novel', 'import', 'steps', 'progress'].every((id) => tour.seen().includes(id as never)), '跳过全部记满 4 条')
+  must(!tour.tourEnabled(), '测试环境默认不开引导')
+  await act(async () => { troot.unmount() })
+  host.remove(); tc.remove()
+}
+console.log('6. 新手引导 ✓')
+
 // 静态检查：src/ 下全部 .ts / .tsx（中文语言包 i18n/zh.ts 除外）除注释外不许有中文与全角标点
 const fs = await import('node:fs')
 const path = await import('node:path')

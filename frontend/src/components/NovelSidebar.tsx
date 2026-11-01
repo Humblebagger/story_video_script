@@ -52,7 +52,7 @@ export function NovelSidebar({
               onClick={() => onOpenJob(j)}
             >
               <div className="hrun__top">
-                <span className="dot dot--live" />
+                <span className="dot dot--live" data-tour="progress" />
                 <b className="hrun__title">{j.work_title || t('shell.shelf.converting')}</b>
               </div>
               {j.chapter && <p className="hrun__chapter">{j.chapter}</p>}
@@ -77,6 +77,11 @@ export function NovelSidebar({
       {!loading && !novels.length && (
         <EmptyState title={t('shell.shelf.emptyTitle')}
                     action={<Button size="sm" onClick={onNewNovel}><Plus />{t('shell.newNovel')}</Button>} />
+      )}
+
+      {!loading && !!novels.length && !shown.length && (
+        <EmptyState title={t('shell.shelf.noMatch')}
+                    action={<Button size="sm" variant="outline" onClick={() => setQuery('')}>{t('common.clearSearch')}</Button>} />
       )}
 
       <ul className="hist__list">
