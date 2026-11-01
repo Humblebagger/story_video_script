@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { ApiError, renderPlan } from '../api'
 import type { RenderPack, Storyboard, VerificationReport } from '../types'
 import { VerificationPanel } from './VerificationPanel'
+import { tr, useI18n } from '@/i18n/core'
 
 interface Props {
   doc: Storyboard
@@ -30,6 +31,7 @@ function saveFile(name: string, text: string, mime = 'text/plain;charset=utf-8')
  *  出图排在出视频之前：资产图没出，就只能纯文生视频，每个镜头换一张脸，
  *  整套资产引用制的防漂移能力等于白做。 */
 export function RenderView({ doc, runId }: Props) {
+  const { t } = useI18n()
   const [pack, setPack] = useState<RenderPack | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -83,47 +85,46 @@ export function RenderView({ doc, runId }: Props) {
   const onlyEpisode = (ep: string) => {
     setPicked(new Set(plan!.clips.filter((c) => c.episode === ep).map((c) => c.id)))
   }
-  const stem = `${plan?.work_title || '分镜'}_${plan?.chapter || ''}`.replace(/[/\\:*?"<>|]/g, '_')
+  const stem = `${plan?.work_title || tr('renderPack.fileStem')}_${plan?.chapter || ''}`.replace(/[/\\:*?"<>|]/g, '_')
 
   return (
     <div className="rend">
       <header className="rend__head">
         <div>
-          <h3>渲染任务包</h3>
+          <h3>{t('renderPack.title')}</h3>
           <p className="rend__hint">
-            把分镜拆成视频模型能直接吃的 clip，附出图清单与费用估算。
-            提示词与「生产包」Markdown 里那一段逐字相同——在这里核对过，发出去的就是它。
+            {t('renderPack.hint')}
           </p>
         </div>
         <div className="rend__acts">
           <label className="rend__len">
-            单 clip 上限
+            {t('renderPack.maxClip')}
             <select value={maxClip} disabled={busy}
                     onChange={(e) => {
                       const v = Number(e.target.value)
                       setMaxClip(v)
                       void build({ maxClipSeconds: v })
                     }}>
-              {CLIP_LENGTHS.map((s) => <option key={s} value={s}>{s} 秒</option>)}
+              {CLIP_LENGTHS.map((s) => <option key={s} value={s}>{t('renderPack.secs', { s })}</option>)}
             </select>
           </label>
           <label className="rend__len">
-            费率档位
+            {t('renderPack.tier')}
             <select value={model} disabled={busy}
                     onChange={(e) => { setModel(e.target.value); void build({ model: e.target.value }) }}>
-              {(plan?.tiers ?? [{ id: 'seedance-2.0', label: 'Seedance 2.0（标准）' }])
-                .map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              {(plan?.tiers ?? [{ id: 'seedance-2.0', label: t('renderPack.tierDefault') }])
+                .map((tier) => <option key={tier.id} value={tier.id}>{tier.label}</option>)}
             </select>
           </label>
-          <label className="rend__len" title="拿一次真实调用的账单标定后填这里，estimate 就不再是推算值">
-            实测元/秒
-            <input className="rend__rate" value={rate} placeholder="留空=推算"
+          <label className="rend__len" title={t('renderPack.rateTip')}>
+            {t('renderPack.rate')}
+            <input className="rend__rate" value={rate} placeholder={t('renderPack.ratePh')}
                    inputMode="decimal" disabled={busy}
                    onChange={(e) => setRate(e.target.value)}
                    onBlur={() => plan && void build()} />
           </label>
           <Button size="sm" disabled={busy} onClick={() => void build()}>
-            {busy ? '组装中…' : plan ? '重新组装' : '生成任务包'}
+            {busy ? t('renderPack.building') : plan ? t('renderPack.rebuild') : t('renderPack.build')}
           </Button>
         </div>
       </header>
@@ -132,36 +133,38 @@ export function RenderView({ doc, runId }: Props) {
       {blocked && <VerificationPanel report={blocked} doc={doc} origin="render" />}
 
       {!plan && !busy && !err && (
-        <p className="empty">还没组装。点「生成任务包」看这一章要切成几个 clip、缺几张图、大概多少钱。</p>
+        <p className="empty">{t('renderPack.empty')}</p>
       )}
 
       {plan && (
         <>
           <div className="rend__cost">
             <div className="rend__num">
-              <b>{plan.estimate.clips}</b><span>个 clip</span>
+              <b>{plan.estimate.clips}</b><span>{t('renderPack.clips')}</span>
             </div>
             <div className="rend__num">
               <b>{Math.round(plan.estimate.playable_seconds)}</b>
               <span>
-                秒成片
+                {t('renderPack.playable')}
                 {plan.estimate.speech_overflow_sec > 0 &&
-                  `（标称 ${Math.round(plan.estimate.seconds)}s，
-                    含念完旁白必须补的 ${Math.round(plan.estimate.speech_overflow_sec)}s）`}
+                  t('renderPack.overflow', {
+                    nominal: Math.round(plan.estimate.seconds),
+                    extra: Math.round(plan.estimate.speech_overflow_sec),
+                  })}
               </span>
             </div>
             <div className="rend__num rend__num--warn">
               <b>{plan.estimate.asset_images_missing}</b>
-              <span>张资产图待出（共 {plan.estimate.asset_images_total}）</span>
+              <span>{t('renderPack.imgsMissing', { total: plan.estimate.asset_images_total })}</span>
             </div>
             <div className="rend__num rend__num--cost">
               <b>¥{partial ? chosenCny : plan.estimate.cny_once}–{
                 partial ? Math.round(chosenCny * plan.estimate.retry_factor * 10) / 10
                         : plan.estimate.cny_with_retries}</b>
               <span>
-                {plan.estimate.calibrated ? '费用' : '费用估算'}
-                （一次过 → 抽 {plan.estimate.retry_factor} 次）
-                {partial && ` · 仅选中的 ${chosen.length}/${plan.clips.length} 条`}
+                {plan.estimate.calibrated ? t('renderPack.cost') : t('renderPack.costEst')}
+                {t('renderPack.retries', { n: plan.estimate.retry_factor })}
+                {partial && t('renderPack.onlyChosen', { n: chosen.length, total: plan.clips.length })}
               </span>
             </div>
           </div>
@@ -169,12 +172,12 @@ export function RenderView({ doc, runId }: Props) {
             <button type="button" className="rend__basis-head" aria-expanded={basisOpen}
                     onClick={() => setBasisOpen(!basisOpen)}>
               <ChevronRight size={14} aria-hidden />
-              <b>费用怎么算</b>
+              <b>{t('renderPack.basis')}</b>
               <span>
                 {plan.estimate.calibrated
-                  ? `按你指定的 ${plan.estimate.cny_per_second} 元/秒 计算`
-                  : `按 ${plan.estimate.model_label} 推算 ${plan.estimate.cny_per_second} 元/秒`}
-                —— 这是估算，点开看依据与不确定性
+                  ? t('renderPack.basisCal', { rate: plan.estimate.cny_per_second })
+                  : t('renderPack.basisEst', { model: plan.estimate.model_label, rate: plan.estimate.cny_per_second })}
+                {' '}{t('renderPack.basisTail')}
               </span>
             </button>
             <div className="rend__basis-body" hidden={!basisOpen}>
@@ -183,38 +186,37 @@ export function RenderView({ doc, runId }: Props) {
                 {plan.estimate.caveats.map((c) => <li key={c}>{c}</li>)}
               </ul>
               <p className="rend__note">
-                档位适用分辨率：{plan.estimate.resolutions}；
-                费率 {plan.estimate.rate.cny_per_million_tokens} 元/百万 token ×
-                {plan.estimate.rate.tokens_per_second} token/秒。
+                {t('renderPack.resNote', {
+                  res: plan.estimate.resolutions,
+                  price: plan.estimate.rate.cny_per_million_tokens,
+                  tps: plan.estimate.rate.tokens_per_second,
+                })}
               </p>
             </div>
           </div>
 
           {plan.estimate.asset_images_missing > 0 && (
             <p className="rend__warn">
-              还有 <b>{plan.estimate.asset_images_missing}</b> 张资产图没出。
-              直接文生视频的话，同一个角色在不同 clip 里会换脸——
-              资产引用制防的就是这个。建议先按下面的出图清单把图出好，
-              填回资产卡的「设定图」，再来生成视频。
+              {t('renderPack.warnA')}<b>{plan.estimate.asset_images_missing}</b>{t('renderPack.warnB')}
             </p>
           )}
 
           <div className="rend__dl">
             <Button size="sm" variant="outline" onClick={() => saveFile(
-              `${stem}_渲染任务清单${partial ? `_选中${chosen.length}条` : ''}.json`,
+              `${stem}_${t('renderPack.fileList')}${partial ? t('renderPack.fileSel', { n: chosen.length }) : ''}.json`,
               JSON.stringify(partial ? { ...plan, clips: chosen } : plan, null, 2),
               'application/json;charset=utf-8')}>
-              下载任务清单 JSON
+              {t('renderPack.dlList')}
             </Button>
             {pack!.packs.map((p) => (
               <Button size="sm" variant="ghost" key={p.episode}
-                      onClick={() => saveFile(`${stem}_${p.episode}_生产包.md`, p.markdown)}>
-                下载 {p.episode} 生产包
+                      onClick={() => saveFile(`${stem}_${p.episode}_${t('renderPack.filePack')}.md`, p.markdown)}>
+                {t('renderPack.dlPack', { ep: p.episode })}
               </Button>
             ))}
           </div>
 
-          <h4 className="rend__sub">出图清单（{plan.assets.length} 张卡）</h4>
+          <h4 className="rend__sub">{t('renderPack.assetList', { n: plan.assets.length })}</h4>
           <ul className="rend__assets">
             {plan.assets.map((a) => (
               <li className="rasset" key={a.id}>
@@ -224,7 +226,7 @@ export function RenderView({ doc, runId }: Props) {
                   <span className="chip">{a.kind_zh}</span>
                   <span className={`rasset__imgs${
                     a.have_images >= a.need_images ? ' is-ok' : ''}`}>
-                    {a.have_images}/{a.need_images} 张图
+                    {t('renderPack.imgCount', { have: a.have_images, need: a.need_images })}
                   </span>
                 </div>
                 <p className="rasset__prompt">{a.image_prompt}</p>
@@ -234,7 +236,7 @@ export function RenderView({ doc, runId }: Props) {
                   </p>
                 ))}
                 {!!a.constraints.length && (
-                  <p className="rasset__cons">不要：{a.constraints.join('；')}</p>
+                  <p className="rasset__cons">{t('renderPack.avoid', { list: a.constraints.join(t('renderPack.avoidSep')) })}</p>
                 )}
               </li>
             ))}
@@ -242,17 +244,20 @@ export function RenderView({ doc, runId }: Props) {
 
           <div className="rend__pick">
             <h4 className="rend__sub">
-              分镜 clip（{partial ? `选中 ${chosen.length}/${plan.clips.length}`
-                                 : plan.clips.length} 条 · {chosenSec}s · ¥{chosenCny}）
+              {t('renderPack.clipTitle', {
+                count: partial ? t('renderPack.clipCountSel', { n: chosen.length, total: plan.clips.length })
+                  : plan.clips.length,
+                sec: chosenSec, cny: chosenCny,
+              })}
             </h4>
             <span className="rend__eps">
-              只渲染：
+              {t('renderPack.onlyRender')}
               {[...new Set(plan.clips.map((c) => c.episode))].map((ep) => (
                 <Button size="xs" variant="outline" key={ep}
                         onClick={() => onlyEpisode(ep)}>{ep}</Button>
               ))}
               <Button size="xs" variant="ghost"
-                      onClick={() => setPicked(null)}>全选</Button>
+                      onClick={() => setPicked(null)}>{t('renderPack.all')}</Button>
             </span>
           </div>
           <ul className="rend__clips">
@@ -260,20 +265,20 @@ export function RenderView({ doc, runId }: Props) {
               <li className={`rclip${picked && !picked.has(c.id) ? ' is-off' : ''}`} key={c.id}>
                 <span className="rclip__pick">
                   <input type="checkbox" checked={!picked || picked.has(c.id)}
-                         title="不勾就不渲染这一条"
+                         title={t('renderPack.pickTip')}
                          onChange={() => toggle(c.id)} />
                 </span>
                 <button className="rclip__head" onClick={() =>
                   setOpen(open === c.id ? null : c.id)}>
                   <span className="rclip__id">{c.id}</span>
                   <span className="rclip__dur" title={c.speech_overflow > 0
-                    ? `标称 ${c.duration_sec}s，念完旁白需 ${c.playable_sec}s` : ''}>
+                    ? t('renderPack.overTip', { nominal: c.duration_sec, play: c.playable_sec }) : ''}>
                     {c.playable_sec}s
                     {c.speech_overflow > 0 && <em className="rclip__over">+{c.speech_overflow}</em>}
                   </span>
                   <span className="rclip__shots">{c.shots.join(' + ')}</span>
-                  <span className="rclip__refs">垫图 {c.reference_assets.join('、') || '无'}</span>
-                  <span className="rclip__caret">{open === c.id ? '收起' : '看提示词'}</span>
+                  <span className="rclip__refs">{t('renderPack.refsOf', { list: c.reference_assets.join(t('common.listSep')) || t('renderPack.none') })}</span>
+                  <span className="rclip__caret">{open === c.id ? t('renderPack.collapse') : t('renderPack.showPrompt')}</span>
                 </button>
                 {open === c.id && <pre className="rclip__prompt">{c.prompt}</pre>}
               </li>

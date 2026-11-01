@@ -14,6 +14,7 @@ import type {
   CameraAngle, CameraMovement, LocationAngle, Shot, ShotSize, TimeOfDay, Transition,
 } from '../types'
 import { CardPicker, matchCards } from './CardPicker'
+import { useI18n } from '@/i18n/core'
 
 interface Props {
   shot: Shot
@@ -53,12 +54,13 @@ function VariantSelect({ card, value, shot, onChange }: {
   shot: Shot
   onChange: (patch: Partial<Shot>) => void
 }) {
+  const { t } = useI18n()
   if (!card?.variants.length) return null
   return (
     <select
       className="ed ed--sel ed--var"
       value={value ?? ''}
-      title={card.kind === 'props' ? '本镜头的形态' : '本镜头的服装'}
+      title={card.kind === 'props' ? t('shot.propState') : t('shot.outfit')}
       onChange={(e) => onChange(setVariant(shot, card, e.target.value))}
     >
       {card.variants.map((v) => (
@@ -77,9 +79,10 @@ function DetachButton({ card, shot, onChange }: {
   shot: Shot
   onChange: (patch: Partial<Shot>) => void
 }) {
+  const { t } = useI18n()
   if (!card) return null
   return (
-    <button type="button" className="ed__x" title={`把 ${card.name} 从本镜头摘掉`}
+    <button type="button" className="ed__x" title={t('shot.detach', { name: card.name })}
             onClick={() => onChange(detachCard(shot, card))}>×</button>
   )
 }
@@ -102,6 +105,7 @@ type PickState =
   | { mode: 'at'; from: number; caret: number; query: string }
 
 export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
+  const { t } = useI18n()
   const [pick, setPick] = useState<PickState | null>(null)
   const [active, setActive] = useState(0)
   const [attachQuery, setAttachQuery] = useState('')
@@ -158,7 +162,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
 
   const place = shot.location_ref
     ? idx.assetName(shot.location_ref) +
-      (shot.location_angle ? `（${label(LOCATION_ANGLE, shot.location_angle)}）` : '')
+      (shot.location_angle ? t('shot.angled', { name: '', angle: label(LOCATION_ANGLE, shot.location_angle) }) : '')
     : ''
 
   const setCam = (k: 'movement' | 'angle', v: string | undefined) =>
@@ -178,7 +182,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               value={shot.duration_sec}
               onChange={(e) => onChange({ duration_sec: Number(e.target.value) || 1 })}
             />
-            <span className="ed__unit">秒</span>
+            <span className="ed__unit">{t('shot.sec')}</span>
             <EnumSelect<ShotSize>
               value={shot.shot_size} map={SHOT_SIZE}
               onChange={(v) => v && onChange({ shot_size: v })} />
@@ -212,7 +216,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
             value={shot.location_ref ?? ''}
             onChange={(e) => onChange({ location_ref: e.target.value || undefined })}
           >
-            <option value="">— 无场景 —</option>
+            <option value="">{t('shot.noPlace')}</option>
             {idx.locationOptions.map((l) => (
               <option key={l.id} value={l.id}>{l.id} {l.name}</option>
             ))}
@@ -225,7 +229,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
             onChange={(v) => onChange({ time_of_day: v })} />
           <input
             className="ed"
-            placeholder="天气"
+            placeholder={t('shot.weather')}
             value={shot.weather ?? ''}
             onChange={(e) => onChange({ weather: e.target.value || undefined })}
           />
@@ -248,7 +252,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               className="ed ed--area"
               value={shot.action}
               rows={3}
-              placeholder="画面内容（打 @ 可挂资产卡）"
+              placeholder={t('shot.actionPh')}
               onKeyDown={(e) => { if (pick?.mode === 'at') pickKeys(e) }}
               onChange={(e) => {
                 const caret = e.target.selectionStart ?? e.target.value.length
@@ -263,13 +267,13 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               <CardPicker
                 options={options} active={active} onActive={setActive}
                 onPick={pickCard} onClose={closePick} isAttached={attached}
-                hint="选中即挂上引用：角色锁形象、道具锁形态、场景锁机位"
+                hint={t('shot.atHint')}
               />
             )}
           </div>
           <input
             className="ed"
-            placeholder="氛围"
+            placeholder={t('shot.atmosphere')}
             value={shot.atmosphere ?? ''}
             onChange={(e) => onChange({ atmosphere: e.target.value || undefined })}
           />
@@ -287,7 +291,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               )}
               {shot.transition_out && (
                 <p className="shot__trans">
-                  <ArrowRight size={12} aria-hidden />转场：{label(TRANSITION, shot.transition_out)}
+                  <ArrowRight size={12} aria-hidden />{t('shot.transition', { v: label(TRANSITION, shot.transition_out) })}
                 </p>
               )}
             </div>
@@ -306,7 +310,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
                 <input
                   key={k}
                   className="ed"
-                  placeholder={{ expression: '表情', action: '动作', position: '位置' }[k]}
+                  placeholder={t(`shot.${k}`)}
                   value={c[k] ?? ''}
                   onChange={(e) => onChange({
                     characters: shot.characters!.map((x, j) =>
@@ -360,9 +364,9 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               <span className="beat__sec">{b.duration_sec}s</span>
               <span className="beat__body">
                 <b>{b.action}</b>
-                {b.expression && <em>表演：{b.expression}</em>}
-                {b.lighting && <em>光：{b.lighting}</em>}
-                {b.camera_note && <em>机位：{b.camera_note}</em>}
+                {b.expression && <em>{t('shot.beatExpr', { v: b.expression })}</em>}
+                {b.lighting && <em>{t('shot.beatLight', { v: b.lighting })}</em>}
+                {b.camera_note && <em>{t('shot.beatCam', { v: b.camera_note })}</em>}
               </span>
             </li>
           ))}
@@ -376,33 +380,33 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               <span className="beat__n">{i + 1}</span>
               <input
                 className="ed ed--num" type="number" step="0.5" min="0.5"
-                title="本拍时长（镜头总时长自动跟着各拍之和走）"
+                title={t('shot.beatSecTip')}
                 value={b.duration_sec}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { duration_sec: Number(e.target.value) || 0 }))}
               />
-              <span className="ed__unit">秒</span>
+              <span className="ed__unit">{t('shot.sec')}</span>
               <input
-                className="ed" placeholder="本拍画面" value={b.action}
+                className="ed" placeholder={t('shot.beatAction')} value={b.action}
                 onChange={(e) => onChange(updateBeat(shot, i, { action: e.target.value }))}
               />
               <input
-                className="ed" placeholder="表演" value={b.expression ?? ''}
+                className="ed" placeholder={t('shot.beatExprPh')} value={b.expression ?? ''}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { expression: e.target.value || undefined }))}
               />
               <input
-                className="ed" placeholder="光：正面柔光 / 右侧光 / 背光轮廓"
+                className="ed" placeholder={t('shot.beatLightPh')}
                 value={b.lighting ?? ''}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { lighting: e.target.value || undefined }))}
               />
               <input
-                className="ed" placeholder="机位补充" value={b.camera_note ?? ''}
+                className="ed" placeholder={t('shot.beatCamPh')} value={b.camera_note ?? ''}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { camera_note: e.target.value || undefined }))}
               />
-              <button type="button" className="ed__x" title="删掉这一拍"
+              <button type="button" className="ed__x" title={t('shot.beatDel')}
                       onClick={() => onChange(removeBeat(shot, i))}>×</button>
             </li>
           ))}
@@ -411,7 +415,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
 
       {!editing && !!shot.constraints?.length && (
         <p className="cons">
-          <span className="cons__tag">不要</span>
+          <span className="cons__tag">{t('shot.consTag')}</span>
           {shot.constraints.join(' · ')}
         </p>
       )}
@@ -421,13 +425,13 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
           <span className="ed__attachbox">
             <Button type="button" size="sm" variant="outline"
                     onClick={() => setPick(pick?.mode === 'attach' ? null : { mode: 'attach' })}>
-              ＋ 挂卡
+              {t('shot.attach')}
             </Button>
             {pick?.mode === 'attach' && (
               <span className="cpick__wrap">
                 <input
                   className="ed ed--slim" autoFocus
-                  placeholder="搜卡片：ID / 名称 / 别名"
+                  placeholder={t('shot.attachPh')}
                   value={attachQuery}
                   onChange={(e) => { setAttachQuery(e.target.value); setActive(0) }}
                   onKeyDown={pickKeys}
@@ -435,39 +439,39 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
                 <CardPicker
                   options={options} active={active} onActive={setActive}
                   onPick={pickCard} onClose={closePick} isAttached={attached}
-                  hint="角色/生物挂进出场主体，道具进道具引用，场景落到本镜头的场景卡"
+                  hint={t('shot.attachHint')}
                 />
               </span>
             )}
           </span>
 
           <Button type="button" size="sm" variant="outline"
-                  title="把这个镜头拆成几拍：同一个不切的长镜头里，情绪与灯光逐级推进"
+                  title={t('shot.splitTip')}
                   onClick={() => onChange(addBeat(shot))}>
-            {shot.beats?.length ? '＋ 加一拍' : '拆成分镜内阶段'}
+            {shot.beats?.length ? t('shot.addBeat') : t('shot.splitBeats')}
           </Button>
 
           <span className="ed__attachbox">
             <Button type="button" size="sm" variant="outline"
-                    title="出图时拿哪几张卡垫图——直接决定形象锁不锁得住"
+                    title={t('shot.refsTip')}
                     onClick={() => setPick(pick?.mode === 'refs' ? null : { mode: 'refs' })}>
-              垫图 {shot.prompts?.reference_assets?.length || 0}
+              {t('shot.refs', { n: shot.prompts?.reference_assets?.length || 0 })}
             </Button>
             {pick?.mode === 'refs' && (
               <CardPicker
                 options={options} active={active} onActive={setActive}
                 onPick={pickCard} onClose={closePick}
                 isAttached={(c) => !!shot.prompts?.reference_assets?.includes(c.id)}
-                hint="从本镜头已挂的卡里勾选；摘掉卡时会自动从这里移除"
+                hint={t('shot.refsHint')}
               />
             )}
           </span>
 
           <span className="ed__cons">
-            <span className="ed__conslabel" title="出图质量的一半毁在没有负面约束上">不要</span>
+            <span className="ed__conslabel" title={t('shot.consLabelTip')}>{t('shot.consTag')}</span>
             <input
               className="ed"
-              placeholder="负面约束，用 / 分隔：画面内不出现灯具 / 无镜头光晕 / 全程不切镜"
+              placeholder={t('shot.consPh')}
               value={(shot.constraints ?? []).join(' / ')}
               onChange={(e) => onChange(setConstraints(splitList(e.target.value)))}
             />
@@ -478,7 +482,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               {shot.prompts.reference_assets.map((id) => (
                 <span className="chip chip--ref" key={id}>
                   {id} {idx.assetName(id)}
-                  <button type="button" className="chip__x" title="不再垫这张"
+                  <button type="button" className="chip__x" title={t('shot.unref')}
                           onClick={() => onChange(setReferenceAssets(shot,
                             shot.prompts!.reference_assets!.filter((r) => r !== id)))}>×</button>
                 </span>
@@ -491,7 +495,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       {editing && (
         <input
           className="ed"
-          placeholder="音效（多条用 / 分隔）"
+          placeholder={t('shot.sfxPh')}
           value={(shot.sfx ?? []).join(' / ')}
           onChange={(e) => {
             const list = splitList(e.target.value)
@@ -512,7 +516,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
                   {editing ? (
                     <input
                       className="ed ed--slim"
-                      placeholder="情绪/语气"
+                      placeholder={t('shot.emotionPh')}
                       value={d.emotion ?? ''}
                       onChange={(e) => onChange({
                         dialogue: shot.dialogue!.map((x, j) =>
@@ -522,7 +526,7 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
                   ) : (
                     d.emotion && <span className="line__emo">{d.emotion}</span>
                   )}
-                  {d.verbatim === false && <span className="chip chip--warn">非原文</span>}
+                  {d.verbatim === false && <span className="chip chip--warn">{t('shot.notVerbatim')}</span>}
                 </p>
               ))}
             </div>
@@ -531,11 +535,11 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
           {shot.narration?.text && (
             <div className="lines">
               <p className="line line--nar">
-                <span className="line__who"><Mic size={12} aria-hidden />旁白</span>
+                <span className="line__who"><Mic size={12} aria-hidden />{t('shot.narrator')}</span>
                 <span className="line__text">{shot.narration.text}</span>
                 {editing && (
-                  <span className="lock" title="旁白取自原文，改动会破坏保真校验">
-                    <Lock size={12} aria-label="锁定" />
+                  <span className="lock" title={t('shot.narLock')}>
+                    <Lock size={12} aria-label={t('shot.lock')} />
                   </span>
                 )}
               </p>
@@ -557,8 +561,8 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
           </button>
         ))}
         {editing && (
-          <span className="lock" title="溯源引用与推导标记锁死，保证产物仍可通过校验">
-            <Lock size={12} aria-hidden />溯源锁定
+          <span className="lock" title={t('shot.srcLockTip')}>
+            <Lock size={12} aria-hidden />{t('shot.srcLock')}
           </span>
         )}
         {shot.source?.note && <span className="shot__note">{shot.source.note}</span>}

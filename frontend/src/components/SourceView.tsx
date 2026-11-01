@@ -4,6 +4,7 @@ import { label, UNIT_KIND } from '../labels'
 import type { Index } from '../resolve'
 import { pct } from '../resolve'
 import type { Storyboard } from '../types'
+import { useI18n } from '@/i18n/core'
 
 interface Props {
   doc: Storyboard
@@ -29,6 +30,7 @@ function highlight(text: string, q: string) {
 }
 
 export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
+  const { t } = useI18n()
   const [onlyGaps, setOnlyGaps] = useState(false)
   const [query, setQuery] = useState('')
   const rowRef = useRef<HTMLLIElement | null>(null)
@@ -50,14 +52,14 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
     <div className="src">
       <div className="src__bar">
         <span>
-          原文 {units.length} 句 · 已被镜头覆盖{' '}
-          <b>{pct(idx.stats.coveredRatio)}</b> · 念作旁白{' '}
+          {t('source.sumA', { n: units.length })}{' '}
+          <b>{pct(idx.stats.coveredRatio)}</b> {t('source.sumB')}{' '}
           <b>{pct(idx.stats.narratedRatio)}</b>
         </span>
         <input
           className="src__search"
           value={query}
-          placeholder="搜索原文 / 句子编号"
+          placeholder={t('source.searchPh')}
           onChange={(e) => setQuery(e.target.value)}
         />
         <label className="src__toggle">
@@ -66,7 +68,7 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
             checked={onlyGaps}
             onChange={(e) => setOnlyGaps(e.target.checked)}
           />
-          只看未覆盖（{unmapped.size}）
+          {t('source.onlyGaps', { n: unmapped.size })}
         </label>
       </div>
 
@@ -88,15 +90,15 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
                 <span className="unit__id">{u.id}</span>
                 {u.kind && <span className="chip">{label(UNIT_KIND, u.kind)}</span>}
                 {u.para !== undefined && <span className="unit__para">§{u.para}</span>}
-                {idx.narratedUnits.has(u.id) && <span className="chip chip--nar">旁白</span>}
+                {idx.narratedUnits.has(u.id) && <span className="chip chip--nar">{t('source.narration')}</span>}
               </div>
               <p className="unit__text">{highlight(u.text, q)}</p>
               <div className="unit__refs">
                 {refs.length === 0
-                  ? <span className="unit__gap"><TriangleAlert size={12} aria-hidden />无镜头引用</span>
+                  ? <span className="unit__gap"><TriangleAlert size={12} aria-hidden />{t('source.noRef')}</span>
                   : refs.map((r) => onPickShot
                     ? (
-                      <button className="uref" key={r.shot.id} title="在画布上选中这一镜"
+                      <button className="uref" key={r.shot.id} title={t('source.pickShot')}
                               onClick={() => onPickShot(r.shot.id)}>{r.shot.id}</button>
                     )
                     : <span className="uref uref--static" key={r.shot.id}>{r.shot.id}</span>)}
@@ -105,7 +107,7 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
           )
         })}
       </ol>
-      {!shown.length && <p className="empty">没有符合条件的句子。</p>}
+      {!shown.length && <p className="empty">{t('source.empty')}</p>}
     </div>
   )
 }

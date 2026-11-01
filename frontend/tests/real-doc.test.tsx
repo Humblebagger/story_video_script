@@ -98,5 +98,27 @@ for (const s of shots.slice(0, 40)) {
 must(bad === 0, `挂卡产出的引用有 ${bad} 处不合 lint 规则`)
 console.log(`挂卡规则 ok：40 个镜头 × ${idx.cardOptions.length} 张卡的组合全部合规`)
 
+// 英文渲染：视图切换、统计卡与镜头卡标签都是英文，文档内容原样
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { setCurrentLocale } = await import('../src/i18n/core')
+  await act(async () => {
+    root.render(
+      <I18nProvider initial="en">
+        <StoryboardView doc={doc} canSave={false} dirty={false} saving={false}
+                        onChange={() => {}} onSave={() => {}} />
+      </I18nProvider>)
+  })
+  const tabs = [...container.querySelectorAll('.tabs__btn')].map((b) => b.textContent).join(' ')
+  must(tabs === 'Shots Assets Source Render JSON', `英文视图切换：${tabs}`)
+  must((container.querySelector('.stats')?.textContent ?? '').includes('Coverage'), '英文统计卡有 Coverage')
+  must([...container.querySelectorAll('.shot .chip')].some((c) => c.textContent === 'Wide'), '镜头卡景别标签是英文 Wide')
+  must(!/[一-鿿]/.test(container.querySelector('.sb__head .stats')?.textContent ?? ''), '统计卡无中文')
+  await act(async () => { root.render(<StoryboardView doc={doc} canSave={false} dirty={false} saving={false}
+                                                      onChange={() => {}} onSave={() => {}} />) })
+  setCurrentLocale('zh')
+  console.log('英文渲染 ok')
+}
+
 root.unmount()
 console.log('\nALL PASS')

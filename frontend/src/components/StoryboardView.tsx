@@ -14,13 +14,11 @@ import { TimelineCanvas } from './TimelineCanvas'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/i18n/core'
 
 type Tab = 'shots' | 'assets' | 'source' | 'render' | 'json'
 
-const TABS: [Tab, string][] = [
-  ['shots', '分镜'], ['assets', '资产卡'], ['source', '原文溯源'],
-  ['render', '渲染'], ['json', 'JSON'],
-]
+const TABS: Tab[] = ['shots', 'assets', 'source', 'render', 'json']
 
 function download(doc: Storyboard) {
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
@@ -60,6 +58,7 @@ export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
   bench = null, openFilm, onCanvasClose,
 }: Props) {
+  const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('shots')
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -111,7 +110,7 @@ export function StoryboardView({
     <div className="sb">
       <header className="sb__head">
         <div className="sb__title">
-          <h2>{meta?.title ?? '未命名'}</h2>
+          <h2>{meta?.title ?? t('board.untitled')}</h2>
           {source?.chapter && <span className="sb__chapter">{source.chapter}</span>}
           <span className="sb__badges">
             <Badge variant="secondary" className="font-mono font-normal">schema {meta?.schema_version}</Badge>
@@ -125,7 +124,7 @@ export function StoryboardView({
               <Button size="sm" variant={editing ? 'default' : 'outline'}
                       onClick={() => setEditing((v) => !v)}>
                 {editing ? <Check /> : <PencilLine />}
-                {editing ? '完成编辑' : '编辑分镜'}
+                {editing ? t('board.editDone') : t('board.edit')}
               </Button>
             )}
             {canSave && !preview && (
@@ -135,46 +134,44 @@ export function StoryboardView({
                 disabled={!dirty || saving}
                 onClick={onSave}
               >
-                {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
+                {saving ? t('board.saving') : dirty ? t('board.save') : t('board.saved')}
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => setCanvas(true)}
-                    title="按视频时间铺开：集、场景、镜头、各角色的动作顺序、旁白台词、BGM 情绪">
+                    title={t('board.canvasTip')}>
               <Clapperboard />
-              时间轴画布
+              {t('board.canvas')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => download(doc)}>
               <Download />
-              下载 JSON
+              {t('board.download')}
             </Button>
           </div>
         </div>
 
         {preview && (
           <p className="sb__preview">
-            预览：只含已完成的前 {preview.done}/{preview.total} 批，只读。
-            整章跑完后会自动换成完整产物，那时才能编辑、保存和渲染。
+            {t('board.preview', { done: preview.done, total: preview.total })}
           </p>
         )}
 
         {editing && !preview && (
           <p className="sb__editnote">
-            编辑权只开在「呈现」一侧：分镜可改景别 / 运镜 / 时长 / 画面描述 / 氛围 / 音效 / 转场 / 角色表演，
-            <b>资产卡</b>可改名称 / 别名 / 外貌 / 服装 / 状态 / 描述。
-            <Lock size={12} aria-label="锁定" />锁死的是原文句子、溯源引用、推导标记、台词与旁白文本，以及被跨引用的各级 ID——
-            改了就通不过后端的 lint 与保真校验。
-            {!canSave && '　本地打开的 JSON 不入库，改完请下载。'}
+            {t('board.editNoteA')}
+            <b>{t('board.editNoteAssets')}</b>{t('board.editNoteB')}
+            <Lock size={12} aria-label={t('board.lock')} />{t('board.editNoteC')}
+            {!canSave && t('board.localNote')}
           </p>
         )}
 
         <div className="stats grid grid-cols-3 gap-2 md:grid-cols-6">
-          <Stat n={idx.stats.units} k="原文句" />
-          <Stat n={idx.stats.episodes} k="集" />
-          <Stat n={idx.stats.shots} k="镜头" />
-          <Stat n={pct(idx.stats.coveredRatio)} k="覆盖率"
+          <Stat n={idx.stats.units} k={t('board.statUnits')} />
+          <Stat n={idx.stats.episodes} k={t('board.statEpisodes')} />
+          <Stat n={idx.stats.shots} k={t('board.statShots')} />
+          <Stat n={pct(idx.stats.coveredRatio)} k={t('board.statCoverage')}
                 warn={idx.stats.coveredRatio < 1} />
-          <Stat n={pct(idx.stats.narratedRatio)} k="旁白占比" />
-          <Stat n={pct(idx.stats.inferredRatio)} k="系统补充镜" />
+          <Stat n={pct(idx.stats.narratedRatio)} k={t('board.statNarrated')} />
+          <Stat n={pct(idx.stats.inferredRatio)} k={t('board.statInferred')} />
         </div>
 
         {meta?.style?.style_prefix && (
@@ -183,8 +180,8 @@ export function StoryboardView({
       </header>
 
       <div className="sb__bar">
-        <nav className="inline-flex shrink-0 rounded-lg bg-muted p-1" aria-label="分镜视图">
-          {TABS.filter(([id]) => !preview || id !== 'render').map(([id, name]) => (
+        <nav className="inline-flex shrink-0 rounded-lg bg-muted p-1" aria-label={t('board.viewsAria')}>
+          {TABS.filter((id) => !preview || id !== 'render').map((id) => (
             <button
               key={id}
               type="button"
@@ -196,7 +193,7 @@ export function StoryboardView({
               )}
               onClick={() => setTab(id)}
             >
-              {name}
+              {t(`board.tabs.${id}`)}
             </button>
           ))}
         </nav>

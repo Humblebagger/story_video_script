@@ -1,33 +1,30 @@
 import { Lock, MapPin, Package, PawPrint, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { splitAliases } from '../edit'
-import { appearanceFields, voiceFields } from '../labels'
+import { appearanceFields, LOCATION_ANGLE, voiceFields } from '../labels'
+import { tr, useI18n } from '@/i18n/core'
+import type { MsgKey } from '@/i18n/core'
 import type { AssetKind } from '../edit'
 import type {
   AssetVariant, Assets, CharacterAsset, CreatureAsset, LocationAsset, LocationAngle,
   PropAsset, ReferenceImage,
 } from '../types'
 
-// oxlint-disable-next-line react/only-export-components -- 小说页资产库复用同一份分类名，不另抄一份
-export const KIND_TITLE: Record<AssetKind, string> = {
-  characters: '角色 C', locations: '场景 S', props: '道具 P', creatures: '生物 A',
-}
+const ASSET_KINDS: AssetKind[] = ['characters', 'locations', 'props', 'creatures']
 
-const KIND_HINT: Partial<Record<AssetKind, string>> = {
-  characters: '外貌只存在于资产卡，镜头层只写引用——从根上防角色漂移',
+// oxlint-disable-next-line react/only-export-components -- 小说页资产库复用同一份分类名，不另抄一份
+export const KIND_TITLE = Object.fromEntries(ASSET_KINDS.map((k) => [k, k])) as Record<AssetKind, string>
+for (const k of ASSET_KINDS) {
+  Object.defineProperty(KIND_TITLE, k, { enumerable: true, get: () => tr(`assetView.kindTitle.${k}` as MsgKey) })
 }
 
 const KIND_ICON = {
   characters: User, locations: MapPin, props: Package, creatures: PawPrint,
 } as const
 
-const IE_LABEL: Record<string, string> = {
-  interior: '内景', exterior: '外景', both: '内外兼有',
-}
-
-const ANGLE_LABEL: Record<LocationAngle, string> = {
-  front: '正面', reverse: '反打', side: '侧面', overhead: '顶视', establishing: '定场',
-}
+const IE_KEYS = ['interior', 'exterior', 'both']
+const ieLabel = () => Object.fromEntries(IE_KEYS.map((k) => [k, tr(`assetView.ie.${k}` as MsgKey)])) as Record<string, string>
+const ANGLE_LABEL = LOCATION_ANGLE
 
 interface Props {
   assets: Assets
@@ -98,10 +95,8 @@ function FixedMap({ map, fields, onChange }: {
   )
 }
 
-const VIEW_LABEL: Record<string, string> = {
-  front: '全身正面', side: '侧面', back: '背面',
-  three_quarter: '四分之三侧', close_up: '面部特写',
-}
+const VIEW_KEYS = ['front', 'side', 'back', 'three_quarter', 'close_up']
+const viewLabel = () => Object.fromEntries(VIEW_KEYS.map((k) => [k, tr(`assetView.view.${k}` as MsgKey)])) as Record<string, string>
 
 /** 设定图槽位。
  *
@@ -114,6 +109,7 @@ function RefImages({ list, variants, tagKey, onChange }: {
   tagKey: 'outfit' | 'state'
   onChange: (next: ReferenceImage[] | undefined) => void
 }) {
+  const { t } = useI18n()
   const items = list ?? []
   const set = (i: number, patch: Partial<ReferenceImage>) =>
     onChange(items.map((x, j) => (j === i ? { ...x, ...patch } : x)))
@@ -123,26 +119,26 @@ function RefImages({ list, variants, tagKey, onChange }: {
         <div className="asub" key={i}>
           <select className="ed ed--sel" value={img.view ?? ''}
                   onChange={(e) => set(i, { view: (e.target.value || undefined) as ReferenceImage['view'] })}>
-            <option value="">— 视图 —</option>
-            {Object.entries(VIEW_LABEL).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+            <option value="">{t('assetView.viewPh')}</option>
+            {Object.entries(viewLabel()).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
           </select>
           {!!variants.length && (
             <select className="ed ed--sel" value={img[tagKey] ?? ''}
-                    title={tagKey === 'outfit' ? '这张图画的是哪套服装' : '这张图画的是哪种形态'}
+                    title={tagKey === 'outfit' ? t('assetView.outfitTip') : t('assetView.stateTip')}
                     onChange={(e) => set(i, { [tagKey]: e.target.value || undefined })}>
-              <option value="">基准形象</option>
+              <option value="">{t('assetView.baseLook')}</option>
               {variants.map((v) => <option key={v.id} value={v.id}>{v.id}</option>)}
             </select>
           )}
-          <Text value={img.uri} placeholder="设定图路径 / URL"
+          <Text value={img.uri} placeholder={t('assetView.uriPh')}
                 onChange={(v) => set(i, { uri: v })} />
-          <button type="button" className="ed__x" title="删掉这张设定图"
+          <button type="button" className="ed__x" title={t('assetView.delImg')}
                   onClick={() => onChange(items.filter((_, j) => j !== i).length
                     ? items.filter((_, j) => j !== i) : undefined)}>×</button>
         </div>
       ))}
       <Button type="button" size="sm" variant="outline"
-              onClick={() => onChange([...items, {}])}>＋ 设定图</Button>
+              onClick={() => onChange([...items, {}])}>{t('assetView.addImg')}</Button>
     </div>
   )
 }
@@ -167,6 +163,7 @@ function Constraints({ list, onChange, hint }: {
 function CharacterCard({ c, editing, patch }: {
   c: CharacterAsset; editing: boolean; patch: (p: Record<string, unknown>) => void
 }) {
+  const { t } = useI18n()
   if (!editing) {
     return (
       <>
@@ -174,7 +171,7 @@ function CharacterCard({ c, editing, patch }: {
           <p className="acard__row" key={k}><span>{label}</span>{c.appearance![k]}</p>
         ))}
         {!!c.outfits?.length && (
-          <div className="acard__row"><span>服装</span>
+          <div className="acard__row"><span>{t('assetView.outfits')}</span>
             <div className="chips">
               {c.outfits.map((o) => (
                 <span className="chip chip--var" key={o.id}><b>{o.id}</b>{o.description}</span>
@@ -185,48 +182,48 @@ function CharacterCard({ c, editing, patch }: {
         {voiceFields().filter(([k]) => c.voice?.[k]).map(([k, label]) => (
           <p className="acard__row" key={k}><span>{label}</span>{c.voice![k]}</p>
         ))}
-        {c.persona_notes && <p className="acard__row"><span>性格</span>{c.persona_notes}</p>}
+        {c.persona_notes && <p className="acard__row"><span>{t('assetView.persona')}</span>{c.persona_notes}</p>}
       </>
     )
   }
   return (
     <>
-      <Row label="别名">
-        <Text value={(c.aliases ?? []).join('、')} placeholder="以顿号分隔"
+      <Row label={t('assetView.alias')}>
+        <Text value={(c.aliases ?? []).join('、')} placeholder={t('assetView.aliasPh')}
               onChange={(v) => patch({ aliases: v ? splitAliases(v) : undefined })} />
       </Row>
-      <Row label="外貌">
+      <Row label={t('assetView.appearance')}>
         <FixedMap map={c.appearance} fields={appearanceFields()}
                   onChange={(v) => patch({ appearance: v })} />
       </Row>
       {!!c.outfits?.length && (
-        <Row label="服装">
+        <Row label={t('assetView.outfits')}>
           {c.outfits.map((o, i) => (
             <div className="asub" key={o.id}>
-              <span className="asub__id" title="服装 ID 被镜头的 characters[].outfit 引用，不可改">
+              <span className="asub__id" title={t('assetView.outfitId')}>
                 <Lock size={12} aria-hidden />{o.id}
               </span>
               <Text value={o.description} area
-                    placeholder="这套装束的完整外观描述（服装+鞋+配饰）"
+                    placeholder={t('assetView.outfitPh')}
                     onChange={(v) => patch({ outfits: c.outfits!.map(
                       (x, j) => (j === i ? { ...x, description: v } : x)) })} />
             </div>
           ))}
         </Row>
       )}
-      <Row label="设定图">
+      <Row label={t('assetView.refImages')}>
         <RefImages list={c.reference_images} variants={c.outfits ?? []} tagKey="outfit"
                    onChange={(v) => patch({ reference_images: v })} />
       </Row>
-      <Row label="不要">
+      <Row label={t('assetView.cons')}>
         <Constraints list={c.constraints} onChange={(v) => patch({ constraints: v })}
-                     hint="画这张卡时不要做什么，用 / 分隔：不要平滑笔触 / 不要加照片级细节 / 不要改画风" />
+                     hint={t('assetView.consCharHint')} />
       </Row>
-      <Row label="声音">
+      <Row label={t('assetView.voice')}>
         <FixedMap map={c.voice} fields={voiceFields()}
                   onChange={(v) => patch({ voice: v })} />
       </Row>
-      <Row label="性格">
+      <Row label={t('assetView.persona')}>
         <Text value={c.persona_notes} area
               onChange={(v) => patch({ persona_notes: v })} />
       </Row>
@@ -237,45 +234,46 @@ function CharacterCard({ c, editing, patch }: {
 function LocationCard({ l, editing, patch }: {
   l: LocationAsset; editing: boolean; patch: (p: Record<string, unknown>) => void
 }) {
+  const { t } = useI18n()
   if (!editing) {
     return (
       <>
-        {l.era && <p className="acard__row"><span>年代</span>{l.era}</p>}
+        {l.era && <p className="acard__row"><span>{t('assetView.era')}</span>{l.era}</p>}
         {l.interior_exterior && (
-          <p className="acard__row"><span>内外景</span>{IE_LABEL[l.interior_exterior]}</p>
+          <p className="acard__row"><span>{t('assetView.ieLabel')}</span>{ieLabel()[l.interior_exterior]}</p>
         )}
         {!!l.angles?.length && (
-          <p className="acard__row"><span>机位</span>
-            {l.angles.map((a) => (a.angle ? ANGLE_LABEL[a.angle] : '')).filter(Boolean).join('、')}</p>
+          <p className="acard__row"><span>{t('assetView.angles')}</span>
+            {l.angles.map((a) => (a.angle ? ANGLE_LABEL[a.angle] : '')).filter(Boolean).join(t('common.listSep'))}</p>
         )}
         {l.lighting_defaults && (
-          <p className="acard__row"><span>默认光</span>{l.lighting_defaults}</p>
+          <p className="acard__row"><span>{t('assetView.defLight')}</span>{l.lighting_defaults}</p>
         )}
       </>
     )
   }
   return (
     <>
-      <Row label="年代"><Text value={l.era} onChange={(v) => patch({ era: v })} /></Row>
-      <Row label="内外景">
+      <Row label={t('assetView.era')}><Text value={l.era} onChange={(v) => patch({ era: v })} /></Row>
+      <Row label={t('assetView.ieLabel')}>
         <select
           className="ed ed--sel"
           value={l.interior_exterior ?? ''}
           onChange={(e) => patch({ interior_exterior: e.target.value || undefined })}
         >
           <option value="">—</option>
-          {Object.entries(IE_LABEL).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+          {Object.entries(ieLabel()).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
         </select>
       </Row>
-      <Row label="默认光">
+      <Row label={t('assetView.defLight')}>
         <Text value={l.lighting_defaults} onChange={(v) => patch({ lighting_defaults: v })} />
       </Row>
-      <Row label="不要">
+      <Row label={t('assetView.cons')}>
         <Constraints list={l.constraints} onChange={(v) => patch({ constraints: v })}
-                     hint="画这张卡时不要做什么，用 / 分隔" />
+                     hint={t('assetView.consHint')} />
       </Row>
       {!!l.angles?.length && (
-        <Row label="机位">
+        <Row label={t('assetView.angles')}>
           {l.angles.map((a, i) => (
             <div className="asub" key={i}>
               <select
@@ -287,7 +285,7 @@ function LocationCard({ l, editing, patch }: {
                 <option value="">—</option>
                 {Object.entries(ANGLE_LABEL).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
               </select>
-              <Text value={a.uri} placeholder="该机位的设定图路径 / URL"
+              <Text value={a.uri} placeholder={t('assetView.angleUriPh')}
                     onChange={(v) => patch({ angles: l.angles!.map(
                       (x, j) => (j === i ? { ...x, uri: v } : x)) })} />
             </div>
@@ -301,9 +299,10 @@ function LocationCard({ l, editing, patch }: {
 function PropCard({ p, editing, patch }: {
   p: PropAsset; editing: boolean; patch: (x: Record<string, unknown>) => void
 }) {
+  const { t } = useI18n()
   if (!editing) {
     return p.states?.length ? (
-      <div className="acard__row"><span>状态机</span>
+      <div className="acard__row"><span>{t('assetView.states')}</span>
         <div className="chips">
           {p.states.map((s) => (
             <span className="chip chip--var" key={s.id}><b>{s.id}</b>{s.description}</span>
@@ -315,27 +314,27 @@ function PropCard({ p, editing, patch }: {
   return (
     <>
       {!!p.states?.length && (
-        <Row label="状态机">
+        <Row label={t('assetView.states')}>
           {p.states.map((s, i) => (
             <div className="asub" key={s.id}>
-              <span className="asub__id" title="状态 ID 被镜头的 prop_refs[].state 引用，不可改">
+              <span className="asub__id" title={t('assetView.stateId')}>
                 <Lock size={12} aria-hidden />{s.id}
               </span>
               <Text value={s.description} area
-                    placeholder="该形态的完整外观描述"
+                    placeholder={t('assetView.statePh')}
                     onChange={(v) => patch({ states: p.states!.map(
                       (x, j) => (j === i ? { ...x, description: v } : x)) })} />
             </div>
           ))}
         </Row>
       )}
-      <Row label="设定图">
+      <Row label={t('assetView.refImages')}>
         <RefImages list={p.reference_images} variants={p.states ?? []} tagKey="state"
                    onChange={(v) => patch({ reference_images: v })} />
       </Row>
-      <Row label="不要">
+      <Row label={t('assetView.cons')}>
         <Constraints list={p.constraints} onChange={(v) => patch({ constraints: v })}
-                     hint="画这张卡时不要做什么，用 / 分隔" />
+                     hint={t('assetView.consHint')} />
       </Row>
     </>
   )
@@ -344,31 +343,32 @@ function PropCard({ p, editing, patch }: {
 function CreatureCard({ c, editing, patch }: {
   c: CreatureAsset; editing: boolean; patch: (p: Record<string, unknown>) => void
 }) {
+  const { t } = useI18n()
   if (!editing) {
     return (
       <>
-        {c.species && <p className="acard__row"><span>物种</span>{c.species}</p>}
-        {c.notes && <p className="acard__row"><span>备注</span>{c.notes}</p>}
+        {c.species && <p className="acard__row"><span>{t('assetView.species')}</span>{c.species}</p>}
+        {c.notes && <p className="acard__row"><span>{t('assetView.notes')}</span>{c.notes}</p>}
       </>
     )
   }
   return (
     <>
-      <Row label="别名">
-        <Text value={(c.aliases ?? []).join('、')} placeholder="以顿号分隔"
+      <Row label={t('assetView.alias')}>
+        <Text value={(c.aliases ?? []).join('、')} placeholder={t('assetView.aliasPh')}
               onChange={(v) => patch({ aliases: v ? splitAliases(v) : undefined })} />
       </Row>
-      <Row label="物种"><Text value={c.species} onChange={(v) => patch({ species: v })} /></Row>
-      <Row label="设定图">
+      <Row label={t('assetView.species')}><Text value={c.species} onChange={(v) => patch({ species: v })} /></Row>
+      <Row label={t('assetView.refImages')}>
         {/* 生物卡没有变体集（lint 明令引用不得带 outfit），故不给归属下拉 */}
         <RefImages list={c.reference_images} variants={[]} tagKey="outfit"
                    onChange={(v) => patch({ reference_images: v })} />
       </Row>
-      <Row label="不要">
+      <Row label={t('assetView.cons')}>
         <Constraints list={c.constraints} onChange={(v) => patch({ constraints: v })}
-                     hint="画这张卡时不要做什么，用 / 分隔" />
+                     hint={t('assetView.consHint')} />
       </Row>
-      <Row label="备注"><Text value={c.notes} area onChange={(v) => patch({ notes: v })} /></Row>
+      <Row label={t('assetView.notes')}><Text value={c.notes} area onChange={(v) => patch({ notes: v })} /></Row>
     </>
   )
 }
@@ -376,18 +376,17 @@ function CreatureCard({ c, editing, patch }: {
 /* ---------- 主视图 ---------- */
 
 export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }: Props) {
-  const kinds = (['characters', 'locations', 'props', 'creatures'] as AssetKind[])
+  const { t } = useI18n()
+  const kinds = ASSET_KINDS
     .filter((k) => (assets[k] ?? []).length > 0)
 
-  if (!kinds.length) return <p className="empty">此分镜没有资产卡。</p>
+  if (!kinds.length) return <p className="empty">{t('assetView.emptyDoc')}</p>
 
   return (
     <div className="assets">
       {editing && !hideEditNote && (
         <p className="assets__editnote">
-          资产卡整个属于「呈现」侧，名称 / 别名 / 外貌 / 描述都可以改。
-          只有带锁图标的 ID 锁死——它们被镜头层跨引用（场景、道具及其状态、角色及其服装），
-          改了 lint 立刻报「引用不存在的资产」。
+          {t('assetView.editNote')}
         </p>
       )}
       {kinds.map((kind) => (
@@ -395,7 +394,7 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
           <h3 className="assets__title">
             {KIND_TITLE[kind]} <span className="assets__n">{(assets[kind] ?? []).length}</span>
           </h3>
-          {KIND_HINT[kind] && <p className="assets__hint">{KIND_HINT[kind]}</p>}
+          {kind === 'characters' && <p className="assets__hint">{t('assetView.charHint')}</p>}
           <div className="assets__grid">
             {(assets[kind] ?? []).map((card) => {
               const patch = (p: Record<string, unknown>) => onChange(kind, card.id, p)
@@ -405,17 +404,17 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
                   <header>
                     <Icon className="acard__icon" size={16} aria-hidden />
                     {editing
-                      ? <Text value={card.name} placeholder="名称"
+                      ? <Text value={card.name} placeholder={t('assetView.namePh')}
                               onChange={(v) => patch({ name: v ?? '' })} />
                       : <b className="acard__name">{card.name}</b>}
-                    <span className="acard__id" title="资产 ID 被镜头层引用，不可改">
+                    <span className="acard__id" title={t('assetView.idTip')}>
                       {editing && <Lock size={12} aria-hidden />}{card.id}
                     </span>
                     {!editing && 'aliases' in card && !!card.aliases?.length && (
-                      <span className="acard__alias">别称：{card.aliases.join('、')}</span>
+                      <span className="acard__alias">{t('assetView.aliasShown', { v: card.aliases.join(t('common.listSep')) })}</span>
                     )}
                     {editing && onDelete && (
-                      <button type="button" className="acard__del" title="删除这张卡"
+                      <button type="button" className="acard__del" title={t('assetView.delCard')}
                               onClick={() => onDelete(kind, card.id)}>×</button>
                     )}
                   </header>
@@ -434,7 +433,7 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
                   )}
 
                   {editing ? (
-                    <Row label="画面描述">
+                    <Row label={t('assetView.visual')}>
                       <Text value={card.visual_prompt} area
                             onChange={(v) => patch({ visual_prompt: v })} />
                     </Row>

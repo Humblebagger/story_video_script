@@ -222,6 +222,8 @@ const I18N_FILES = [
   ...['NovelPage', 'NovelAssets', 'NewNovelForm', 'ParamsForm', 'CardPicker', 'SelectOrCustom', 'JobPanel', 'JobProgress', 'NovelSidebar']
     .map((f) => `components/${f}.tsx`),
   'App.tsx',
+  ...['StoryboardView', 'EpisodeView', 'ShotCard', 'AssetsView', 'SourceView', 'RenderView', 'VerificationPanel']
+    .map((f) => `components/${f}.tsx`),
   ...fs.readdirSync(path.join(SRC, 'components/admin')).map((f) => `components/admin/${f}`),
 ]
 // 必须保持中文的数据字面量（正确性所需），按文件、按行形态放行：
