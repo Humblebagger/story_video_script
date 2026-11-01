@@ -107,7 +107,18 @@ await act(async () => { root.render(<Host />) })
 await settle()
 must(body().includes('墨卷') && body().includes('amy') && body().includes('药') && body().includes('第一章'),
   '外壳显示品牌、用户与面包屑')
-must(body().includes('未配置密钥') && body().includes('书架内容') && body().includes('内容区'), '服务状态与插槽')
+must(body().includes('书架内容') && body().includes('内容区'), '插槽')
+const openAccount = async () => {
+  await act(async () => {
+    win.document.querySelector('[data-testid="account-menu"]')!.dispatchEvent(
+      new win.PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }) as unknown as Event)
+  })
+  await settle()
+}
+await openAccount()
+must(body().includes('未配置密钥') && body().includes('claude-x'), '账号菜单里有当前模型与服务状态')
+await act(async () => { win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event) })
+await settle()
 await click(button('管理'))
 await click(button('新建小说'))
 await click(button('退出'))
@@ -123,6 +134,7 @@ must(win.document.documentElement.lang === 'zh-CN', 'html lang 为中文')
 must(win.document.querySelector('nav[aria-label="位置"] [aria-current="page"]')?.textContent === '第一章', '面包屑最后一节 aria-current')
 await act(async () => { setLoc('en') })
 await settle()
+await openAccount()
 must(body().includes('Inkreel') && body().includes('Sign out') && body().includes('API key not set'),
   '切到英文后外壳文字变英文')
 must(win.document.documentElement.lang === 'en', 'html lang 跟着切到英文')

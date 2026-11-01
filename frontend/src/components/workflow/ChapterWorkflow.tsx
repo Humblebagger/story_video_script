@@ -4,6 +4,7 @@
  *  原文与分镜的未保存修改共用底部的未保存提示条（保存 / 撤销两样都管）。 */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { motion } from 'motion/react'
 import { Clapperboard, Film } from 'lucide-react'
 import { toast } from 'sonner'
@@ -11,7 +12,9 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
 import { flashTarget } from '@/lib/flash'
+import { useMedia } from '@/lib/useMedia'
 import { useMotionPresets } from '@/motion'
+import { useTopbarSlot } from '@/components/shell/topbarSlot'
 import type { Chapter, JobSummary, NarrationMode, Novel, Storyboard } from '@/types'
 import type { useChapterFlow } from '@/useChapterFlow'
 import { currentStep, primaryFor, stepDone, stepStates, STEPS } from '@/workflow'
@@ -87,6 +90,8 @@ export function ChapterWorkflow({
 }: Props) {
   const { t } = useI18n()
   const m = useMotionPresets()
+  const slot = useTopbarSlot()
+  const narrowBar = useMedia('(max-width: 899px)')
   const [title, setTitle] = useState(chapter.title)
   const [text, setText] = useState(chapter.text)
   const [mode, setMode] = useState<NarrationMode | ''>('')
@@ -252,19 +257,20 @@ export function ChapterWorkflow({
     }
   })()
 
+  // 步骤条在顶栏中间的插槽里；拿不到插槽（单测等）时留在章节页原位
+  const stepper = <Stepper states={stepStates(input)} view={view} onView={setView} compact={!!slot && narrowBar} />
   return (
     <div className="flex flex-col gap-4 pb-28">
-      <section className="chap">
-        <header className="chap__head">
-          <span className="chap__novel">{t('flow.novelTitle', { title: novel.title })}</span>
-          <span className="text-[17px] font-semibold">{chapter.title}</span>
-        </header>
-        <Stepper states={stepStates(input)} view={view} onView={setView} />
-        {view !== 'import' && (
-          <VersionBar chapter={chapter} versionId={docVid} onOpenVersion={onOpenVersion} onAdopt={onAdopt}
-                      onDeleteVersion={onDeleteVersion} onRerunDigest={onRerunDigest} />
-        )}
-      </section>
+      {slot && createPortal(stepper, slot)}
+      {(!slot || view !== 'import') && (
+        <section className="chap">
+          {!slot && stepper}
+          {view !== 'import' && (
+            <VersionBar chapter={chapter} versionId={docVid} onOpenVersion={onOpenVersion} onAdopt={onAdopt}
+                        onDeleteVersion={onDeleteVersion} onRerunDigest={onRerunDigest} />
+          )}
+        </section>
+      )}
       {/* ③④⑤ 共用同一个 key：在这三步之间切换不重新挂载分镜视图（编辑态、页签、画布都保留） */}
       <motion.div key={BOARD.includes(view) ? 'board' : view} {...m.enter} className="flex flex-col gap-4">
         {workspace}

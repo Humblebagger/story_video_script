@@ -3,8 +3,11 @@
  *  view 是正在看的步骤（可以回看已完成的）。 */
 import { useEffect, useId, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, Lock } from 'lucide-react'
+import { Check, ChevronDown, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { cn } from '@/lib/utils'
@@ -12,10 +15,12 @@ import { useMotionPresets } from '@/motion'
 import { STEPS } from '@/workflow'
 import type { StepId, StepState } from '@/workflow'
 
-export function Stepper({ states, view, onView }: {
+export function Stepper({ states, view, onView, compact }: {
   states: StepState[]
   view: StepId
   onView: (id: StepId) => void
+  /** 顶栏太窄时的紧凑形态：只显示正在看的一步，下拉里选步骤 */
+  compact?: boolean
 }) {
   const { t } = useI18n()
   const m = useMotionPresets()
@@ -32,6 +37,32 @@ export function Stepper({ states, view, onView }: {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [hint])
+  if (compact) {
+    const i = Math.max(0, states.findIndex((x) => x.id === view))
+    return (
+      <nav aria-label={t('flow.stepsLabel')} data-tour="steps" data-compact="">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2 rounded-full" data-testid="stepper-compact">
+              <span className="font-mono">{i + 1}</span>{t(`flow.steps.${view}` as MsgKey)}
+              <ChevronDown className="size-3.5 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center">
+            {states.map((s, k) => (
+              <DropdownMenuItem key={s.id} data-step={s.id} disabled={s.state === 'locked'}
+                                aria-current={view === s.id ? 'step' : undefined} onSelect={() => onView(s.id)}>
+                {s.state === 'done' ? <Check className="size-4 text-success" />
+                  : s.state === 'locked' ? <Lock className="size-4" />
+                    : <span className="w-4 text-center font-mono text-xs">{k + 1}</span>}
+                {t(`flow.steps.${s.id}` as MsgKey)}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </nav>
+    )
+  }
   return (
     <nav aria-label={t('flow.stepsLabel')} data-tour="steps" className="relative">
       <ol className="flex flex-wrap items-center gap-1">

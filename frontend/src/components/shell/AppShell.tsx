@@ -1,20 +1,25 @@
-/** 应用外壳：左侧可收起的侧边栏（标志、新建小说、小说列表插槽、管理入口、账号与退出）+ 顶栏（面包屑、服务状态、
- *  打开本地 JSON、语言与主题）+ 内容区（切换时淡入上移）。文字全部走语言包。
+/** 应用外壳：左侧可收起的侧边栏（标志、新建小说、小说列表插槽、管理入口、账号与退出）+ 三段式顶栏（左：项目切换器与章节；
+ *  中：#topbar-center 步骤条插槽；右：费用表、服务未连通、铃铛、打开本地 JSON、语言、主题、账号菜单）+ 内容区（切换时淡入上移）。
+ *  文字全部走语言包。
  *  测试依赖的按钮文字：「管理」「返回书架」「退出」「新建小说」，以及用户名可见（展开时）；收起时只剩图标，aria-label 与提示同文字。
  *  窄屏（< 768px）默认收起。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'motion/react'
-import { FileJson, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Shield } from 'lucide-react'
+import { Bell, FileJson, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Shield } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
 import { LangToggle } from '@/components/common/LangToggle'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/common/StatusPill'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { useMotionPresets } from '@/motion'
+import { TopbarSlotContext } from './topbarSlot'
 
 export interface AppShellProps {
   username: string
@@ -24,8 +29,16 @@ export interface AppShellProps {
   onLogout: () => void
   onNewNovel: () => void
   onOpenLocal: () => void
-  /** 面包屑（小说名 / 章节 / 版本），空则只显示产品名 */
-  crumbs: string[]
+  /** 面包屑（没传 projectSwitcher 时用；空则只显示产品名） */
+  crumbs?: string[]
+  /** 顶栏左侧：项目切换器（没打开小说时不传，显示产品名）与章节切换 */
+  projectSwitcher?: ReactNode
+  chapterCrumb?: ReactNode
+  /** 顶栏右侧：费用表 */
+  costMeter?: ReactNode
+  /** 任务铃铛：在跑任务数（0 不显示徽标）与点击回调 */
+  runningCount?: number
+  onToggleActivity?: () => void
   /** 服务状态：down 为连不上；model 为当前模型；noKey 为没配密钥 */
   service: { down: boolean; model?: string; noKey?: boolean }
   /** 侧边栏中部（小说列表） */
@@ -53,6 +66,7 @@ export function AppShell(p: AppShellProps) {
   const { t } = useI18n()
   const m = useMotionPresets()
   const [collapsed, setCollapsed] = useState(narrow)
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
   const toggleLabel = collapsed ? t('shell.expand') : t('shell.collapse')
   const adminLabel = p.adminOpen ? t('shell.backToShelf') : t('shell.admin')
   return (
@@ -114,40 +128,91 @@ export function AppShell(p: AppShellProps) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/80 px-5 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <nav className="min-w-0 flex-1 truncate text-sm text-muted-foreground" aria-label={t('shell.breadcrumb')}>
-            {p.crumbs.length
-              ? p.crumbs.map((c, i) => (
-                <span key={i}>
-                  {i > 0 && <span className="mx-2 opacity-50">/</span>}
-                  {i === p.crumbs.length - 1
-                    ? <span className="text-foreground" aria-current="page">{c}</span>
-                    : <span>{c}</span>}
-                </span>
-              ))
-              : <span className="text-foreground">{t('brand.name')}</span>}
-          </nav>
-          {p.service.down
-            ? <Badge variant="destructive">{t('shell.serviceDown')}</Badge>
-            : p.service.model && (
-              <Badge variant="outline" className="font-mono text-xs font-normal">
-                {p.service.model}{p.service.noKey && <span className="ml-1 text-destructive">· {t('shell.noKey')}</span>}
-              </Badge>
+        <header className="sticky top-0 z-20 grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b bg-background/80 px-5 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+                data-testid="topbar">
+          <div className="flex min-w-0 items-center gap-1">
+            {p.projectSwitcher ? (
+              <>{p.projectSwitcher}{p.chapterCrumb}</>
+            ) : (
+              <nav className="min-w-0 truncate text-sm text-muted-foreground" aria-label={t('shell.breadcrumb')}>
+                {p.crumbs?.length
+                  ? p.crumbs.map((c, i) => (
+                    <span key={i}>
+                      {i > 0 && <span className="mx-2 opacity-50">/</span>}
+                      {i === p.crumbs!.length - 1
+                        ? <span className="text-foreground" aria-current="page">{c}</span>
+                        : <span>{c}</span>}
+                    </span>
+                  ))
+                  : <span className="text-foreground">{t('brand.name')}</span>}
+              </nav>
             )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label={t('shell.openLocal')} onClick={p.onOpenLocal}>
-                <FileJson className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('shell.openLocal')}</TooltipContent>
-          </Tooltip>
-          <LangToggle />
-          <ThemeToggle />
+          </div>
+          <div id="topbar-center" ref={setSlot} className="flex min-w-0 justify-center" />
+          <div className="flex items-center justify-end gap-1">
+            {p.costMeter}
+            {p.service.down && <StatusPill tone="err">{t('shell.serviceDown')}</StatusPill>}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative" aria-label={t('shell.activity')}
+                        data-testid="activity-bell" onClick={p.onToggleActivity}>
+                  <Bell className="size-4" />
+                  {!!p.runningCount && (
+                    <span data-testid="activity-count"
+                          className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-mono text-[10px] text-primary-foreground">
+                      {p.runningCount}
+                    </span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('shell.activity')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={t('shell.openLocal')} onClick={p.onOpenLocal}>
+                  <FileJson className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('shell.openLocal')}</TooltipContent>
+            </Tooltip>
+            <LangToggle />
+            <ThemeToggle />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={t('shell.account')} data-testid="account-menu">
+                  <span className="flex size-7 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white">
+                    {p.username.slice(0, 1).toUpperCase()}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>{t('shell.signedInAs', { name: p.username })}</DropdownMenuLabel>
+                <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+                  <span className="text-muted-foreground">{t('shell.model')}</span>
+                  <span className="min-w-0 truncate font-mono text-xs">
+                    {p.service.model ?? '—'}{p.service.noKey && <span className="ml-1 text-destructive">· {t('shell.noKey')}</span>}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+                  <span className="text-muted-foreground">{t('shell.service')}</span>
+                  <StatusPill tone={p.service.down ? 'err' : 'ok'}>
+                    {p.service.down ? t('shell.serviceDown') : t('shell.serviceOk')}
+                  </StatusPill>
+                </div>
+                <DropdownMenuSeparator />
+                {p.isAdmin && (
+                  <DropdownMenuItem onSelect={p.onToggleAdmin}><Shield className="size-4" />{adminLabel}</DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={p.onLogout}><LogOut className="size-4" />{t('shell.logout')}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
-        <motion.main key={p.viewKey} {...m.enter} className="min-w-0 flex-1 px-6 py-6">
-          {p.children}
-        </motion.main>
+        <TopbarSlotContext.Provider value={slot}>
+          <motion.main key={p.viewKey} {...m.enter} className="min-w-0 flex-1 px-6 py-6">
+            {p.children}
+          </motion.main>
+        </TopbarSlotContext.Provider>
       </div>
     </div>
     </TooltipProvider>

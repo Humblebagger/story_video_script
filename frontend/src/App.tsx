@@ -8,6 +8,8 @@ import {
 import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
 import type { User } from './auth'
 import { AppShell } from './components/shell/AppShell'
+import { CostMeter } from './components/shell/CostMeter'
+import { ChapterCrumb, ProjectSwitcher } from './components/shell/ProjectSwitcher'
 import { AdminView } from './components/admin/AdminView'
 import { ChapterWorkflow } from './components/workflow/ChapterWorkflow'
 import { JobPanel } from './components/JobPanel'
@@ -32,6 +34,8 @@ import type {
   VerificationReport,
 } from './types'
 import { useChapterFlow } from './useChapterFlow'
+import { useNovelSummary } from './useNovelSummary'
+import { ART_STYLES } from './presets'
 import { useJob } from './useJob'
 import { DUR, EASE_OUT } from './motion'
 
@@ -58,6 +62,8 @@ export default function App() {
   const [novel, setNovel] = useState<Novel | null>(null)
   const [chapter, setChapter] = useState<Chapter | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 右侧动态面板开关（面板本身在后续任务里做；这里先接铃铛） */
+  const [, setActivityOpen] = useState(false)
 
   const [doc, setDoc] = useState<Storyboard | null>(null)
   /** doc 属于哪个版本；本地打开的 JSON 与分批预览都没有 */
@@ -79,7 +85,12 @@ export default function App() {
   openChapterId.current = chapter?.id ?? null
   /** 章节级只读出片状态（步骤条与主按钮用）；画布关闭、保存后重读 */
   const flow = useChapterFlow(novel && chapter && docVid ? { nid: novel.id, cid: chapter.id, vid: docVid } : null)
-  const reloadFlow = flow.reload
+  /** 费用表与左栏汇总的刷新键：任务结束、出片或合成刷新、采用、删版本时加一 */
+  const [summaryKey, setSummaryKey] = useState(0)
+  const bumpSummary = useCallback(() => setSummaryKey((k) => k + 1), [])
+  const summary = useNovelSummary(novel?.id, summaryKey)
+  const flowReload = flow.reload
+  const reloadFlow = useCallback(async () => { await flowReload(); bumpSummary() }, [flowReload, bumpSummary])
   /** 递增一次 = 打开画布并切到「出片」页 */
   const [openFilmN, setOpenFilmN] = useState(0)
   /** 章节原文框里有没保存的改动（由章节工作流报上来）；和分镜的 dirty 一起管离开提醒 */
@@ -145,6 +156,7 @@ export default function App() {
   // 任务跑完且用户正看着它：直接把产物摆出来
   const onJobDone = useCallback((done: Job) => {
     void refreshNovels()
+    bumpSummary()
     announce(done)
     // 巡检要过几秒才发现它结束了；在那之前章节页不能还显示「转换中」
     setRunning((list) => list.filter((j) => j.id !== done.id))
@@ -157,7 +169,7 @@ export default function App() {
     savedDoc.current = done.result
     setDocVid(done.id)
     setDirty(false)
-  }, [refreshNovels, reloadOpen, announce])
+  }, [refreshNovels, reloadOpen, announce, bumpSummary])
 
   const { job, error, submitting, start, attach, reset } = useJob(onJobDone)
   attachedJob.current = job?.id ?? null
@@ -426,6 +438,7 @@ export default function App() {
         + (r.digest === 'running' ? t('app.adoptedDigest') : ''))
       await reloadOpen(novel.id, chapter.id)
       void refreshNovels()
+      bumpSummary()
     } catch (e) {
       notice.err(t('app.err.adopt', { msg: msg(e) }))
     }
@@ -437,6 +450,7 @@ export default function App() {
       action: t('confirm.delete'), danger: true }))) return
     try {
       await deleteVersion(novel.id, chapter.id, vid)
+      bumpSummary()
       await reloadOpen(novel.id, chapter.id)
       if (docVid === vid) {
         // 删的正是在看的这版：换到采用版（没有就最新一版），画布不必跟着关掉
@@ -615,8 +629,21 @@ export default function App() {
         onLogout={logout}
         onNewNovel={() => void newNovel()}
         onOpenLocal={() => fileRef.current?.click()}
-        crumbs={adminOpen && user.role === 'admin' ? []
-          : [novel?.title, chapter?.title, docVid ?? undefined].filter((x): x is string => !!x)}
+        crumbs={[]}
+        projectSwitcher={novel && !(adminOpen && user.role === 'admin') ? (
+          <ProjectSwitcher novels={novels} currentId={novel.id}
+                           meta={[novel.params.aspect_ratio, ART_STYLES.find((a) => a.value === novel.params.art_style)?.label]
+                             .filter(Boolean).join(' · ')}
+                           onOpen={(nid) => void openNovel(nid)} onNew={() => void newNovel()} />
+        ) : null}
+        chapterCrumb={novel && chapter && !(adminOpen && user.role === 'admin') ? (
+          <ChapterCrumb chapters={[...novel.chapters].sort((a, b) => a.order - b.order)} currentId={chapter.id}
+                        onOpen={(cid) => void openChapter(cid)} />
+        ) : null}
+        costMeter={novel && !(adminOpen && user.role === 'admin')
+          ? <CostMeter data={summary.data} chapterId={chapter?.id ?? null} /> : null}
+        runningCount={running.length}
+        onToggleActivity={() => setActivityOpen((v) => !v)}
         service={{ down: svcDown, model: svc?.model, noKey: !!svc && !svc.api_key_configured }}
         viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
         sidebar={adminOpen && user.role === 'admin' ? null : (
