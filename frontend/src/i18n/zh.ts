@@ -358,6 +358,8 @@ export const zh = {
     more: '+{n}',
     moreAria: '展开全部章节',
     lessAria: '收起章节',
+    onlyTxt: '只支持 .txt 文本文件',
+    readFail: '读取文件失败',
     firstChapter: '第一章',
     chipRatio: '画幅',
     chipStyle: '风格',

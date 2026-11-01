@@ -10,6 +10,8 @@ for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement', '
     value: (win as unknown as Record<string, unknown>)[k], writable: true, configurable: true,
   })
 }
+g.requestAnimationFrame = (f: () => void) => setTimeout(f, 0)
+g.cancelAnimationFrame = (n: number) => clearTimeout(n)
 g.IS_REACT_ACT_ENVIRONMENT = true
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -205,6 +207,14 @@ const setInput = async (el: HTMLElement, v: string) => {
   must((q('input[aria-label="小说标题"]') as unknown as HTMLInputElement).value === '我的小说', '标题自动取文件名')
   must(((q('[data-testid="composer-source"]') as unknown as HTMLTextAreaElement).value).includes('内容'), '原文框应有内容')
 
+  // 非 .txt 被拒
+  const nBefore = notice.log.length
+  const png = new win.File(['x'], 'a.png', { type: 'image/png' })
+  await fire('drop', { files: [png], types: ['Files'] })
+  await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
+  must((q('input[aria-label="小说标题"]') as unknown as HTMLInputElement).value === '我的小说', '拒绝图片后标题不变')
+  must(notice.log.length === nBefore + 1 && notice.log.at(-1)!.msg.includes('.txt'), '拒绝非 txt 应有 notice.err')
+
   // 超过 4 章：4 个标签加 +N
   const six = Array.from({ length: 6 }, (_, i) => `第${i + 1}章 题\n正文${i}`).join('\n')
   await setInput(q('[data-testid="composer-source"]')!, six)
@@ -214,5 +224,18 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(qa('[data-testid="chapter-chip"]').length === 6, '点开显示全部')
 }
 
+{ // 受控 + openMore
+  const seen: P[] = []
+  const ref = { current: null as null | { openMore: () => void } }
+  await act(async () => {
+    root.render(h(NewNovelComposer as never, { key: 'ctl', ref, disabled: false, onSubmit: () => {}, params: DEFAULT_PARAMS, onParamsChange: (n: P) => seen.push(n) }))
+  })
+  await click(q('[data-testid="chip-ratio"]'))
+  await click(q('[data-ratio="1:1"]'))
+  must(seen.at(-1)?.aspect_ratio === '1:1', '受控模式点比例应回调 onParamsChange')
+  await act(async () => { ref.current!.openMore() })
+  await act(async () => { await new Promise((r) => setTimeout(r, 80)) })
+  must(!!q('[data-more="prefix"]') && doc.activeElement === (q('[data-more="prefix"]') as unknown), 'openMore 应打开更多并聚焦风格前缀')
+}
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

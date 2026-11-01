@@ -1,9 +1,10 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { ArrowRight, FileUp, Layers, Palette, Mic, RectangleVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
+import { notice } from '@/lib/notice'
 import { useMotionPresets } from '@/motion'
 import { parseChapters } from '../chapters'
 import { ART_STYLES, TTS_VOICES } from '../presets'
@@ -57,12 +58,22 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
   const prefixRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
-  useImperativeHandle(ref, () => ({
-    openMore: () => {
-      setMoreOpen(true)
-      setTimeout(() => prefixRef.current?.focus(), 80)
-    },
-  }), [])
+  const [styleOpen, setStyleOpen] = useState(false)
+  const [focusPrefix, setFocusPrefix] = useState(false)
+  const openMoreAndFocus = () => { setStyleOpen(false); setMoreOpen(true); setFocusPrefix(true) }
+  useImperativeHandle(ref, () => ({ openMore: openMoreAndFocus }))
+  // 「更多」浮层挂载后再聚焦风格前缀输入框（浮层内容在入口之后才渲染，等下一帧）
+  useEffect(() => {
+    if (!moreOpen || !focusPrefix) return
+    let n = 0
+    let raf = 0
+    const tryFocus = () => {
+      if (prefixRef.current) { prefixRef.current.focus(); setFocusPrefix(false); return }
+      if (n++ < 10) raf = requestAnimationFrame(tryFocus)
+    }
+    raf = requestAnimationFrame(tryFocus)
+    return () => cancelAnimationFrame(raf)
+  }, [moreOpen, focusPrefix])
 
   const chapters = useMemo(() => {
     if (!source.trim()) return []
@@ -86,7 +97,8 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
   }
 
   const readFile = (f: File) => {
-    void f.text().then(setSource)
+    if (!/\.txt$/i.test(f.name) && f.type !== 'text/plain') { notice.err(t('composer.onlyTxt')); return }
+    f.text().then(setSource, () => notice.err(t('composer.readFail')))
     setTitle((cur) => cur.trim() ? cur : f.name.replace(/\.[^.]+$/, ''))
   }
 
@@ -101,7 +113,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
       <form className="composer relative rounded-2xl border bg-card shadow-sm" data-drop={dropping ? 'on' : undefined}
             onSubmit={(e) => { e.preventDefault(); submit() }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit() }
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); submit() }
             }}
             onDragEnter={(e) => { if (hasFiles(e)) { e.preventDefault(); dragDepth.current++; setDropping(true) } }}
             onDragOver={(e) => { if (hasFiles(e)) e.preventDefault() }}
@@ -111,9 +123,10 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
               if (!dragDepth.current) setDropping(false)
             }}
             onDrop={(e) => {
-              e.preventDefault()
               dragDepth.current = 0
               setDropping(false)
+              if (!hasFiles(e)) return
+              e.preventDefault()
               const f = e.dataTransfer?.files?.[0]
               if (f) readFile(f)
             }}>
@@ -159,9 +172,10 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
             <ParamChip testId="chip-ratio" icon={<RectangleVertical />} label={t('composer.chipRatio')} value={params.aspect_ratio}>
               <RatioPicker value={params} onChange={setParams} />
             </ParamChip>
-            <ParamChip testId="chip-style" icon={<Palette />} label={t('composer.chipStyle')} value={styleLabel}>
+            <ParamChip testId="chip-style" icon={<Palette />} label={t('composer.chipStyle')} value={styleLabel}
+                       open={styleOpen} onOpenChange={setStyleOpen}>
               <StylePicker compact value={params} onChange={setParams}
-                           onCustom={() => { setMoreOpen(true); setTimeout(() => prefixRef.current?.focus(), 80) }} />
+                           onCustom={openMoreAndFocus} />
             </ParamChip>
             <ParamChip testId="chip-voice" icon={<Mic />} label={t('composer.chipVoice')} value={voiceLabel}>
               <VoicePicker value={params} onChange={setParams} />
