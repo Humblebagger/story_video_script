@@ -281,6 +281,7 @@ for (const f of I18N_FILES) {
 //  chapters.ts：解析「第X章」之类中文章节标题的正则，换成别的字就认不出中文章节了
 const ALLOW: Record<string, RegExp> = {
   'presets.ts': /^\s*P\('[^']*', 'presets\./,
+  'styleLook.ts': /^\s*prefix: P\('[^']*', 'presets\./,
   'chapters.ts': /^\s*re: \/\^/,
   // 制作参数默认值：逐字对齐后端 ConvertParams，会写进分镜、发给模型，不能译
   'components/ParamsForm.tsx': /^\s*(style_prefix|color_tone|target_platform): '/,
@@ -301,7 +302,7 @@ for (const f of I18N_FILES) {
   const styleDir = path.join(SRC, 'styles')
   const css = fs.readdirSync(styleDir).filter((f) => f.endsWith('.css')).map((f) => fs.readFileSync(path.join(styleDir, f), 'utf8'))
   const defined = new Set(css.flatMap((s) => [...s.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])))
-  const inline = new Set(['--mood'])
+  const inline = new Set(['--mood', '--pill'])
   const used = new Set(css.flatMap((s) => [...s.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1])))
   const bad = [...used].filter((v) => !defined.has(v) && !inline.has(v))
   must(!bad.length, `样式表用了未定义的变量：${bad.join('、')}`)

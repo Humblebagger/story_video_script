@@ -712,6 +712,10 @@ export const en: Messages = {
       cinematic: 'Cinematic realism', republic: 'Republic-era river town', wuxia: 'Period wuxia',
       urban: 'Modern city', xuanhuan: 'Eastern fantasy', anime: 'Anime youth',
     },
+    lookPrefix: {
+      cinematic: 'Cinematic grade', anime: 'Anime look', ink_wash: 'Ink wash look', chinese_comic: 'Chinese comic paint',
+      oil_painting: 'Classic oil', watercolor: 'Soft watercolor', render3d: '3D render', pixel_art: 'Retro pixel',
+    },
   },
   canvas: {
     lane: { episode: 'Episode', scene: 'Scene', shot: 'Shot', clip: 'Clips', frame: 'Frames', speech: 'Narration / dialogue', music: 'BGM' },

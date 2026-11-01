@@ -14,6 +14,7 @@
 @import "./admin.css" layer(components);
 @import "./novel.css" layer(components);
 @import "./shell.css" layer(components);
+@import "./shelf.css" layer(components);
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -177,5 +178,6 @@
   }
   @media (prefers-reduced-motion: reduce) {
     [data-tour-on] { animation: none; }
+    [data-slot="popover-content"] { --tw-enter-scale: 1; --tw-exit-scale: 1; }
   }
 }

@@ -1,0 +1,11 @@
+/* 书架与新建：状态标签 */
+.status-pill {
+  background: color-mix(in oklab, var(--pill) 12%, transparent);
+  color: color-mix(in oklab, var(--pill) 85%, var(--foreground));
+}
+.status-pill__dot { background: var(--pill); }
+.status-pill[data-tone="live"] .status-pill__dot { animation: status-pulse 1.6s ease-in-out infinite; }
+@keyframes status-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .status-pill[data-tone="live"] .status-pill__dot { animation: none; }
+}

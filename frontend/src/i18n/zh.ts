@@ -706,6 +706,10 @@ export const zh = {
       cinematic: '电影感写实', republic: '民国江南', wuxia: '古装武侠',
       urban: '现代都市', xuanhuan: '东方玄幻', anime: '日系青春',
     },
+    lookPrefix: {
+      cinematic: '电影级调色', anime: '日系动画', ink_wash: '中国水墨', chinese_comic: '国漫厚涂',
+      oil_painting: '古典油画', watercolor: '水彩淡彩', render3d: '三维渲染', pixel_art: '像素复古',
+    },
   },
   canvas: {
     lane: { episode: '集', scene: '场景', shot: '镜头', clip: '成片', frame: '画面', speech: '旁白/台词', music: 'BGM' },
