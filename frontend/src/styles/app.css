@@ -10,6 +10,7 @@
 @import "./views.css" layer(components);
 @import "./canvas.css" layer(components);
 @import "./film.css" layer(components);
+@import "./admin.css" layer(components);
 
 @custom-variant dark (&:where(.dark, .dark *));
 

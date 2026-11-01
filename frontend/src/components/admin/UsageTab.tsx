@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
+import { Download, Inbox, RefreshCw } from 'lucide-react'
+import { EmptyState } from '@/components/common/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { useI18n } from '@/i18n/core'
+import { notice } from '@/lib/notice'
 import { adminPricing, adminSavePricing, adminUsage, adminUsageCsv } from '../../api'
 import type { UsageGroupRow } from '../../types'
 import { errText, int, usd, usd4 } from './format'
+import { ErrorBar, Segmented, TableSkeleton } from './LoadState'
 import { useLoad } from './useLoad'
 
 type Group = 'user' | 'day' | 'model'
-const GROUPS: [Group, string][] = [['user', '按用户'], ['day', '按天'], ['model', '按模型']]
+const GROUPS: Group[] = ['user', 'day', 'model']
 const RANGES = [7, 30, 90]
 
 function download(name: string, text: string) {
@@ -24,68 +31,78 @@ const partUnpriced = (r: UsageGroupRow) => r.unpriced > 0 && !isUnpriced(r)
 
 /** 用量：分组汇总、每千字成本、导出 CSV；下面是价格表。 */
 export function UsageTab() {
+  const { t } = useI18n()
   const [group, setGroup] = useState<Group>('user')
   const [days, setDays] = useState(30)
   const { data, error, reload } = useLoad(() => adminUsage(group, days), [group, days])
-  const [csvErr, setCsvErr] = useState<string | null>(null)
 
   const exportCsv = async () => {
-    setCsvErr(null)
     try {
       download(`usage-${days}d.csv`, await adminUsageCsv(days))
     } catch (e) {
-      setCsvErr(errText(e))
+      notice.err(errText(e))
     }
   }
+  const th = (k: string, num = true) => (
+    <th className={num ? 'is-num' : undefined}>{t(`admin.usage.cols.${k}` as 'admin.usage.cols.calls')}</th>
+  )
 
   return (
     <section className="adm__sec">
       <div className="adm__bar">
-        <div className="adm__seg">
-          {GROUPS.map(([g, label]) => (
-            <button key={g} className={group === g ? 'is-on' : ''} onClick={() => setGroup(g)}>{label}</button>
-          ))}
-        </div>
-        <div className="adm__seg">
-          {RANGES.map((d) => (
-            <button key={d} className={days === d ? 'is-on' : ''} onClick={() => setDays(d)}>{d} 天</button>
-          ))}
-        </div>
-        <button className="btn btn--sm btn--ghost" onClick={() => void exportCsv()}>导出 CSV</button>
-        <button className="btn btn--sm btn--ghost" onClick={reload}>刷新</button>
-        {csvErr && <span className="adm__err">{csvErr}</span>}
+        <Segmented items={GROUPS.map((g) => [g, t(`admin.usage.groups.${g}`)] as [Group, string])}
+                   value={group} onChange={setGroup} />
+        <Segmented items={RANGES.map((d) => [d, t('admin.usage.days', { n: d })] as [number, string])}
+                   value={days} onChange={setDays} />
+        <Button size="sm" variant="outline" onClick={() => void exportCsv()}>
+          <Download aria-hidden />{t('admin.usage.exportCsv')}
+        </Button>
+        <Button size="sm" variant="outline" onClick={reload}>
+          <RefreshCw aria-hidden />{t('admin.usage.refresh')}
+        </Button>
       </div>
-      {error && <p className="adm__err">{error}</p>}
-      {!data && !error && <p className="adm__empty">加载中…</p>}
+      {error && <ErrorBar error={error} onRetry={reload} />}
+      {!data && !error && <TableSkeleton />}
       {data && (
         <>
           <p className="adm__kpi">
-            每千字成本：均值 {usd4(data.per_k_chars.mean)} · P90 {usd4(data.per_k_chars.p90)}
-            （{data.per_k_chars.n} 次成功转换）
+            {t('admin.usage.perK', {
+              mean: usd4(data.per_k_chars.mean), p90: usd4(data.per_k_chars.p90), n: data.per_k_chars.n,
+            })}
           </p>
           {data.unpriced_models.length > 0 && (
-            <p className="adm__warn">未定价模型：{data.unpriced_models.join('、')}（不计入金额）</p>
+            <p className="adm__warn">
+              {t('admin.usage.unpriced', { models: data.unpriced_models.join(t('common.listSep')) })}
+            </p>
           )}
-          <table className="adm__table">
-            <thead>
-              <tr>
-                <th>{GROUPS.find(([g]) => g === data.group)?.[1].slice(1) ?? '分组'}</th>
-                <th>调用</th><th>输入</th><th>输出</th><th>缓存读</th><th>缓存写</th>
-                <th>原文字数</th><th>金额</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((r) => (
-                <tr key={r.key}>
-                  <td>{r.label}</td><td>{int(r.calls)}</td><td>{int(r.input)}</td>
-                  <td>{int(r.output)}</td><td>{int(r.cache_read)}</td><td>{int(r.cache_write)}</td>
-                  <td>{int(r.chars)}</td>
-                  <td>{isUnpriced(r) ? '未定价' : usd(r.cost_usd)}{partUnpriced(r) ? `（另有 ${r.unpriced} 条未定价）` : ''}</td>
+          {data.rows.length === 0 ? (
+            <EmptyState icon={<Inbox aria-hidden />} title={t('admin.usage.empty')} />
+          ) : (
+            <table className="adm__table">
+              <thead>
+                <tr>
+                  <th>{t(`admin.usage.groupCol.${data.group}` as 'admin.usage.groupCol.user')}</th>
+                  {th('calls')}{th('input')}{th('output')}{th('cacheRead')}{th('cacheWrite')}
+                  {th('chars')}{th('cost')}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="adm__note">金额按当前价格表估算。</p>
+              </thead>
+              <tbody>
+                {data.rows.map((r) => (
+                  <tr key={r.key}>
+                    <td>{r.label}</td><td className="is-num">{int(r.calls)}</td><td className="is-num">{int(r.input)}</td>
+                    <td className="is-num">{int(r.output)}</td><td className="is-num">{int(r.cache_read)}</td>
+                    <td className="is-num">{int(r.cache_write)}</td>
+                    <td className="is-num">{int(r.chars)}</td>
+                    <td className="is-num">
+                      {isUnpriced(r) ? t('admin.usage.unpricedCell') : usd(r.cost_usd)}
+                      {partUnpriced(r) ? t('admin.usage.partUnpriced', { n: r.unpriced }) : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="adm__note">{t('admin.usage.note')}</p>
         </>
       )}
       <PricingEditor />
@@ -102,13 +119,14 @@ function hasBadPrice(table: unknown): boolean {
 }
 
 function PricingEditor() {
+  const { t } = useI18n()
   const [raw, setRaw] = useState('')
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null) // 跟输入框绑在一起的校验错误
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    adminPricing().then((t) => setRaw(JSON.stringify({ models: t.models }, null, 2)))
-      .catch((e: unknown) => setMsg(errText(e)))
+    adminPricing().then((p) => setRaw(JSON.stringify({ models: p.models }, null, 2)))
+      .catch((e: unknown) => notice.err(errText(e)))
   }, [])
 
   const save = async () => {
@@ -116,21 +134,21 @@ function PricingEditor() {
     try {
       parsed = JSON.parse(raw)
     } catch {
-      setMsg('不是合法的 JSON')
+      setMsg(t('admin.usage.badJson'))
       return
     }
     if (hasBadPrice(parsed)) {
-      setMsg('单价必须是不小于 0 的有限数字')
+      setMsg(t('admin.usage.badPrice'))
       return
     }
     setBusy(true)
     setMsg(null)
     try {
-      const t = await adminSavePricing(parsed)
-      setRaw(JSON.stringify({ models: t.models }, null, 2))
-      setMsg('已保存')
+      const p = await adminSavePricing(parsed)
+      setRaw(JSON.stringify({ models: p.models }, null, 2))
+      notice.ok(t('admin.usage.saved'))
     } catch (e) {
-      setMsg(errText(e))
+      notice.err(errText(e))
     } finally {
       setBusy(false)
     }
@@ -138,11 +156,12 @@ function PricingEditor() {
 
   return (
     <div className="adm__sec">
-      <h3 className="adm__h">价格表（美元 / 每百万 token）</h3>
-      <textarea className="adm__pricing" value={raw} onChange={(e) => setRaw(e.target.value)} />
+      <h3 className="text-base font-semibold">{t('admin.usage.pricingTitle')}</h3>
+      <Textarea className="adm__pricing min-h-[180px] font-mono text-[12.5px]" value={raw}
+                onChange={(e) => setRaw(e.target.value)} />
       <div className="adm__acts">
-        <button className="btn btn--sm" disabled={busy} onClick={() => void save()}>保存价格表</button>
-        {msg && <span className="adm__msg">{msg}</span>}
+        <Button size="sm" disabled={busy} onClick={() => void save()}>{t('admin.usage.savePricing')}</Button>
+        {msg && <span className="adm__err">{msg}</span>}
       </div>
     </div>
   )

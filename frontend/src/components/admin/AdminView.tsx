@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n/core'
+import { cn } from '@/lib/utils'
 import type { User } from '../../auth'
 import { AuditTab } from './AuditTab'
 import { JobsTab } from './JobsTab'
@@ -7,23 +11,33 @@ import { UsageTab } from './UsageTab'
 import { Users } from './Users'
 
 type Tab = 'overview' | 'users' | 'usage' | 'jobs' | 'audit'
-const TABS: [Tab, string][] = [
-  ['overview', '概览'], ['users', '用户'], ['usage', '用量'], ['jobs', '任务'], ['audit', '审计'],
-]
+const TABS: Tab[] = ['overview', 'users', 'usage', 'jobs', 'audit']
 
 /** 管理后台：只给管理员看（入口在右上角）；权限以后端为准。 */
 export function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('overview')
+  const { t } = useI18n()
   return (
     <div className="adm">
       <header className="adm__head">
-        <h2>管理后台</h2>
-        <button className="btn btn--sm btn--ghost" onClick={onBack}>返回</button>
+        <h2 className="text-base font-semibold">{t('admin.title')}</h2>
+        <Button size="sm" variant="ghost" onClick={onBack}><ArrowLeft aria-hidden />{t('admin.back')}</Button>
       </header>
-      <nav className="tabs">
-        {TABS.map(([id, name]) => (
-          <button key={id} className={`tabs__btn${tab === id ? ' is-on' : ''}`}
-                  onClick={() => setTab(id)}>{name}</button>
+      <nav className="inline-flex rounded-lg bg-muted p-1" aria-label={t('admin.tabsLabel')}>
+        {TABS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={tab === id}
+            className={cn(
+              'tabs__btn rounded-md border-0 px-3 py-1.5 text-sm text-muted-foreground',
+              'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
+              tab === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
+            )}
+            onClick={() => setTab(id)}
+          >
+            {t(`admin.tabs.${id}`)}
+          </button>
         ))}
       </nav>
       {tab === 'overview' && <Overview />}

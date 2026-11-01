@@ -23,6 +23,7 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 
 /* ---------- 桩后端 ---------- */
 const calls: string[] = []
+let slowMs = 0
 const daily = Array.from({ length: 30 }, (_, i) => ({
   day: `2026-10-${String(i + 1).padStart(2, '0')}`, cost_usd: i === 29 ? 4.5 : 0 }))
 const users = [
@@ -44,6 +45,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                                      text: async () => JSON.stringify(data) })
   const err = (status: number, detail: string) => ({
     ok: false, status, text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) })
+  if (path === '/admin/overview') await new Promise((r) => setTimeout(r, slowMs))
   if (path === '/admin/overview') return json({ users: 3, active_7d: 1, tokens_30d: 1234567,
     cost_30d: 13.5, running: 1, failed_7d: 2, daily, unpriced_models: ['mystery'] })
   if (path === '/admin/users') return json({ users })
@@ -105,6 +107,7 @@ const { JobsTab } = await import('../src/components/admin/JobsTab')
 const { AuditTab } = await import('../src/components/admin/AuditTab')
 const { AdminView } = await import('../src/components/admin/AdminView')
 const { notice } = await import('../src/lib/notice')
+const { I18nProvider } = await import('../src/i18n')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -221,7 +224,7 @@ must(calls.includes('GET /admin/usage?group=model&days=30') && text().includes('
 await click(button('7 天'))
 must(calls.includes('GET /admin/usage?group=model&days=7'), '切到 7 天')
 await click(button('保存价格表'))
-must(calls.some((c) => c.startsWith('PUT /admin/pricing')) && text().includes('已保存'), '价格表保存')
+must(calls.some((c) => c.startsWith('PUT /admin/pricing')) && lastNotice().kind === 'ok' && lastNotice().msg === '已保存', '价格表保存')
 const area = container.querySelector('textarea')!
 await act(async () => {
   const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
@@ -294,7 +297,30 @@ await click(button('返回'))
 must(back === 1, '返回回调')
 console.log('7. 页签框架 / 返回 ✓')
 
-// @@NEXT@@
+// 8. 加载骨架屏、30 天金额迷你折线
+slowMs = 80
+await act(async () => { root.unmount() })
+root = createRoot(container as unknown as HTMLElement)
+await act(async () => { root.render(<Overview />) })
+must(container.querySelectorAll('[data-slot="skeleton"]').length >= 6, '加载中应显示骨架屏')
+must(!text().includes('加载中'), '不再显示「加载中…」文字')
+slowMs = 0
+await settle(150)
+must(container.querySelectorAll('[data-slot="skeleton"]').length === 0, '加载完骨架屏消失')
+must(container.querySelectorAll('[data-testid="sparkline"] path').length >= 1, '30 天金额卡里有迷你折线')
+console.log('8. 骨架屏 / 迷你折线 ✓')
+
+// 9. 英文：页签文字
+await remount(<I18nProvider initial="en"><AdminView me={me} onBack={() => {}} /></I18nProvider>)
+const tabNames = [...container.querySelectorAll('.tabs__btn')].map((b) => b.textContent)
+must(tabNames.join(' ') === 'Overview Users Usage Jobs Audit', `英文页签，实为 ${tabNames.join(' ')}`)
+must(text().includes('Active (7d)') || text().includes('Users'), '英文概览')
+await act(async () => { root.unmount() })
+root = createRoot(container as unknown as HTMLElement)
+console.log('9. 英文页签 ✓')
+
+await remount(<AdminView me={me} onBack={() => {}} />)
+
 
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/core'
 import { usd } from './format'
 
 interface Props {
@@ -7,8 +8,8 @@ interface Props {
 }
 
 /** 手写 SVG 折线图：纵轴 0 到最大值，只标首尾日期与最大值。 */
-export function LineChart({ points, height = 140, label = '每日金额' }: Props) {
-  if (!points.length) return <p className="adm__empty">暂无数据</p>
+export function LineChart({ points, height = 140, label = tr('admin.chart.label') }: Props) {
+  if (!points.length) return <p className="adm__empty">{tr('admin.chart.empty')}</p>
   const W = 640
   const P = { l: 52, r: 12, t: 12, b: 24 }
   const max = Math.max(...points.map((p) => p.value), 0) || 1
