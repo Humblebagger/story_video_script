@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { onStepRequest, setWhere, takeStep } from '@/lib/assistantBridge'
 import { flashTarget } from '@/lib/flash'
 import { useBarFits } from '@/lib/useBarFits'
 import { useMedia } from '@/lib/useMedia'
@@ -131,6 +132,16 @@ export function ChapterWorkflow({
   // 跟步与完成提示：只在「该做的那一步」往后走时跟；进章节的第一次计算、换版本后的首次读取都不提示
   const seen = useRef<Seen | null>(null)
   const vid = version?.id ?? null
+  // 助手：发布当前位置；接收跳到某一步的请求（打开章节前发来的请求在挂载时取走）
+  useEffect(() => {
+    setWhere({ chapter_id: chapter.id, version_id: vid ?? undefined, step: view })
+  }, [chapter.id, vid, view])
+  useEffect(() => () => setWhere({}), [])
+  useEffect(() => {
+    const take = () => { const s = takeStep(chapter.id); if (s) setView(s) }
+    take()
+    return onStepRequest(take)
+  }, [chapter.id])
   const live = !!version && LIVE.includes(version.status)
   const shots = version?.shots ?? 0
   const genDone = stepDone('storyboard', input)

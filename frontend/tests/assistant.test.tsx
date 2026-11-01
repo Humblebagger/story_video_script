@@ -190,4 +190,46 @@ const enter = async (composing = false) => {
 }
 globalThis.fetch = realFetch
 
+// ---------- 页签与入口 ----------
+{
+  const { ActivityPanel } = await import('../src/components/shell/ActivityPanel')
+  const { AppShell } = await import('../src/components/shell/AppShell')
+  const tbox = doc.createElement('div')
+  doc.body.appendChild(tbox)
+  const q = (sel: string) => tbox.querySelector(sel) as HTMLElement | null
+  const tabs: string[] = []
+  const panel = (p: Record<string, unknown>) => h(I18nProvider, null, h(TooltipProvider, null,
+    h(ActivityPanel, { running: [], done: [], onOpen: () => {}, onClose: () => {}, ...p })))
+  const root = createRoot(tbox as unknown as HTMLElement)
+
+  await act(async () => { root.render(panel({ assistant: h('div', { 'data-testid': 'ast' }, '助手内容'), tab: 'activity', onTab: (x: string) => tabs.push(x) })) })
+  must(tbox.querySelectorAll('[role="tab"]').length === 2, '传了 assistant 有两个页签')
+  must(!q('.activity--wide') && !q('[data-testid="ast"]'), '动态页签不加宽、不渲染助手')
+  await act(async () => { q('[data-testid="activity-tab-assistant"]')!.click() })
+  must(tabs.join() === 'assistant', '点助手调 onTab')
+
+  await act(async () => { root.render(panel({ assistant: h('div', { 'data-testid': 'ast' }, '助手内容'), tab: 'assistant' })) })
+  must(!!q('aside.activity--wide'), '助手页签加宽')
+  must(!!q('[data-testid="ast"]') && !q('[data-testid="activity-empty"]') && !tbox.querySelector('.activity__title'), '渲染助手内容')
+  must(q('[data-testid="activity-tab-assistant"]')!.getAttribute('aria-selected') === 'true', '助手页签选中')
+
+  await act(async () => { root.render(panel({ tab: 'assistant' })) })
+  must(tbox.querySelectorAll('[role="tab"]').length === 1 && !q('.activity--wide'), '不传 assistant 只有动态页签')
+
+  let opened = 0
+  const shell = (on: boolean) => h(I18nProvider, null, h(AppShell, {
+    username: 'amy', isAdmin: false, adminOpen: false, onToggleAdmin: () => {}, onLogout: () => {}, onNewNovel: () => {},
+    onOpenLocal: () => {}, service: { down: false }, sidebar: null, viewKey: 'a',
+    onOpenAssistant: on ? () => { opened++ } : undefined,
+  }, null))
+  await act(async () => { root.render(shell(true)) })
+  must(!!q('[data-testid="assistant-open"]'), '有入口按钮')
+  await act(async () => { q('[data-testid="assistant-open"]')!.click() })
+  must(opened === 1, '点入口')
+  await act(async () => { root.render(shell(false)) })
+  must(!q('[data-testid="assistant-open"]'), '不传没有入口按钮')
+  await act(async () => { root.unmount() })
+  console.log('✓ 页签与入口')
+}
+
 console.log('assistant: ALL PASS')

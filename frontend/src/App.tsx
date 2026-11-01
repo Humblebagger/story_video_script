@@ -24,6 +24,8 @@ import { ShelfHome } from './components/ShelfHome'
 import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { ActivityPanel } from './components/shell/ActivityPanel'
+import { AssistantPanel } from './components/assistant/AssistantPanel'
+import { requestStep } from './lib/assistantBridge'
 import type { DoneJob } from './components/shell/ActivityPanel'
 import { ProjectNav } from './components/shell/ProjectNav'
 import { readLastChapter, writeLastChapter } from './lastChapter'
@@ -75,6 +77,7 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false)
   const [recentDone, setRecentDone] = useState<DoneJob[]>([])
   const [activityDot, setActivityDot] = useState(false)
+  const [activityTab, setActivityTab] = useState<'activity' | 'assistant'>('activity')
   const activityOpenRef = useRef(false)
   activityOpenRef.current = activityOpen
 
@@ -415,6 +418,7 @@ export default function App() {
     clearWork()
     setNovel(null)
     setChapter(null)
+    setActivityTab('activity')
   }
 
   const submitNovel = async (n: NewNovel) => {
@@ -608,7 +612,7 @@ export default function App() {
     setChapter(null)
     setNovels([])
     setRunning([])
-    setRecentDone([]); setActivityDot(false); setActivityOpen(false); setSection('overview')
+    setRecentDone([]); setActivityDot(false); setActivityOpen(false); setActivityTab('activity'); setSection('overview')
     prevRunning.current = new Set()
   }
   resetRef.current = resetSignedOut
@@ -720,10 +724,26 @@ export default function App() {
         costMeter={novel && !(adminOpen && user.role === 'admin')
           ? <CostMeter data={summary.data} chapterId={chapter?.id ?? null} /> : null}
         runningCount={running.length}
-        onToggleActivity={() => { setActivityOpen((v) => !v); setActivityDot(false) }}
+        onOpenAssistant={novel && !(adminOpen && user.role === 'admin')
+          ? () => { setActivityTab('assistant'); setActivityOpen(true) } : undefined}
+        onToggleActivity={() => {
+          setActivityDot(false)
+          if (!activityOpen) { setActivityTab('activity'); setActivityOpen(true) }
+          else if (activityTab === 'activity') setActivityOpen(false)
+          else setActivityTab('activity')
+        }}
         activityDot={activityDot && !activityOpen}
         activity={activityOpen ? (
           <ActivityPanel running={running} done={recentDone} onOpen={openJob}
+                         tab={activityTab} onTab={setActivityTab}
+                         assistant={novel ? (
+                           <AssistantPanel novelId={novel.id}
+                                           chapters={novel.chapters.map((c) => ({ id: c.id, title: c.title }))}
+                                           onGoto={(g) => {
+                                             if (g.chapter_id !== chapter?.id) void openChapter(g.chapter_id)
+                                             requestStep(g.chapter_id, g.step)
+                                           }} />
+                         ) : undefined}
                          onOpenDone={(d) => openFromToast.current(d)}
                          onClose={() => {
                            setActivityOpen(false)

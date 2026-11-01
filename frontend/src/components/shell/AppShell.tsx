@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Bell, FileJson, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Shield } from 'lucide-react'
+import { Bell, FileJson, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Shield, Sparkles } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
 import { LangToggle } from '@/components/common/LangToggle'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
@@ -39,6 +39,8 @@ export interface AppShellProps {
   /** 任务铃铛：在跑任务数（0 不显示徽标）与点击回调 */
   runningCount?: number
   onToggleActivity?: () => void
+  /** 助手入口（进了小说才传）；不传则不显示按钮 */
+  onOpenAssistant?: () => void
   /** 铃铛上的「有新完成」小圆点 */
   activityDot?: boolean
   /** 右侧动态面板（ActivityPanel）；null 为收起 */
@@ -160,6 +162,17 @@ export function AppShell(p: AppShellProps) {
           <div className="flex items-center justify-end gap-1">
             {p.costMeter}
             {p.service.down && <StatusPill tone="err">{t('shell.serviceDown')}</StatusPill>}
+            {p.onOpenAssistant && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label={t('assistant.open')}
+                          data-testid="assistant-open" onClick={p.onOpenAssistant}>
+                    <Sparkles className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('assistant.open')}</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative" aria-label={t('shell.activity')}
