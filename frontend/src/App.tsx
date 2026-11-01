@@ -24,6 +24,7 @@ import { ShelfHome } from './components/ShelfHome'
 import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { ProjectNav } from './components/shell/ProjectNav'
+import { readLastChapter, writeLastChapter } from './lastChapter'
 import type { Section } from './section'
 import { StoryboardView } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
@@ -339,6 +340,7 @@ export default function App() {
         novel?.id === nid ? Promise.resolve(novel) : getNovel(nid), getChapter(nid, cid)])
       setNovel(n)
       openChapterId.current = c.id
+      writeLastChapter(nid, c.id)
       setChapter(c)
       const live = vid ? undefined : jobId ?? running.find((j) => j.chapter_id === cid)?.id
       if (live) attach(live)
@@ -405,7 +407,7 @@ export default function App() {
     try {
       const created = await createNovel(n.title, n.params)
       const chapters = []
-      for (const c of n.chapters) chapters.push(await createChapter(created.id, c.title, c.text))
+      chapters.push(...await createChapters(created.id, n.chapters))
       await refreshNovels()
       setSection('overview')
       setNovel(await getNovel(created.id))
@@ -414,6 +416,28 @@ export default function App() {
       setAlert(t('app.err.createNovel', { msg: msg(e) }))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /** 逐章新建（顺序创建，章节编号按先后） */
+  const createChapters = async (nid: string, list: { title: string; text: string }[]) => {
+    const made = []
+    for (const c of list) made.push(await createChapter(nid, c.title, c.text))
+    return made
+  }
+
+  /** 导入整本：在当前小说里按已拆好的章节逐章新建，停留在「原文与章节」页 */
+  const importChapters = async (list: { title: string; text: string }[]) => {
+    if (!novel || !list.length) return
+    const nid = novel.id
+    try {
+      await createChapters(nid, list)
+      await refreshNovels()
+      setNovel(await getNovel(nid))
+      bumpSummary()
+      notice.ok(t('app.imported', { n: list.length }))
+    } catch (e) {
+      notice.err(t('app.err.createChapter', { msg: msg(e) }))
     }
   }
 
@@ -711,6 +735,10 @@ export default function App() {
                 onOpenChapter={(cid) => void openChapter(cid)}
                 section={section}
                 onNewChapter={() => void newChapter()}
+                summary={summary.data}
+                lastChapterId={readLastChapter(novel.id)}
+                onSection={(sec) => void gotoSection(sec)}
+                onImportChapters={(list) => void importChapters(list)}
               />
             )}
             {novel && chapter && (

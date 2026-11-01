@@ -92,3 +92,11 @@ export function paragraphs(text: string): string[] {
 export function joinParagraphs(list: string[]): string {
   return list.join('\n')
 }
+
+/** 把整本原文拆成各章；识别不出章节标记时整篇作为一章（标题用 fallbackTitle） */
+export function splitChapters(source: string, fallbackTitle: string): { title: string; text: string }[] {
+  if (!source.trim()) return []
+  const segs = parseChapters(source)
+  if (!segs.length) return [{ title: fallbackTitle, text: source.trim() }]
+  return segs.map((s) => ({ title: s.title, text: source.slice(s.start, s.end).trim() }))
+}

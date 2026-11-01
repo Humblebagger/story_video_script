@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
 import { notice } from '@/lib/notice'
 import { useMotionPresets } from '@/motion'
-import { parseChapters } from '../chapters'
+import { splitChapters } from '../chapters'
 import { ART_STYLES, TTS_VOICES } from '../presets'
 import type { NovelParams } from '../types'
 import { MoreParams } from './params/MoreParams'
@@ -82,11 +82,8 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
   }, [moreOpen, focusPrefix])
 
   const chapters = useMemo(() => {
-    if (!source.trim()) return []
-    const segs = parseChapters(source)
     // 识别不出章节标记：整篇作为第一章
-    if (!segs.length) return [{ title: t('composer.firstChapter'), text: source.trim() }]
-    return segs.map((s) => ({ title: s.title, text: source.slice(s.start, s.end).trim() }))
+    return splitChapters(source, t('composer.firstChapter'))
   }, [source, t])
 
   // 原文框随内容增高，最高 360px 之后滚动

@@ -273,5 +273,124 @@ const novels: NS[] = [
   console.log('5. ProjectNav ✓')
 }
 
+// 6. 概览页与原文与章节页
+{
+  const { NovelOverview } = await import('../src/components/NovelOverview')
+  const { mainCharacters } = await import('../src/mainCharacters')
+  const { ChaptersPage } = await import('../src/components/ChaptersPage')
+  type N = import('../src/types').Novel
+  const chs = Array.from({ length: 6 }, (_, i) => ch({
+    id: 'c' + (i + 1), title: ['第一章', '第二章', '第三章', '第四章', '第五章', '第六章'][i], order: i + 1,
+    versions: [ok], adopted_version: i < 4 ? 'v1' : null }))
+  const mk = (o: Partial<N['memory']['plot']> = {}, life: unknown[] = [], chars?: unknown[]): N => ({
+    id: 'n1', title: '药', created_at: '', updated_at: '',
+    params: { aspect_ratio: '9:16', art_style: 'realistic', narration_mode: 'selective', tts_voice: 'male_mature' },
+    memory: {
+      assets: { characters: chars ?? ['甲', '乙', '丙', '丁', '戊', '己', '庚'].map((n, i) => ({ id: 'C0' + (i + 1), name: n })),
+                locations: [{ id: 'S01', name: '屋' }], props: [{ id: 'P01', name: '药' }], creatures: [] },
+      numbering: { next_unit: 1, next_para: 1, next_episode: 1 },
+      lifecycle: life as never, plot: { outline: '', chapters: [], ...o }, constraints: [],
+    },
+    chapters: chs,
+  }) as unknown as N
+  const full = (stages: Record<string, Partial<ChapterSum>> = {}) => ({
+    cost: { llm_usd: 0.4, render_cny: 3.66, budget_cny: null }, unpriced: [],
+    chapters: chs.map((c) => sum({ id: c.id, shots: 10, ...(stages[c.id] ?? {}) })),
+  })
+  // c1,c2 下载；c3 版本检查没过（review）；c4..c6 还在出片
+  const mid = full({
+    c1: { final: 'fresh' }, c2: { final: 'fresh' }, c3: { final: 'none' },
+    c4: { film: { done: 0, total: 3, failed: 0, running: 0 }, final: 'none' },
+    c5: { film: { done: 0, total: 3, failed: 0, running: 0 }, final: 'none' },
+    c6: { film: { done: 0, total: 3, failed: 0, running: 0 }, final: 'none' },
+  })
+  const novelMid = mk()
+  novelMid.chapters = chs.map((c, i) => i === 2 ? { ...c, versions: [{ ...ok, status: 'draft_invalid' }] } as never : c)
+  const calls: string[] = []
+  const ovw = (novel: N, summary: unknown, o: Record<string, unknown> = {}) => wrap(h(NovelOverview, {
+    novel, summary, lastChapterId: null, onOpenChapter: (id: string) => calls.push('open:' + id),
+    onSection: (x: string) => calls.push('sec:' + x), onDeleted: () => calls.push('deleted'), ...o }))
+
+  await render(ovw(novelMid, mid))
+  must(q('[data-testid="ovw-title"]')!.textContent === '药', '标题')
+  must(q('[data-testid="ovw-meta"]')!.textContent === '9:16 · 写实 · 择要旁白 · 男声·沉稳', '参数小字：' + q('[data-testid="ovw-meta"]')!.textContent)
+  const stat = qa('[data-testid="stat"]').map((x) => x.textContent ?? '')
+  must(stat.length === 6, '6 张数字卡')
+  must(stat[0].includes('6') && stat[1].includes('4') && stat[2].includes('60') && stat[3].includes('9')
+       && stat[4].includes('2/6') && stat[5].includes('¥3.66 · $0.40'), '数字卡：' + stat.join('|'))
+  const cont = q('[data-testid="ovw-continue"]') as unknown as HTMLButtonElement
+  must(cont.textContent === '继续：第三章 · 检查修改', '继续：' + cont.textContent)
+  await click(cont)
+  must(calls.join() === 'open:c3', '点继续')
+  await render(ovw(novelMid, mid, { lastChapterId: 'c5' }))
+  must(q('[data-testid="ovw-continue"]')!.textContent === '继续：第五章 · 出片', '优先最近打开的章节')
+
+  await render(ovw(novelMid, null))
+  must(qa('[data-testid="stat"]')[5].textContent!.includes('—'), '没有汇总时花费显示「—」')
+
+  const allMid = full()
+  await render(ovw(mk(), allMid))
+  const done = q('[data-testid="ovw-continue"]') as unknown as HTMLButtonElement
+  must(done.textContent === '全部完成' && done.disabled, '全部完成且不能点')
+
+  must(!!q('[data-testid="ovw-outline"]')!.textContent!.includes('还没有主线剧情'), '无梗概')
+  calls.length = 0
+  await click(qa('[data-testid="ovw-outline"] button')[0])
+  must(calls.join() === 'sec:memory', '去填写')
+  await render(ovw(mk({ outline: '一\n\n二\n三\n四\n五' }), mid))
+  must(qa('[data-testid="outline-line"]').map((x) => x.textContent).join('') === '一二三四', '梗概只取前 4 行')
+
+  const syn = ['丙遇见丁', '丙', '乙', '丙'].map((x, i) => ({ chapter_id: 'c' + (i + 1), synopsis: x, origin: 'user' as const }))
+  const mains = mainCharacters(mk({ chapters: syn }))
+  must(mains.length === 5 && mains.map((c) => c.name).join('') === '丙乙丁甲戊', '主要人物按出场章数：' + mains.map((c) => c.name).join(''))
+  must(mainCharacters(mk()).map((c) => c.name).join('') === '甲乙丙丁戊', '没有摘要时按资产卡顺序')
+  await render(ovw(mk({ chapters: syn }), mid))
+  must(qa('[data-testid="main-char"]').length === 5 && qa('[data-testid="avatar"]')[0].textContent === '丙', '人物与首字头像')
+
+  await render(ovw(novelMid, mid))
+  const rows = qa('[data-testid="progress-row"]')
+  must(rows.length === 6, '每章一行')
+  const cells = (r: HTMLElement) => [...r.querySelectorAll('[data-testid="cell"]')].map((c) => c.getAttribute('data-state')).join()
+  must(cells(rows[0]) === 'done,done,done,done,done,done', '下载：全部完成')
+  must(cells(rows[2]) === 'done,done,current,todo,todo,todo', 'review：前两格完成、第三格当前')
+  must((rows[2].textContent ?? '').includes('检查修改') && (rows[0].textContent ?? '').includes('0:30'), '步骤名与时长')
+  calls.length = 0
+  await click(rows[1])
+  must(calls.join() === 'open:c2', '点一行')
+
+  must(!q('[data-testid="ovw-pending"]'), '没有待处理时不显示')
+  const withLife = mk({}, [{ id: 'l1', status: 'proposed' }, { id: 'l2', status: 'proposed' }, { id: 'l3', status: 'confirmed' }])
+  await render(ovw(withLife, full({ c1: { final: 'stale' } })))
+  const pend = q('[data-testid="ovw-pending"]')!.textContent ?? ''
+  must(pend.includes('2 条人物状态待确认') && pend.includes('去确认'), '待确认人物状态')
+  must(pend.includes('第一章的成片内容改过，需要重新合成') && pend.includes('去处理'), '成片过期')
+  calls.length = 0
+  await click(qa('[data-testid="ovw-pending"] button')[0])
+  await click(qa('[data-testid="ovw-pending"] button')[1])
+  must(calls.join() === 'sec:memory,open:c1', '待处理的去处理按钮：' + calls.join())
+
+  await open(q('button[aria-label="更多操作"]'))
+  must(qa('[role="menuitem"]').some((x) => (x.textContent ?? '').includes('删除小说')), '更多菜单里有「删除小说」')
+  await render(null)
+
+  // 原文与章节页
+  const cc: string[] = []
+  const imported: unknown[] = []
+  await render(wrap(h(ChaptersPage, {
+    novel: novelMid, summary: mid, onOpenChapter: (id: string) => cc.push('open:' + id), onNewChapter: () => cc.push('new'),
+    onImport: (l: unknown) => imported.push(l) })))
+  const trs = qa('[data-testid="chapter-row"]')
+  must(trs.length === 6, '章节表格 6 行')
+  must((trs[2].textContent ?? '').includes('第三章') && (trs[2].textContent ?? '').includes('100') && (trs[2].textContent ?? '').includes('检查修改'),
+       '行内含标题、字数、步骤')
+  await click(q('[data-testid="new-chapter"]'))
+  must(cc.join() === 'new', '点＋新章节')
+  must(q('[data-testid="import-txt"]')!.getAttribute('data-tour') === 'import', '导入按钮带 data-tour="import"')
+  await click(trs[1])
+  must(cc.join() === 'new,open:c2', '点行打开章节')
+  await render(null)
+  console.log('6. 概览页与原文与章节页 ✓')
+}
+
 win.happyDOM.abort?.()
 console.log('workspace: ALL PASS')

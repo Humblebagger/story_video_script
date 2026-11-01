@@ -5,6 +5,7 @@ import type { ComponentType, ReactNode } from 'react'
 import {
   BookText, LayoutDashboard, MapPin, Package, PawPrint, Plus, ScrollText, Search, Settings2, ShieldAlert, Users,
 } from 'lucide-react'
+import { fmtDuration } from '@/lib/fmt'
 import { StatusPill } from '@/components/common/StatusPill'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -24,12 +25,6 @@ const ORDER: Section[] = [
 ]
 /** 章节多于这个数才出现搜索框 */
 const SEARCH_FROM = 8
-
-function fmtDuration(s: number | null | undefined): string | null {
-  if (s == null || !(s > 0)) return null
-  const n = Math.round(s)
-  return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`
-}
 
 function Tip({ on, label, children }: { on: boolean; label: string; children: ReactNode }) {
   if (!on) return <>{children}</>

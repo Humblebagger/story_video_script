@@ -732,7 +732,7 @@ console.log('9b. 新版本 → 改采用 ✓')
 
 // 10. 小说页：章后整理的人物状态提议高亮待确认，确认后才进后续章节的转换
 await click(navItem('memory'))
-must(has('《药》') && !!container.querySelector('[data-testid="nav-badge"]'), '左栏「剧情与记忆」上要有待确认的提示点')
+must(!!container.querySelector('[data-testid="nav-badge"]'), '左栏「剧情与记忆」上要有待确认的提示点')
 must(has('他推门。') && has('模型提议'), '提议要附原文证据')
 await click([...container.querySelectorAll('.life__acts button')]
   .find((b) => b.textContent === '确认') as unknown as HTMLElement)
@@ -818,7 +818,7 @@ console.log('11c. 左栏章节卡片 → 步骤名 / 点卡片进章节 / 点导
   await settle()
   must((enBox.querySelector('.sechead h3')?.textContent ?? '') === 'Source & chapters', '英文分区标题')
   must((enBox.textContent ?? '').includes('+ New chapter') && !(enBox.textContent ?? '').includes('新章节'), '「新章节」按钮应是英文')
-  must(!!enBox.querySelector('button[aria-label="More actions"]'), '标题右侧应有「更多操作」菜单')
+  must(!!enBox.querySelector('[data-tour="import"]') && (enBox.textContent ?? '').includes('Import whole book'), '导入整本按钮是英文')
   setCurrentLocale('zh')
   await act(async () => { enRoot.unmount() })
   enBox.remove()
@@ -914,7 +914,7 @@ console.log('12b. 管理入口 → 管理员进出后台 / 401 后换普通用�
 await type(titleInput(), '鲍勃的新书', false)
 await click(container.querySelector('[data-testid="composer-submit"]') as unknown as HTMLElement)
 await settle(150)
-must(shelf('bob').length === 1 && has('《鲍勃的新书》'), '不导入原文也能建小说，建完打开小说页')
+must(shelf('bob').length === 1 && has('鲍勃的新书'), '不导入原文也能建小说，建完打开小说页')
 await click(navItem('characters'))
 const cardInput = container.querySelector('.lib__add input') as unknown as HTMLElement
 for (const name of ['赵老三', '钱掌柜']) {

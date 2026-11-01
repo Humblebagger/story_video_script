@@ -3,19 +3,16 @@
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useI18n } from '@/i18n/core'
+import { cny, costText, usd } from '@/lib/fmt'
 import type { CostSum, NovelSummaryData } from '@/types'
 
-const cny = (n: number) => `¥${n.toFixed(2)}`
-const usd = (n: number) => `$${n.toFixed(2)}`
 
 export function CostMeter({ data, chapterId }: { data: NovelSummaryData | null; chapterId?: string | null }) {
   const { t } = useI18n()
   const cost: CostSum | null = data
     ? (chapterId ? data.chapters.find((c) => c.id === chapterId)?.cost : null) ?? data.cost
     : null
-  const text = cost
-    ? [cost.render_cny != null ? cny(cost.render_cny) : null, usd(cost.llm_usd)].filter(Boolean).join(' · ')
-    : '—'
+  const text = costText(cost)
   const dash = '—'
   const rows: [string, string][] = cost ? [
     [t('shell.cost.llm'), usd(cost.llm_usd)],

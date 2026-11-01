@@ -1,11 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { MoreHorizontal, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,14 +11,16 @@ import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { notice } from '@/lib/notice'
 import {
-  addConstraint, addLifecycle, deleteConstraint, deleteLifecycle, deleteNovel, setOutline,
+  addConstraint, addLifecycle, deleteConstraint, deleteLifecycle, setOutline,
   setSynopsis, updateConstraint, updateLifecycle, updateNovel,
 } from '../api'
 import { LIFECYCLE_STATUS, LIFECYCLE_TYPE, label } from '../labels'
-import type { LifecycleType, Novel, NovelParams } from '../types'
+import type { LifecycleType, Novel, NovelParams, NovelSummaryData } from '../types'
 import type { AssetKind } from '../edit'
 import type { Section } from '../section'
+import { ChaptersPage } from './ChaptersPage'
 import { NovelAssets } from './NovelAssets'
+import { NovelOverview } from './NovelOverview'
 import { MoreParams } from './params/MoreParams'
 import { NarrationPick } from './params/NarrationPick'
 import { RatioPicker } from './params/RatioPicker'
@@ -38,16 +37,25 @@ interface Props {
   /** 左栏项目导航选中的分区：主区按它渲染 */
   section: Section
   onNewChapter: () => void
+  /** 以下四个由 App 传入；单独渲染（测试）时可省 */
+  summary?: NovelSummaryData | null
+  lastChapterId?: string | null
+  onSection?: (s: Section) => void
+  onImportChapters?: (chapters: { title: string; text: string }[]) => void
 }
 
 const ASSET_SECTIONS: Section[] = ['characters', 'locations', 'props', 'creatures']
 
+const noop = () => {}
+
 const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** 小说页 = 总会话：制作参数默认值 + 长期记忆（主线剧情、创作限制、资产库、人物生命周期） */
-export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, section, onNewChapter }: Props) {
+export function NovelPage({
+  novel, onChanged, onDeleted, onOpenChapter, section, onNewChapter,
+  summary, lastChapterId, onSection = noop, onImportChapters = noop,
+}: Props) {
   const { t } = useI18n()
-  const [ask, confirmUi] = useConfirm()
   const [addCard, setAddCard] = useState(0)
   const [busy, setBusy] = useState(false)
 
@@ -64,50 +72,23 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, section,
     }
   }
 
-  const remove = async () => {
-    if (!(await ask({ title: t('confirm.novel.title', { title: novel.title }), body: t('confirm.novel.body'),
-      action: t('confirm.delete'), danger: true }))) return
-    void deleteNovel(novel.id).then(onDeleted)
-      .catch((e) => notice.err(t('novel.failed', { what: t('novel.deleteNovel') }), err(e)))
-  }
-
   return (
     <section className="novel">
-      {confirmUi}
-      <header className="novel__head">
-        <h2>{t('common.bookTitle', { title: novel.title })}</h2>
-        <span className="novel__meta">
-          {t('novel.meta', {
-            n: novel.chapters.length, a: novel.chapters.filter((c) => c.adopted_version).length,
-            u: String(novel.memory.numbering.next_unit).padStart(4, '0'),
-            e: String(novel.memory.numbering.next_episode).padStart(2, '0'),
-          })}
-        </span>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t('novel.more')}>
-              <MoreHorizontal aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem variant="destructive" onSelect={() => { setTimeout(() => void remove(), 0) }}>
-              <Trash2 aria-hidden />{t('novel.deleteNovel')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </header>
       <div className="novel__body" data-section={section}>
-        <div className="sechead">
+        {section !== 'overview' && <div className="sechead">
           <h3>{t(`nav.${section}` as MsgKey)}</h3>
-          {section === 'chapters' && (
-            <Button size="sm" data-tour="import" onClick={onNewChapter}>{t('novel.newChapter')}</Button>
-          )}
           {ASSET_SECTIONS.includes(section) && (
             <Button size="sm" data-testid="new-card" onClick={() => setAddCard((n) => n + 1)}>{t('nav.newCard')}</Button>
           )}
-        </div>
-        {section === 'overview' && <p className="secplaceholder">{t('nav.overviewHint')}</p>}
-        {section === 'chapters' && <p className="secplaceholder">{t('nav.chaptersHint')}</p>}
+        </div>}
+        {section === 'overview' && (
+          <NovelOverview novel={novel} summary={summary ?? null} lastChapterId={lastChapterId}
+                         onOpenChapter={onOpenChapter} onSection={onSection} onDeleted={onDeleted} />
+        )}
+        {section === 'chapters' && (
+          <ChaptersPage novel={novel} summary={summary ?? null} onOpenChapter={onOpenChapter}
+                        onNewChapter={onNewChapter} onImport={onImportChapters} />
+        )}
         {section === 'settings' && <ParamsTab novel={novel} busy={busy} run={run} />}
         {section === 'constraints' && <ConstraintsTab novel={novel} busy={busy} run={run} />}
         {ASSET_SECTIONS.includes(section) && (
