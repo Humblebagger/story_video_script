@@ -49,12 +49,12 @@ export function NovelPage({ novel, onChanged, onDeleted, onOpenChapter, running,
   const [tab, setTab] = useState<Tab>(pending ? 'lifecycle' : 'chapters')
   const [busy, setBusy] = useState(false)
 
-  const run = async (what: string, fn: () => Promise<unknown>) => {
+  const run = async (what: string, done: string, fn: () => Promise<unknown>) => {
     setBusy(true)
     try {
       await fn()
       onChanged()
-      notice.ok(t('novel.done', { what }))
+      notice.ok(done)
     } catch (e) {
       notice.err(t('novel.failed', { what }), err(e))
     } finally {
@@ -204,7 +204,7 @@ function ChaptersTab({ novel, running, onOpenChapter, onNewChapter }: {
 export interface TabProps {
   novel: Novel
   busy: boolean
-  run: (what: string, fn: () => Promise<unknown>) => Promise<void>
+  run: (what: string, done: string, fn: () => Promise<unknown>) => Promise<void>
 }
 
 function ParamsTab({ novel, busy, run }: TabProps) {
@@ -228,7 +228,7 @@ function ParamsTab({ novel, busy, run }: TabProps) {
         <div className="form__foot">
           <span />
           <Button disabled={busy || !title.trim()}
-                  onClick={() => void run(t('novel.params.save'), () => updateNovel(novel.id, {
+                  onClick={() => void run(t('novel.params.save'), t('novel.ok.saved'), () => updateNovel(novel.id, {
                     ...(title.trim() !== novel.title ? { title: title.trim() } : {}), params }))}>
             {t('novel.params.save')}
           </Button>
@@ -254,7 +254,7 @@ export function PlotTab({ novel, busy, run }: TabProps) {
         </Label>
         <div>
           <Button size="sm" disabled={busy || outline === novel.memory.plot.outline}
-                  onClick={() => void run(t('novel.plot.saveOutline'), () => setOutline(novel.id, outline))}>
+                  onClick={() => void run(t('novel.plot.saveOutline'), t('novel.ok.saved'), () => setOutline(novel.id, outline))}>
             {t('novel.plot.saveOutline')}
           </Button>
         </div>
@@ -278,7 +278,7 @@ export function PlotTab({ novel, busy, run }: TabProps) {
                           onChange={(e) => setDrafts((d) => ({ ...d, [c.id]: e.target.value }))} />
                 {drafts[c.id] !== undefined && drafts[c.id] !== (s?.synopsis ?? '') && (
                   <Button size="sm" disabled={busy}
-                          onClick={() => void run(t('novel.plot.saveSynopsis'), async () => {
+                          onClick={() => void run(t('novel.plot.saveSynopsis'), t('novel.ok.saved'), async () => {
                             await setSynopsis(novel.id, c.id, drafts[c.id])
                             setDrafts(({ [c.id]: _, ...rest }) => rest)
                           })}>
@@ -301,7 +301,7 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
   const [neg, setNeg] = useState('')
   const [keywords, setKeywords] = useState('')
   const list = novel.memory.constraints
-  const add = () => run(t('novel.cons.whatAdd'), async () => {
+  const add = () => run(t('novel.cons.whatAdd'), t('novel.ok.consAdded'), async () => {
     await addConstraint(novel.id, {
       text: text.trim(), negative_prompt: neg.trim(),
       keywords: keywords.split(/[,，、\s]+/).filter(Boolean),
@@ -319,7 +319,7 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
           <li key={c.id} className={`cons__item${c.enabled ? '' : ' is-off'}`}>
             <label className="check">
               <input type="checkbox" checked={c.enabled} disabled={busy}
-                     onChange={(e) => void run(t('novel.cons.whatToggle'), () =>
+                     onChange={(e) => void run(t('novel.cons.whatToggle'), t('novel.ok.updated'), () =>
                        updateConstraint(novel.id, c.id, { enabled: e.target.checked }))} />
               <b>{c.text}</b>
             </label>
@@ -329,7 +329,7 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
                     title={t('novel.cons.delTip')} aria-label={t('novel.cons.delTip')}
                     onClick={async () => {
                       if (await ask({ title: t('confirm.constraint.title'), action: t('confirm.delete'), danger: true })) {
-                        void run(t('novel.cons.whatDelete'), () => deleteConstraint(novel.id, c.id))
+                        void run(t('novel.cons.whatDelete'), t('novel.ok.deleted'), () => deleteConstraint(novel.id, c.id))
                       }
                     }}>
               <Trash2 aria-hidden />
@@ -409,14 +409,14 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
             <div className="life__acts">
               {e.status !== 'confirmed' && (
                 <Button size="sm" disabled={busy}
-                        onClick={() => void run(t('novel.life.confirm'), () =>
+                        onClick={() => void run(t('novel.life.confirm'), t('novel.ok.confirmed'), () =>
                           updateLifecycle(novel.id, e.id, { status: 'confirmed' }))}>
                   {t('novel.life.confirm')}
                 </Button>
               )}
               {e.status !== 'rejected' && (
                 <Button size="sm" variant="outline" disabled={busy}
-                        onClick={() => void run(t('novel.life.reject'), () =>
+                        onClick={() => void run(t('novel.life.reject'), t('novel.ok.rejected'), () =>
                           updateLifecycle(novel.id, e.id, { status: 'rejected' }))}>
                   {t('novel.life.reject')}
                 </Button>
@@ -426,7 +426,7 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
                       aria-label={t('novel.life.delete')} title={t('novel.life.delete')}
                       onClick={async () => {
                         if (await ask({ title: t('confirm.record.title'), action: t('confirm.delete'), danger: true })) {
-                          void run(t('novel.life.delete'), () => deleteLifecycle(novel.id, e.id))
+                          void run(t('novel.life.delete'), t('novel.ok.deleted'), () => deleteLifecycle(novel.id, e.id))
                         }
                       }}>
                 <Trash2 aria-hidden />
@@ -464,7 +464,7 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
           <div className="form__foot">
             <span>{!chars.length && t('novel.life.noChars')}</span>
             <Button size="sm" disabled={busy || !who}
-                    onClick={() => void run(t('novel.life.whatAdd'), async () => {
+                    onClick={() => void run(t('novel.life.whatAdd'), t('novel.ok.recordAdded'), async () => {
                       await addLifecycle(novel.id, { character_id: who, type, detail,
                                                      chapter_id: since || null })
                       setDetail('')

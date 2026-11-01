@@ -59,11 +59,11 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
     setDirty((prev) => new Set(prev).add(`${kind}:${id}`))
   }
 
-  const run = async (what: string, fn: () => Promise<void>) => {
+  const run = async (what: string, done: string, fn: () => Promise<void>) => {
     setBusy(true)
     try {
       await fn()
-      notice.ok(t('novel.done', { what }))
+      notice.ok(done)
     } catch (e) {
       notice.err(t('novel.failed', { what }), e instanceof Error ? e.message : String(e))
     } finally {
@@ -71,7 +71,7 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
     }
   }
 
-  const save = () => run(t('assets.whatSave'), async () => {
+  const save = () => run(t('assets.whatSave'), t('novel.ok.saved'), async () => {
     for (const key of dirty) {
       const [kind, id] = key.split(':') as [AssetKind, string]
       const card = (assets[kind] ?? []).find((c) => c.id === id)
@@ -81,7 +81,7 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
     onSaved()
   })
 
-  const addCard = () => run(t('assets.whatAdd'), async () => {
+  const addCard = () => !newName.trim() ? Promise.resolve() : run(t('assets.whatAdd'), t('assets.okAdded'), async () => {
     const name = newName.trim()
     if (!name) return
     const card = { id: nextId(assets, newKind), name }
@@ -95,7 +95,7 @@ export function NovelAssets({ nid, assets: initial, onSaved }: Props) {
   const removeCard = async (kind: AssetKind, id: string) => {
     if (!(await ask({ title: t('confirm.asset.title', { id }), body: t('confirm.asset.body'),
       action: t('confirm.delete'), danger: true }))) return
-    void run(t('assets.whatDelete'), async () => {
+    void run(t('assets.whatDelete'), t('novel.ok.deleted'), async () => {
       await deleteMemoryCard(nid, kind, id)
       setAssets((prev) => ({ ...prev, [kind]: (prev[kind] ?? []).filter((c) => c.id !== id) }))
       setDirty((prev) => {

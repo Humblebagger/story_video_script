@@ -226,7 +226,7 @@ export const zh = {
     deleteNovel: '删除小说',
     tabsLabel: '小说页签',
     tabs: { params: '制作参数', plot: '主线剧情', constraints: '创作限制', assets: '资产库', lifecycle: '人物生命周期', lifecyclePending: '人物生命周期（{n} 待确认）' },
-    done: '{what}：完成',
+    ok: { saved: '已保存', deleted: '已删除', updated: '已更新', consAdded: '已新增限制', confirmed: '已确认', rejected: '已驳回', recordAdded: '已添加记录' },
     failed: '{what}失败',
     titleLabel: '小说标题',
     params: {
@@ -329,6 +329,7 @@ export const zh = {
     whatSave: '保存',
     whatAdd: '新建',
     whatDelete: '删除',
+    okAdded: '已新建',
   },
   job: {
     dismiss: '关闭任务面板',

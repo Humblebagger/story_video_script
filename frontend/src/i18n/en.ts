@@ -228,7 +228,7 @@ export const en: Messages = {
     deleteNovel: 'Delete novel',
     tabsLabel: 'Novel tabs',
     tabs: { params: 'Settings', plot: 'Plot', constraints: 'Constraints', assets: 'Assets', lifecycle: 'Character states', lifecyclePending: 'Character states ({n} to confirm)' },
-    done: '{what}: done',
+    ok: { saved: 'Saved', deleted: 'Deleted', updated: 'Updated', consAdded: 'Constraint added', confirmed: 'Confirmed', rejected: 'Rejected', recordAdded: 'Record added' },
     failed: '{what} failed',
     titleLabel: 'Novel title',
     params: {
@@ -265,9 +265,9 @@ export const en: Messages = {
       whatDelete: 'Delete constraint',
     },
     life: {
-      hintA: 'Irreversible changes to main characters (death, permanent injury or disability, permanent exit). After you adopt a chapter the model proposes them, each with a verbatim quote that the program has checked. ',
+      hintA: 'Irreversible changes to main characters: death, permanent injury or disability, permanent exit. After you adopt a chapter, the model proposes them, each with a verbatim quote that the program has checked. ',
       hintB: 'Once confirmed,',
-      hintC: ' an entry is injected into later chapters’ conversion, and you are asked to review whenever a deceased or departed character appears outside a flashback.',
+      hintC: ' an entry is applied to the conversion of later chapters, and you are asked to review whenever a deceased or departed character appears outside a flashback.',
       byModel: 'Proposed by model',
       byUser: 'Added manually',
       confirm: 'Confirm',
@@ -331,6 +331,7 @@ export const en: Messages = {
     whatSave: 'Save',
     whatAdd: 'Create',
     whatDelete: 'Delete',
+    okAdded: 'Card created',
   },
   job: {
     dismiss: 'Close job panel',

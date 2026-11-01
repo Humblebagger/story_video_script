@@ -41,7 +41,7 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
   const [part, setPart] = useState<'plot' | 'constraints'>('plot')
   const [busy, setBusy] = useState(false)
   const [alert, setAlert] = useState<string | null>(null)
-  const run = async (what: string, fn: () => Promise<unknown>) => {
+  const run = async (what: string, _done: string, fn: () => Promise<unknown>) => {
     setBusy(true)
     setAlert(null)
     try {
