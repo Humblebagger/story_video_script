@@ -143,6 +143,24 @@ must(has('0:00 / 12:42'), '时钟按可播时长给总长')
 must(has('E01-SH001') && !!container.querySelector('.tlc__shot.is-cur'), '播放头在首镜，浮层展开首镜详情')
 console.log(`1. 打开画布 → ${shots.length} 镜上轴 / ${lanes.length} 条泳道 / BGM 情绪段 ✓`)
 
+// 1b. 泳道比一屏高（happy-dom 里画布区高 0）：出竖滚动条，上下滚有底，最后一条停在底部工具条上方
+const tyOf = () => Number(/translate\(0, (-?[\d.]+)\)/.exec(
+  container.querySelector('.tlc__labels')!.getAttribute('transform') ?? '')?.[1])
+must(!!container.querySelector('.tlc__vscroll .tlc__vthumb'), '泳道放不下时应出竖滚动条')
+const shiftWheel = (dy: number) => act(async () => {
+  const ev = new win.WheelEvent('wheel', { deltaY: dy, bubbles: true })
+  Object.defineProperty(ev, 'shiftKey', { value: true }) // happy-dom 的 WheelEvent 不带修饰键
+  container.querySelector('.tlc__svg')!.dispatchEvent(ev as unknown as Event)
+})
+await shiftWheel(100000)
+const bottomTy = tyOf()
+must(Number.isFinite(bottomTy) && bottomTy < 0, `往下滚应有位移，实为 ${bottomTy}`)
+await shiftWheel(100000)
+must(tyOf() === bottomTy, '滚到底再滚不再动（不会把泳道滚没）')
+await shiftWheel(-100000)
+must(tyOf() === 0, '往上滚回到顶')
+console.log('1b. 竖滚动条、上下滚到底停住、能回到顶 ✓')
+
 // 2. 播放：播放头推进，经过的镜头与角色节点点亮
 const speed = [...container.querySelectorAll('.tlc__speed button')].find((b) => b.textContent === '2×')
 must(!!speed, '倍速分段控件里有 2×')

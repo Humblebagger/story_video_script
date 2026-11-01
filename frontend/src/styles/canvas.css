@@ -349,3 +349,15 @@
   .tlc__speed button, .tlc__shot .tlc__box, .tlc__thumb rect, .tlc__node circle,
   .tlc__unit, .tlc__prompt { transition: none; }
 }
+
+/* ---------- 竖滚动条：人物多、泳道比一屏高时出现，止于底部工具条上方 ---------- */
+
+.tlc__vscroll {
+  position: absolute; right: 2px; width: 10px; z-index: 2; cursor: pointer; touch-action: none;
+}
+.tlc__vthumb {
+  position: absolute; left: 2px; right: 2px; border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 22%, transparent);
+  transition: background-color 150ms ease-out;
+}
+.tlc__vscroll:hover .tlc__vthumb { background: color-mix(in oklab, var(--foreground) 38%, transparent); }

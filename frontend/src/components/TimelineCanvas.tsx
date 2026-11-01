@@ -46,6 +46,8 @@ const UNDO_MERGE_MS = 800
 
 const GUTTER = 132         // 左侧泳道名一栏：角色两行（名字 / ID），不再挤成一行截断
 const RULER = 30
+/** 底部悬浮工具条占的高度：泳道最多只能滚到它上面，不能被它盖住 */
+const BAR_SPACE = 72
 const ROW = { episode: 24, scene: 26, shot: 38, clip: 34, frame: 72, char: 44, speech: 30, music: 26 }
 const SPEEDS = [0.5, 1, 2]
 
@@ -212,7 +214,15 @@ export function TimelineCanvas({
   const [width, setWidth] = useState(1200)
   const [pps, setPps] = useState(24)              // 每秒多少像素（缩放）
   const [tx, setTx] = useState(0)                 // 水平平移（像素）
-  const [ty, setTy] = useState(0)                 // 垂直平移
+  const [ty, setTyRaw] = useState(0)              // 垂直平移
+  const [viewH, setViewH] = useState(800)
+  /** 泳道比一屏高（人物多）时最多往上滚到最后一条露在工具条上方 */
+  const minTy = Math.min(0, viewH - BAR_SPACE - height)
+  const clampTy = useCallback((v: number) => Math.max(minTy, Math.min(0, v)), [minTy])
+  const setTy = useCallback((f: number | ((v: number) => number)) =>
+    setTyRaw((v) => clampTy(typeof f === 'function' ? f(v) : f)), [clampTy])
+  // 窗口变高、泳道变少时把已滚的位置夹回范围内
+  useEffect(() => { setTyRaw((v) => clampTy(v)) }, [clampTy])
   const [t, setT] = useState(0)                   // 播放头（秒）
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -236,7 +246,7 @@ export function TimelineCanvas({
     setWidth(w)
     if (tl.total > 0) setPps(Math.max(0.3, (w - GUTTER - 32) / tl.total))
     setTx(0)
-    setTy(0)
+    setTyRaw(0) // 0 永远在范围内，不用夹
   }, [tl.total])
   useEffect(() => { fit() }, [fit])
   // 进出编辑态时右侧栏变宽变窄：没手动调过视图就重新铺满
@@ -246,7 +256,8 @@ export function TimelineCanvas({
   // 画布区宽度会随右侧栏变（编辑态更宽），只盯窗口 resize 不够
   useEffect(() => {
     const el = box.current
-    const onResize = () => setWidth(el?.clientWidth ?? 1200)
+    const onResize = () => { setWidth(el?.clientWidth ?? 1200); setViewH(el?.clientHeight ?? 800) }
+    onResize()
     if (el && typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(onResize)
       ro.observe(el)
@@ -360,7 +371,7 @@ export function TimelineCanvas({
   const onWheel = (e: React.WheelEvent) => {
     userView.current = true
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { setTx((v) => v - e.deltaX); return }
-    if (e.shiftKey) { setTy((v) => Math.min(0, v - e.deltaY)); return }
+    if (e.shiftKey) { setTy((v) => v - e.deltaY); return }
     // 以光标处的时刻为锚点缩放：光标下的那一秒不动
     const anchor = timeAt(e.clientX)
     const left = box.current?.getBoundingClientRect().left ?? 0
@@ -403,7 +414,7 @@ export function TimelineCanvas({
     }
     userView.current = true
     setTx(d.tx + e.clientX - d.x)
-    setTy(Math.min(0, d.ty + e.clientY - d.y))
+    setTy(d.ty + e.clientY - d.y)
   }
   const onPointerUp = () => {
     // 刻度上只点不拖：清掉选区
@@ -784,6 +795,37 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
         <line className="tlc__head" x1={playX} x2={playX} y1={0} y2="100%" />
         <circle className="tlc__headdot" cx={playX} cy={7} r={5} />
       </svg>
+
+      {/* 泳道比一屏高时右边出一条竖滚动条（也可 Shift+滚轮或拖空白处上下移） */}
+      {minTy < 0 && (() => {
+        const track = Math.max(1, viewH - BAR_SPACE - RULER)
+        const span = track - minTy
+        const thumb = Math.max(28, (track * track) / span)
+        const top = RULER + ((-ty) / -minTy) * (track - thumb)
+        return (
+          <div className="tlc__vscroll" style={{ top: RULER, height: track }}
+               onPointerDown={(e) => {
+                 e.stopPropagation()
+                 const el = e.currentTarget
+                 const startY = e.clientY
+                 const rect = el.getBoundingClientRect()
+                 const onThumb = e.clientY - rect.top >= top - RULER && e.clientY - rect.top <= top - RULER + thumb
+                 // 点在空槽上：先跳到那里，再接着拖
+                 const base = onThumb ? ty
+                   : clampTy(-((e.clientY - rect.top - thumb / 2) / (track - thumb)) * -minTy)
+                 if (!onThumb) setTy(base)
+                 userView.current = true
+                 el.setPointerCapture?.(e.pointerId)
+                 const move = (ev: PointerEvent) =>
+                   setTy(base - ((ev.clientY - startY) / Math.max(1, track - thumb)) * -minTy)
+                 const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up) }
+                 el.addEventListener('pointermove', move)
+                 el.addEventListener('pointerup', up)
+               }}>
+            <div className="tlc__vthumb" style={{ top: top - RULER, height: thumb }} />
+          </div>
+        )
+      })()}
 
       {/* 播放时的预览窗：当前镜的关键帧（没图给镜头描述占位）+ 此刻在念的旁白 / 台词字幕 */}
       {playing && animatic && cur && (
