@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
+import { useI18n } from '@/i18n/core'
 import { AUDIO_MODE, MOOD, label } from '../labels'
 import {
   BGM_ACCEPT, composeBlockers, composeLabel, curveText, finalEpisodes, finalText, noteText,
@@ -22,21 +23,22 @@ const yuan = (n: number) => `¥${n.toFixed(2)}`
 const locked = (c: Compose) => c.busy || !!c.confirm
 
 export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
+  const { t } = useI18n()
   const c = useCompose(film, dirty)
   const s = film.session!
   const p = c.preview
   if (!p) {
     return (
       <section className="compose">
-        <h4>配音与合成</h4>
+        <h4>{t('compose.panel.title')}</h4>
         {c.error
           ? (
             <>
               <p className="tlc__kferr">{c.error}</p>
-              <Button size="sm" variant="outline" className="self-start" onClick={() => void c.load()}>重试</Button>
+              <Button size="sm" variant="outline" className="self-start" onClick={() => void c.load()}>{t('common.retry')}</Button>
             </>
           )
-          : <p className="tlc__kfnote">读取合成预览…</p>}
+          : <p className="tlc__kfnote">{t('compose.panel.loading')}</p>}
       </section>
     )
   }
@@ -44,8 +46,8 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
   return (
     <section className="compose">
       <div className="compose__head">
-        <h4>配音与合成</h4>
-        <button className="tlc__linkbtn" onClick={() => void c.load()}>刷新合成</button>
+        <h4>{t('compose.panel.title')}</h4>
+        <button className="tlc__linkbtn" onClick={() => void c.load()}>{t('compose.panel.refresh')}</button>
       </div>
       {c.error && <p className="tlc__kferr">{c.error}</p>}
       <Voices c={c} />
@@ -53,12 +55,13 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
       <ComposeConfirm s={s} c={c} blockers={blockers} />
       <div className="compose__run">
         <p>
-          配音 {p.lines} 条{p.lines ? ` · 未缓存 ${p.tts_chars} 字 · 约 ${yuan(p.tts_cny)}` : ''}
-          {p.no_video.length ? ` · ${p.no_video.length} 段还没出片` : ''}
+          {t('compose.panel.lines', { n: p.lines })}
+          {p.lines ? t('compose.panel.uncached', { chars: p.tts_chars, cost: yuan(p.tts_cny) }) : ''}
+          {p.no_video.length ? t('compose.panel.noVideo', { n: p.no_video.length }) : ''}
         </p>
         <label className="check">
           <input type="checkbox" checked={c.draft} disabled={locked(c)} onChange={(e) => c.setDraft(e.target.checked)} />
-          没出好的段先用图片代替（用关键帧定格补位，没有关键帧用黑场）
+          {t('compose.panel.draft')}
         </label>
         {blockers.map((b) => <p key={b} className="tlc__notice">{b}</p>)}
         <Button size="sm" className="self-start" disabled={!!blockers.length || c.busy} onClick={c.start}>
@@ -72,30 +75,32 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
 
 /** 各说话人的音色：缺音色的展开并标红；选「按提示默认」恢复默认 */
 function Voices({ c }: { c: Compose }) {
+  const { t } = useI18n()
   const v = c.voices
-  if (!c.preview!.lines) return <p className="tlc__kfnote">这个声音模式下没有要配音的语音条。</p>
+  if (!c.preview!.lines) return <p className="tlc__kfnote">{t('compose.panel.noLines')}</p>
   if (!v) {
     return c.voicesError
-      ? <p className="tlc__kferr">读取音色表失败：{c.voicesError}（点「刷新合成」重试）</p>
-      : <p className="tlc__kfnote">读取音色表…</p>
+      ? <p className="tlc__kferr">{t('compose.panel.voicesFailed', { error: c.voicesError ?? '' })}</p>
+      : <p className="tlc__kfnote">{t('compose.panel.voicesLoading')}</p>
   }
   const name = (id: string | null) => v.voices.find((x) => x.id === id)?.name ?? id ?? ''
   return (
     <details className="compose__box" open={v.missing.length > 0}>
-      <summary>音色 · {v.provider}{v.missing.length ? ` · 缺 ${v.missing.length} 个` : ''}</summary>
+      <summary>{t('compose.panel.voicesSum', { provider: v.provider ?? '' })}{v.missing.length ? t('compose.panel.voicesMissing', { n: v.missing.length }) : ''}</summary>
       <table className="compose__table">
         <tbody>
           {v.speakers.map((sp) => (
             <tr key={sp.key} className={sp.voice ? '' : 'is-missing'}>
               <td>{sp.name}{sp.hint && <span className="film__dim">（{sp.hint}）</span>}</td>
               <td>
-                <select aria-label={`${sp.name} 的音色`} value={sp.chosen ?? ''} disabled={locked(c)}
+                <select aria-label={t('compose.panel.voiceAria', { name: sp.name })} value={sp.chosen ?? ''} disabled={locked(c)}
                         onChange={(e) => void c.setVoice(sp.key, e.target.value)}>
                   <option value="">
-                    {sp.chosen ? '按提示默认' : sp.voice ? `默认：${name(sp.voice)}` : '请选择音色'}
+                    {sp.chosen ? t('compose.panel.hintDefault')
+                      : sp.voice ? t('compose.panel.defaultVoice', { name: name(sp.voice) }) : t('compose.panel.pickVoice')}
                   </option>
                   {v.voices.map((x) => (
-                    <option key={x.id} value={x.id}>{x.name}（{x.gender === 'male' ? '男' : '女'}）</option>
+                    <option key={x.id} value={x.id}>{t('compose.panel.voiceOpt', { name: x.name, gender: t(x.gender === 'male' ? 'compose.panel.male' : 'compose.panel.female') })}</option>
                   ))}
                 </select>
               </td>
@@ -103,28 +108,29 @@ function Voices({ c }: { c: Compose }) {
           ))}
         </tbody>
       </table>
-      <p className="tlc__kfnote">音色只存在这次出片里，不改分镜。费率依据：{v.rate_note || '厂商未注明'}。</p>
+      <p className="tlc__kfnote">{t('compose.panel.voicesNote', { note: v.rate_note || t('money.rateUnknown') })}</p>
     </details>
   )
 }
 
 /** 每集 BGM：上传 / 换一段 / 删除；分镜的选曲参考 */
 function Music({ c }: { c: Compose }) {
+  const { t } = useI18n()
   const p = c.preview!
   const eps = Object.entries(p.music)
   return (
     <details className="compose__box">
-      <summary>BGM · 已上传 {p.bgm.length} / {eps.length} 集</summary>
+      <summary>{t('compose.panel.bgmSum', { n: p.bgm.length, total: eps.length })}</summary>
       {eps.map(([ep, m]) => {
         const has = p.bgm.includes(ep)
         return (
           <div key={ep} className="compose__ep">
             <div className="compose__eprow">
               <b>{ep}</b>
-              {has ? <span>已上传</span> : <span className="film__dim">没有 BGM</span>}
+              {has ? <span>{t('compose.panel.uploaded')}</span> : <span className="film__dim">{t('compose.panel.noBgm')}</span>}
               <label className="compose__upload">
-                {has ? '换一段' : '上传'}
-                <input type="file" hidden accept={BGM_ACCEPT} aria-label={`${ep} 的 BGM`} disabled={locked(c)}
+                {has ? t('compose.panel.replace') : t('compose.panel.upload')}
+                <input type="file" hidden accept={BGM_ACCEPT} aria-label={t('compose.panel.bgmAria', { ep })} disabled={locked(c)}
                        onChange={(e) => {
                          const f = e.target.files?.[0]
                          e.target.value = ''
@@ -132,7 +138,7 @@ function Music({ c }: { c: Compose }) {
                        }} />
               </label>
               {has && (
-                <button className="tlc__linkbtn" disabled={locked(c)} onClick={() => void c.removeBgm(ep)}>删除</button>
+                <button className="tlc__linkbtn" disabled={locked(c)} onClick={() => void c.removeBgm(ep)}>{t('compose.panel.remove')}</button>
               )}
             </div>
             {(m.mood || m.style_hint) && (
@@ -144,13 +150,15 @@ function Music({ c }: { c: Compose }) {
           </div>
         )
       })}
-      <p className="tlc__kfnote">每集一段（mp3 / wav / m4a / aac，≤ 30MB），合成时循环铺满，有人声时自动压低；选曲参考来自分镜。</p>
+      <p className="tlc__kfnote">{t('compose.panel.bgmNote')}</p>
     </details>
   )
 }
 
 /** 成片：状态、失败时的 ffmpeg 输出、各集播放与下载、合成报告 */
 function Final({ c }: { c: Compose }) {
+  const { t } = useI18n()
+  const sep = t('common.listSep')
   const f = c.preview!.final!
   const r = c.preview!.report
   const eps = finalEpisodes(f.files)
@@ -167,12 +175,12 @@ function Final({ c }: { c: Compose }) {
       <p className={tone}>{finalText(f)}</p>
       {f.state === 'failed' && f.detail && (
         <details>
-          <summary>ffmpeg 输出</summary>
+          <summary>{t('compose.panel.ffmpegOut')}</summary>
           <pre className="film__prompt">{f.detail}</pre>
         </details>
       )}
       {!!eps.length && f.state !== 'done' && (
-        <p className="film__dim">下面是上一次合成的成片{f.stale ? '（内容改过）' : ''}。</p>
+        <p className="film__dim">{t('compose.panel.lastCut', { stale: f.stale ? t('compose.panel.edited') : '' })}</p>
       )}
       {!!eps.length && (
         <table className="compose__table">
@@ -182,8 +190,8 @@ function Final({ c }: { c: Compose }) {
               return (
                 <tr key={e.episode}>
                   <td><b>{e.episode}</b></td>
-                  <td>{rep ? `${rep.seconds.toFixed(1)} 秒` : ''}</td>
-                  <td><button className="tlc__linkbtn" onClick={() => setOpen(e.episode)}>播放 / 下载</button></td>
+                  <td>{rep ? t('compose.panel.seconds', { v: rep.seconds.toFixed(1) }) : ''}</td>
+                  <td><button className="tlc__linkbtn" onClick={() => setOpen(e.episode)}>{t('compose.panel.playDl')}</button></td>
                 </tr>
               )
             })}
@@ -193,18 +201,18 @@ function Final({ c }: { c: Compose }) {
       {sel && <EpisodeFiles c={c} e={sel} />}
       {r && (
         <details className="compose__box">
-          <summary>合成报告</summary>
-          <p>{r.size} · {label(AUDIO_MODE, r.audio_mode)}{r.draft ? ' · 没出好的段用了图片代替' : ''}</p>
+          <summary>{t('compose.panel.report')}</summary>
+          <p>{r.size} · {label(AUDIO_MODE, r.audio_mode)}{r.draft ? t('compose.panel.draftUsed') : ''}</p>
           {r.warning && <p className="tlc__notice">{r.warning}</p>}
           <p className="film__dim">{r.alignment}</p>
           {r.episodes.map((x) => (
             <div key={x.episode} className="compose__ep">
               <b>{x.episode}</b>
-              {!!x.placeholders.length && <p>补位（关键帧或黑场）：{x.placeholders.join('、')}</p>}
-              {!!x.stale.length && <p>用的是内容改过的旧段：{x.stale.join('、')}</p>}
+              {!!x.placeholders.length && <p>{t('compose.panel.placeholders', { list: x.placeholders.join(sep) })}</p>}
+              {!!x.stale.length && <p>{t('compose.panel.staleSegs', { list: x.stale.join(sep) })}</p>}
               {x.notes.map((n, i) => <p key={i}>{noteText(n)}</p>)}
               {!x.placeholders.length && !x.stale.length && !x.notes.length && (
-                <p className="film__dim">声画都对得上，没有调整。</p>
+                <p className="film__dim">{t('compose.panel.aligned')}</p>
               )}
             </div>
           ))}
@@ -216,16 +224,17 @@ function Final({ c }: { c: Compose }) {
 
 /** 一集的成片播放与下载（文件取回成 blob 后才有链接） */
 function EpisodeFiles({ c, e }: { c: Compose; e: FinalEpisode }) {
+  const { t } = useI18n()
   const video = c.url(e.video)
   const srt = c.url(e.srt)
   return (
     <div className="compose__play">
       {e.video && (video
         ? <video className="film__video" src={video} controls />
-        : <p className="tlc__kfnote">读取成片…</p>)}
+        : <p className="tlc__kfnote">{t('compose.panel.readingFinal')}</p>)}
       <div className="tlc__kfacts">
-        {video && <a className="compose__dl" href={video} download={`${e.episode}.mp4`}>下载 {e.episode}.mp4</a>}
-        {srt && <a className="compose__dl compose__dl--ghost" href={srt} download={`${e.episode}.srt`}>下载字幕</a>}
+        {video && <a className="compose__dl" href={video} download={`${e.episode}.mp4`}>{t('compose.panel.dlMp4', { ep: e.episode })}</a>}
+        {srt && <a className="compose__dl compose__dl--ghost" href={srt} download={`${e.episode}.srt`}>{t('compose.panel.dlSrt')}</a>}
       </div>
     </div>
   )
@@ -233,17 +242,18 @@ function EpisodeFiles({ c, e }: { c: Compose; e: FinalEpisode }) {
 
 /** 配音花钱前的确认（全站统一的 MoneyConfirm）；一直挂着、靠 open 开合，关闭时才有退出动画 */
 function ComposeConfirm({ s, c, blockers }: { s: FilmSession; c: Compose; blockers: string[] }) {
+  const { t } = useI18n()
   // 关闭动画期间沿用最后一次的内容，免得标题、金额跳成占位值
   const last = useRef(c.confirm)
   if (c.confirm) last.current = c.confirm
   const cf = c.confirm ?? last.current
   return (
     <MoneyConfirm
-      open={!!c.confirm} title="合成整章" cny={cf?.cny ?? 0} spent={s.spent_cny} budget={s.budget_cny}
-      changed={cf?.changed} rateNote={c.voices?.rate_note} action="确认合成"
+      open={!!c.confirm} title={t('compose.panel.confirmTitle')} cny={cf?.cny ?? 0} spent={s.spent_cny} budget={s.budget_cny}
+      changed={cf?.changed} rateNote={c.voices?.rate_note} action={t('compose.panel.action')}
       blocked={blockers.length > 0} busy={c.busy} onConfirm={() => void c.confirmNow()} onCancel={c.cancelConfirm}>
       {blockers.map((b) => <p key={b} className="text-destructive">{b}</p>)}
-      <p>配音费用对应未缓存的 {c.preview?.tts_chars ?? 0} 字；合成本身不花钱。</p>
+      <p>{t('compose.panel.ttsNote', { n: c.preview?.tts_chars ?? 0 })}</p>
     </MoneyConfirm>
   )
 }

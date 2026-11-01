@@ -436,5 +436,34 @@ await settle()
 must(!container.querySelector('.tlc'), 'Esc 应关闭画布')
 console.log('7. Esc 关闭 ✓')
 
+// 8. 英文渲染：侧栏页签、工具条按钮的 aria-label / title 都是英文，快捷键说明也是英文
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { setCurrentLocale } = await import('../src/i18n/core')
+  await act(async () => {
+    root.render(
+      <I18nProvider initial="en">
+        <StoryboardView doc={doc} canSave dirty={false} saving={false}
+                        version={{ nid: 'n1', cid: 'c1', vid: 'v1' }} bench={bench}
+                        onChange={() => {}} onSave={() => {}} />
+      </I18nProvider>)
+  })
+  await click(button('Timeline canvas'))
+  const tabs = [...container.querySelectorAll('.tlc__tabs button')].map((b) => b.textContent).join(' | ')
+  must(tabs === 'Shot | Source | Assets | Render | Plot | Tasks', `英文侧栏页签：${tabs}`)
+  must(!!container.querySelector('button[aria-label="Previous shot"]') && !!container.querySelector('button[title="Next shot"]'),
+       '工具条按钮 aria-label / title 是英文')
+  must(!!container.querySelector('button[aria-label="Close canvas (Esc)"]'), '关闭按钮是英文')
+  must((container.querySelector('.tlc__help')?.getAttribute('title') ?? '').startsWith('Space = preview'), '快捷键说明是英文')
+  const lanesEn = [...container.querySelectorAll('.tlc__labels text')].map((t) => t.textContent)
+  must(lanesEn.includes('Episode') && lanesEn.includes('Shot'), `英文泳道名：${lanesEn.slice(0, 4)}`)
+  must(!/[一-鿿]/.test(container.querySelector('.tlc__bar')?.textContent ?? ''), '工具条无中文')
+  await act(async () => {
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }) as unknown as Event)
+  })
+  setCurrentLocale('zh')
+  console.log('8. 英文渲染 ✓')
+}
+
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

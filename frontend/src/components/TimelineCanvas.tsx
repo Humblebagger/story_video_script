@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CircleHelp, ImageOff, Maximize2, Pause, Play, Redo2, SkipBack, SkipForward, Undo2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n/core'
+import type { Ctx } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateAsset, updateShot } from '../edit'
@@ -55,23 +57,23 @@ export type PanelTab = 'shot' | 'source' | 'assets' | 'film' | 'novel' | 'tasks'
 
 interface Row { key: string; label: string; sub?: string; y: number; h: number }
 
-function layoutRows(tl: Timeline, withFrames: boolean, withClips: boolean): { rows: Row[]; height: number } {
+function layoutRows(tl: Timeline, withFrames: boolean, withClips: boolean, t: Ctx['t']): { rows: Row[]; height: number } {
   const rows: Row[] = []
   let y = RULER
   const push = (key: string, lbl: string, h: number, sub?: string) => {
     rows.push({ key, label: lbl, sub, y, h })
     y += h
   }
-  push('episode', '集', ROW.episode)
-  push('scene', '场景', ROW.scene)
-  push('shot', '镜头', ROW.shot)
+  push('episode', t('canvas.lane.episode'), ROW.episode)
+  push('scene', t('canvas.lane.scene'), ROW.scene)
+  push('shot', t('canvas.lane.shot'), ROW.shot)
   // 有出片会话才出这条泳道：每段一条横条，横跨所含镜头
-  if (withClips) push('clip', '成片', ROW.clip)
+  if (withClips) push('clip', t('canvas.lane.clip'), ROW.clip)
   // 有关键帧图才出这条泳道：图直接铺在画布上，不必盯着侧栏
-  if (withFrames) push('frame', '画面', ROW.frame)
+  if (withFrames) push('frame', t('canvas.lane.frame'), ROW.frame)
   for (const c of tl.characters) push(`c:${c.ref}`, c.name, ROW.char, c.ref)
-  push('speech', '旁白/台词', ROW.speech)
-  push('music', 'BGM', ROW.music)
+  push('speech', t('canvas.lane.speech'), ROW.speech)
+  push('music', t('canvas.lane.music'), ROW.music)
   return { rows, height: y + 12 }
 }
 
@@ -108,6 +110,7 @@ export function TimelineCanvas({
   doc, onClose, onJumpShot, bench = null, version = null,
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
 }: Props) {
+  const { t: tt } = useI18n()
   const kf = useKeyframes(doc, version)
   const idx = useMemo(() => buildIndex(doc), [doc])
   const editable = !!onChange
@@ -195,7 +198,7 @@ export function TimelineCanvas({
   const withFrames = Object.keys(kf.urls).length > 0
   const spans = useMemo(() => (film.session ? clipSpans(tl, film.session) : []), [tl, film.session])
   const withClips = spans.length > 0
-  const { rows, height } = useMemo(() => layoutRows(tl, withFrames, withClips), [tl, withFrames, withClips])
+  const { rows, height } = useMemo(() => layoutRows(tl, withFrames, withClips, tt), [tl, withFrames, withClips, tt])
   const { ensure } = film
   // 成片泳道的缩略图：各段采用那次的尾帧
   useEffect(() => {
@@ -482,65 +485,64 @@ export function TimelineCanvas({
           <span className="tlc__editbar">
             <Button variant={editing ? 'secondary' : 'ghost'} size="sm" aria-pressed={editing}
                     onClick={() => setEditing((v) => !v)}>
-              {editing ? '完成编辑' : '编辑'}
+              {editing ? tt('board.editDone') : tt('canvas.edit')}
             </Button>
             {(editing || past.current.length > 0 || future.current.length > 0) && (
               <>
-                <Button variant="ghost" size="sm" disabled={!past.current.length} title="撤销（⌘Z）"
-                        onClick={undo}><Undo2 aria-hidden />撤销</Button>
-                <Button variant="ghost" size="sm" disabled={!future.current.length} title="重做（⌘⇧Z）"
-                        onClick={redo}><Redo2 aria-hidden />重做</Button>
+                <Button variant="ghost" size="sm" disabled={!past.current.length} title={tt('canvas.undoTip')}
+                        onClick={undo}><Undo2 aria-hidden />{tt('canvas.undo')}</Button>
+                <Button variant="ghost" size="sm" disabled={!future.current.length} title={tt('canvas.redoTip')}
+                        onClick={redo}><Redo2 aria-hidden />{tt('canvas.redo')}</Button>
               </>
             )}
             {canSave && onSave && (
               <Button variant={dirty ? 'default' : 'ghost'} size="sm" disabled={!dirty || saving} onClick={onSave}>
-                {saving ? '保存中…' : dirty ? '保存修改' : '已保存'}
+                {saving ? tt('board.saving') : dirty ? tt('board.save') : tt('board.saved')}
               </Button>
             )}
           </span>
         )}
-        <Button variant="ghost" size="sm" className="tlc__play" title="从播放头播到片尾（空格只播选区或当前这一镜）"
+        <Button variant="ghost" size="sm" className="tlc__play" title={tt('canvas.playTip')}
                 onClick={playAll}>
-          {playing ? <><Pause aria-hidden />暂停</> : <><Play aria-hidden />播放</>}
+          {playing ? <><Pause aria-hidden />{tt('canvas.pause')}</> : <><Play aria-hidden />{tt('canvas.play')}</>}
         </Button>
-        <Button variant="ghost" size="icon-sm" title="上一镜" aria-label="上一镜" disabled={current <= 0}
+        <Button variant="ghost" size="icon-sm" title={tt('canvas.prev')} aria-label={tt('canvas.prev')} disabled={current <= 0}
                 onClick={() => seek(tl.shots[Math.max(0, current - 1)].start)}><SkipBack aria-hidden /></Button>
-        <Button variant="ghost" size="icon-sm" title="下一镜" aria-label="下一镜" disabled={current >= tl.shots.length - 1}
+        <Button variant="ghost" size="icon-sm" title={tt('canvas.next')} aria-label={tt('canvas.next')} disabled={current >= tl.shots.length - 1}
                 onClick={() => seek(tl.shots[Math.min(tl.shots.length - 1, current + 1)].start)}><SkipForward aria-hidden /></Button>
-        <span className="tlc__speed" role="group" aria-label="倍速">
+        <span className="tlc__speed" role="group" aria-label={tt('canvas.speed')}>
           {SPEEDS.map((s) => (
             <button key={s} type="button" aria-pressed={speed === s} className={speed === s ? 'is-on' : ''}
                     onClick={() => setSpeed(s)}>{s}×</button>
           ))}
         </span>
         <span className="tlc__clock">{fmtClock(t)} / {fmtClock(tl.total)}</span>
-        <Button variant="ghost" size="sm" title="整章铺满一屏" onClick={fit}><Maximize2 aria-hidden />适应</Button>
+        <Button variant="ghost" size="sm" title={tt('canvas.fitTip')} onClick={fit}><Maximize2 aria-hidden />{tt('canvas.fit')}</Button>
         <Button variant={animatic ? 'secondary' : 'ghost'} size="sm" aria-pressed={animatic}
-                title="静帧预演：按播放头显示当前镜头的关键帧图" onClick={() => setAnimatic((v) => !v)}>
-          预演
+                title={tt('canvas.animaticTip')} onClick={() => setAnimatic((v) => !v)}>
+          {tt('canvas.animatic')}
         </Button>
         {animatic && spans.some((sp) => chosenAttempt(sp.clip)) && (
           <Button variant={filmMode ? 'secondary' : 'ghost'} size="sm" aria-pressed={filmMode}
-                  title="预览窗播已出的成片（采用的那一次）；未出片的段显示关键帧"
+                  title={tt('canvas.filmModeTip')}
                   onClick={() => setFilmMode((v) => !v)}>
-            {filmMode ? '播成片' : '播关键帧'}
+            {filmMode ? tt('canvas.filmModeOn') : tt('canvas.filmModeOff')}
           </Button>
         )}
-        <span className="tlc__kfcount" title="已上传关键帧图的镜头数">
-          关键帧 {Object.keys(kf.urls).length}/{tl.shots.length}
+        <span className="tlc__kfcount" title={tt('canvas.kfCountTip')}>
+          {tt('canvas.kfCount', { n: Object.keys(kf.urls).length, total: tl.shots.length })}
         </span>
         {range && (
           <span className="tlc__range">
-            选区 {fmtClock(range.start)}–{fmtClock(range.end)}（{(range.end - range.start).toFixed(1)}s）
-            <button className="tlc__linkbtn tlc__rangeclear" title="清除选区（Esc）" aria-label="清除选区（Esc）"
+            {tt('canvas.range', { from: fmtClock(range.start), to: fmtClock(range.end), len: (range.end - range.start).toFixed(1) })}
+            <button className="tlc__linkbtn tlc__rangeclear" title={tt('canvas.rangeClear')} aria-label={tt('canvas.rangeClear')}
                     onClick={() => setRange(null)}><X size={12} aria-hidden /></button>
           </span>
         )}
-        <span className="tlc__help" role="img" aria-label="快捷键与操作说明" tabIndex={0} title={`空格 预览：播选区，没选区就播当前这一镜，播到段尾停 · ▶ 播放 从播放头播到片尾
-在时间刻度上拖 = 圈选区 · 拖播放头 = 拖着看 · Shift+点镜头 = 从当前镜圈到这一镜
-${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮⏭ 逐镜 · 拖动平移 · 滚轮缩放 · Shift+滚轮上下 · Esc 清选区 / 关闭${
-          editing ? '\n编辑：双击角色节点改动作 · 右侧改本镜全部呈现字段' : ''}`}><CircleHelp size={16} aria-hidden /></span>
-        <Button variant="ghost" size="icon-sm" className="tlc__close" title="关闭画布（Esc）" aria-label="关闭画布（Esc）"
+        <span className="tlc__help" role="img" aria-label={tt('canvas.helpLabel')} tabIndex={0}
+              title={[tt('canvas.help1'), tt('canvas.help2'), editable ? tt('canvas.help3') : '', tt('canvas.help4'),
+                editing ? tt('canvas.help5') : ''].filter(Boolean).join('\n')}><CircleHelp size={16} aria-hidden /></span>
+        <Button variant="ghost" size="icon-sm" className="tlc__close" title={tt('canvas.close')} aria-label={tt('canvas.close')}
                 onClick={onClose}><X aria-hidden /></Button>
       </div>
 
@@ -627,13 +629,13 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
                 {fitText(s.id.replace(/^E\d+-/, ''), s.playable * pps - 9, 10, Infinity)}
               </text>
               <title>{`${s.id} · ${label(SHOT_SIZE, s.shot.shot_size)} · ${s.playable.toFixed(1)}s${
-                s.playable > s.nominal + 0.05 ? `（标称 ${s.nominal}s，念完旁白台词需更久）` : ''}\n${s.shot.action}`}</title>
+                s.playable > s.nominal + 0.05 ? tt('canvas.shotOver', { nominal: s.nominal }) : ''}\n${s.shot.action}`}</title>
               {editable && (
                 <rect className="tlc__grip" data-shot={s.id} x={x(s.start + s.nominal) - 4} y={shotRow.y + 4}
                       width={8} height={ROW.shot - 8}
                       onPointerDown={(e) => startResize(e, s.id, s.start)}
                       onClick={(e) => e.stopPropagation()}>
-                  <title>{`拖动改时长（标称 ${s.nominal}s）`}</title>
+                  <title>{tt('canvas.gripTip', { nominal: s.nominal })}</title>
                 </rect>
               )}
               {resizing?.shotId === s.id && (
@@ -680,7 +682,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
               <image href={kf.urls[s.id]} x={x(s.start) + 2} y={rowOf.frame.y + 5}
                      width={Math.max(1, s.playable * pps - 4)} height={ROW.frame - 10}
                      preserveAspectRatio="xMidYMid meet" />
-              <title>{`${s.id} 关键帧`}</title>
+              <title>{tt('canvas.kfOf', { id: s.id })}</title>
             </g>
           ))}
 
@@ -727,9 +729,10 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
                        }}>
                       <circle cx={x(n.t)} cy={cy} r={on ? 6 : 4} />
                       {tag && <text x={tx} y={cy + 19} textAnchor="middle">{tag}</text>}
-                      <title>{`${c.name} · ${n.shotId}\n动作：${n.action}${n.fromShotAction ? '（镜头描述）' : ''}${
-                        n.expression ? `\n表情：${n.expression}` : ''}${n.position ? `\n位置：${n.position}` : ''}${
-                        n.outfit ? `\n服装：${n.outfit}` : ''}`}</title>
+                      <title>{`${c.name} · ${n.shotId}\n${tt('canvas.nodeAction', { v: n.action })}${n.fromShotAction ? tt('canvas.nodeFromShot') : ''}${
+                        n.expression ? `\n${tt('canvas.nodeExpression', { v: n.expression })}` : ''}${
+                        n.position ? `\n${tt('canvas.nodePosition', { v: n.position })}` : ''}${
+                        n.outfit ? `\n${tt('canvas.nodeOutfit', { v: n.outfit })}` : ''}`}</title>
                     </g>
                   )
                 })}
@@ -742,7 +745,8 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
             <rect key={i} className={`tlc__speech tlc__speech--${s.kind}${s.start <= t ? ' is-past' : ''}`}
                   x={x(s.start)} y={rowOf.speech.y + (s.kind === 'narration' ? 6 : 15)}
                   width={Math.max(1, (s.end - s.start) * pps - 1)} height={9} rx={2}>
-              <title>{`${s.kind === 'narration' ? '旁白' : `台词 · ${s.who ?? ''}`}：${s.text}`}</title>
+              <title>{s.kind === 'narration' ? tt('canvas.speechNarr', { text: s.text })
+                : tt('canvas.speechDlg', { who: s.who ?? '', text: s.text })}</title>
             </rect>
           ))}
 
@@ -833,15 +837,15 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           {curVideo && film.files[curVideo]
             ? <video ref={videoRef} src={film.files[curVideo]} muted={curSpan?.clip.mute_native} playsInline />
             : kf.urls[cur.id]
-              ? <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
+              ? <img src={kf.urls[cur.id]} alt={tt('canvas.kfOf', { id: cur.id })} />
               : (
                 <div className="tlc__pipph"><p>{cur.shot.action}</p></div>
               )}
-          {filmMode && !curVideo && <span className="tlc__pipnote">未出片</span>}
+          {filmMode && !curVideo && <span className="tlc__pipnote">{tt('canvas.notRendered')}</span>}
           <div className="tlc__subs">
             {speechAt(tl, t).map((sp, i) => (
               <p key={i} className={`tlc__sub tlc__sub--${sp.kind}`}>
-                {sp.kind === 'dialogue' && sp.who ? `${sp.who}：` : ''}{sp.text}
+                {sp.kind === 'dialogue' && sp.who ? tt('canvas.who', { who: sp.who }) : ''}{sp.text}
               </p>
             ))}
           </div>
@@ -851,7 +855,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
 
       {nodeEdit && (
         <input className="tlc__nodeedit" autoFocus value={nodeEdit.value}
-               placeholder="本镜动作（留空则用镜头描述）"
+               placeholder={tt('canvas.nodePh')}
                style={{ left: nodeEdit.left, top: nodeEdit.top }}
                onPointerDown={(e) => e.stopPropagation()}
                onChange={(e) => setNodeEdit({ ...nodeEdit, value: e.target.value })}
@@ -867,11 +871,12 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
       <aside className={`tlc__panel${shown !== 'shot' ? ' tlc__panel--wide'
                : editing ? ' tlc__panel--edit' : ''}`}
              onPointerDown={(e) => e.stopPropagation()}>
-        <nav className="tlc__tabs" aria-label="侧栏页签">
+        <nav className="tlc__tabs" aria-label={tt('canvas.tabsAria')}>
           <div className="flex w-full rounded-lg bg-muted p-1">
-            {([['shot', '本镜'], ['source', '原文'], ['assets', '资产'],
-               ...(film.enabled ? [['film', '出片']] : []),
-               ...(bench ? [['novel', '剧情'], ['tasks', bench.converting ? '任务 ●' : '任务']] : [])] as [PanelTab, string][])
+            {([['shot', tt('canvas.tabs.shot')], ['source', tt('canvas.tabs.source')], ['assets', tt('canvas.tabs.assets')],
+               ...(film.enabled ? [['film', tt('canvas.tabs.film')]] : []),
+               ...(bench ? [['novel', tt('canvas.tabs.novel')],
+                            ['tasks', bench.converting ? tt('canvas.tabs.tasksBusy') : tt('canvas.tabs.tasks')]] : [])] as [PanelTab, string][])
               .map(([id, name]) => (
                 <button key={id} type="button" aria-pressed={shown === id}
                         className={cn(
@@ -891,7 +896,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
                       onChange={(kind: AssetKind, id, patch) => commit(updateAsset(docRef.current, kind, id, patch))} />
         )}
         {shown === 'assets' && editable && !editing && (
-          <p className="tlc__kfnote">点底部「编辑」后可直接改资产卡，和镜头改动共用撤销与保存。</p>
+          <p className="tlc__kfnote">{tt('canvas.assetsNote')}</p>
         )}
         {shown === 'novel' && bench && <NovelPanel bench={bench} />}
         {shown === 'film' && film.enabled && (
@@ -904,12 +909,12 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
               ? (
                 // 按图自己的比例整张显示：传上来的图未必是成片画幅，裁成 9:16 会只剩中间一条
                 <figure className="tlc__frame">
-                  <img src={kf.urls[cur.id]} alt={`${cur.id} 关键帧`} />
+                  <img src={kf.urls[cur.id]} alt={tt('canvas.kfOf', { id: cur.id })} />
                   <figcaption>{cur.id} · {fmtClock(cur.start)}</figcaption>
                 </figure>
               )
               // 没图只占一条：画面里不塞文字，提示词在下面关键帧一节里看和改
-              : <div className="tlc__frame tlc__noframe"><ImageOff size={16} aria-hidden />{cur.id} · 还没有关键帧图</div>
+              : <div className="tlc__frame tlc__noframe"><ImageOff size={16} aria-hidden />{tt('canvas.noKf', { id: cur.id })}</div>
           )}
           {editing && (
             <ShotCard key={cur.id} shot={cur.shot} idx={idx} editing onPickUnit={onJumpUnit}
@@ -919,7 +924,7 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           <header>
             <b>{cur.id}</b>
             <span>{label(SHOT_SIZE, cur.shot.shot_size)} · {fmtClock(cur.start)}–{fmtClock(cur.end)}
-              {cur.playable > cur.nominal + 0.05 && `（标称 ${cur.nominal}s）`}</span>
+              {cur.playable > cur.nominal + 0.05 && tt('canvas.nominal', { nominal: cur.nominal })}</span>
           </header>
           <p className="tlc__action">{cur.shot.action}</p>
           {cur.shot.atmosphere && <p className="tlc__atmo">{cur.shot.atmosphere}</p>}
@@ -927,19 +932,19 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
             <ul className="tlc__chars">
               {cur.shot.characters.map((c) => (
                 <li key={c.ref}><b>{tl.characters.find((l) => l.ref === c.ref)?.name ?? c.ref}</b>
-                  {c.action && ` ${c.action}`}{c.expression && `（${c.expression}）`}</li>
+                  {c.action && ` ${c.action}`}{c.expression && tt('canvas.expr', { v: c.expression })}</li>
               ))}
             </ul>
           )}
           {cur.shot.dialogue?.map((d, i) => (
             <p key={i} className="tlc__line">
-              「{d.text}」<em>{tl.characters.find((l) => l.ref === d.character_ref)?.name ?? d.character_ref}</em>
+              {tt('canvas.quote', { text: d.text })}<em>{tl.characters.find((l) => l.ref === d.character_ref)?.name ?? d.character_ref}</em>
             </p>
           ))}
-          {cur.shot.narration?.text && <p className="tlc__narr">旁白：{cur.shot.narration.text}</p>}
+          {cur.shot.narration?.text && <p className="tlc__narr">{tt('canvas.speechNarr', { text: cur.shot.narration.text })}</p>}
           <div className="tlc__units">
             {(cur.shot.source?.unit_refs ?? []).map((u) => (
-              <button key={u} className="tlc__unit" onClick={() => onJumpUnit(u)} title="在侧栏「原文」页定位这一句">
+              <button key={u} className="tlc__unit" onClick={() => onJumpUnit(u)} title={tt('canvas.unitTip')}>
                 <code>{u}</code> {units[u] ?? ''}
               </button>
             ))}
@@ -947,30 +952,30 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
           </>}
           <section className="tlc__kf">
             <div className="tlc__kfhead">
-              <b>关键帧</b>
+              <b>{tt('canvas.kfHead')}</b>
               {kf.urls[cur.id]
-                ? <Badge variant="secondary" className="font-normal">已上传</Badge>
-                : <Badge variant="outline" className="border-dashed font-normal text-muted-foreground">未出图</Badge>}
+                ? <Badge variant="secondary" className="font-normal">{tt('canvas.kfUploaded')}</Badge>
+                : <Badge variant="outline" className="border-dashed font-normal text-muted-foreground">{tt('canvas.kfMissing')}</Badge>}
             </div>
             <div className="tlc__kfacts">
               <Button variant="outline" size="sm" disabled={!curPrompt}
                       onClick={() => void navigator.clipboard?.writeText(curPrompt!.prompt)}>
-                复制提示词
+                {tt('canvas.copyPrompt')}
               </Button>
               <Button variant="outline" size="sm" disabled={!Object.keys(kf.prompts).length}
-                      title="全部镜头的关键帧出图提示词（含手改），拿去任意出图工具批量生成"
-                      onClick={() => downloadText(`${doc.meta?.title ?? 'storyboard'}-关键帧提示词.md`,
+                      title={tt('canvas.downloadAllTip')}
+                      onClick={() => downloadText(tt('canvas.promptFile', { title: doc.meta?.title ?? 'storyboard' }),
                         promptSheet(doc.meta?.title ?? '', tl.shots.map((x) => kf.promptOf(x.id)!).filter(Boolean)))}>
-                下载全章提示词
+                {tt('canvas.downloadAll')}
               </Button>
               {kf.canUpload && (
                 <>
                   <Button size="sm" disabled={kf.busy === cur.id}
                           onClick={() => fileRef.current?.click()}>
-                    {kf.busy === cur.id ? '上传中…' : kf.urls[cur.id] ? '换图' : '上传图'}
+                    {kf.busy === cur.id ? tt('canvas.uploading') : kf.urls[cur.id] ? tt('canvas.replaceImg') : tt('canvas.uploadImg')}
                   </Button>
                   {kf.urls[cur.id] && (
-                    <Button variant="ghost" size="sm" onClick={() => void kf.remove(cur.id)}>删除</Button>
+                    <Button variant="ghost" size="sm" onClick={() => void kf.remove(cur.id)}>{tt('canvas.removeImg')}</Button>
                   )}
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
                          onChange={(e) => {
@@ -981,24 +986,24 @@ ${editable ? '拖镜头右缘改时长（取 0.5s）· ⌘Z 撤销\n' : ''}⏮�
                 </>
               )}
             </div>
-            {!kf.canUpload && <p className="tlc__kfnote">本地 JSON / 分批预览只有提示词；存进章节版本后才能上传关键帧图。</p>}
+            {!kf.canUpload && <p className="tlc__kfnote">{tt('canvas.localOnly')}</p>}
             {curPrompt && (
               <>
                 <textarea className="tlc__prompt" value={curPrompt.prompt} rows={8}
-                          aria-label="本镜关键帧出图提示词"
+                          aria-label={tt('canvas.promptAria')}
                           onChange={(e) => kf.editPrompt(cur.id, e.target.value)} />
                 <div className="tlc__promptmeta">
-                  {curPrompt.negative_prompt && <span>负面：{curPrompt.negative_prompt}</span>}
-                  {!!curPrompt.reference_assets.length && <span>垫图：{curPrompt.reference_assets.join('、')}</span>}
+                  {curPrompt.negative_prompt && <span>{tt('canvas.negative', { v: curPrompt.negative_prompt })}</span>}
+                  {!!curPrompt.reference_assets.length && <span>{tt('canvas.refImgs', { v: curPrompt.reference_assets.join(tt('common.listSep')) })}</span>}
                   {cur.id in kf.edited && (
-                    <button className="tlc__linkbtn" onClick={() => kf.editPrompt(cur.id, null)}>恢复生成的提示词</button>
+                    <button className="tlc__linkbtn" onClick={() => kf.editPrompt(cur.id, null)}>{tt('canvas.restore')}</button>
                   )}
                 </div>
               </>
             )}
             {kf.error && <p className="tlc__kferr">{kf.error}</p>}
           </section>
-          <Button variant="ghost" size="sm" className="self-start" onClick={() => onJumpShot(cur.id)}>在分镜页打开这一镜</Button>
+          <Button variant="ghost" size="sm" className="self-start" onClick={() => onJumpShot(cur.id)}>{tt('canvas.openShot')}</Button>
         </>}
       </aside>
     </div>

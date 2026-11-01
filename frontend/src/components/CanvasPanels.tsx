@@ -38,6 +38,7 @@ const ADOPTABLE = ['succeeded', 'completed_with_warnings']
 const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export function NovelPanel({ bench }: { bench: Workbench }) {
+  const { t } = useI18n()
   const [part, setPart] = useState<'plot' | 'constraints'>('plot')
   const [busy, setBusy] = useState(false)
   const [alert, setAlert] = useState<string | null>(null)
@@ -48,15 +49,15 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
       await fn()
       bench.onNovelChanged()
     } catch (e) {
-      setAlert(`${what}失败：${err(e)}`)
+      setAlert(t('canvas.panel.failedWith', { what, error: err(e) }))
     } finally {
       setBusy(false)
     }
   }
   return (
     <div className="tlc__novel">
-      <div className="tlc__seg2 inline-flex self-start rounded-lg bg-muted p-1" role="group" aria-label="剧情页内容">
-        {([['plot', '主线剧情'], ['constraints', '创作限制']] as const).map(([id, name]) => (
+      <div className="tlc__seg2 inline-flex self-start rounded-lg bg-muted p-1" role="group" aria-label={t('canvas.panel.segAria')}>
+        {([['plot', t('canvas.panel.plot')], ['constraints', t('canvas.panel.constraints')]] as const).map(([id, name]) => (
           <button key={id} type="button" aria-pressed={part === id}
                   className={cn(
                     'rounded-md border-0 px-3 py-1 text-sm text-muted-foreground',
@@ -70,7 +71,7 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
       {part === 'plot'
         ? <PlotTab novel={bench.novel} busy={busy} run={run} />
         : <ConstraintsTab novel={bench.novel} busy={busy} run={run} />}
-      <p className="tlc__kfnote">改的是整本小说的长期记忆，从下一次生成起生效；本版分镜不会自动变，要用新设定就去「任务」重新生成。</p>
+      <p className="tlc__kfnote">{t('canvas.panel.note')}</p>
     </div>
   )
 }
@@ -91,29 +92,29 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
       {confirmUi}
       {bench.notice && <p className="tlc__notice">{bench.notice}</p>}
       <section>
-        <h4>生成</h4>
+        <h4>{t('canvas.panel.generate')}</h4>
         {live ? (
           <div className="tlc__job">
             <b>{label(JOB_STATUS, live.status)}</b>
             {live.progress && <JobProgress progress={live.progress} />}
             {!!live.log.length && <code className="tlc__jobline">{live.log[live.log.length - 1]}</code>}
-            <p className="tlc__kfnote">画布不用关，跑完自动换成新版本；也可以关掉画布去做别的，侧栏能点回来。</p>
+            <p className="tlc__kfnote">{t('canvas.panel.liveNote')}</p>
           </div>
         ) : converting ? (
-          <p className="tlc__kfnote">本章有生成任务在后台跑，跑完会出现在下面的版本里。</p>
+          <p className="tlc__kfnote">{t('canvas.panel.bgNote')}</p>
         ) : (
           <>
             <label className="field">
-              <span>旁白模式（本次）</span>
+              <span>{t('flow.chapter.narration')}</span>
               <select value={mode} onChange={(e) => setMode(e.target.value as NarrationMode | '')}>
-                <option value="">沿用小说设置（{label(NARRATION_MODE,
-                  novel.params.narration_mode ?? 'selective')}）</option>
+                <option value="">{t('flow.chapter.narrationInherit', {
+                  mode: label(NARRATION_MODE, novel.params.narration_mode ?? 'selective') })}</option>
                 {Object.entries(NARRATION_MODE).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
               </select>
             </label>
-            <label className="check" title="软质量门（旁白密度/评审分）重试耗尽时直接失败，而非择优降级交付">
+            <label className="check" title={t('flow.chapter.strictHint')}>
               <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
-              严格模式
+              {t('flow.chapter.strict')}
             </label>
             <Button size="sm" className="self-start" disabled={bench.disabled || !chapter.text.trim()}
                     onClick={async () => {
@@ -121,21 +122,21 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
                         action: t('confirm.regen.action') }))) return
                       bench.onConvert({ ...(mode ? { narration_mode: mode } : {}), strict })
                     }}>
-              重新生成（新版本）
+              {t('canvas.panel.regen')}
             </Button>
-            <p className="tlc__kfnote">按本章原文 + 小说当前的长期记忆（剧情、限制、资产库）重跑一遍，结果存成新版本，旧版本不动。</p>
+            <p className="tlc__kfnote">{t('canvas.panel.regenNote')}</p>
           </>
         )}
       </section>
 
       <section>
-        <h4>版本</h4>
+        <h4>{t('flow.chapter.versions')}</h4>
         <div className="tlc__vers">
           {versions.map((v, i) => (
             <button key={v.id}
                     className={`vchip${v.id === versionId ? ' is-on' : ''}${
                       v.id === chapter.adopted_version ? ' is-adopted' : ''}`}
-                    title={`${label(JOB_STATUS, v.status)} · ${v.shots} 镜`}
+                    title={`${label(JOB_STATUS, v.status)} · ${t('flow.chapter.shots', { n: v.shots })}`}
                     disabled={v.id === versionId}
                     onClick={() => bench.onOpenVersion(v.id)}>
               v{i + 1}{v.id === chapter.adopted_version && ' ★'}
@@ -146,21 +147,21 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
         {current && current.id !== chapter.adopted_version && (
           <div className="tlc__kfacts">
             <Button size="sm" disabled={!ADOPTABLE.includes(current.status) || dirty}
-                    title={dirty ? '先保存修改再采用'
-                      : ADOPTABLE.includes(current.status) ? '把这一版写入小说的长期记忆'
-                        : '只有生成成功、且编辑后仍通过完整性检查的版本可以采用'}
+                    title={dirty ? t('canvas.panel.saveFirst')
+                      : ADOPTABLE.includes(current.status) ? t('flow.chapter.adoptHint')
+                        : t('canvas.panel.adoptBlocked')}
                     onClick={() => bench.onAdopt(current.id)}>
-              采用此版
+              {t('flow.chapter.adopt')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => bench.onDeleteVersion(current.id)}>
-              删除此版
+              {t('flow.chapter.removeVersion')}
             </Button>
           </div>
         )}
         {current && current.id === chapter.adopted_version && (
-          <p className="tlc__kfnote">★ 采用版：资产卡、编号接续、人物状态与剧情摘要都以它为准。</p>
+          <p className="tlc__kfnote">{t('canvas.panel.adoptedNote')}</p>
         )}
-        {chapter.digest?.status === 'running' && <p className="tlc__kfnote">章后整理进行中（人物状态提议与本章摘要）…</p>}
+        {chapter.digest?.status === 'running' && <p className="tlc__kfnote">{t('canvas.panel.digesting')}</p>}
       </section>
     </div>
   )

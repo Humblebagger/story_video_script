@@ -222,6 +222,7 @@ const I18N_FILES = [
   ...['NovelPage', 'NovelAssets', 'NewNovelForm', 'ParamsForm', 'CardPicker', 'SelectOrCustom', 'JobPanel', 'JobProgress', 'NovelSidebar']
     .map((f) => `components/${f}.tsx`),
   'App.tsx',
+  ...['TimelineCanvas', 'CanvasPanels', 'FilmPanel', 'ComposePanel'].map((f) => `components/${f}.tsx`),
   ...['StoryboardView', 'EpisodeView', 'ShotCard', 'AssetsView', 'SourceView', 'RenderView', 'VerificationPanel']
     .map((f) => `components/${f}.tsx`),
   ...fs.readdirSync(path.join(SRC, 'components/admin')).map((f) => `components/admin/${f}`),
