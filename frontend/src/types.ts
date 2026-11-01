@@ -829,3 +829,28 @@ export interface ComposePreview {
   music: Record<string, { mood?: Mood; style_hint?: string; curve?: MusicSegment[] }>
   report: MixReport | null
 }
+
+/* ---------- 小说汇总（GET /novels/{nid}/summary，backend/server/summary.py） ---------- */
+
+export interface CostSum {
+  llm_usd: number
+  render_cny: number | null
+  budget_cny: number | null
+}
+
+export interface ChapterSum {
+  id: string
+  version: string | null
+  shots: number | null
+  duration_s: number | null
+  film: { done: number; total: number; failed: number; running: number } | null
+  /** 后端目前不会给 stale（它无法判断），类型里留着备用 */
+  final: 'none' | 'busy' | 'fresh' | 'stale'
+  cost: CostSum | null
+}
+
+export interface NovelSummaryData {
+  cost: CostSum
+  unpriced: string[]
+  chapters: ChapterSum[]
+}

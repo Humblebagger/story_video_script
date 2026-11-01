@@ -7,7 +7,7 @@ import { tr } from './i18n/core'
 import { getToken, notifyUnauthorized } from './auth'
 import type { User } from './auth'
 import type {
-  Chapter, Constraint, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
+  Chapter, Constraint, NovelSummaryData, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
   FilmSession, FilmSettings, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
@@ -135,6 +135,10 @@ export function createNovel(title: string, params: Partial<NovelParams> = {}): P
 
 export function getNovel(nid: string): Promise<Novel> {
   return req(novelPath(nid))
+}
+
+export function getNovelSummary(nid: string): Promise<NovelSummaryData> {
+  return req(`${novelPath(nid)}/summary`)
 }
 
 export function updateNovel(nid: string,

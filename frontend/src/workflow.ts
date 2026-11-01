@@ -1,7 +1,7 @@
 /** 章节工作流的纯计算：六步的完成判断、「该做的那一步」、各步状态、各步主按钮（动作、金额、拦截原因与修复目标）。
  *  界面只吃这里的结果；单测见 tests/workflow.test.ts。原因与按钮文字是语言包的键，界面再翻译。 */
 import type { MsgKey } from './i18n/core'
-import type { ComposePreview, FilmSession, VersionSummary } from './types'
+import type { ChapterSum, ChapterSummary, ComposePreview, FilmSession, VersionSummary } from './types'
 
 export const STEPS = ['import', 'storyboard', 'review', 'render', 'compose', 'download'] as const
 export type StepId = (typeof STEPS)[number]
@@ -143,4 +143,19 @@ export function primaryFor(id: StepId, f: FlowInput): Primary {
     case 'download':
       return { action: 'none', label: 'flow.primary.next' }
   }
+}
+
+/** 章节「该做的那一步」，只凭列表摘要与汇总推算（章节页里的精确判断仍用 currentStep）。
+ *  版本选择与后端一致：采用版，否则最新一个可采用的版本（列表按时间倒序）；只剩改坏的草稿则归 ③。 */
+export function chapterStage(ch: ChapterSummary, sum: ChapterSum | undefined, converting: boolean): StepId {
+  if (ch.chars <= 0) return 'import'
+  if (converting) return 'storyboard'
+  const v = ch.versions.find((x) => x.id === ch.adopted_version)
+    ?? ch.versions.find((x) => OK.includes(x.status))
+    ?? ch.versions.find((x) => x.status === 'draft_invalid')
+  if (!v || !GENERATED.includes(v.status)) return 'storyboard'
+  if (v.status === 'draft_invalid' || v.verification_status === 'failed') return 'review'
+  const film = sum?.film
+  if (!film || film.total <= 0 || film.done < film.total) return 'render'
+  return sum.final === 'fresh' ? 'download' : 'compose'
 }
