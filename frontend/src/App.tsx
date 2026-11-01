@@ -23,6 +23,8 @@ import type { NewNovel } from './components/NewNovelComposer'
 import { ShelfHome } from './components/ShelfHome'
 import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
+import { ActivityPanel } from './components/shell/ActivityPanel'
+import type { DoneJob } from './components/shell/ActivityPanel'
 import { ProjectNav } from './components/shell/ProjectNav'
 import { readLastChapter, writeLastChapter } from './lastChapter'
 import type { Section } from './section'
@@ -67,8 +69,12 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   /** 小说层当前分区（左栏项目导航选中的那项） */
   const [section, setSection] = useState<Section>('overview')
-  /** 右侧动态面板开关（面板本身在后续任务里做；这里先接铃铛） */
-  const [, setActivityOpen] = useState(false)
+  /** 右侧动态面板开关；recentDone 为最近完成的任务（只在内存，最多 20 条）；activityDot 为面板关着时的新完成提示 */
+  const [activityOpen, setActivityOpen] = useState(false)
+  const [recentDone, setRecentDone] = useState<DoneJob[]>([])
+  const [activityDot, setActivityDot] = useState(false)
+  const activityOpenRef = useRef(false)
+  activityOpenRef.current = activityOpen
 
   const [doc, setDoc] = useState<Storyboard | null>(null)
   /** doc 属于哪个版本；本地打开的 JSON 与分批预览都没有 */
@@ -231,7 +237,13 @@ export default function App() {
       for (const id of prevRunning.current) {
         if (liveIds.has(id)) continue
         const done = jobs.find((x) => x.id === id)
-        if (done) { announce(done); finished = true }
+        if (done) {
+          announce(done); finished = true
+          const { id: did, status, work_title, chapter, novel_id, chapter_id } = done
+          setRecentDone((r) => [{ id: did, status, work_title, chapter, novel_id, chapter_id },
+            ...r.filter((x) => x.id !== did)].slice(0, 20))
+          if (!activityOpenRef.current) setActivityDot(true)
+        }
       }
       prevRunning.current = liveIds
       if (finished) {
@@ -687,7 +699,13 @@ export default function App() {
         costMeter={novel && !(adminOpen && user.role === 'admin')
           ? <CostMeter data={summary.data} chapterId={chapter?.id ?? null} /> : null}
         runningCount={running.length}
-        onToggleActivity={() => setActivityOpen((v) => !v)}
+        onToggleActivity={() => { setActivityOpen((v) => !v); setActivityDot(false) }}
+        activityDot={activityDot && !activityOpen}
+        activity={activityOpen ? (
+          <ActivityPanel running={running} done={recentDone} onOpen={openJob}
+                         onOpenDone={(d) => openFromToast.current(d)}
+                         onClose={() => setActivityOpen(false)} />
+        ) : null}
         service={{ down: svcDown, model: svc?.model, noKey: !!svc && !svc.api_key_configured }}
         viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
         sidebarHandlesCollapse={!!novel}

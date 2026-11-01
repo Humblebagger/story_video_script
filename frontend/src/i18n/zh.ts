@@ -92,6 +92,10 @@ export const zh = {
     open: '打开',
     col: { no: '编号', title: '标题', chars: '字数', versions: '版本', step: '步骤' },
   },
+  activity: {
+    tab: '任务', close: '关闭', running: '在跑', done: '最近完成', view: '查看',
+    empty: '没有在跑的任务', emptyHint: '开始转换或出片后，进度会出现在这里',
+  },
   shell: {
     newNovel: '新建小说',
     openLocal: '打开本地 JSON',
@@ -121,6 +125,7 @@ export const zh = {
       unset: '未设置',
     },
     activity: '任务动态',
+    activityNew: '有新完成的任务',
     account: '账号',
     model: '当前模型',
     service: '服务状态',

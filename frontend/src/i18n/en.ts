@@ -94,6 +94,10 @@ export const en: Messages = {
     open: 'Open',
     col: { no: 'No.', title: 'Title', chars: 'Chars', versions: 'Versions', step: 'Step' },
   },
+  activity: {
+    tab: 'Jobs', close: 'Close', running: 'Running', done: 'Recently finished', view: 'View',
+    empty: 'No running jobs', emptyHint: 'Progress shows up here once a conversion or render starts',
+  },
   shell: {
     newNovel: 'New novel',
     openLocal: 'Open local JSON',
@@ -123,6 +127,7 @@ export const en: Messages = {
       unset: 'Not set',
     },
     activity: 'Activity',
+    activityNew: 'Tasks finished',
     account: 'Account',
     model: 'Model',
     service: 'Service',

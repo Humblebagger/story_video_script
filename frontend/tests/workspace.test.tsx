@@ -392,5 +392,39 @@ const novels: NS[] = [
   console.log('6. 概览页与原文与章节页 ✓')
 }
 
+// ---------- 右侧动态面板 ----------
+{
+  const { ActivityPanel } = await import('../src/components/shell/ActivityPanel')
+  const rj = (id: string, o: object = {}) => ({ id, status: 'running', created_at: null, work_title: '雾港', chapter: '第' + id + '章',
+    chars: 100, log_lines: 3, last_log: '第 2 批校验中', novel_id: 'n1', chapter_id: 'c' + id,
+    progress: { batches: 4, batch: 2, total_chars: 100, done_chars: 40, attempt: 1, max_attempts: 3, phase: 'checking',
+                elapsed_sec: 30, eta_sec: 150 }, ...o })
+  const opened: string[] = []
+  let closed = 0
+  const dn = (id: string, status: string) => ({ id, status, work_title: '雾港', chapter: '第' + id + '章' })
+  const panel = (r: unknown[], d: unknown[]) => wrap(h(ActivityPanel, {
+    running: r, done: d, onOpen: (j: { id: string }) => opened.push(j.id), onClose: () => { closed += 1 } }))
+  await render(panel([rj('1'), rj('2', { progress: null })], [dn('3', 'succeeded'), dn('4', 'completed_with_warnings'), dn('5', 'failed')]))
+  const runs = qa('[data-testid="activity-running"]')
+  must(runs.length === 2, '在跑 2 项')
+  const r0 = runs[0].textContent ?? ''
+  must(r0.includes('雾港 · 第1章') && r0.includes('第 2 批校验中') && r0.includes('3 分'), '在跑项内容：' + r0)
+  must(!!runs[0].querySelector('[role="progressbar"]'), '进度条')
+  await click(runs[1].querySelector('button'))
+  must(opened.join() === '2', '查看')
+  const dones = qa('[data-testid="activity-done"]')
+  must(dones.length === 3, '完成 3 项')
+  must(dones.map((x) => x.querySelector('[data-slot="status-pill"]')!.getAttribute('data-tone')).join() === 'ok,warn,err', '状态语义色')
+  must(qa('[role="tab"]').length === 1, '只有一个页签')
+  await click(q('button[aria-label="关闭"]'))
+  must(closed === 1, '关闭按钮')
+  await act(async () => { q('[data-testid="activity-panel"]')!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event) })
+  must(closed === 2, 'Esc 关闭')
+  await render(panel([], []))
+  must((q('[data-testid="empty-state"]')?.textContent ?? '').includes('没有在跑的任务'), '空状态')
+  await render(null)
+  console.log('7. 动态面板 ✓')
+}
+
 win.happyDOM.abort?.()
 console.log('workspace: ALL PASS')

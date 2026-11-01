@@ -5,7 +5,7 @@
  *  窄屏（< 768px）默认收起。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Bell, FileJson, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Shield } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
 import { LangToggle } from '@/components/common/LangToggle'
@@ -39,6 +39,10 @@ export interface AppShellProps {
   /** 任务铃铛：在跑任务数（0 不显示徽标）与点击回调 */
   runningCount?: number
   onToggleActivity?: () => void
+  /** 铃铛上的「有新完成」小圆点 */
+  activityDot?: boolean
+  /** 右侧动态面板（ActivityPanel）；null 为收起 */
+  activity?: ReactNode
   /** 服务状态：down 为连不上；model 为当前模型；noKey 为没配密钥 */
   service: { down: boolean; model?: string; noKey?: boolean }
   /** 侧边栏中部（小说列表或项目导航） */
@@ -167,6 +171,10 @@ export function AppShell(p: AppShellProps) {
                       {p.runningCount}
                     </span>
                   )}
+                  {!!p.activityDot && (
+                    <span data-testid="activity-dot" aria-label={t('shell.activityNew')}
+                          className="absolute right-0.5 top-0.5 size-2 rounded-full bg-destructive" />
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('shell.activity')}</TooltipContent>
@@ -212,11 +220,14 @@ export function AppShell(p: AppShellProps) {
             </DropdownMenu>
           </div>
         </header>
-        <TopbarSlotContext.Provider value={slot}>
-          <motion.main key={p.viewKey} {...m.enter} className="min-w-0 flex-1 px-6 py-6">
-            {p.children}
-          </motion.main>
-        </TopbarSlotContext.Provider>
+        <div className="flex min-h-0 min-w-0 flex-1">
+          <TopbarSlotContext.Provider value={slot}>
+            <motion.main key={p.viewKey} {...m.enter} className="min-w-0 flex-1 px-6 py-6">
+              {p.children}
+            </motion.main>
+          </TopbarSlotContext.Provider>
+          <AnimatePresence>{p.activity}</AnimatePresence>
+        </div>
       </div>
     </div>
     </TooltipProvider>

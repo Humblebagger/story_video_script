@@ -99,3 +99,19 @@
 .chtable__row { border-bottom: 1px solid var(--border); cursor: pointer; transition: background-color 150ms ease-out; }
 .chtable__row:last-child { border-bottom: 0; }
 .chtable__row:hover { background: var(--ui-muted); }
+
+/* 右侧动态面板：宽屏挤压主区，窄屏盖在主区上方 */
+.activity { width: 320px; flex-shrink: 0; position: sticky; top: 56px; align-self: flex-start; height: calc(100vh - 56px);
+  display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); outline: none; }
+.activity__head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 0 12px; border-bottom: 1px solid var(--border); }
+.activity__tab { padding: 8px 4px; font-size: 14px; font-weight: 500; border-bottom: 2px solid var(--primary); margin-bottom: -1px; }
+.activity__body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 16px; }
+.activity__title { font-size: 12px; color: var(--ui-muted-foreground); margin-bottom: 8px; }
+.activity__item { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.activity__item--click { cursor: pointer; transition: background-color 150ms ease-out; }
+.activity__item--click:hover { background: var(--ui-muted); }
+.activity__log { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--ui-muted-foreground);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1099px) {
+  .activity { position: fixed; right: 0; top: 56px; z-index: 30; box-shadow: -8px 0 24px rgb(0 0 0 / 0.12); max-width: 100vw; }
+}
