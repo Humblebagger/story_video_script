@@ -142,6 +142,8 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   must(opts()[1].getAttribute('data-issue') === 'hard' && opts()[2].getAttribute('data-issue') === 'soft', '红黄点')
   must(!opts()[0].hasAttribute('data-issue'), '无问题不标')
 
+  must(q('[role="listbox"]')!.getAttribute('aria-activedescendant') === 'focus-opt-SH001', 'activedescendant 指向选中项')
+  must(qa('[role="listbox"] > [role="group"]').length === 2, '集是 group')
   await click(opts()[1])
   must(qa('.shot').length === 1 && q('.shot')!.id === 'shot-SH002', '中栏只有选中镜头')
   const src = q('[data-testid="focus-source"]')!.textContent!
@@ -178,6 +180,8 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   must(saved === 1, '保存')
   await view({ dirty: true, canSave: true, saving: true })
   must(prim().disabled, '保存中禁用')
+  await view({ dirty: true, canSave: false, saving: true })
+  must(!prim().disabled && prim().textContent === '在画布中查看', '非保存态不禁用')
   await view({})
 
   await click(opts()[1])

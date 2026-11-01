@@ -34,6 +34,8 @@ interface Props {
   onOpenCanvas: () => void
 }
 
+const optId = (id: string) => `focus-opt-${id}`
+const epId = (ep: string) => `focus-ep-${ep}`
 const hue = (shot: Shot) => `hsl(${SIZE_HUE[shot.shot_size] ?? 200} 55% 50% / .35)`
 
 export function ShotFocusView({
@@ -56,19 +58,21 @@ export function ShotFocusView({
 
   useEffect(() => {
     if (!focusShot) return
+    // n 是触发器：同一镜头也能反复定位
     setSel(focusShot.id)
     setEditingNarrow(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusShot?.n])
 
+  const showList = !narrow || !editingNarrow
+  const showEdit = !narrow || editingNarrow
   const cur = rows.find((r) => r.shot.id === sel) ?? rows[0]
   const curId = cur?.shot.id
 
   useEffect(() => {
     if (!curId) return
-    const el = listRef.current?.querySelector(`[data-shot="${CSS.escape(curId)}"]`) as HTMLElement | null
-    el?.scrollIntoView?.({ block: 'nearest' })
-  }, [curId])
+    document.getElementById(optId(curId))?.scrollIntoView?.({ block: 'nearest' })
+  }, [curId, showList])
 
   const shown = useMemo(() => filterShots(rows, query), [rows, query])
   const groups = useMemo(() => {
@@ -114,8 +118,6 @@ export function ShotFocusView({
   })
 
   const pick = (id: string) => { setSel(id); setEditingNarrow(true) }
-  const showList = !narrow || !editingNarrow
-  const showEdit = !narrow || editingNarrow
 
   const shot = cur?.shot
   const title = shot && [
@@ -138,21 +140,23 @@ export function ShotFocusView({
           <div
             ref={listRef} className="focus__scroll" role="listbox" tabIndex={0}
             aria-label={t('board.focus.listAria')} onKeyDown={onKey}
+            aria-activedescendant={curId && shown.some((r) => r.shot.id === curId) ? optId(curId) : undefined}
           >
             {groups.map((g) => {
               const closed = collapsed.has(g.ep)
-              return [
+              return (
+                <div key={g.ep} role="group" aria-labelledby={epId(g.ep)}>
                 <button
-                  key={'h' + g.ep} type="button" className="focus__ep" aria-expanded={!closed}
+                  type="button" className="focus__ep" aria-expanded={!closed}
                   onClick={() => toggle(g.ep)}
                 >
                   <ChevronDown size={14} className="focus__caret" aria-hidden />
-                  <span className="focus__ep-id">{g.ep}</span>
+                  <span id={epId(g.ep)} className="focus__ep-id">{g.ep}</span>
                   <span className="focus__ep-n">{t('board.focus.epCount', { n: g.rows.length })}</span>
-                </button>,
-                ...(closed ? [] : g.rows.map(({ shot: s }) => (
+                </button>
+                {closed ? null : g.rows.map(({ shot: s }) => (
                   <div
-                    key={s.id} role="option" tabIndex={-1} data-shot={s.id} aria-selected={s.id === curId}
+                    key={s.id} id={optId(s.id)} role="option" tabIndex={-1} data-shot={s.id} aria-selected={s.id === curId}
                     data-issue={issues.get(s.id)} className="focus__item" onClick={() => pick(s.id)}
                   >
                     {urls[s.id]
@@ -165,8 +169,9 @@ export function ShotFocusView({
                     <span className="focus__item-dur">{playableSeconds(s).toFixed(1)}s</span>
                     {issues.has(s.id) && <span className="focus__dot" data-issue={issues.get(s.id)} />}
                   </div>
-                ))),
-              ]
+                ))}
+                </div>
+              )
             })}
           </div>
         </div>
@@ -180,7 +185,7 @@ export function ShotFocusView({
                 {'← ' + t('board.focus.backToList')}
               </button>
             )}
-            <motion.div key={shot.id} {...m.enter} className="focus__main">
+            <motion.div key={shot.id} {...m.enter} className="focus__pane">
               <h3 className="focus__title">{title}</h3>
               <ShotCard
                 shot={shot} idx={idx} editing={!readOnly} onPickUnit={onPickUnit}
@@ -226,7 +231,7 @@ export function ShotFocusView({
               ) : <p className="focus__none">{t('board.focus.noSource')}</p>}
             </div>
             <button
-              type="button" className="focus__primary" data-testid="focus-primary" disabled={saving}
+              type="button" className="focus__primary" data-testid="focus-primary" disabled={saving && showSave}
               onClick={showSave ? onSave : onOpenCanvas}
             >
               {t(showSave ? 'board.focus.saveEdits' : 'board.focus.openCanvas')}

@@ -48,7 +48,7 @@
 .focus__dot[data-issue="hard"] { background: var(--destructive); }
 .focus__dot[data-issue="soft"] { background: var(--warning); }
 
-.focus__main { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.focus__main, .focus__pane { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .focus__title {
   margin: 0; font-size: 14px; font-weight: 500; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
