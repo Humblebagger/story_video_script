@@ -12,24 +12,38 @@ const GAP = 8
 const MARGIN = 16
 
 const targetOf = (id: TourId) => document.querySelector<HTMLElement>(`[data-tour="${id}"]`)
+const MODAL = '.tlc, [role="dialog"]:not([data-testid="tour-tip"]), [role="alertdialog"]'
 const visible = (el: HTMLElement | null) => {
   if (!el) return false
   const r = el.getBoundingClientRect()
-  return r.width > 0 && r.height > 0
+  if (!(r.width > 0 && r.height > 0)) return false
+  if (getComputedStyle(el).visibility === 'hidden') return false
+  // 被别的层盖住就不提示；测试环境没有 elementFromPoint 时跳过这一项
+  const hit = typeof document.elementFromPoint === 'function'
+    ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null
+  return !hit || el === hit || el.contains(hit)
 }
 
 export function Tour({ force }: { force?: boolean }) {
   const { t } = useI18n()
   const m = useMotionPresets()
   const [cur, setCur] = useState<TourId | null>(null)
+  /** cur 当前对应的 DOM 节点；React 换了节点就跟着换 */
+  const [node, setNode] = useState<HTMLElement | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const card = useRef<HTMLDivElement>(null)
   const on = !!force || tourEnabled()
 
+  const curRef = useRef<TourId | null>(null)
+  curRef.current = cur
   const find = useCallback(() => {
     const done = seen()
-    const next = TOUR.find((id) => !done.includes(id) && visible(targetOf(id))) ?? null
-    setCur((c) => (c && !done.includes(c) && visible(targetOf(c)) ? c : next))
+    const ok = (id: TourId) => !done.includes(id) && visible(targetOf(id))
+    const c = curRef.current
+    const open = !document.querySelector(MODAL)
+    const id = !open ? null : c && ok(c) ? c : TOUR.find(ok) ?? null
+    setCur(id)
+    setNode(id ? targetOf(id) : null)
   }, [])
 
   useEffect(() => {
@@ -42,14 +56,13 @@ export function Tour({ force }: { force?: boolean }) {
 
   // 高亮目标；换条或关掉时摘掉
   useEffect(() => {
-    const el = cur ? targetOf(cur) : null
-    el?.setAttribute('data-tour-on', '')
-    return () => el?.removeAttribute('data-tour-on')
-  }, [cur])
+    node?.setAttribute('data-tour-on', '')
+    return () => node?.removeAttribute('data-tour-on')
+  }, [node])
 
   // 定位：目标下方 8px，放不下放上方，水平夹在视口内
   useEffect(() => {
-    const el = cur ? targetOf(cur) : null
+    const el = node
     const c = card.current
     if (!el || !c) { setPos(null); return }
     const place = () => {
@@ -64,21 +77,23 @@ export function Tour({ force }: { force?: boolean }) {
     window.addEventListener('resize', place)
     window.addEventListener('scroll', place, true)
     return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
-  }, [cur])
+  }, [cur, node])
 
   const ok = useCallback(() => {
     if (!cur) return
     markSeen([cur])
     setCur(null)
+    setNode(null)
     setPos(null)
   }, [cur])
-  const skip = () => { markSeen(TOUR); setCur(null); setPos(null) }
+  const skip = () => { markSeen(TOUR); setCur(null); setNode(null); setPos(null) }
 
   useEffect(() => {
     if (!cur) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') ok() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    // 捕获阶段先收：这一下 Esc 只关提示，不再连带关掉画布或对话框
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); ok() } }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [cur, ok])
 
   if (!on || !cur) return null
