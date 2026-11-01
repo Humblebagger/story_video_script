@@ -372,6 +372,22 @@ export const en: Messages = {
     voicePh: 'Voice ID',
     custom: 'Custom…',
     customPh: 'Type your own',
+    styleCustom: 'Custom',
+    styleImageChange: 'Change image',
+    styleImageReset: 'Reset',
+    styleImageFail: 'Could not store the image; kept the original',
+    narrDetail: 'Narration detail',
+    narr: {
+      narrated: 'Narrated', narratedDesc: 'A narrator tells the story over the visuals',
+      acted: 'Acted', actedDesc: 'No narration; dialogue and visuals carry the plot',
+    },
+    voiceDesc: {
+      male_mature: 'Male, steady. Fits serious narration',
+      male_young: 'Male, young. Clear and lively',
+      female_mature: 'Female, steady. Warm and textured',
+      female_young: 'Female, young. Bright and agile',
+      neutral: 'Neutral. Plain and restrained',
+    },
   },
   assets: {
     hint: 'Asset cards from each adopted chapter are merged here. Every generation for this novel receives the whole library as the existing asset library, and the model must reuse its IDs and descriptions. You can also set up characters and locations first, then generate.',

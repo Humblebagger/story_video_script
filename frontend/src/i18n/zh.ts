@@ -370,6 +370,22 @@ export const zh = {
     voicePh: '音色标识',
     custom: '自定义…',
     customPh: '手动填写',
+    styleCustom: '自定义',
+    styleImageChange: '换图',
+    styleImageReset: '恢复默认',
+    styleImageFail: '图片存不下，已保持原样',
+    narrDetail: '旁白细项',
+    narr: {
+      narrated: '旁白解说', narratedDesc: '解说人念出旁白，画面配合讲述',
+      acted: '剧情演绎', actedDesc: '不加旁白，靠台词和画面推进剧情',
+    },
+    voiceDesc: {
+      male_mature: '男声 · 沉稳，适合正剧旁白',
+      male_young: '男声 · 青年，清朗有朝气',
+      female_mature: '女声 · 沉稳，温和有质感',
+      female_young: '女声 · 青年，清亮灵动',
+      neutral: '中性 · 平实克制，适合多数题材',
+    },
   },
   assets: {
     hint: '各章采用版的资产卡自动并进这里；转换本书任何一章都整份注入为【已有资产库】，模型须沿用其 ID 与描述。也可以先把人物场景设定好再去转换。',
