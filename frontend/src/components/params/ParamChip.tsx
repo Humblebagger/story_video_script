@@ -1,5 +1,6 @@
 /** 胶囊按钮 + 浮层外壳：图标、小字标签、粗体当前值；点开是 children */
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 interface Props {
@@ -11,9 +12,11 @@ interface Props {
   /** 受控打开（父组件要从外面打开浮层时用）；不传则自管 */
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  /** 透传给浮层内容（如 onCloseAutoFocus） */
+  contentProps?: Omit<ComponentProps<typeof PopoverContent>, 'children'>
 }
 
-export function ParamChip({ icon, label, value, children, testId, open, onOpenChange }: Props) {
+export function ParamChip({ icon, label, value, children, testId, open, onOpenChange, contentProps }: Props) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -24,7 +27,7 @@ export function ParamChip({ icon, label, value, children, testId, open, onOpenCh
           <span className="font-semibold">{value}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent>{children}</PopoverContent>
+      <PopoverContent {...contentProps} className={cn('w-auto min-w-72', contentProps?.className)}>{children}</PopoverContent>
     </Popover>
   )
 }

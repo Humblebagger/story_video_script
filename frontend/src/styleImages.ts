@@ -1,4 +1,4 @@
-/** 风格卡片的用户替换图：只存本机 localStorage，只作卡片显示，不上传、不进参数。 */
+/** 风格卡片的用户替换图：只存本机 localStorage（每个浏览器各一份，不跨设备），只作卡片显示，不上传、不进参数。 */
 import { useSyncExternalStore } from 'react'
 import { tr } from './i18n/core'
 import { notice } from './lib/notice'
@@ -56,6 +56,7 @@ async function shrink(file: Blob): Promise<string> {
     const ctx = canvas.getContext('2d')
     if (!ctx) return await raw(file)
     ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height)
+    bmp.close?.()
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85))
     return await (blob ? readDataUrl(blob) : raw(file))
   } catch {

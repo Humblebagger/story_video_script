@@ -47,12 +47,14 @@ export function ShelfHome({ novels, running, disabled, onSubmit, onOpenNovel }: 
         <section className="flex flex-col gap-3" data-testid="shelf-recent">
           <h2 className="text-sm font-semibold">{t('shelf.home.recent')}</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {novels.map((n, i) => (
+            {novels.map((n, i) => {
+              const when = ago(n.updated_at)
+              return (
               <motion.button key={n.id} type="button" data-testid="shelf-card" {...m.item(i)}
                              onClick={() => onOpenNovel(n.id)}
                              className="shelf-card flex flex-col overflow-hidden rounded-xl border bg-card text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
                 <span className="shelf-card__cover relative block h-24 w-full" style={{ background: swatchFor(n.id) }}>
-                  <span className="absolute bottom-2 left-3 z-10 text-[28px] font-semibold leading-none text-white">
+                  <span aria-hidden className="absolute bottom-2 left-3 z-10 text-[28px] font-semibold leading-none text-white">
                     {[...n.title][0] ?? ''}
                   </span>
                   {liveIds.has(n.id) && (
@@ -63,11 +65,12 @@ export function ShelfHome({ novels, running, disabled, onSubmit, onOpenNovel }: 
                   <span className="truncate text-sm font-medium">{n.title}</span>
                   <span className="text-xs text-muted-foreground">
                     {t('shelf.home.stats', { chapters: n.chapters, adopted: n.adopted })}
-                    {ago(n.updated_at) && ` · ${ago(n.updated_at)}`}
+                    {when && ` · ${when}`}
                   </span>
                 </span>
               </motion.button>
-            ))}
+              )
+            })}
             <motion.button type="button" data-testid="shelf-new" {...m.item(novels.length)}
                            onClick={() => composer.current?.focusTitle()}
                            className="shelf-card flex min-h-[140px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">

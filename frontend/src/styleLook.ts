@@ -30,8 +30,8 @@ export const STYLE_LOOKS: StyleLook[] = [
 ]
 
 export const lookOf = (artStyle: string) => STYLE_LOOKS.find((s) => s.id === artStyle)
-/** 用户手改过前缀吗：不是任何一种风格的默认前缀，就算手改过 */
-export const prefixTouched = (prefix: string) => !STYLE_LOOKS.some((s) => s.prefix.value === prefix)
+/** 用户手改过前缀吗：空白不算；不是任何一种风格的默认前缀，就算手改过 */
+export const prefixTouched = (prefix: string) => prefix.trim() !== '' && !STYLE_LOOKS.some((s) => s.prefix.value === prefix)
 /** 按 id 稳定地挑一套色块（最近小说的封面用） */
 export const swatchFor = (id: string) =>
   STYLE_LOOKS[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % STYLE_LOOKS.length].swatch

@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { NARRATION_MODE } from '../../labels'
-import { COLOR_TONES, STYLE_PREFIXES, TARGET_PLATFORMS } from '../../presets'
+import { ART_STYLES, COLOR_TONES, STYLE_PREFIXES, TARGET_PLATFORMS, TTS_VOICES } from '../../presets'
 import type { NarrationMode, NovelParams } from '../../types'
 import { Field } from '../ParamsForm'
 import { SelectOrCustom } from '../SelectOrCustom'
@@ -27,6 +27,14 @@ export function MoreParams({ value, onChange, prefixRef }: Props) {
       <Field label={t('params.platform')}>
         <SelectOrCustom value={value.target_platform} options={TARGET_PLATFORMS}
                         onChange={(v) => set('target_platform', v)} />
+      </Field>
+      <Field label={t('params.artStyle')}>
+        <SelectOrCustom value={value.art_style} options={ART_STYLES}
+                        onChange={(v) => set('art_style', v)} placeholder={t('params.artStylePh')} />
+      </Field>
+      <Field label={t('params.voice')}>
+        <SelectOrCustom value={value.tts_voice} options={TTS_VOICES}
+                        onChange={(v) => set('tts_voice', v)} placeholder={t('params.voicePh')} />
       </Field>
       <div className="flex flex-col gap-1.5 text-sm">
         <Field label={t('params.stylePrefix')}>

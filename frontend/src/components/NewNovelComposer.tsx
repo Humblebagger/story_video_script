@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { ArrowRight, FileUp, Layers, Palette, Mic, RectangleVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -47,6 +47,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
 ) {
   const { t } = useI18n()
   const m = useMotionPresets()
+  const hintId = useId()
   const [title, setTitle] = useState('')
   const [own, setOwn] = useState<NovelParams>(DEFAULT_PARAMS)
   const params = paramsProp ?? own
@@ -63,6 +64,8 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
 
   const [styleOpen, setStyleOpen] = useState(false)
   const [focusPrefix, setFocusPrefix] = useState(false)
+  // 风格浮层里点「自定义」要交棒给「更多」：此时别让风格浮层关闭时把焦点还给触发按钮（否则「更多」被当成失焦关掉）
+  const handoff = useRef(false)
   const openMoreAndFocus = () => { setStyleOpen(false); setMoreOpen(true); setFocusPrefix(true) }
   useImperativeHandle(ref, () => ({ openMore: openMoreAndFocus, focusTitle: () => titleRef.current?.focus() }))
   // 「更多」浮层挂载后再聚焦风格前缀输入框（浮层内容在入口之后才渲染，等下一帧）
@@ -155,7 +158,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
               <span className="text-muted-foreground">{t('composer.found', { n: chapters.length })}</span>
               {shown.map((c, i) => (
                 <span key={i} data-testid="chapter-chip"
-                      className="rounded-full bg-muted px-2.5 py-1 tabular-nums">
+                      className="rounded-full bg-muted px-2.5 py-1 font-mono tabular-nums">
                   {t('composer.chip', { title: c.title, n: c.text.length.toLocaleString('en-US') })}
                 </span>
               ))}
@@ -163,7 +166,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
                 <button type="button" data-testid="chapter-more" aria-expanded={expanded}
                         aria-label={expanded ? t('composer.lessAria') : t('composer.moreAria')}
                         onClick={() => setExpanded((v) => !v)}
-                        className="rounded-full border px-2.5 py-1 tabular-nums outline-none hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50">
+                        className="rounded-full border px-2.5 py-1 font-mono tabular-nums outline-none hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50">
                   {expanded ? '−' : t('composer.more', { n: hidden })}
                 </button>
               )}
@@ -173,12 +176,13 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
         <div className="flex flex-wrap items-center gap-2 border-t px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <ParamChip testId="chip-ratio" icon={<RectangleVertical />} label={t('composer.chipRatio')} value={params.aspect_ratio}>
-              <RatioPicker value={params} onChange={setParams} />
+              <RatioPicker aria-label={t('composer.chipRatio')} value={params} onChange={setParams} />
             </ParamChip>
             <ParamChip testId="chip-style" icon={<Palette />} label={t('composer.chipStyle')} value={styleLabel}
-                       open={styleOpen} onOpenChange={setStyleOpen}>
-              <StylePicker compact value={params} onChange={setParams}
-                           onCustom={openMoreAndFocus} />
+                       open={styleOpen} onOpenChange={setStyleOpen}
+                       contentProps={{ onCloseAutoFocus: (e) => { if (handoff.current) { handoff.current = false; e.preventDefault() } } }}>
+              <StylePicker compact aria-label={t('composer.chipStyle')} value={params} onChange={setParams}
+                           onCustom={() => { handoff.current = true; openMoreAndFocus() }} />
             </ParamChip>
             <ParamChip testId="chip-voice" icon={<Mic />} label={t('composer.chipVoice')} value={voiceLabel}>
               <VoicePicker value={params} onChange={setParams} />
@@ -189,7 +193,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
             </ParamChip>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            {!title.trim() && <span className="text-xs text-muted-foreground">{t('composer.needTitle')}</span>}
+            {!title.trim() && <span id={hintId} className="text-xs text-muted-foreground">{t('composer.needTitle')}</span>}
             <Button type="button" variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
               <FileUp />{t('composer.readTxt')}
             </Button>
@@ -199,8 +203,9 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
                      if (f) readFile(f)
                      e.target.value = ''
                    }} />
-            <Button type="submit" data-testid="composer-submit" disabled={!canSubmit}>
-              {chapters.length ? t('composer.submitN', { n: chapters.length }) : t('composer.submit')}
+            <Button type="submit" data-testid="composer-submit" disabled={!canSubmit}
+                    aria-describedby={title.trim() ? undefined : hintId}>
+              {chapters.length === 0 ? t('composer.submit') : chapters.length === 1 ? t('composer.submit1') : t('composer.submitN', { n: chapters.length })}
               <ArrowRight />
             </Button>
           </div>

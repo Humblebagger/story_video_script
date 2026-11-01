@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { BookOpen, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -215,11 +215,12 @@ export interface TabProps {
 function SetRow({ label, desc, children, testId }: {
   label: string; desc?: string; children: React.ReactNode; testId: string
 }) {
+  const id = useId()
   return (
-    <section data-testid={testId}
+    <section data-testid={testId} role="group" aria-labelledby={id}
              className="flex flex-col gap-3 border-b py-5 first:pt-0 last:border-b-0 sm:flex-row sm:gap-6">
       <div className="shrink-0 sm:w-60">
-        <h3 className="text-sm font-medium">{label}</h3>
+        <h3 id={id} className="text-sm font-medium">{label}</h3>
         {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
       </div>
       <div className="min-w-0 flex-1">{children}</div>
@@ -231,13 +232,22 @@ function ParamsTab({ novel, busy, run }: TabProps) {
   const { t } = useI18n()
   const [title, setTitle] = useState(novel.title)
   const [params, setParams] = useState<NovelParams>({ ...DEFAULT_PARAMS, ...novel.params })
-  useEffect(() => {
-    setTitle(novel.title)
-    setParams({ ...DEFAULT_PARAMS, ...novel.params })
-  }, [novel.id, novel.title, novel.params])
+  const prefixRef = useRef<HTMLInputElement>(null)
   const saved = { ...DEFAULT_PARAMS, ...novel.params }
   const dirty = title.trim() !== novel.title
     || (Object.keys(params) as (keyof NovelParams)[]).some((k) => params[k] !== saved[k])
+  // 只在换了小说、或服务端内容真的变了且本地没有未保存改动时才重置表单
+  const dirtyRef = useRef(dirty)
+  useEffect(() => { dirtyRef.current = dirty })
+  const lastId = useRef(novel.id)
+  const paramsKey = JSON.stringify(novel.params)
+  useEffect(() => {
+    const switched = lastId.current !== novel.id
+    lastId.current = novel.id
+    if (!switched && dirtyRef.current) return
+    setTitle(novel.title)
+    setParams({ ...DEFAULT_PARAMS, ...JSON.parse(paramsKey) })
+  }, [novel.id, novel.title, paramsKey])
   return (
     <Card className="novel__sec max-w-[720px] gap-0 p-5">
       <p className="lib__hint mb-4">{t('novel.params.hint')}</p>
@@ -245,10 +255,11 @@ function ParamsTab({ novel, busy, run }: TabProps) {
         <Input aria-label={t('novel.titleLabel')} value={title} onChange={(e) => setTitle(e.target.value)} />
       </SetRow>
       <SetRow testId="set-ratio" label={t('novel.set.ratio')} desc={t('novel.set.ratioDesc')}>
-        <RatioPicker value={params} onChange={setParams} />
+        <RatioPicker aria-label={t('novel.set.ratio')} value={params} onChange={setParams} />
       </SetRow>
       <SetRow testId="set-style" label={t('novel.set.style')} desc={t('novel.set.styleDesc')}>
-        <StylePicker value={params} onChange={setParams} />
+        <StylePicker aria-label={t('novel.set.style')} value={params} onChange={setParams}
+                     onCustom={() => { prefixRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); prefixRef.current?.focus() }} />
       </SetRow>
       <SetRow testId="set-narration" label={t('novel.set.narration')} desc={t('novel.set.narrationDesc')}>
         <NarrationPick value={params} onChange={setParams} />
@@ -257,7 +268,7 @@ function ParamsTab({ novel, busy, run }: TabProps) {
         <VoicePicker value={params} onChange={setParams} />
       </SetRow>
       <SetRow testId="set-more" label={t('novel.set.more')} desc={t('novel.set.moreDesc')}>
-        <MoreParams value={params} onChange={setParams} />
+        <MoreParams value={params} onChange={setParams} prefixRef={prefixRef} />
       </SetRow>
       <div className="flex justify-end pt-5">
         <Button disabled={busy || !title.trim() || !dirty} data-testid="set-save"

@@ -10,11 +10,11 @@ const box = (r: AspectRatio) => {
   return { width: Math.round(w * k), height: Math.round(h * k) }
 }
 
-interface Props { value: NovelParams; onChange: (next: NovelParams) => void }
+interface Props { value: NovelParams; onChange: (next: NovelParams) => void; 'aria-label'?: string }
 
-export function RatioPicker({ value, onChange }: Props) {
+export function RatioPicker({ value, onChange, 'aria-label': ariaLabel }: Props) {
   return (
-    <div className="flex gap-2">
+    <div role="group" aria-label={ariaLabel} className="flex gap-2">
       {RATIOS.map((r) => {
         const on = value.aspect_ratio === r
         return (

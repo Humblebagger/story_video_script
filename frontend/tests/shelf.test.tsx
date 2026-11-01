@@ -43,6 +43,8 @@ must(lookOf('realistic')?.prefix.value === DEFAULT_PARAMS.style_prefix, '写实�
 must(prefixTouched(DEFAULT_PARAMS.style_prefix) === false, '默认前缀不算手改')
 must(prefixTouched('自己写的') === true, '自写前缀算手改')
 must(swatchFor('n1') === swatchFor('n1'), '色块要稳定')
+must(new Set(Array.from({ length: 20 }, (_, i) => swatchFor(`n${i}`))).size > 1, '不同 id 应分到不止一种色块')
+must(prefixTouched('') === false && prefixTouched('  ') === false, '空白前缀不算手改')
 
 await act(async () => { root.render(h(StatusPill, { tone: 'live' }, '生成中')) })
 const pill = win.document.querySelector('[data-tone="live"]')
@@ -152,11 +154,17 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(got.at(-1)!.target_platform === '快手', '平台写回 target_platform')
   await setInput(q('[data-more="prefix"]')!, '新前缀')
   must(got.at(-1)!.style_prefix === '新前缀', '风格前缀输入写回')
+  const got2 = await mount(MoreParams, { ...DEFAULT_PARAMS, tts_voice: 'my_voice', art_style: 'ukiyo_e' }, { key: 'custom-more' })
+  await setInput(qa('input').find((i) => i.getAttribute('placeholder') === '音色标识')!, 'my_voice2')
+  must(got2.at(-1)!.tts_voice === 'my_voice2', '音色可自定义输入')
+  await setInput(qa('input').find((i) => i.getAttribute('placeholder') === '风格分类标识，如 ukiyo_e')!, 'noir')
+  must(got2.at(-1)!.art_style === 'noir', '风格类别可自定义输入')
+  const got3 = await mount(MoreParams, DEFAULT_PARAMS, { key: 'plain-more' })
   await click(qa('[data-prefix-tag]')[1])
-  must(got.at(-1)!.style_prefix === STYLE_PREFIXES[1].value, '点小标签填入前缀')
+  must(got3.at(-1)!.style_prefix === STYLE_PREFIXES[1].value, '点小标签填入前缀')
   must(qa('[data-narr-mode]').length === 4, '旁白细项应有 4 种')
   await click(q('[data-narr-mode="original_text"]'))
-  must(got.at(-1)!.narration_mode === 'original_text', '旁白细项可选原文照念')
+  must(got3.at(-1)!.narration_mode === 'original_text', '旁白细项可选原文照念')
 }
 
 { // ParamChip
@@ -241,6 +249,17 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(!!q('[data-more="prefix"]') && doc.activeElement === (q('[data-more="prefix"]') as unknown), 'openMore 应打开更多并聚焦风格前缀')
 }
 
+{ // 风格浮层里点自定义：交棒给「更多」，不能一闪即关
+  await act(async () => { root.render(h(NewNovelComposer as never, { key: 'handoff', disabled: false, onSubmit: () => {} })) })
+  await click(q('[data-testid="chip-style"]'))
+  await click(q('[data-style-custom]'))
+  await act(async () => { await new Promise((r) => setTimeout(r, 400)) })
+  const px = q('[data-more="prefix"]')
+  must(!!px, '点自定义后「更多」应保持打开')
+  must(doc.activeElement === (px as unknown), '点自定义后焦点应在风格前缀输入框')
+  must(!q('[data-style-custom]'), '风格浮层应已关闭')
+}
+
 { // ago
   const now = Date.parse('2026-11-01T12:00:00Z')
   const at = (min: number) => new Date(now - min * 60000).toISOString()
@@ -305,6 +324,52 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(patches.length === 1 && !('title' in patches[0]), '只应发出一次不带标题的 PATCH')
   must(JSON.stringify(patches[0].params) === JSON.stringify({ ...DEFAULT_PARAMS, aspect_ratio: '1:1' }),
        'params 应只有画幅变了')
+}
+{ // 设置页：自定义风格、重置策略
+  const { NovelPage } = await import('../src/components/NovelPage')
+  const patches: Array<Record<string, unknown>> = []
+  g.fetch = async (_u: unknown, init?: { method?: string; body?: string }) => {
+    if (init?.method === 'PATCH') patches.push(JSON.parse(init.body ?? '{}'))
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+  const mk = (id: string, title: string) => ({
+    id, title, created_at: '', updated_at: '', params: {}, chapters: [],
+    memory: { assets: { characters: [], scenes: [], props: [] }, numbering: { next_unit: 1, next_para: 1, next_episode: 1 },
+              lifecycle: [], plot: { outline: '', chapters: [] }, constraints: [] },
+  })
+  const page = async (novel: ReturnType<typeof mk>, key: string) => {
+    await act(async () => {
+      root.render(h(TooltipProvider, null, h(NovelPage as never, {
+        key, novel, running: [], onChanged: () => {}, onDeleted: () => {}, onOpenChapter: () => {}, onNewChapter: () => {},
+      })))
+    })
+  }
+  const toParams = async () => click(qa('.tabs__btn').find((b) => b.textContent === '制作参数') ?? null)
+  const titleBox = () => q('input[aria-label="小说标题"]') as unknown as HTMLInputElement
+  const save = () => q('[data-testid="set-save"]') as unknown as HTMLButtonElement
+
+  await page(mk('c1', '药'), 'cust')
+  await toParams()
+  await click(q('[data-style-custom]'))
+  must(doc.activeElement === (q('[data-more="prefix"]') as unknown), '设置页点自定义应聚焦风格前缀')
+  must(qa('section[data-testid^="set-"]').every((e) => e.getAttribute('role') === 'group' && !!e.getAttribute('aria-labelledby')), '设置分区应是带标题的 group')
+
+  await setInput(titleBox(), '药 ')
+  must(save().disabled, '仅多了空白的标题不算改动')
+  await setInput(titleBox(), '  新名  ')
+  must(!save().disabled, '改标题后可保存')
+  patches.length = 0
+  await click(save())
+  await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+  must(patches.length === 1 && patches[0].title === '新名', '标题 PATCH 应带去空白后的新标题')
+
+  // 同一小说的无关刷新（新对象、同内容）不冲掉未保存的编辑
+  await setInput(titleBox(), '草稿')
+  await page(mk('c1', '药'), 'cust')
+  must(titleBox().value === '草稿', '同一小说刷新不应冲掉未保存的标题')
+  // 换了小说则重置
+  await page(mk('c2', '雪'), 'cust')
+  must(titleBox().value === '雪', '换小说应重置表单')
 }
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

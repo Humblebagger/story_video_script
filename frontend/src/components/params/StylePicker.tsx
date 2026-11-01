@@ -16,9 +16,10 @@ interface Props {
   onCustom?: () => void
   /** 放在胶囊浮层里：小卡片，不显示换图按钮 */
   compact?: boolean
+  'aria-label'?: string
 }
 
-export function StylePicker({ value, onChange, onCustom, compact }: Props) {
+export function StylePicker({ value, onChange, onCustom, compact, 'aria-label': ariaLabel }: Props) {
   const { t } = useI18n()
   const m = useMotionPresets()
   const images = useStyleImages()
@@ -38,14 +39,14 @@ export function StylePicker({ value, onChange, onCustom, compact }: Props) {
   const custom = !ART_STYLES.some((a) => a.value === value.art_style)
 
   return (
-    <div className={cn('flex flex-wrap gap-2', compact && 'w-[276px]')} data-style-picker>
+    <div role="group" aria-label={ariaLabel} className="flex flex-wrap gap-2" data-style-picker>
       {ART_STYLES.map((a, i) => {
         const look = lookOf(a.value)
         const on = value.art_style === a.value
         const img = images[a.value]
         return (
           <motion.div key={a.value} {...m.item(i)} className={cn('group relative', w)}>
-            <button type="button" data-style={a.value} aria-pressed={on} onClick={() => pick(a.value)}
+            <button type="button" data-style={a.value} aria-pressed={on} title={look ? t('params.styleDefaultLook', { look: look.prefix.label }) : undefined} onClick={() => pick(a.value)}
                     className={cn('block w-full rounded-lg p-0.5 text-left text-xs outline-none ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring/50',
                                   on ? 'ring-2 ring-primary' : 'hover:ring-1 hover:ring-border')}>
               {img
