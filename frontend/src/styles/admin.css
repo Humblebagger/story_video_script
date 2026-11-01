@@ -5,7 +5,7 @@
 .adm__sec { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; }
 .adm__card { transition: border-color 150ms ease-out, box-shadow 150ms ease-out; }
 .adm__card:hover { border-color: var(--ring); box-shadow: 0 1px 3px oklch(0 0 0 / 6%); }
-.adm__note { font-size: 12px; color: var(--ui-muted-foreground); margin: 0; }
+.adm__note, .adm__empty { font-size: 12px; color: var(--ui-muted-foreground); margin: 0; }
 .adm__warn {
   font-size: 12px; margin: 0; padding: 8px 12px; background: var(--ui-muted);
   border-left: 3px solid var(--warning); border-radius: 4px;
