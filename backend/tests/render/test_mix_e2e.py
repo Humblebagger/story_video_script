@@ -6,15 +6,21 @@
 """
 import copy
 import json
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from render import mix  # noqa: E402
+from render import export_fcpxml, mix  # noqa: E402
+from fcpxml_check import check_structure  # noqa: E402
 from render.providers.fake import FakeTts  # noqa: E402
 
 DOC = {
@@ -36,6 +42,13 @@ def session(with_video: bool) -> dict:
         {"id": "E01-C02", "episode": "E01", "shots": ["S3"], "state": "planned", "attempts": [], "chosen": None,
          "mute_native": False},
     ]}
+
+
+class SlowTts(FakeTts):
+    """配音比镜头略长（约 1.11 倍），合成时会被提速。"""
+
+    def synthesize(self, text, voice, emotion, speed, dest):
+        return super().synthesize(text, voice, emotion, speed * 0.9, dest)
 
 
 def main() -> int:
@@ -105,6 +118,52 @@ def main() -> int:
         assert len(ep_tl["speech"]) == 2 and all((root / x["file"]).is_file() for x in ep_tl["speech"])
         assert ep_tl["bgm"] == "audio/bgm/E01.wav" and (root / ep_tl["bgm"]).is_file()
         print("2b. 时间轴 timeline.json：段、配音、BGM 与计划一致，文件都在 ✓")
+
+        title = "药-第一章-v1"
+        z1 = export_fcpxml.export(root, title=title, tools=tools)
+        assert z1 == root / "final" / "export" / "药-第一章-v1.zip"
+        with zipfile.ZipFile(z1) as z:
+            names = set(z.namelist())
+            xml = z.read(f"{title}/project.fcpxml").decode("utf-8")
+        assert {f"{title}/project.fcpxml", f"{title}/README.txt", f"{title}/subtitles/E01.srt"} <= names
+        assert check_structure(xml, tl["size"]) == [], check_structure(xml, tl["size"])
+        srcs = re.findall(r'<media-rep [^>]*src="([^"]+)"', xml)
+        assert srcs and all(f"{title}/{unquote(x)}" in names for x in srcs)
+        assert f"{title}/media/bgm/E01.wav" in names and f"{title}/media/clips/E01-C01.mp4" in names
+        print(f"2c. 导出：zip 含 fcpxml、说明、字幕与 {len(srcs)} 个素材，结构校验通过 ✓")
+
+        slow_root = root / "slow"
+        (slow_root / "clips").mkdir(parents=True)
+        shutil.copy(root / "clips" / "E01-C01.t1.mp4", slow_root / "clips" / "E01-C01.t1.mp4")
+        doc2 = {"meta": DOC["meta"], "assets": DOC["assets"], "episodes": [{"id": "E01", "shots": [
+            {"id": "S1", "duration_sec": 3, "narration": {"text": "秋天的后半夜月亮下去了啊啊"}}]}]}
+        s2 = session(True)
+        s2["clips"] = s2["clips"][:1]
+        s2["clips"][0]["shots"] = ["S1"]
+        mix.compose(slow_root, doc2, s2, tts=SlowTts(), keyframes={}, bgm={}, draft=True, tools=tools)
+        ep2 = json.loads((slow_root / "final" / "timeline.json").read_text(encoding="utf-8"))["episodes"][0]
+        sp = ep2["speech"][0]
+        assert sp["speed"] > 1.0, sp
+        zs = export_fcpxml.export(slow_root, title="slow", tools=tools)
+        with zipfile.ZipFile(zs) as z:
+            z.extract(f"slow/media/voice/{sp['line']}.wav", slow_root / "unz")
+        got = mix.media_seconds(slow_root / "unz" / "slow" / "media" / "voice" / f"{sp['line']}.wav", ffprobe)
+        orig = mix.media_seconds(slow_root / sp["file"], ffprobe)
+        assert abs(got - orig / sp["speed"]) <= 0.05, (got, orig, sp["speed"])
+        cache = sorted((slow_root / "final" / "export" / "voice").glob("*.wav"))
+        assert len(cache) == 1
+        stamp = cache[0].stat().st_mtime_ns
+        zs_stamp = zs.stat().st_mtime_ns
+        zs2 = export_fcpxml.export(slow_root, title="slow", tools=tools)
+        assert zs2 == zs and cache[0].stat().st_mtime_ns == stamp, "提速缓存不重做"
+        assert zs.stat().st_mtime_ns != zs_stamp and zipfile.is_zipfile(zs), "zip 被覆盖"
+        (slow_root / "final" / "timeline.json").unlink()
+        try:
+            export_fcpxml.export(slow_root, title="slow", tools=tools)
+            raise AssertionError("没有时间轴应拒绝")
+        except export_fcpxml.ExportError as e:
+            assert "重新合成" in str(e)
+        print(f"2d. 提速配音预渲染 {sp['speed']:.3f} 倍：{orig:.2f}s -> {got:.2f}s；缓存复用、zip 覆盖、无时间轴提示重新合成 ✓")
 
         work = sorted((root / "final" / "work").glob("*.mp4"))
         stamps = {w.name: w.stat().st_mtime_ns for w in work if ".joined" not in w.name}
