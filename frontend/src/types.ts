@@ -1,3 +1,5 @@
+import type { StepId } from './workflow'
+
 /** NovelStoryboard v0.4 / v0.5 分镜 IR 的 TypeScript 镜像（对齐 backend/schema/storyboard.schema.json）。
  *  字段可选性以 schema 的 required 为准：非必填一律标 `?`，渲染层不得假设其存在。 */
 
@@ -870,3 +872,33 @@ export interface NovelSummaryData {
   unpriced: string[]
   chapters: ChapterSum[]
 }
+
+// ---------- 助手 ----------
+export type AssistantStep = StepId
+export interface AssistantWhere { chapter_id?: string; version_id?: string; step?: AssistantStep }
+export interface AssistantGoto { chapter_id: string; step: AssistantStep }
+export interface AssistantTool {
+  id: string
+  name: string
+  args: Record<string, unknown>
+  /** null：进行中 */
+  ok: boolean | null
+  summary: string
+}
+export interface AssistantMsg {
+  role: 'user' | 'assistant'
+  text: string
+  tools?: AssistantTool[]
+  goto?: AssistantGoto[]
+  /** 本地标记：用户点了停止 */
+  interrupted?: boolean
+  /** 本地标记：这一轮出错（显示报错与重试） */
+  error?: string
+}
+export type AssistantEvent =
+  | { event: 'token'; data: { text: string } }
+  | { event: 'tool_start'; data: { id: string; name: string; args: Record<string, unknown> } }
+  | { event: 'tool_end'; data: { id: string; ok: boolean; summary: string } }
+  | { event: 'goto'; data: AssistantGoto }
+  | { event: 'done'; data: Record<string, never> }
+  | { event: 'error'; data: { message: string } }

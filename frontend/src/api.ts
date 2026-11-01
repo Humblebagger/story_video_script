@@ -5,6 +5,7 @@
  */
 import { tr } from './i18n/core'
 import { getToken, notifyUnauthorized } from './auth'
+import { parseSse } from './lib/sse'
 import type { User } from './auth'
 import type {
   Chapter, Constraint, NovelSummaryData, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
@@ -12,6 +13,7 @@ import type {
   FilmSession, FilmSettings, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
   AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
+  AssistantEvent, AssistantMsg, AssistantWhere,
 } from './types'
 
 /** 带结构化 detail 的接口错误。
@@ -516,4 +518,35 @@ export function adminSavePricing(table: unknown) {
   return req<PricingTable>('/admin/pricing', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
   })
+}
+
+// ---------- 助手 ----------
+
+export const getAssistant = (nid: string) =>
+  req<{ messages: AssistantMsg[] }>(`/novels/${encodeURIComponent(nid)}/assistant`)
+
+export const clearAssistant = (nid: string) =>
+  req<{ ok: true }>(`/novels/${encodeURIComponent(nid)}/assistant`, { method: 'DELETE' })
+
+/** 发一条消息并逐个回调事件；signal 中止即停止（服务端跑完当前这一步就停）。
+ *  429 / 409 / 422 等在开始流之前就会以 ApiError 抛出。 */
+export async function streamAssistant(
+  nid: string, body: { text: string; lang: string; where: AssistantWhere },
+  onEvent: (e: AssistantEvent) => void, signal?: AbortSignal,
+): Promise<void> {
+  const res = await send(`/novels/${encodeURIComponent(nid)}/assistant/messages`, { ...jsonPost(body), signal })
+  const reader = res.body?.getReader()
+  if (!reader) return
+  const dec = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const { events, rest } = parseSse(buf)
+    buf = rest
+    events.forEach(onEvent)
+  }
+  const { events } = parseSse(buf + '\n\n')
+  events.forEach(onEvent)
 }
