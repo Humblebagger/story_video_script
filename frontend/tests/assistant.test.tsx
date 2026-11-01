@@ -115,9 +115,9 @@ const type = async (v: string) => {
     ta.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
   })
 }
-const enter = async (composing = false) => {
+const enter = async (composing = false, keyCode = 13) => {
   await act(async () => {
-    $('assistant-input')!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: composing }) as unknown as Event)
+    $('assistant-input')!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: composing, keyCode }) as unknown as Event)
   })
   await flush()
 }
@@ -141,6 +141,7 @@ const enter = async (composing = false) => {
   ]
   await type('还有哪些没出片？')
   await enter(true)
+  await enter(false, 229)
   must(!calls.some((c) => c.method === 'POST'), '输入法组字中 Enter 不发送')
   await enter()
   const post = calls.find((c) => c.method === 'POST')!

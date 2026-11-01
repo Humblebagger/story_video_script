@@ -156,7 +156,8 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
                   data-testid="assistant-input" aria-label={t('assistant.placeholder')}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void sendText(text) }
+                    // Safari 确认输入法候选的回车 isComposing 已是 false，只能靠 keyCode 229 认出来
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void sendText(text) }
                   }} />
         {busy ? (
           <Button type="button" size="icon" variant="outline" aria-label={t('assistant.stop')} data-testid="assistant-stop"
