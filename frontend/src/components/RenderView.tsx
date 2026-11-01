@@ -177,7 +177,7 @@ export function RenderView({ doc, runId }: Props) {
                 {plan.estimate.calibrated
                   ? t('renderPack.basisCal', { rate: plan.estimate.cny_per_second })
                   : t('renderPack.basisEst', { model: plan.estimate.model_label, rate: plan.estimate.cny_per_second })}
-                {' '}{t('renderPack.basisTail')}
+                {t('renderPack.basisTail')}
               </span>
             </button>
             <div className="rend__basis-body" hidden={!basisOpen}>

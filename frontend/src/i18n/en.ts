@@ -481,7 +481,7 @@ export const en: Messages = {
     tabs: { shots: 'Shots', assets: 'Assets', source: 'Source', render: 'Render', json: 'JSON' },
     ep: {
       noTitle: '(untitled)',
-      count: '{n} shots',
+      count: 'Shots: {n}',
       moodTip: 'BGM mood of this episode',
       segTip: '{from} → {to}\n{mood} · intensity {intensity}\n{note}',
       music: 'Instrumentation: {v}',
@@ -579,7 +579,7 @@ export const en: Messages = {
     delCard: 'Delete this card',
   },
   source: {
-    sumA: '{n} source lines · covered by shots',
+    sumA: 'Source lines: {n} · covered by shots',
     sumB: '· read as narration',
     searchPh: 'Search source text / line number',
     onlyGaps: 'Uncovered only ({n})',
@@ -617,7 +617,7 @@ export const en: Messages = {
     basis: 'How cost is calculated',
     basisCal: 'Using your rate of {rate} CNY/s',
     basisEst: 'Estimated from {model} at {rate} CNY/s',
-    basisTail: '— an estimate; open for the basis and uncertainties',
+    basisTail: ' — an estimate; open for the basis and uncertainties',
     resNote: 'Resolutions for this tier: {res}; price {price} CNY per million tokens × {tps} tokens/s.',
     warnA: '',
     warnB: ' asset images are still missing. With text-to-video alone, the same character changes face between clips — the asset-reference system exists to prevent exactly that. Make the images from the checklist below first, fill them back into the cards\' reference images, then generate video.',
@@ -641,7 +641,7 @@ export const en: Messages = {
   verify: {
     severity: { critical: 'Critical', high: 'Severe', medium: 'Warning', low: 'Note' },
     hard: 'Blocking',
-    soft: 'Note',
+    soft: 'Advisory',
     unitAt: 'Source {id}',
     unitNth: 'Source line {n}',
     epNth: 'Episode {n}',
