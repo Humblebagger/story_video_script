@@ -55,7 +55,7 @@ export function ProjectSwitcher({ novels, currentId, meta, onOpen, onNew, onAll 
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onNew}>{t('shell.switcher.newNovel')}</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onAll ?? onNew}>{t('shell.switcher.all')}</DropdownMenuItem>
+        {onAll && <DropdownMenuItem onSelect={onAll}>{t('shell.switcher.all')}</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
   )

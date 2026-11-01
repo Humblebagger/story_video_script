@@ -231,13 +231,14 @@ export default function App() {
       prevRunning.current = liveIds
       if (finished) {
         void refreshNovels()
+        bumpSummary()
         const nid = novelRef.current?.id
         if (nid) void reloadOpen(nid, openChapterId.current)
       }
     } catch {
       /* 巡检失败静默重试，不打扰用户 */
     }
-  }, [announce, refreshNovels, reloadOpen])
+  }, [announce, refreshNovels, reloadOpen, bumpSummary])
 
   // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
   // 监听只订阅一次，所以通过 ref 拿到最新的重置函数；和退出共用，保证换账号不残留上一个人的小说与产物
@@ -634,7 +635,8 @@ export default function App() {
           <ProjectSwitcher novels={novels} currentId={novel.id}
                            meta={[novel.params.aspect_ratio, ART_STYLES.find((a) => a.value === novel.params.art_style)?.label]
                              .filter(Boolean).join(' · ')}
-                           onOpen={(nid) => void openNovel(nid)} onNew={() => void newNovel()} />
+                           onOpen={(nid) => void openNovel(nid)} onNew={() => void newNovel()}
+                           onAll={() => void newNovel()} />
         ) : null}
         chapterCrumb={novel && chapter && !(adminOpen && user.role === 'admin') ? (
           <ChapterCrumb chapters={[...novel.chapters].sort((a, b) => a.order - b.order)} currentId={chapter.id}

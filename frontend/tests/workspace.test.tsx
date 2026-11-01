@@ -90,7 +90,7 @@ const novels: NS[] = [
   const calls: string[] = []
   await render(wrap(h(ProjectSwitcher, {
     novels, currentId: 'n1', meta: '9:16 · 写实',
-    onOpen: (id: string) => calls.push('open:' + id), onNew: () => calls.push('new') })))
+    onOpen: (id: string) => calls.push('open:' + id), onNew: () => calls.push('new'), onAll: () => calls.push('all') })))
   const trig = q('[data-testid="project-switcher"]')!
   must((trig.textContent ?? '').includes('药') && (trig.textContent ?? '').includes('9:16 · 写实'), '触发按钮显示当前小说与小字')
   await open(trig)
@@ -110,6 +110,12 @@ const novels: NS[] = [
   await open(q('[data-testid="project-switcher"]'))
   await click(qa('[role="menuitem"]').find((x) => (x.textContent ?? '').includes('新建小说')) ?? null)
   must(calls.join() === 'open:n2,new', '点「＋ 新建小说」调 onNew')
+  await open(q('[data-testid="project-switcher"]'))
+  await click(qa('[role="menuitem"]').find((x) => (x.textContent ?? '').includes('全部小说')) ?? null)
+  must(calls.join() === 'open:n2,new,all', '点「全部小说」只调 onAll，不调 onNew')
+  await render(wrap(h(ProjectSwitcher, { novels, currentId: 'n1', onOpen: () => {}, onNew: () => {} })))
+  await open(q('[data-testid="project-switcher"]'))
+  must(!qa('[role="menuitem"]').some((x) => (x.textContent ?? '').includes('全部小说')), '没传 onAll 就不显示「全部小说」')
   await render(null)
   console.log('1. ProjectSwitcher ✓')
 }
