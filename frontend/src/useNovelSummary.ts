@@ -4,17 +4,18 @@ import { getNovelSummary } from './api'
 import type { NovelSummaryData } from './types'
 
 export function useNovelSummary(nid: string | undefined, refreshKey: unknown = 0) {
-  const [data, setData] = useState<NovelSummaryData | null>(null)
+  // 记下数据属于哪部小说：切换小说后、新数据到之前不显示上一部的
+  const [got, setGot] = useState<{ nid: string; data: NovelSummaryData } | null>(null)
   const seq = useRef(0)
 
   const reload = useCallback(async () => {
     const n = ++seq.current
-    if (!nid) { setData(null); return }
+    if (!nid) { setGot(null); return }
     try {
       const d = await getNovelSummary(nid)
-      if (n === seq.current) setData(d)
+      if (n === seq.current) setGot({ nid, data: d })
     } catch {
-      if (n === seq.current) setData(null)
+      if (n === seq.current) setGot(null)
     }
   }, [nid])
 
@@ -24,5 +25,5 @@ export function useNovelSummary(nid: string | undefined, refreshKey: unknown = 0
     return () => { counter.current++ }
   }, [reload, refreshKey])
 
-  return { data, reload }
+  return { data: got && got.nid === nid ? got.data : null, reload }
 }
