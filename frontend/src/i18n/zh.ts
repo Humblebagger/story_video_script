@@ -596,6 +596,17 @@ export const zh = {
     statInferred: '系统补充镜',
     viewsAria: '分镜视图',
     tabs: { shots: '分镜', assets: '资产卡', source: '原文溯源', render: '渲染', json: 'JSON' },
+    focus: {
+      search: '搜索镜头：ID / 画面 / 台词',
+      listAria: '镜头列表',
+      noSource: '这一镜没有引用原文（系统补充）',
+      frame: '关键帧',
+      clip: '成片段',
+      saveEdits: '保存修改',
+      openCanvas: '在画布中查看',
+      backToList: '镜头列表',
+      epCount: '{n} 镜',
+    },
     ep: {
       noTitle: '（无标题）',
       count: '{n} 镜',

@@ -602,6 +602,17 @@ export const en: Messages = {
     statInferred: 'Added shots',
     viewsAria: 'Storyboard views',
     tabs: { shots: 'Shots', assets: 'Assets', source: 'Source', render: 'Render', json: 'JSON' },
+    focus: {
+      search: 'Search shots: ID / action / lines',
+      listAria: 'Shot list',
+      noSource: 'This shot cites no source text (added by the system)',
+      frame: 'Keyframe',
+      clip: 'Clip',
+      saveEdits: 'Save changes',
+      openCanvas: 'View on canvas',
+      backToList: 'Shot list',
+      epCount: '{n} shots',
+    },
     ep: {
       noTitle: '(untitled)',
       count: 'Shots: {n}',
