@@ -114,7 +114,6 @@ let root = createRoot(container as unknown as HTMLElement)
 const settle = async (ms = 30) => {
   await act(async () => { await new Promise((r) => setTimeout(r, ms)) })
 }
-const has = (s: string) => container.innerHTML.includes(s)
 const text = () => container.textContent ?? ''
 const button = (label: string) => {
   const b = [...container.querySelectorAll('button')].find((x) => (x.textContent ?? '').includes(label))

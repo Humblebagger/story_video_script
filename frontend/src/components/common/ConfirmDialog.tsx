@@ -3,7 +3,7 @@
  *    if (!(await ask({ title, body, action, danger: true }))) return
  *    …  并在 JSX 里渲染 {confirmUi}
  *  不需要全局 Provider：单测直接渲染组件也能用。花钱的确认用 MoneyConfirm，不用它。 */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -26,6 +26,8 @@ export function useConfirm(): [(o: ConfirmOpts) => Promise<boolean>, ReactNode] 
   const [opts, setOpts] = useState<ConfirmOpts | null>(null)
   const [open, setOpen] = useState(false)
   const resolver = useRef<((v: boolean) => void) | null>(null)
+  // 还没回答组件就卸载了（比如关掉了画布）：当取消，等着的调用方别永远挂着
+  useEffect(() => () => { resolver.current?.(false); resolver.current = null }, [])
   const settle = (v: boolean) => {
     resolver.current?.(v)
     resolver.current = null
