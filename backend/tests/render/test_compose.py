@@ -23,6 +23,7 @@ from render.providers.fake import FakeVideo  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 GOLDEN = Path(__file__).resolve().parent / "golden_plan_yao.json"
+GOLDEN_CLIPS = Path(__file__).resolve().parent / "golden_clips_yao.json"
 
 
 def must_raise(exc, fn, *a, **kw):
@@ -276,11 +277,23 @@ def part_style(doc):
     caps = fake.caps("fake-1")
     caps_w = FakeVideo(frame_with_refs=True).caps("fake-1")
     with tempfile.TemporaryDirectory() as d:
+        # 0. 没有风格图时与风格图功能之前（fb90f81）的输出逐字一致：只多三个空值字段
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import golden_clips
+        gold = json.loads(GOLDEN_CLIPS.read_text(encoding="utf-8"))
+        now = golden_clips.dump(compose, FakeVideo, rewrite_refs, doc, Path(d))
+        assert now.keys() == gold.keys() and len(gold) == 32
+        for k in gold:
+            assert now[k]["count"] == gold[k]["count"], k
+            assert now[k]["sample"] == gold[k]["sample"], k
+            assert now[k]["digest"] == gold[k]["digest"], k
+        print("0. 无风格图的切段与请求和 fb90f81 黄金文件一致（32 种配置）✓")
         # 1. 不变性
         for dd in (doc, rich):
             base_ = compose.build_clips(dd, caps, keyframes={}, **kw)
             none_ = fp(caps, dd, None)
             assert strip(base_) == strip(none_) and base_ == none_
+            assert all(x["style"] is None and x["style_hash"] is None for x in base_)
             a, b, c = fp(caps, dd, None), fp(caps, dd, style), fp(caps, dd, style2)
             assert [x["fingerprint"] for x in a] == [x["fingerprint"] for x in b] \
                 == [x["fingerprint"] for x in c]

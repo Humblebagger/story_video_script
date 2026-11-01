@@ -398,8 +398,26 @@ def main() -> int:
     runner.tick()
     assert clip(rootS, sid)["attempts"][-1]["style_ref"] == "h1"
     drain()
+    # 建会话后换图：记下的是提交时实际发出的那张，不算过期
+    used = [c["id"] for c in sS["clips"] if c["style"] == "used"]
+    assert len(used) >= 3, used
+    sess.queue_run(rootS, [used[1]])
+    runner.watch(rootS)
+    current["style"] = {"source": "data:image/png;base64,BBBB", "hash": "h2"}
+    runner.tick()
+    c2 = clip(rootS, used[1])
+    assert c2["attempts"][-1]["style_ref"] == "h2", c2["attempts"][-1]
+    assert c2["state"] != "stale" and not c2.get("error"), c2
+    drain()
+    # 建会话后删图：提交时没有风格图，记 None，不拦
+    sess.queue_run(rootS, [used[2]])
+    runner.watch(rootS)
     current["style"] = None
-    print("风格图写回尝试 ✓")
+    runner.tick()
+    c3 = clip(rootS, used[2])
+    assert c3["attempts"][-1]["style_ref"] is None and not c3.get("error"), c3
+    drain()
+    print("风格图写回尝试（含建会话后换图 / 删图）✓")
 
     print("\nALL PASS")
     return 0

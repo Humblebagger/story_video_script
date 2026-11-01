@@ -9,7 +9,7 @@ export function useStyleImage(nid: string, hash: string | null | undefined): str
     const key = `${nid}:${hash}`
     let alive = true
     let made: string | null = null
-    styleImageUrl(nid).then((u) => {
+    styleImageUrl(nid, hash).then((u) => {
       if (!alive) { URL.revokeObjectURL(u); return }
       made = u
       setState({ key, url: u })

@@ -49,6 +49,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
 """
+import hashlib
 import os
 import copy
 import json
@@ -759,7 +760,7 @@ _STYLE = "/novels/{nid}/style-image"
 @app.get(_STYLE)
 def style_image_get(nid: str, user: dict = Depends(novel_user)):
     path, kind = _novel_call(novels.style_image_file, user["id"], nid)
-    return FileResponse(path, media_type=kind)
+    return FileResponse(path, media_type=kind, headers={"Cache-Control": "no-store"})
 
 
 @app.put(_STYLE)
@@ -813,13 +814,17 @@ def _render_call(fn, *args, **kwargs):
 
 
 def _style_for(uid: str, nid: str) -> Optional[dict]:
-    """这部小说当前的风格参考图（data URI + 哈希）；没有或读不到为 None。"""
+    """这部小说当前的风格参考图（data URI + 哈希）。
+
+    以小说记录里的元数据为准（没有元数据即没有图，哪怕目录里有残留文件）；
+    哈希按实际读到的字节算，data URI 也用这同一份字节，记下的就是发出去的。
+    """
     try:
         path, _ = novels.style_image_file(uid, nid)
-        meta = novels.get_novel(uid, nid).get("style_image") or {}
-        return {"source": render_compose.data_uri(path), "hash": meta.get("hash")}
+        data = path.read_bytes()
     except (novels.NotFound, OSError):
         return None
+    return {"source": render_compose.data_uri_bytes(data, path), "hash": hashlib.sha256(data).hexdigest()}
 
 
 def _render_request(root, s: dict, clip: dict):

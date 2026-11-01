@@ -325,8 +325,9 @@ export function deleteKeyframe(nid: string, cid: string, vid: string, shotId: st
 /* ---------- 风格参考图（每部小说一张） ---------- */
 
 /** 带 token 取风格参考图，转成 blob URL（用完要 revoke）；没有图是 404 */
-export async function styleImageUrl(nid: string) {
-  const res = await send(`/novels/${enc(nid)}/style-image`)
+export async function styleImageUrl(nid: string, hash: string) {
+  // ?v=hash：换图后换地址，浏览器 HTTP 缓存不会把旧图当新图
+  const res = await send(`/novels/${enc(nid)}/style-image?v=${enc(hash)}`, { cache: 'no-store' })
   return URL.createObjectURL(await res.blob())
 }
 

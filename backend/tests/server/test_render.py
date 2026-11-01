@@ -5,6 +5,7 @@
 全程临时数据目录 + 假厂商，不联网、不花钱。用法: python3 tests/server/test_render.py
 """
 import copy
+import hashlib
 import json
 import os
 import sys
@@ -247,7 +248,13 @@ def main() -> int:
     assert s["style_outdated_count"] == 0
     g = c.get(R13 + "/session", headers=H).json()
     assert g["style_outdated_count"] == 0 and all(x["style_outdated"] is False for x in g["clips"])
-    print("13. 风格图进会话 ✓")
+    # _render_request（出片线程用）也带风格图：请求里恰有一个 style 参考，哈希是图的哈希
+    sess13 = render_session.load(root13 := novels.render_dir(uid, nid, cid, "v13"))
+    used13 = next(x for x in sess13["clips"] if x["style"] == "used")
+    req13, _ = app_mod._render_request(root13, sess13, used13)
+    assert req13.style_ref == hashlib.sha256(PNG).hexdigest()
+    assert [r.role for r in req13.refs].count("style") == 1
+    print("13. 风格图进会话、进请求 ✓")
 
     print("\nALL PASS")
     return 0

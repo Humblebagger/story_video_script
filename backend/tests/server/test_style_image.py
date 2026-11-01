@@ -82,6 +82,48 @@ def main() -> int:
     assert c.delete(U, headers=H).status_code == 200
     print("删除: 幂等 ✓")
 
+    # 8. 元数据为准：目录里的残留文件不算图
+    uid = alice["id"]
+    sdir.mkdir(parents=True, exist_ok=True)
+    (sdir / "style.png").write_bytes(PNG)
+    assert c.get(U, headers=H).status_code == 404
+    assert app_mod._style_for(uid, nid) is None
+    print("残留文件无元数据: 不取、不发 ✓")
+
+    # 9. 元数据与文件对不上：哈希与 data URI 都按实际读到的字节
+    import base64
+    assert c.put(U, headers={**H, "Content-Type": "image/png"}, content=PNG).status_code == 200
+    other = b"\x89PNG\r\n\x1a\n" + b"9" * 50
+    (sdir / "style.png").write_bytes(other)
+    st = app_mod._style_for(uid, nid)
+    assert st["hash"] == hashlib.sha256(other).hexdigest() != novels.get_novel(uid, nid)["style_image"]["hash"]
+    assert base64.b64decode(st["source"].split(",", 1)[1]) == other
+    # 文件丢了但元数据还在: None
+    (sdir / "style.png").unlink()
+    assert app_mod._style_for(uid, nid) is None
+    print("元数据与文件哈希不符 / 文件缺失 ✓")
+
+    # 10. 原子保存：存元数据失败时旧图旧元数据原样、不留临时文件
+    assert c.put(U, headers={**H, "Content-Type": "image/png"}, content=PNG).status_code == 200
+    old_meta = novels.get_novel(uid, nid)["style_image"]
+    real_save = novels._save_novel
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    novels._save_novel = boom
+    try:
+        try:
+            novels.save_style_image(uid, nid, "image/jpeg", JPG)
+            raise AssertionError("应当抛错")
+        except OSError:
+            pass
+    finally:
+        novels._save_novel = real_save
+    assert [p.name for p in sdir.iterdir()] == ["style.png"]
+    assert (sdir / "style.png").read_bytes() == PNG
+    assert novels.get_novel(uid, nid)["style_image"] == old_meta
+    print("保存失败: 旧图旧元数据不动、无临时文件 ✓")
+
     print("\nALL PASS")
     return 0
 

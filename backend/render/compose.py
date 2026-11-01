@@ -383,9 +383,14 @@ def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
 _MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 
 
-def data_uri(path: Path) -> str:
+def data_uri_bytes(data: bytes, path: Path) -> str:
+    """已读到的字节 + 文件名定格式 → data URI（风格图用：哈希与发出的是同一份字节）。"""
     mime = _MIME.get(Path(path).suffix.lower(), "image/jpeg")
-    return f"data:{mime};base64," + base64.b64encode(Path(path).read_bytes()).decode("ascii")
+    return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
+
+
+def data_uri(path: Path) -> str:
+    return data_uri_bytes(Path(path).read_bytes(), path)
 
 
 class Stale(Exception):
