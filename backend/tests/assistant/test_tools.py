@@ -65,6 +65,18 @@ def main() -> int:
     assert ov["title"] == "药" and [c["title"] for c in ov["chapters"]][:2] == ["第一章 茶馆", "第二章 刑场"]
     stages = {c["id"]: c["stage"] for c in ov["chapters"]}
     assert stages[c1] == "render" and stages[c2] == "storyboard" and stages[c3] == "import", stages
+    # _stage 与前端 chapterStage 对齐：检查没过归 review；会话里没有段归 render；全出完看成片
+    base = {"chars": 10, "latest_status": "succeeded", "adopted_version": None,
+            "versions": [{"id": "v1", "status": "succeeded"}]}
+    full = {"clips": [{"state": "done"}], "final": {"state": "done"}}
+    assert T._stage({**base, "versions": [{"id": "v1", "status": "succeeded", "verification_status": "failed"}]}, None) == "review"
+    assert T._stage({**base, "latest_status": "draft_invalid", "versions": [{"id": "v1", "status": "draft_invalid"}]}, None) == "review"
+    assert T._stage({**base, "latest_status": "failed", "versions": [{"id": "v1", "status": "failed"}]}, None) == "storyboard"
+    assert T._stage({**base, "latest_status": "running"}, full) == "storyboard"
+    assert T._stage(base, {"clips": [], "final": {}}) == "render"
+    assert T._stage(base, {"clips": [{"state": "done"}, {"state": "planned"}], "final": {}}) == "render"
+    assert T._stage(base, {"clips": [{"state": "done"}], "final": {}}) == "compose"
+    assert T._stage(base, full) == "download"
     print("2. novel_overview ✓")
 
     # 3. chapter_status：缺省取当前章

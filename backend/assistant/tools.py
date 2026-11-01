@@ -110,21 +110,23 @@ def _session(user_id: str, nid: str, cid: str, vid: Optional[str]) -> Optional[d
 
 
 def _stage(ch: dict, sess: Optional[dict]) -> str:
-    """与前端 chapterStage 同一套规则（实施裁定 8），只用于给模型的文字。"""
+    """与前端 chapterStage（frontend/src/workflow.ts）同一套规则（实施裁定 8），只用于给模型的文字。"""
     if not ch.get("chars"):
         return "import"
     versions = ch.get("versions") or []
-    if not versions or ch.get("latest_status") in LIVE:
+    if ch.get("latest_status") in LIVE:
         return "storyboard"
-    vid = summary._pick_version(ch)
-    if not vid:
-        return "review" if versions[0].get("status") == "draft_invalid" else "storyboard"
+    v = (next((x for x in versions if x["id"] == ch.get("adopted_version")), None)
+         or next((x for x in versions if x.get("status") in novels.ADOPTABLE), None)
+         or next((x for x in versions if x.get("status") == "draft_invalid"), None))
+    if not v:
+        return "storyboard"
+    if v.get("status") == "draft_invalid" or v.get("verification_status") == "failed":
+        return "review"
     film = summary._film(sess)
-    if not film or film["done"] < film["total"]:
+    if not film or film["total"] <= 0 or film["done"] < film["total"]:
         return "render"
-    if summary._final(sess) != "fresh":
-        return "compose"
-    return "download"
+    return "download" if summary._final(sess) == "fresh" else "compose"
 
 
 def _doc(user_id: str, nid: str, ch: dict) -> tuple:
