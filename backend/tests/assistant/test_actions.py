@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""助手的操作工具：出卡字段、确认后执行、取消不执行、金额变了重新出卡（以服务端给的卡为准）、连变 3 次不执行、
-合成金额为 0 不出卡、生成分镜（没原文报错、无金额、本章已有采用版）、导出直接放下载按钮、执行函数的 HTTP 报错转述、
+"""助手的操作工具：出卡字段、确认后执行、取消不执行、金额变了不执行（以服务端给的卡为准）、
+金额变了又变回时取消仍有效、合成金额为 0 不出卡（恢复时变免费也尊重取消）、生成分镜（没原文报错、无金额、本章已有采用版）、导出直接放下载按钮、执行函数的 HTTP 报错转述、
 工具参数说明里没有 config 与 tool_call_id。执行函数用替身（ops），不碰出片与模型。
 用法: python3 tests/assistant/test_actions.py
 """
@@ -110,34 +110,27 @@ def main() -> int:
     assert calls == [] and m.artifact["outcome"] == "rejected" and "取消" in m.content
     print("2. 取消不执行 ✓")
 
-    # 3. 金额变了：重新出卡（带原金额），再确认才按新金额执行
+    # 3. 金额变了：不执行，工具报「预估变了」（带新旧金额）；每次调用只中断一次
     C = cfg()
     ag = agent_for([call("film_run", {}, "f3"), AIMessage("好")])
     its = run(ag, C, {"messages": [HumanMessage("出片")]})
     film["amount"] = 2.0
-    its2 = run(ag, C, answer(its[0]))
-    assert calls == [] and len(its2) == 1
-    assert its2[0].value["amount"] == 2.0 and its2[0].value["changed"] is True and its2[0].value["previous_amount"] == 1.5
-    run(ag, C, answer(its2[0]))
-    assert calls == [("film", "v1", None, 2.0)], calls
-    print("3. 金额变了重新出卡 ✓")
-
-    # 4. 连变 3 次：不执行，工具报错
-    calls.clear()
-    seq = iter(range(10, 100))
-    film["next"] = lambda: float(next(seq))
-    C = cfg()
-    ag = agent_for([call("film_run", {}, "f4"), AIMessage("好")])
-    its = run(ag, C, {"messages": [HumanMessage("出片")]})
-    shown = 1
-    while its:
-        its = run(ag, C, answer(its[0]))
-        shown += bool(its)
-    film.pop("next")
-    film["amount"] = 1.5
+    assert run(ag, C, answer(its[0])) == [], "不再在同一次调用里出第二张卡"
     m = result(ag, C)
-    assert shown == 3 and calls == [] and m.status == "error" and "一直在变" in m.content, (shown, m.content)
-    print("4. 连变 3 次不执行 ✓")
+    assert calls == [] and m.status == "error" and "预估变了" in m.content and "1.50" in m.content and "2.00" in m.content, m.content
+    film["amount"] = 1.5
+    print("3. 金额变了不执行 ✓")
+
+    # 4. 生成分镜的要点变了（原文字数）：同样不执行
+    c3 = novels.create_chapter(uid, nid, "第三章 坟地", text="原文三")["id"]   # 没有采用版，原文还能改
+    C = cfg()
+    ag = agent_for([call("generate_storyboard", {"chapter": c3}, "g0"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("生成第三章")]})
+    novels.update_chapter(uid, nid, c3, text="原文三改长了")
+    run(ag, C, answer(its[0]))
+    m = result(ag, C)
+    assert calls == [] and m.status == "error" and "预估变了" in m.content, m.content
+    print("4. 要点变了不执行 ✓")
 
     # 5. 合成：金额为 0 不出卡直接执行；大于 0 出卡，确认后带金额
     C = cfg()
@@ -154,6 +147,16 @@ def main() -> int:
     assert its[0].value["detail"] == {"chars": 120, "draft": False} and its[0].value["amount"] == 0.3
     run(ag, C, answer(its[0]))
     assert calls == [("compose", False, 0.3)], calls
+    # 恢复时配音刚好变成已缓存（金额 0）：被恢复的这次调用照样取回答，用户取消就不合成
+    calls.clear()
+    C = cfg()
+    ag = agent_for([call("compose", {}, "m3"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("合成")]})
+    comp.update(amount=0.0, chars=0)
+    C["configurable"]["resume_tool_call"] = "m3"
+    run(ag, C, answer(its[0], "reject"))
+    m = result(ag, C)
+    assert calls == [] and m.artifact["outcome"] == "rejected", (calls, m.content)
     print("5. 合成 ✓")
 
     # 6. 生成分镜：没原文报错不出卡；有原文出卡（无金额、已有采用版），确认后开任务

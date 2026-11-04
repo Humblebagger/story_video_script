@@ -1,8 +1,10 @@
 """助手的操作工具（spec §7）：生成分镜、出片、配音合成先出确认卡，用户点确认才执行；导出不花钱，直接放下载按钮。
 
 确认：服务端先算预估，interrupt(卡) 暂停这一轮；用户点按钮后接口用 Command(resume={中断编号: {decision, card}})
-接着跑，card 是接口从存档里取的那张（不信前端）。恢复时工具从头重跑：重算预估，与用户确认的卡对不上就带原金额
-重新出卡，连变 MAX_RECARD 次不执行。
+接着跑，card 是接口从存档里取的那张（不信前端）。恢复时工具从头重跑：重算预估，与用户确认的卡对不上就不执行，
+报「预估变了」，由助手再调一次工具出新卡。每次调用只中断一次：多次中断时恢复会按顺序重放旧回答，
+重放时的重算可能已经不同，用户最后的「取消」会被前面的「确认」盖掉。
+被恢复的那次调用（configurable.resume_tool_call）不管金额多少都先取回答，免得「恢复时变免费」跳过用户的取消。
 执行函数在 server/app.py（与接口同一份：鉴权、验证门、上限、确认金额都一样），由 app 在导入时填进 ops——
 本包不能反过来导入 app（循环导入）。
 """
@@ -18,7 +20,6 @@ from server import summary
 
 # 名字 → app 里的执行函数：start_version / film_quote / film_run / compose_quote / compose_start / export_check
 ops: dict = {}
-MAX_RECARD = 3
 
 
 def _op(name: str, *args):
@@ -56,18 +57,26 @@ def _same(a: dict, b: dict) -> bool:
     return a["detail"] == b["detail"]
 
 
+def _money(q: dict) -> str:
+    return "按模型用量计费" if q["amount"] is None else f"¥{q['amount']:.2f}"
+
+
 def _ask(card: dict, quote: Callable[[], dict]) -> tuple:
-    """出卡等用户确认 → (是否确认, 用户最后确认或取消的那张卡)。确认后重算预估，对不上就带原金额重新出卡。"""
-    for _ in range(MAX_RECARD):
-        answer = interrupt(card) or {}
-        seen = answer.get("card") or card
-        if answer.get("decision") != "approve":
-            return False, seen
-        fresh = quote()
-        if _same(fresh, seen):
-            return True, seen
-        card = {**seen, **fresh, "changed": True, "previous_amount": seen["amount"]}
-    raise ToolException("预估一直在变，先不执行；稍后再让我试一次")
+    """出卡等用户确认 → (是否确认, 用户确认或取消的那张卡)。确认后重算预估，对不上就不执行（报错，由助手再出新卡）。"""
+    answer = interrupt(card) or {}
+    seen = answer.get("card") or card
+    if answer.get("decision") != "approve":
+        return False, seen
+    fresh = quote()
+    if not _same(fresh, seen):
+        raise ToolException(f"预估变了（{_money(seen)} → {_money(fresh)}，要点 {seen['detail']} → {fresh['detail']}），"
+                            "没有执行；要的话我再出一张新卡")
+    return True, seen
+
+
+def _resuming(config: RunnableConfig, tool_call_id: str) -> bool:
+    """这次调用是不是正被恢复的那次（resume 接口在 configurable 里标明）。"""
+    return (config.get("configurable") or {}).get("resume_tool_call") == tool_call_id
 
 
 def _result(text: str, card: dict, outcome: str, task: Optional[dict] = None) -> tuple:
@@ -131,12 +140,12 @@ def compose(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolCal
 
     card = _card(tool_call_id, "compose", ch, vid, quote())
     outcome = "done"
-    if card["amount"] > 0:
+    if card["amount"] > 0 or _resuming(config, tool_call_id):
         ok, card = _ask(card, quote)
         if not ok:
             return _result("用户取消了，没有合成", card, "rejected")
         outcome = "approved"
-    _op("compose_start", user, nid, ch["id"], vid, draft, card["amount"] if card["amount"] > 0 else None)
+    _op("compose_start", user, nid, ch["id"], vid, draft, card["amount"] or None)
     return _result(f"已开始合成「{ch['title']}」，进度在任务卡上", card, outcome,
                    {"kind": "compose", "chapter_id": ch["id"], "version_id": vid})
 
