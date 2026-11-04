@@ -574,10 +574,8 @@ def _schedule_digest(user_id: str, nid: str, cid: str) -> bool:
     return True
 
 
-@app.post("/novels/{nid}/chapters/{cid}/versions")
-def versions_create(nid: str, cid: str, req: VersionRequest,
-                    user: dict = Depends(novel_user)):
-    """转换本章 → 新版本。返回 job_id（即版本 id），进度/分批预览照旧走 /jobs。"""
+def _start_version(user: dict, nid: str, cid: str, overrides: dict, strict: bool) -> dict:
+    """转换本章 → 新版本（接口与助手共用）。返回 job_id（即版本 id），进度/分批预览照旧走 /jobs。"""
     novel = _novel_call(novels.get_novel, user["id"], nid)
     chapter = _novel_call(novels.get_chapter, user["id"], nid, cid)
     text = chapter.get("text") or ""
@@ -587,12 +585,12 @@ def versions_create(nid: str, cid: str, req: VersionRequest,
     cap = raw.get("monthly_cap_usd") if raw else None
     if cap is not None and usage.month_spent(user["id"], pricing.load()) >= cap:
         raise HTTPException(429, "本月用量已达上限，请联系管理员")
-    merged = {**_clean_params(novel.get("params")), **_clean_params(req.overrides)}
+    merged = {**_clean_params(novel.get("params")), **_clean_params(overrides)}
     params = ConvertParams(**{**merged, "work_title": novel["title"],
                               "chapter": chapter["title"]})
     job_id = uuid.uuid4().hex[:12]
     _novel_call(novels.create_version, user["id"], nid, cid, job_id,
-                {**merged, "strict": req.strict}, text)
+                {**merged, "strict": strict}, text)
     job = {"id": job_id, "user_id": user["id"], "status": "queued", "log": [],
            "result": None, "quality_report": None, "error": None, "persisted": True,
            "created_at": store.now_iso(), "work_title": novel["title"],
@@ -600,9 +598,15 @@ def versions_create(nid: str, cid: str, req: VersionRequest,
            "partial": None, "novel_id": nid, "chapter_id": cid, "version_id": job_id}
     with _lock:
         _jobs[job_id] = job
-    _executor.submit(_run_version_job, job, user["id"], nid, cid, text, params,
-                     req.strict)
+    _executor.submit(_run_version_job, job, user["id"], nid, cid, text, params, strict)
     return {"job_id": job_id, "version_id": job_id, "status_url": f"/jobs/{job_id}"}
+
+
+@app.post("/novels/{nid}/chapters/{cid}/versions")
+def versions_create(nid: str, cid: str, req: VersionRequest,
+                    user: dict = Depends(novel_user)):
+    """转换本章 → 新版本。返回 job_id（即版本 id），进度/分批预览照旧走 /jobs。"""
+    return _start_version(user, nid, cid, req.overrides, req.strict)
 
 
 @app.get("/novels/{nid}/chapters/{cid}/versions/{vid}")
@@ -950,28 +954,40 @@ def render_session_patch(nid: str, cid: str, vid: str, body: RenderSettingsBody,
     return _render_call(render_session.view, s)
 
 
+def _film_quote(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]) -> dict:
+    """出片确认卡的预估：要出哪几段、合计多少元（不改段状态）。厂商与档位由用户在出片那一步选，所以要求已有会话。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
+    if render_session.load(root) is None:
+        raise HTTPException(404, "还没有出片会话：先到出片那一步选好厂商与档位")
+    s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
+                     allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
+    targets, total = _render_call(render_session.run_quote, s, clip_ids)
+    return {"amount": total, "clips": [c["id"] for c in targets]}
+
+
+def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list],
+              expected_cny: Optional[float]) -> dict:
+    """排队出片（接口与助手共用）：按已保存的分镜刷新会话再排队；确认金额由 queue_run 校验。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
+    _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
+                 allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
+    s = _render_call(render_session.queue_run, root, clip_ids, expected_cny)
+    _render_runner.watch(root)
+    return _render_call(render_session.view, s)
+
+
 @app.post(_R + "/clips/{clip_id}/run")
 def render_clip_run(nid: str, cid: str, vid: str, clip_id: str,
                     body: Optional[RenderRunBody] = None, user: dict = Depends(novel_user)):
     """出这一段（试段或重做）。超过确认线时要带 expected_cny。"""
-    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
-    _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
-                 allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
-    s = _render_call(render_session.queue_run, root, [clip_id], body.expected_cny if body else None)
-    _render_runner.watch(root)
-    return _render_call(render_session.view, s)
+    return _film_run(user, nid, cid, vid, [clip_id], body.expected_cny if body else None)
 
 
 @app.post(_R + "/run")
 def render_run_all(nid: str, cid: str, vid: str, body: RenderRunBody,
                    user: dict = Depends(novel_user)):
     """批量出剩余各段：必须带用户确认的预估金额，服务端重算不一致 409。"""
-    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
-    _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
-                 allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
-    s = _render_call(render_session.queue_run, root, None, body.expected_cny)
-    _render_runner.watch(root)
-    return _render_call(render_session.view, s)
+    return _film_run(user, nid, cid, vid, None, body.expected_cny)
 
 
 @app.put(_R + "/clips/{clip_id}/chosen")
@@ -1111,6 +1127,63 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
     return root, doc, kfs, s, p
 
 
+_NO_FFMPEG = ("服务器没有装 ffmpeg：macOS 执行 brew install ffmpeg，"
+              "Ubuntu / Debian 执行 apt install ffmpeg，装好后重启后端")
+_EXPORT_REASONS = {"none": "还没有合成好的成片", "stale": "成片已过期，请先重新合成",
+                   "no_timeline": "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）",
+                   "busy": "正在合成，完成后再导出"}
+
+
+def _compose_blockers(p: dict, draft: bool) -> None:
+    """合成前提：有 ffmpeg、说话人都有音色、非草稿时每段都有视频。"""
+    if render_mix.tools() is None:
+        raise HTTPException(422, _NO_FFMPEG)
+    if p["missing_voices"]:
+        raise HTTPException(422, "还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in p["missing_voices"]))
+    if p["no_video"] and not draft:
+        raise HTTPException(422, f"{len(p['no_video'])} 段还没有可用的视频；打开「草稿合成」可用关键帧补位")
+
+
+def _compose_quote(user: dict, nid: str, cid: str, vid: str, draft: bool) -> dict:
+    """合成确认卡的预估：未缓存配音的字数与金额（元）。过验证门与合成前提；合成中 409。"""
+    _render_ctx(user, nid, cid, vid)          # 过验证门
+    _root, _doc, _kfs, _s, p = _compose_preview(user, nid, cid, vid, draft)
+    if (p.get("final") or {}).get("state") in render_session.COMPOSE_BUSY:
+        raise HTTPException(409, "正在合成，等它结束再合成")
+    _compose_blockers(p, draft)
+    return {"amount": p["tts_cny"], "chars": p["tts_chars"]}
+
+
+def _compose_start(user: dict, nid: str, cid: str, vid: str, draft: bool,
+                   expected_cny: Optional[float]) -> dict:
+    """合成整章（后台线程，接口与助手共用）。配音金额大于 0 时必须带确认金额。"""
+    _render_ctx(user, nid, cid, vid)          # 过验证门
+    root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, draft)
+    _compose_blockers(p, draft)
+    if p["tts_cny"] > 0 and (expected_cny is None or abs(expected_cny - p["tts_cny"]) > 1e-6):
+        raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
+                                         "expected_cny": p["tts_cny"]})
+    s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
+                     tts_cny=p["tts_cny"], draft=draft, voices=s.get("voices") or {})
+    t = threading.Thread(target=_compose_worker, args=(root, doc, s, kfs, draft, render_mix.tools()),
+                         name=f"compose-{vid}", daemon=True)
+    _compose_threads[str(root)] = t
+    t.start()
+    return _render_call(render_session.view, s)
+
+
+def _export_check(user: dict, nid: str, cid: str, vid: str) -> tuple:
+    """能否导出剪辑工程：成片已合成、没过期、有 ffmpeg。返回 (会话目录, ffmpeg 工具)。"""
+    root, _doc, _kfs, _s, p = _compose_preview(user, nid, cid, vid, True)
+    reason = p.get("export_reason")
+    if reason:
+        raise HTTPException(409, _EXPORT_REASONS[reason])
+    tools = render_mix.tools()
+    if not tools:
+        raise HTTPException(503, "服务器没有安装 ffmpeg，无法导出")
+    return root, tools
+
+
 @app.get(_R + "/compose")
 def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: dict = Depends(novel_user)):
     """合成预览（配音条数、未缓存字数与费用、缺音色、缺视频的段、BGM、选曲参考）、当前成片状态与合成报告。"""
@@ -1120,15 +1193,7 @@ def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: d
 @app.get(_R + "/export.zip")
 def render_export(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
     """导出剪辑工程（FCPXML + 素材 + 字幕 + 说明）。只读本地文件、跑本地 ffmpeg，不花钱。"""
-    root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, True)
-    reason = p.get("export_reason")
-    if reason:
-        raise HTTPException(409, {"none": "还没有合成好的成片", "stale": "成片已过期，请先重新合成",
-                                  "no_timeline": "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）",
-                                  "busy": "正在合成，完成后再导出"}[reason])
-    tools = render_mix.tools()
-    if not tools:
-        raise HTTPException(503, "服务器没有安装 ffmpeg，无法导出")
+    root, tools = _export_check(user, nid, cid, vid)
     novel = _novel_call(novels.get_novel, user["id"], nid)
     chapter = next((c for c in novel["chapters"] if c["id"] == cid), {})
     title = f"{novel['title']}-{chapter.get('title', cid)}-{vid[:8]}"
@@ -1175,26 +1240,7 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
 def render_compose_post(nid: str, cid: str, vid: str, body: RenderComposeBody,
                         user: dict = Depends(novel_user)):
     """合成整章（后台线程）。过验证门；配音金额（未缓存的字数 × 单价）大于 0 时必须带确认金额。"""
-    _render_ctx(user, nid, cid, vid)          # 过验证门
-    root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, body.draft)
-    tools = render_mix.tools()
-    if tools is None:
-        raise HTTPException(422, "服务器没有装 ffmpeg：macOS 执行 brew install ffmpeg，"
-                                 "Ubuntu / Debian 执行 apt install ffmpeg，装好后重启后端")
-    if p["missing_voices"]:
-        raise HTTPException(422, "还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in p["missing_voices"]))
-    if p["no_video"] and not body.draft:
-        raise HTTPException(422, f"{len(p['no_video'])} 段还没有可用的视频；打开「草稿合成」可用关键帧补位")
-    if p["tts_cny"] > 0 and (body.expected_cny is None or abs(body.expected_cny - p["tts_cny"]) > 1e-6):
-        raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
-                                         "expected_cny": p["tts_cny"]})
-    s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
-                     tts_cny=p["tts_cny"], draft=body.draft, voices=s.get("voices") or {})
-    t = threading.Thread(target=_compose_worker, args=(root, doc, s, kfs, body.draft, tools),
-                         name=f"compose-{vid}", daemon=True)
-    _compose_threads[str(root)] = t
-    t.start()
-    return _render_call(render_session.view, s)
+    return _compose_start(user, nid, cid, vid, body.draft, body.expected_cny)
 
 
 @app.put(_R + "/bgm/{episode}")

@@ -296,23 +296,28 @@ def _remaining(s: dict) -> list:
     return [c for c in s["clips"] if c["state"] in REMAINING and not c.get("uncertain")]
 
 
+def run_quote(s: dict, clip_ids: Optional[list] = None) -> tuple:
+    """要出的段与合计预估（元），不改会话。queue_run 与助手的确认卡共用这一套挑选、计价与前提检查。"""
+    if (s.get("final") or {}).get("state") in COMPOSE_BUSY:
+        raise Conflict("正在合成，等它结束再出片")
+    if clip_ids is None:
+        targets = _remaining(s)
+    else:
+        targets = [_clip(s, cid) for cid in dict.fromkeys(clip_ids)]
+        for c in targets:
+            if c["state"] in IN_FLIGHT:
+                raise Conflict(f"{c['id']} 已在排队或生成中")
+    if not targets:
+        raise SessionError("没有要出的段")
+    return targets, round(sum(c["estimate_cny"] for c in targets), 2)
+
+
 def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[float] = None) -> dict:
     """排队出片。clip_ids=None 为批量出剩余各段（planned / failed，不含待核对的段），必须带
     确认金额；单段超过确认线也要带。金额与服务端重算不一致 → Conflict（附重算金额）。
     单段点名重做视为用户已看过「请到控制台核对」，清掉待核对标记。"""
     with mutate(root) as s:
-        if (s.get("final") or {}).get("state") in COMPOSE_BUSY:
-            raise Conflict("正在合成，等它结束再出片")
-        if clip_ids is None:
-            targets = _remaining(s)
-        else:
-            targets = [_clip(s, cid) for cid in dict.fromkeys(clip_ids)]
-            for c in targets:
-                if c["state"] in IN_FLIGHT:
-                    raise Conflict(f"{c['id']} 已在排队或生成中")
-        if not targets:
-            raise SessionError("没有要出的段")
-        total = round(sum(c["estimate_cny"] for c in targets), 2)
+        targets, total = run_quote(s, clip_ids)
         if (clip_ids is None or total > s["confirm_over_cny"]) and expected_cny is None:
             raise Conflict(f"本次约 ¥{total:.2f}，请确认金额后再出片", total)
         if expected_cny is not None and abs(expected_cny - total) > 0.005:
