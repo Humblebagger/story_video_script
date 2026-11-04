@@ -146,7 +146,9 @@ export async function decideAssistant(nid: string, toolCallId: string, decision:
                      msgs: s.msgs.map((m, i) => (i === s.msgs.length - 1 ? upsertCard(m, { ...card, sending: true }) : m)) }))
   await run(nid, o, true,
             (onEvent, signal) => resumeAssistant(nid, { id, decision, lang: o.lang, where: o.where }, onEvent, signal),
-            () => put(nid, (s) => ({ ...s, limited: true })))
+            // 429 在服务端动任何东西之前：卡片退出「发送中」，仍待确认
+            () => put(nid, (s) => ({ ...s, limited: true,
+                                     msgs: s.msgs.map((m, i) => (i === s.msgs.length - 1 ? settleTools(m) : m)) })))
 }
 
 export function retryAssistant(nid: string, o: SendOpts): void {

@@ -934,6 +934,5 @@ export type AssistantEvent =
   | { event: 'goto'; data: AssistantGoto }
   | { event: 'confirm'; data: AssistantCardInfo & { id: string } }
   | { event: 'action'; data: AssistantCard }
-
   | { event: 'done'; data: Record<string, never> }
   | { event: 'error'; data: { message: string } }

@@ -1,7 +1,6 @@
 /** 助手：SSE 解析、极简渲染、位置与跳转存储；面板交互（Task 6 追加）。跑法：npm test */
 import { parseSse } from '../src/lib/sse'
 import { cancelStep, getWhere, notifyTask, onStepRequest, onTask, requestStep, setWhere, takeStep } from '../src/lib/assistantBridge'
-
 import { composeView, filmView, jobView } from '../src/lib/assistantTask'
 import type { AssistantTask, FilmSession, Job } from '../src/types'
 
@@ -274,6 +273,22 @@ const enter = async (composing = false, keyCode = 13) => {
   must(sig3.aborted && !getSession('n3').msgs.length && !getSession('n2').msgs.length, '换小说中断并丢掉别的会话')
   await act(async () => { root.unmount() })
   hold = null
+
+  // 恢复被限流（429）：卡片退出「发送中」，仍待确认，今日用完
+  {
+    const { sendAssistant, decideAssistant } = await import('../src/lib/assistantSession')
+    const o = { lang: 'zh', where: {}, busyText: 'busy', cutOffText: 'cut' }
+    const cardInfo = { id: 'i1', tool_call_id: 'tc1', action: 'compose', chapter_id: 'c1', chapter: 'c', version_id: 'v1',
+                       amount: 1, currency: 'cny', detail: {} }
+    script = [{ event: 'confirm', data: cardInfo }, { event: 'done', data: {} }]
+    await sendAssistant('n9', 'go', o)
+    must(getSession('n9').msgs[1].cards?.[0].outcome === 'pending', '种下待确认的卡')
+    status = 429
+    await decideAssistant('n9', 'tc1', 'approve', o)
+    status = 200
+    const c9 = getSession('n9').msgs[1].cards![0]
+    must(!c9.sending && c9.outcome === 'pending' && getSession('n9').limited && !getSession('n9').busy, '恢复 429 后卡片不再发送中')
+  }
   console.log('✓ 面板卸载不中断回答')
 }
 globalThis.fetch = realFetch
