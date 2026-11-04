@@ -11,6 +11,7 @@ import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
 import { chosenAttempt, clipOffset, clipSpans, laneKind, laneText, laneTitle, spanAt } from '../film'
 import { useFilm } from '../useFilm'
+import { onTask } from '@/lib/assistantBridge'
 import { FilmPanel } from './FilmPanel'
 import { ChapterHeadContext } from './workflow/chapterHead'
 import { buildTimeline, fitText, fmtClock, previewFrom, shotSpan, speechAt, textPx, litFraction, shotIndexAt } from '../timeline'
@@ -144,6 +145,11 @@ export function TimelineCanvas({
     if (wasDirty.current && !dirty) void reloadFilm()
     wasDirty.current = dirty
   }, [dirty, reloadFilm])
+  // 助手对这一版发起了出片或合成：重读出片会话（在跑的段让轮询变勤，合成面板跟着会话变）
+  const filmVid = version?.vid
+  useEffect(() => onTask((t) => {
+    if ((t.kind === 'film' || t.kind === 'compose') && t.version_id && t.version_id === filmVid) void reloadFilm()
+  }), [filmVid, reloadFilm])
   const onJumpUnit = (unitId: string) => {
     setFocusUnit(unitId)
     setPanel('source')

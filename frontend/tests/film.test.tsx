@@ -355,6 +355,21 @@ console.log('10. 验证门拦截 ✓')
   console.log('9b. 保存后重读 ✓')
 }
 
+// 9c. 助手对这一版发起出片 / 合成：重读出片会话；别的版本不读
+{
+  const { notifyTask } = await import('../src/lib/assistantBridge')
+  const gets = () => calls.filter((c) => c === 'GET /session').length
+  const n0 = gets()
+  await act(async () => { notifyTask({ kind: 'film', chapter_id: 'c1', version_id: 'v1' }) })
+  await settle()
+  must(gets() > n0, '助手对这一版出片后重读出片会话')
+  const n1 = gets()
+  await act(async () => { notifyTask({ kind: 'compose', chapter_id: 'c1', version_id: 'other' }) })
+  await settle()
+  must(gets() === n1, '别的版本不重读')
+  console.log('9c. 助手发起后重读 ✓')
+}
+
 // 10b. 确认框开着时：未保存 / 验证门没过都要禁用确认；总览主按钮在未保存时也禁用
 Object.assign(clipOf(second), { state: 'failed', error: null, uncertain: false, estimate_cny: 25 })
 film = recount(film!)

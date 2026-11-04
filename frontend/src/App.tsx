@@ -25,7 +25,7 @@ import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { ActivityPanel } from './components/shell/ActivityPanel'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
-import { cancelStep, requestStep } from './lib/assistantBridge'
+import { cancelStep, onTask, requestStep } from './lib/assistantBridge'
 import { keepOnlyAssistant } from './lib/assistantSession'
 import type { DoneJob } from './components/shell/ActivityPanel'
 import { ProjectNav } from './components/shell/ProjectNav'
@@ -263,6 +263,12 @@ export default function App() {
       /* 巡检失败静默重试，不打扰用户 */
     }
   }, [announce, refreshNovels, reloadOpen, bumpSummary])
+
+  // 助手发起了操作：转换让任务巡检立刻刷新（动态里马上出现）；各种操作都让小说概览重算
+  useEffect(() => onTask((t) => {
+    if (t.kind === 'job') void watchJobs()
+    bumpSummary()
+  }), [watchJobs, bumpSummary])
 
   // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
   // 监听只订阅一次，所以通过 ref 拿到最新的重置函数；和退出共用，保证换账号不残留上一个人的小说与产物
