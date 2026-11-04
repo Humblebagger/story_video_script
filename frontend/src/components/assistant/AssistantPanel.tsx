@@ -1,4 +1,4 @@
-/** 助手对话（右侧面板的「助手」页签）：历史、流式回答、工具调用折叠行、跳转按钮、停止、清空、示例问题。
+/** 助手对话（右侧面板的「助手」页签）：历史、流式回答、工具调用折叠行、跳转按钮、操作卡（确认、取消、任务进度在 ActionCard）、停止、清空、示例问题。
  *  对话状态与正在跑的流在 assistantSession（模块级），面板只是视图：卸载（关面板、切页签）不中断回答。
  *  当前位置读 assistantBridge；跳转交给 onGoto（App 打开章节并切步骤）。 */
 import { useEffect, useRef, useState } from 'react'
@@ -11,12 +11,13 @@ import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { useWhere } from '@/lib/assistantBridge'
 import {
-  ASSISTANT_MAX as MAX, clearAssistantSession, loadAssistant, retryAssistant, sendAssistant, setDraft, stopAssistant,
+  ASSISTANT_MAX as MAX, clearAssistantSession, decideAssistant, loadAssistant, retryAssistant, sendAssistant, setDraft, stopAssistant,
   useAssistantSession,
 } from '@/lib/assistantSession'
 import type { SendOpts } from '@/lib/assistantSession'
 import { MiniMd } from '@/lib/miniMd'
 import type { AssistantGoto, AssistantTool } from '@/types'
+import { ActionCard } from './ActionCard'
 
 export function AssistantPanel({ novelId, chapters, onGoto }: {
   novelId: string
@@ -94,6 +95,10 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
               </div>
             ))}
             {!!m.text && <MiniMd text={m.text} />}
+            {(m.cards ?? []).map((c) => (
+              <ActionCard key={c.tool_call_id} novelId={novelId} c={c} busy={busy} onGoto={onGoto}
+                          onDecide={(d) => void decideAssistant(novelId, c.tool_call_id, d, opts())} />
+            ))}
             {(m.goto ?? []).map((g, j) => (
               <Button key={j} variant="outline" size="sm" className="self-start" data-testid="assistant-goto" onClick={() => onGoto(g)}>
                 {t('assistant.goto', { chapter: title(g.chapter_id), step: t(`flow.steps.${g.step}` as MsgKey) })}
@@ -103,7 +108,9 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
             {m.error && (
               <div className="flex items-center gap-2 text-xs text-destructive" data-testid="assistant-error">
                 <span>{m.error}</span>
-                {i === msgs.length - 1 && !busy && <Button variant="ghost" size="sm" onClick={retry}>{t('assistant.retry')}</Button>}
+                {i === msgs.length - 1 && !busy && !(m.cards ?? []).some((c) => c.outcome === 'pending') && (
+                  <Button variant="ghost" size="sm" onClick={retry}>{t('assistant.retry')}</Button>
+                )}
               </div>
             )}
           </div>

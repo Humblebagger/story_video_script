@@ -114,6 +114,8 @@ type Ev = { event: string; data: unknown }
 
 const realFetch = globalThis.fetch
 let history: unknown[] = []
+let filmState: unknown = { clips: [{ id: 'C1', state: 'running' }, { id: 'C2', state: 'done' }], final: null }
+let jobState: unknown = null
 let script: Ev[] = []
 let hold: Promise<void> | null = null        // 设了就等它 resolve 再推 done（测「回答中」）
 let after: Ev[] = []                          // hold 放行之后、done 之前再推的事件
@@ -123,7 +125,13 @@ const calls: { method: string; url: string; body?: string }[] = []
 globalThis.fetch = (async (url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET'
   calls.push({ method, url: String(url), body: init?.body as string | undefined })
-  if (method === 'GET') return new Response(JSON.stringify({ messages: history }), { status: 200 })
+  if (method === 'GET') {
+    const u = String(url)
+    if (u.includes('/render/session')) return new Response(JSON.stringify(filmState), { status: 200 })
+    if (u.includes('/jobs/')) return new Response(JSON.stringify(jobState), { status: jobState ? 200 : 404 })
+    if (u.endsWith('/export.zip')) return new Response('zip', { status: 200, headers: { 'content-disposition': 'attachment; filename="p.zip"' } })
+    return new Response(JSON.stringify({ messages: history }), { status: 200 })
+  }
   if (method === 'DELETE') return new Response(JSON.stringify({ ok: true }), { status: 200 })
   if (status !== 200) return new Response(JSON.stringify({ detail: 'x' }), { status })
   const enc = new TextEncoder()
@@ -290,6 +298,106 @@ const enter = async (composing = false, keyCode = 13) => {
     must(!c9.sending && c9.outcome === 'pending' && getSession('n9').limited && !getSession('n9').busy, '恢复 429 后卡片不再发送中')
   }
   console.log('✓ 面板卸载不中断回答')
+}
+
+{
+  // 确认卡：出卡 → 待确认（金额与要点）→ 点确认发 resume、按钮禁用 → action 结果 → 任务卡与通知
+  const tasks: unknown[] = []
+  const offTask = onTask((t) => tasks.push(t))
+  const card = { id: 'i1', tool_call_id: 'f1', action: 'film_run', chapter_id: 'c1', chapter: '第一章',
+                 version_id: 'v1', amount: 1.5, currency: 'cny', detail: { clips: 2 } }
+  history = []
+  let root = await mount('n-card')
+  script = [{ event: 'confirm', data: card }]
+  await type('第一章出片')
+  await enter()
+  const box = () => $$('assistant-card').at(-1)!
+  must(box().getAttribute('data-outcome') === 'pending', '待确认的卡')
+  must((box().textContent ?? '').includes('1.50') && (box().textContent ?? '').includes('2'), '金额与段数')
+  must(!!$('assistant-card-approve') && !($('assistant-card-approve') as HTMLButtonElement).disabled, '可以确认')
+  must(!$$('assistant-tool').length, '操作工具不出折叠的工具行')
+
+  let release!: () => void
+  hold = new Promise<void>((r) => { release = r })
+  script = [{ event: 'action', data: { tool_call_id: 'f1', action: 'film_run', outcome: 'approved', card,
+                                       task: { kind: 'film', chapter_id: 'c1', version_id: 'v1' } } }]
+  after = [{ event: 'token', data: { text: '开始了' } }]
+  await act(async () => { $('assistant-card-approve')!.click() })
+  await flush()
+  const last = calls.filter((c) => c.method === 'POST').at(-1)!
+  must(last.url.endsWith('/assistant/resume') && JSON.parse(last.body!).id === 'i1' && JSON.parse(last.body!).decision === 'approve',
+       '点确认发 resume，带中断编号')
+  must(box().getAttribute('data-outcome') === 'approved', 'action 到了就是已确认')
+  release()
+  await flush()
+  hold = null
+  after = []
+  must(tasks.length === 1 && (tasks[0] as { kind: string }).kind === 'film', '通知工作台')
+  must(!!$('assistant-task') && ($('assistant-task')!.textContent ?? '').includes('1'), '任务卡显示进度')
+  must(($$('assistant-bot').at(-1)!.textContent ?? '').includes('开始了'), '恢复后的文字接在同一条回答')
+  await act(async () => { root.unmount() })
+
+  // 发送中禁用：再出一张卡，点取消，流还没回来时按钮都禁用
+  history = []
+  root = await mount('n-card2')
+  script = [{ event: 'confirm', data: { ...card, id: 'i2', tool_call_id: 'f2' } }]
+  await type('出片')
+  await enter()
+  hold = new Promise<void>((r) => { release = r })
+  script = []
+  after = [{ event: 'action', data: { tool_call_id: 'f2', action: 'film_run', outcome: 'rejected', card } }]
+  await act(async () => { $('assistant-card-reject')!.click() })
+  await flush()
+  must(($('assistant-card-approve') as HTMLButtonElement).disabled && ($('assistant-card-reject') as HTMLButtonElement).disabled,
+       '请求回来之前两个按钮都禁用')
+  release()
+  await flush()
+  hold = null
+  after = []
+  must(box().getAttribute('data-outcome') === 'rejected' && !!$('assistant-card-rejected'), '取消后显示已取消')
+  await act(async () => { root.unmount() })
+
+  // 有待确认的卡时发新消息：卡本地标成已取消
+  history = []
+  root = await mount('n-card3')
+  script = [{ event: 'confirm', data: { ...card, id: 'i3', tool_call_id: 'f3' } }]
+  await type('出片')
+  await enter()
+  script = [{ event: 'token', data: { text: '好的' } }]
+  await type('算了')
+  await enter()
+  must($$('assistant-card')[0].getAttribute('data-outcome') === 'rejected', '发新消息后待确认的卡变已取消')
+  await act(async () => { root.unmount() })
+
+  // 历史里待确认的卡能直接点；没做成的卡显示原因；导出给下载按钮；生成分镜写按用量计费
+  history = [
+    { role: 'user', text: '做几件事' },
+    { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      { tool_call_id: 'x1', action: 'compose', outcome: 'failed', error: '还有说话人没选音色' },
+      { tool_call_id: 'x2', action: 'export_fcpxml', outcome: 'done',
+        card: { ...card, tool_call_id: 'x2', action: 'export_fcpxml', amount: null, currency: null, detail: {} },
+        task: { kind: 'export', chapter_id: 'c1', version_id: 'v1' } },
+      { tool_call_id: 'x3', action: 'generate_storyboard', outcome: 'approved',
+        card: { ...card, tool_call_id: 'x3', action: 'generate_storyboard', amount: null, currency: 'usd', detail: { chars: 300, archived: true } },
+        task: { kind: 'job', chapter_id: 'c1', version_id: 'j1', job_id: 'j1' } },
+      { tool_call_id: 'x4', action: 'film_run', outcome: 'pending',
+        card: { ...card, id: 'i4', tool_call_id: 'x4', amount: 2 } },
+    ] },
+  ]
+  jobState = { id: 'j1', status: 'running', log: [], result: null, quality_report: null, error: null,
+               progress: { batches: 2, batch: 1, total_chars: 100, done_chars: 40, attempt: 1, max_attempts: 3, phase: 'generating' } }
+  root = await mount('n-card4')
+  const cards = $$('assistant-card')
+  must(cards.length === 4, '四张卡')
+  must(!!$('assistant-card-failed') && ($('assistant-card-failed')!.textContent ?? '').includes('音色'), '没做成的原因')
+  must(!!$('assistant-download'), '导出给下载按钮')
+  must(cards[2].textContent!.includes('40'), '生成分镜的进度百分比')
+  must(!($('assistant-card-approve') as HTMLButtonElement).disabled, '历史里待确认的卡能点')
+  must(!$$('assistant-error').some((e) => e.textContent?.includes('重试')), '有待确认的卡时不给重试')
+  jobState = null
+  await act(async () => { root.unmount() })
+  offTask()
+  console.log('✓ 确认卡与任务卡')
 }
 globalThis.fetch = realFetch
 

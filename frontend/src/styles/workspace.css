@@ -123,6 +123,8 @@
 .assistant__md p + p { margin-top: 4px; }
 .assistant__tool { font-size: 12px; color: var(--ui-muted-foreground); }
 .assistant__tool pre { font-family: var(--font-mono); white-space: pre-wrap; word-break: break-all; margin-top: 4px; }
+.assistant__card { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.assistant__task { font-size: 12px; color: var(--ui-muted-foreground); display: flex; flex-direction: column; gap: 4px; }
 .assistant__input { border-top: 1px solid var(--border); padding-top: 8px; display: flex; gap: 6px; align-items: flex-end; }
 .assistant__input textarea { flex: 1; resize: none; min-height: 40px; max-height: 160px; }
 @media (max-width: 1099px) {
