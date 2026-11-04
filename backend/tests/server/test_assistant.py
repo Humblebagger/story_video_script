@@ -5,6 +5,7 @@
 假模型（tests/assistant/fake_model.py），不调真实模型。
 用法: python3 tests/server/test_assistant.py
 """
+import copy
 import json
 import os
 import sys
@@ -23,9 +24,15 @@ os.environ["STORYBOARD_RENDER_RUNNER"] = "0"
 from fastapi.testclient import TestClient  # noqa: E402
 from langchain_core.messages import AIMessage  # noqa: E402
 from fake_model import ScriptedChat, call  # noqa: E402
-from assistant import store  # noqa: E402
+from assistant import graph as assistant_graph, store  # noqa: E402
+from render import providers  # noqa: E402
+from render.providers.fake import FakeTts, FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
 from server import auth, novels, usage  # noqa: E402
+
+providers.register("fake", lambda: FakeVideo())
+providers.register_tts("fake", lambda: FakeTts())
+DOC = json.loads((ROOT / "tests" / "real_text_yao" / "output_merged.json").read_text(encoding="utf-8"))
 
 
 def events_of(res) -> list:
@@ -204,6 +211,92 @@ def main() -> int:
     finally:
         app_mod.build_chat_model, app_mod.load_settings, app_mod.replace_thinking = saved
     print("14. 助手模型重试 ✓")
+
+    # 15. 生成分镜出卡：只有 confirm 与 done；历史里是待确认的卡（带中断编号）
+    app_mod._assistant_model = lambda: ScriptedChat(script=script)   # 前面的步骤可能换过模型
+    os.environ.pop("STORYBOARD_ASSISTANT_DAILY", None)
+    store.clear(uid, nid)
+    real_job = app_mod._run_version_job
+    app_mod._run_version_job = lambda *a, **k: None       # 不跑真实转换
+    script[:] = [call("generate_storyboard", {}, "g1"), AIMessage("开始了。")]
+    r = c.post(A + "/messages", headers=H, json={"text": "生成第一章", "lang": "zh", "where": {"chapter_id": cid}})
+    evs = events_of(r)
+    assert [e for e, _ in evs] == ["confirm", "done"], evs
+    conf = evs[0][1]
+    assert conf["action"] == "generate_storyboard" and conf["chapter_id"] == cid and conf["amount"] is None
+    h = c.get(A, headers=H).json()["messages"]
+    assert h[-1]["cards"][0]["outcome"] == "pending" and h[-1]["cards"][0]["card"]["id"] == conf["id"]
+    print("15. 出卡 ✓")
+
+    # 16. 恢复的校验：未登录 401、别人的小说 404、decision 非法 422、不是待确认的卡 409
+    R2 = A + "/resume"
+    ok_body = {"id": conf["id"], "decision": "approve", "lang": "zh", "where": {"chapter_id": cid}}
+    assert c.post(R2, json=ok_body).status_code == 401
+    assert c.post(R2, headers=HB, json=ok_body).status_code == 404
+    assert c.post(R2, headers=H, json={**ok_body, "decision": "maybe"}).status_code == 422
+    assert c.post(R2, headers=H, json={**ok_body, "id": "nope"}).status_code == 409
+    print("16. 恢复校验 ✓")
+
+    # 17. 恢复（确认）：action 事件带任务、模型接着说；任务进表；记一笔用量；锁已释放
+    n_usage = len([x for x in usage.read(user_id=uid) if x["purpose"] == "assistant"])
+    script[:] = [AIMessage("开始了。")]      # 每个请求新建模型并复制脚本：第一条调用已在上一请求用掉
+    r = c.post(R2, headers=H, json=ok_body)
+    evs = events_of(r)
+    assert [e for e, _ in evs] == ["action", "token", "done"], evs
+    act = evs[0][1]
+    assert act["outcome"] == "approved" and act["task"]["kind"] == "job"
+    assert app_mod._jobs[act["task"]["job_id"]]["novel_id"] == nid
+    assert len([x for x in usage.read(user_id=uid) if x["purpose"] == "assistant"]) == n_usage + 1
+    assert store.try_begin(uid, nid) and store.end(uid, nid) is None
+    assert c.post(R2, headers=H, json=ok_body).status_code == 409, "处理过的卡不能再恢复"
+    assert _TMP.name not in r.text
+    print("17. 恢复确认 ✓")
+
+    # 18. 出片：真的排上队（假厂商），卡上金额等于剩余各段合计
+    c2 = novels.create_chapter(uid, nid, "第二章 刑场", text="原文二")["id"]
+    novels.create_version(uid, nid, c2, "v2", {}, "原文二")
+    novels.update_version_state(uid, nid, c2, "v2", "succeeded", result=copy.deepcopy(DOC))
+    novels.adopt_version(uid, nid, c2, "v2")
+    sess = c.post(f"/novels/{nid}/chapters/{c2}/versions/v2/render/session", headers=H, json={"budget_cny": 100000}).json()
+    script[:] = [call("film_run", {"chapter": c2}, "f1"), AIMessage("出片开始了。")]
+    evs = events_of(c.post(A + "/messages", headers=H, json={"text": "第二章出片", "lang": "zh"}))
+    assert [e for e, _ in evs] == ["confirm", "done"], evs
+    conf = evs[0][1]
+    assert conf["amount"] == sess["remaining_cny"] and conf["currency"] == "cny" and conf["version_id"] == "v2"
+    script[:] = [AIMessage("出片开始了。")]
+    evs = events_of(c.post(R2, headers=H, json={"id": conf["id"], "decision": "approve", "lang": "zh", "where": {}}))
+    assert evs[0][0] == "action" and evs[0][1]["outcome"] == "approved", evs
+    s = c.get(f"/novels/{nid}/chapters/{c2}/versions/v2/render/session", headers=H).json()
+    assert all(x["state"] == "queued" for x in s["clips"]), [x["state"] for x in s["clips"]]
+    print("18. 出片排队 ✓")
+
+    # 19. 有待确认的卡时发新消息：卡变已取消，模型看到取消结果与新问题
+    script[:] = [call("generate_storyboard", {"chapter": c2}, "g2")]
+    evs = events_of(c.post(A + "/messages", headers=H, json={"text": "生成第二章", "lang": "zh"}))
+    stale = evs[0][1]["id"]
+    model = ScriptedChat(script=[AIMessage("好的，不生成了。")])
+    app_mod._assistant_model = lambda: model
+    evs = events_of(c.post(A + "/messages", headers=H, json={"text": "算了", "lang": "zh"}))
+    assert [e for e, _ in evs] == ["token", "done"], evs
+    assert any(getattr(m, "content", None) == assistant_graph.CANCELLED for m in model.seen[-1])
+    h = c.get(A, headers=H).json()["messages"]
+    assert h[-3]["cards"][0]["outcome"] == "rejected" and h[-1]["text"] == "好的，不生成了。"
+    assert c.post(R2, headers=H, json={"id": stale, "decision": "approve", "lang": "zh", "where": {}}).status_code == 409
+    app_mod._assistant_model = lambda: ScriptedChat(script=script)
+    app_mod._run_version_job = real_job
+    print("19. 发新消息取消待确认的卡 ✓")
+
+    # 20. 恢复也受每日上限约束（429）
+    saved_daily = os.environ.get("STORYBOARD_ASSISTANT_DAILY")
+    os.environ["STORYBOARD_ASSISTANT_DAILY"] = "0"
+    try:
+        assert c.post(R2, headers=H, json={"id": "x", "decision": "reject", "lang": "zh", "where": {}}).status_code == 429
+    finally:
+        if saved_daily is None:
+            os.environ.pop("STORYBOARD_ASSISTANT_DAILY", None)
+        else:
+            os.environ["STORYBOARD_ASSISTANT_DAILY"] = saved_daily
+    print("20. 恢复受每日上限 ✓")
 
     print("\nALL PASS")
     return 0

@@ -47,6 +47,11 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   GET                 …/versions/{vid}/render/files/{path}      取片段与尾帧
   GET                 …/versions/{vid}/render/export.zip        导出剪辑工程（FCPXML + 素材 + 字幕 + 说明；成片已合成且未过期才可）
 
+助手（spec docs/specs/2026-11-01-assistant-panel-design.md）：
+  GET/DELETE  /novels/{nid}/assistant            历史 / 清空
+  POST        /novels/{nid}/assistant/messages   发消息（SSE）；有待确认的卡时先按取消处理
+  POST        /novels/{nid}/assistant/resume     确认卡上点了确认或取消，接着跑（SSE）
+
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
 """
@@ -81,6 +86,8 @@ from pipeline import novel_memory, verification
 from pipeline.chat import ChatInvoker, UsageCallback, build_chat_model, replace_thinking
 from assistant import events as assistant_events, graph as assistant_graph, store as assistant_store
 from assistant import tools as assistant_tools
+from assistant import actions as assistant_actions
+from langgraph.types import Command
 from render import keyframes as keyframes_mod
 from render import plan as render_plan_mod
 from render import compose as render_compose
@@ -1371,6 +1378,11 @@ def constraints_delete(nid: str, kid: str, user: dict = Depends(novel_user)):
 
 # ---------- 助手 ----------
 
+# 操作工具调这些（与接口同一份）；assistant 包不能反过来导入 app
+assistant_actions.ops.update(start_version=_start_version, film_quote=_film_quote, film_run=_film_run,
+                             compose_quote=_compose_quote, compose_start=_compose_start,
+                             export_check=_export_check)
+
 _ASSISTANT_STEPS = ("import", "storyboard", "review", "render", "compose", "download")
 _ASSISTANT_MAX = 2000
 
@@ -1433,30 +1445,43 @@ def assistant_clear(nid: str, user: dict = Depends(novel_user)):
     return {"ok": True}
 
 
-@app.post("/novels/{nid}/assistant/messages")
-def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_user)):
-    _assistant_db(user, nid)
-    text = str(body.get("text") or "").strip()
-    if not text or len(text) > _ASSISTANT_MAX:
-        raise HTTPException(422, f"消息不能为空，且不超过 {_ASSISTANT_MAX} 字")
+def _assistant_ctx(user: dict, nid: str, body: dict) -> tuple:
+    """(lang, where)：语言只收 zh / en；where 校验 step 后消毒（见 _assistant_where）。"""
     lang = body.get("lang") if body.get("lang") in ("zh", "en") else "zh"
     raw = body.get("where") or {}
     if not isinstance(raw, dict):
         raise HTTPException(422, "where 不合法")
     if raw.get("step") is not None and raw.get("step") not in _ASSISTANT_STEPS:
         raise HTTPException(422, "where.step 不合法")
-    where = _assistant_where(user["id"], nid, raw)
+    return lang, _assistant_where(user["id"], nid, raw)
+
+
+def _assistant_begin(user: dict, nid: str) -> float:
+    """每日上限（429）与并发锁（409）；返回锁凭据。"""
     if assistant_store.used_today(user["id"]) >= assistant_store.daily_limit():
         raise HTTPException(429, "今天的助手消息已用完，明天再来")
     token = assistant_store.try_begin(user["id"], nid)
     if not token:
         raise HTTPException(409, "上一条还在回答")
+    return token
+
+
+def _assistant_pending(user_id: str, nid: str) -> dict:
+    """存档里待确认的卡：中断编号 → 卡（中断的原值）。"""
+    if not assistant_store.exists(user_id, nid):
+        return {}
+    with assistant_store.saver(user_id, nid) as cp:
+        agent = assistant_graph.build_agent(assistant_graph.NullModel(), cp)
+        cfg = assistant_graph.run_config(user_id, nid, {}, "zh")
+        return {it.id: it.value for it in assistant_graph.pending(agent, cfg)}
+
+
+def _assistant_stream(user: dict, nid: str, where: dict, lang: str, payload, token: float, model,
+                      before=None, resume_tool_call: Optional[str] = None) -> StreamingResponse:
+    """跑一轮（发消息或确认卡恢复）→ SSE 响应。payload：用户文字或 Command。
+    before(agent, cfg)：开跑前在同一份存档上做的事（发新消息时取消待确认的卡）。
+    resume_tool_call：恢复时被恢复的那次工具调用（工具据此不管金额都先取回答）。"""
     root = str(auth.DATA_DIR)   # 整个数据根：用户目录、密钥文件等任何服务器路径都隐去
-    try:
-        model = _assistant_model()
-    except Exception as e:
-        assistant_store.end(user["id"], nid, token)
-        raise HTTPException(503, assistant_events._hide(f"助手暂不可用：{e}", root))
 
     def gen():
         cb = UsageCallback()
@@ -1464,8 +1489,15 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
         try:
             with assistant_store.saver(user["id"], nid) as cp:
                 agent = assistant_graph.build_agent(model, cp)
-                cfg = assistant_graph.run_config(user["id"], nid, where, lang, [cb])
-                for ev in assistant_events.stream(agent, cfg, text, hide=root):
+                cfg = assistant_graph.run_config(user["id"], nid, where, lang, [cb], resume_tool_call)
+                try:
+                    if before:
+                        before(agent, cfg)
+                except Exception as e:  # 存档读写出错：给一条报错，不开新一轮
+                    yield assistant_events.sse({"event": "error", "data": {
+                        "message": assistant_events._hide(f"助手出错：{e}", root)[:300]}})
+                    return
+                for ev in assistant_events.stream(agent, cfg, payload, hide=root):
                     if ev["event"] == "done":
                         ok = True
                     yield assistant_events.sse(ev)
@@ -1514,8 +1546,50 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
                 await self.body_iterator.aclose()
 
     return _Resp(_Body(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
+def _assistant_model_or_503(user: dict, nid: str, token: float):
+    try:
+        return _assistant_model()
+    except Exception as e:
+        assistant_store.end(user["id"], nid, token)
+        raise HTTPException(503, assistant_events._hide(f"助手暂不可用：{e}", str(auth.DATA_DIR)))
+
+
+@app.post("/novels/{nid}/assistant/messages")
+def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_user)):
+    _assistant_db(user, nid)
+    text = str(body.get("text") or "").strip()
+    if not text or len(text) > _ASSISTANT_MAX:
+        raise HTTPException(422, f"消息不能为空，且不超过 {_ASSISTANT_MAX} 字")
+    lang, where = _assistant_ctx(user, nid, body)
+    token = _assistant_begin(user, nid)
+    model = _assistant_model_or_503(user, nid, token)
+    # 有待确认的卡：先按「取消」处理（spec §7.2），再开新的一轮
+    return _assistant_stream(user, nid, where, lang, text, token, model, before=assistant_graph.cancel_pending)
+
+
+@app.post("/novels/{nid}/assistant/resume")
+def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(novel_user)):
+    """点了确认卡上的按钮：接着跑被中断的那一轮（spec §7.2）。卡以存档为准，不收前端传来的卡。"""
+    _assistant_db(user, nid)
+    iid, decision = body.get("id"), body.get("decision")
+    if not isinstance(iid, str) or decision not in ("approve", "reject"):
+        raise HTTPException(422, "id 或 decision 不合法")
+    lang, where = _assistant_ctx(user, nid, body)
+    token = _assistant_begin(user, nid)
+    try:
+        card = _assistant_pending(user["id"], nid).get(iid)
+    except Exception:
+        assistant_store.end(user["id"], nid, token)
+        raise
+    if card is None:
+        assistant_store.end(user["id"], nid, token)
+        raise HTTPException(409, "这张确认卡已经处理过")
+    model = _assistant_model_or_503(user, nid, token)
+    cmd = Command(resume={iid: {"decision": decision, "card": card}})
+    return _assistant_stream(user, nid, where, lang, cmd, token, model, resume_tool_call=card["tool_call_id"])
 
 # ---------- 探针 ----------
 
