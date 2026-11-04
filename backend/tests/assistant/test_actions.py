@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """助手的操作工具：出卡字段、确认后执行、取消不执行、金额变了不执行（以服务端给的卡为准）、
 金额变了又变回时取消仍有效、合成金额为 0 不出卡（恢复时变免费也尊重取消）、生成分镜（没原文报错、无金额、本章已有采用版）、导出直接放下载按钮、执行函数的 HTTP 报错转述、
-工具参数说明里没有 config 与 tool_call_id。执行函数用替身（ops），不碰出片与模型。
+工具参数说明里没有 config 与 tool_call_id、
+恢复时换了章（或版本）不执行、出片执行卡上那几段且段换了不执行。执行函数用替身（ops），不碰出片与模型。
 用法: python3 tests/assistant/test_actions.py
 """
 import copy
@@ -92,9 +93,10 @@ def main() -> int:
     assert len(its) == 1 and calls == []
     card = its[0].value
     assert card == {"tool_call_id": "f1", "action": "film_run", "chapter_id": c1, "chapter": "第一章 茶馆",
-                    "version_id": "v1", "amount": 1.5, "currency": "cny", "detail": {"clips": 2}}, card
+                    "version_id": "v1", "amount": 1.5, "currency": "cny", "detail": {"clips": 2},
+                    "clips": ["C1", "C2"]}, card
     assert run(ag, C, answer(its[0])) == []
-    assert calls == [("film", "v1", None, 1.5)], calls
+    assert calls == [("film", "v1", ["C1", "C2"], 1.5)], "执行卡上那几段，不是重新挑的「剩余各段」"
     m = result(ag, C)
     assert m.status != "error" and m.artifact == {"card": card, "outcome": "approved",
                                                   "task": {"kind": "film", "chapter_id": c1, "version_id": "v1"}}
@@ -208,6 +210,42 @@ def main() -> int:
         assert "config" not in props and "tool_call_id" not in props, (t.name, props)
     assert A.ACTIONS == ("generate_storyboard", "film_run", "compose", "export_fcpxml")
     print("9. 参数说明 ✓")
+
+    # 10. 恢复时面板已换到别的章（有自己的采用版，预估一模一样）：不执行，报章节或版本变了
+    c4 = novels.create_chapter(uid, nid, "第四章 夜路", text="原文")["id"]
+    novels.create_version(uid, nid, c4, "v4", {}, "原文")
+    novels.update_version_state(uid, nid, c4, "v4", "succeeded", result=copy.deepcopy(DOC))
+    novels.adopt_version(uid, nid, c4, "v4")
+    calls.clear()
+    C = cfg()
+    ag = agent_for([call("film_run", {}, "f6"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("出片")]})
+    assert its[0].value["chapter_id"] == c1 and its[0].value["version_id"] == "v1"
+    C["configurable"]["where"] = {"chapter_id": c4}
+    run(ag, C, answer(its[0]))
+    m = result(ag, C)
+    assert calls == [] and m.status == "error" and "章节或版本" in m.content, (calls, m.content)
+    # 生成分镜同样
+    C = cfg()
+    ag = agent_for([call("generate_storyboard", {}, "g3"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("生成")]})
+    assert its[0].value["chapter_id"] == c1
+    C["configurable"]["where"] = {"chapter_id": c4}
+    run(ag, C, answer(its[0]))
+    m = result(ag, C)
+    assert calls == [] and m.status == "error" and "章节或版本" in m.content, (calls, m.content)
+    print("10. 恢复时换了章不执行 ✓")
+
+    # 11. 要出的段换了（段数、金额都没变）：不执行
+    C = cfg()
+    ag = agent_for([call("film_run", {}, "f7"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("出片")]})
+    film["clips"] = ["C1", "C3"]
+    run(ag, C, answer(its[0]))
+    m = result(ag, C)
+    film["clips"] = ["C1", "C2"]
+    assert calls == [] and m.status == "error" and "C2" in m.content and "C3" in m.content, (calls, m.content)
+    print("11. 要出的段换了不执行 ✓")
 
     print("\nALL PASS")
     return 0

@@ -68,8 +68,8 @@ def _pre_model(state: dict, config: RunnableConfig) -> dict:
 
 
 def build_agent(model, checkpointer):
-    """一次只调一个工具：操作工具会中断等确认，同一步里两个工具各自中断时，恢复其中一个会让整个工具节点重跑、
-    已执行的那个再执行一次。create_react_agent 接受已绑定工具的模型。"""
+    """一次只调一个工具（parallel_tool_calls=False）：每步最多一个操作，确认卡始终一张一张出、好推理，
+    模型也不能在同一步里连发两个花钱的操作。create_react_agent 接受已绑定工具的模型。"""
     return create_react_agent(model.bind_tools(ALL_TOOLS, parallel_tool_calls=False), ALL_TOOLS,
                               pre_model_hook=_pre_model, checkpointer=checkpointer)
 
