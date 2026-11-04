@@ -15,8 +15,10 @@ _TMP = tempfile.TemporaryDirectory()
 os.environ["STORYBOARD_DATA_DIR"] = _TMP.name
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage  # noqa: E402
+from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
+from langgraph.types import Command  # noqa: E402
 from fake_model import ScriptedChat, call  # noqa: E402
-from assistant import events, graph, store  # noqa: E402
+from assistant import actions, events, graph, store  # noqa: E402
 from server import auth, novels  # noqa: E402
 
 
@@ -91,7 +93,7 @@ def main() -> int:
     assert a1["text"] == "第一章还没有出片。"
     assert [t["name"] for t in a1["tools"]] == ["chapter_status", "goto"] and all(t["ok"] for t in a1["tools"])
     assert a1["goto"] == [{"chapter_id": cid, "step": "render"}]
-    assert hist[3] == {"role": "assistant", "text": "好的。", "tools": [], "goto": []}
+    assert hist[3] == {"role": "assistant", "text": "好的。", "tools": [], "goto": [], "cards": []}
     print("6. 历史视图 ✓")
 
     # 7. 工具出错：tool_end ok=False，对话继续
@@ -136,6 +138,92 @@ def main() -> int:
     assert h[1]["tools"][1]["ok"] is False and h[1]["tools"][1]["summary"] == events.INTERRUPTED
     assert _TMP.name not in tools_mod._dump({"error": f"{auth.DATA_DIR}/u/clip.mp4 坏了"})
     print("10. 历史中断与隐去路径 ✓")
+
+    # 11. 关掉并行工具调用（操作工具会中断，并行时恢复一个会让另一个重跑）
+    class Rec(ScriptedChat):
+        bound: dict = {}
+
+        def bind_tools(self, tools, **kwargs):
+            self.bound.update(kwargs)
+            return self
+    r = Rec(script=[])
+    graph.build_agent(r, InMemorySaver())
+    assert r.bound.get("parallel_tool_calls") is False
+    assert [t.name for t in graph.ALL_TOOLS][-4:] == list(actions.ACTIONS)
+    print("11. 关并行 ✓")
+
+    # 12. 操作工具出卡：只发 confirm（不发 tool_start），流以 done 结束；历史里是待确认的卡
+    starts = []
+    actions.ops["start_version"] = lambda user, nid_, cid_, ov, strict: starts.append(cid_) or {"job_id": "j1", "version_id": "j1"}
+    cfg = graph.run_config(uid, nid, {"chapter_id": cid}, "zh")
+    store.clear(uid, nid)
+    model = ScriptedChat(script=[call("generate_storyboard", {}, "g1"), AIMessage("开始了。")])
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(model, cp)
+        evs = list(events.stream(agent, cfg, "生成分镜"))
+        assert [e["event"] for e in evs] == ["confirm", "done"], evs
+        conf = evs[0]["data"]
+        assert conf["tool_call_id"] == "g1" and conf["action"] == "generate_storyboard" and conf["id"]
+        assert conf["amount"] is None and conf["detail"] == {"chars": 2, "archived": False}
+        assert [it.id for it in graph.pending(agent, cfg)] == [conf["id"]]
+        h = events.history(agent, cfg)
+    assert h[-1]["tools"] == [] and h[-1]["cards"] == [
+        {"tool_call_id": "g1", "action": "generate_storyboard", "outcome": "pending", "card": conf}], h[-1]
+    print("12. 出卡 ✓")
+
+    # 13. 恢复（确认）：action 事件带结果与任务，之后模型接着说；历史里卡变成已确认
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(model, cp)
+        card = graph.pending(agent, cfg)[0].value
+        rcfg = graph.run_config(uid, nid, {"chapter_id": cid}, "zh", resume_tool_call="g1")
+        assert rcfg["configurable"]["resume_tool_call"] == "g1" and cfg["configurable"]["resume_tool_call"] is None
+        evs = list(events.stream(agent, rcfg, Command(resume={conf["id"]: {"decision": "approve", "card": card}})))
+        assert [e["event"] for e in evs] == ["action", "token", "done"], evs
+        act = evs[0]["data"]
+        assert act["outcome"] == "approved" and act["tool_call_id"] == "g1" and act["action"] == "generate_storyboard"
+        assert act["task"] == {"kind": "job", "chapter_id": cid, "version_id": "j1", "job_id": "j1"} and starts == [cid]
+        assert graph.pending(agent, cfg) == []
+        h = events.history(agent, cfg)
+    assert h[-1]["cards"][0]["outcome"] == "approved" and h[-1]["cards"][0]["task"]["job_id"] == "j1"
+    assert h[-1]["text"] == "开始了。"
+    print("13. 恢复 ✓")
+
+    # 14. 有待确认的卡时发新消息：卡补「已取消」（不调模型），新一轮模型看到取消结果与新问题
+    model = ScriptedChat(script=[call("generate_storyboard", {}, "g2"), AIMessage("好的，不生成了。")])
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(model, cp)
+        list(events.stream(agent, cfg, "再生成一次"))
+        assert len(graph.pending(agent, cfg)) == 1
+        calls_before = len(model.seen)
+        assert graph.cancel_pending(agent, cfg) == 1
+        assert len(model.seen) == calls_before, "取消不调模型"
+        assert graph.pending(agent, cfg) == [] and graph.cancel_pending(agent, cfg) == 0
+        evs = list(events.stream(agent, cfg, "算了，问个别的"))
+        assert [e["event"] for e in evs] == ["token", "done"], evs
+        last = model.seen[-1]
+        assert any(isinstance(m, ToolMessage) and m.content == graph.CANCELLED for m in last)
+        assert isinstance(last[-1], HumanMessage) and last[-1].content == "算了，问个别的"
+        h = events.history(agent, cfg)
+    assert h[-3]["cards"][0]["outcome"] == "rejected" and h[-1]["text"] == "好的，不生成了。"
+    print("14. 发新消息取消待确认的卡 ✓")
+
+    # 15. 操作工具报错：action 事件 outcome=failed 带原因；历史里同样；被停掉没结果的标「（已中断）」
+    model = ScriptedChat(script=[call("film_run", {}, "f1"), AIMessage("没有可用版本。")])
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(model, cp)
+        evs = list(events.stream(agent, cfg, "出片"))
+        assert [e["event"] for e in evs] == ["action", "token", "done"], evs
+        assert evs[0]["data"]["outcome"] == "failed" and "分镜版本" in evs[0]["data"]["error"]
+        h = events.history(agent, cfg)
+    assert h[-1]["cards"][0]["outcome"] == "failed"
+    dangling = [HumanMessage("q"), call("film_run", {}, "f9")]
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(ScriptedChat(script=[]), cp)
+        agent.update_state(cfg, {"messages": dangling}, as_node="agent")
+        h = events.history(agent, cfg)
+    assert h[-1]["cards"][-1] == {"tool_call_id": "f9", "action": "film_run", "outcome": "failed",
+                                   "error": events.INTERRUPTED}, h[-1]
+    print("15. 操作报错与被停掉 ✓")
 
     print("\nALL PASS")
     return 0

@@ -7,9 +7,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import create_react_agent
 
-from assistant import store
+from assistant import actions, store
 from assistant.tools import TOOLS
 from server import novels
+
+ALL_TOOLS = TOOLS + actions.TOOLS
+CANCELLED = "用户没有确认，发了新消息；这个操作已取消"
 
 HISTORY = 20                  # 发给模型的最近消息数（存档保留全量）
 RECURSION_LIMIT = 37          # 约 12 次工具调用（pre_model_hook 自成一个节点，每轮工具循环占 3 步）
@@ -65,7 +68,26 @@ def _pre_model(state: dict, config: RunnableConfig) -> dict:
 
 
 def build_agent(model, checkpointer):
-    return create_react_agent(model, TOOLS, pre_model_hook=_pre_model, checkpointer=checkpointer)
+    """一次只调一个工具：操作工具会中断等确认，同一步里两个工具各自中断时，恢复其中一个会让整个工具节点重跑、
+    已执行的那个再执行一次。create_react_agent 接受已绑定工具的模型。"""
+    return create_react_agent(model.bind_tools(ALL_TOOLS, parallel_tool_calls=False), ALL_TOOLS,
+                              pre_model_hook=_pre_model, checkpointer=checkpointer)
+
+
+def pending(agent, config: dict) -> list:
+    """存档里待确认的卡（LangGraph 的中断）。"""
+    return list(agent.get_state(config).interrupts)
+
+
+def cancel_pending(agent, config: dict) -> int:
+    """有待确认的卡时用户发了新消息：给每张卡补一条「已取消」的工具结果（不调模型），新消息照常开新的一轮。"""
+    its = pending(agent, config)
+    if not its:
+        return 0
+    msgs = [ToolMessage(CANCELLED, tool_call_id=it.value["tool_call_id"], name=it.value["action"],
+                        artifact={"card": it.value, "outcome": "rejected", "task": None}) for it in its]
+    agent.update_state(config, {"messages": msgs}, as_node="tools")
+    return len(msgs)
 
 
 class NullModel(BaseChatModel):
@@ -81,9 +103,10 @@ class NullModel(BaseChatModel):
         raise RuntimeError("NullModel 不应被调用")
 
 
-def run_config(user_id: str, nid: str, where: Optional[dict], lang: str, callbacks: Optional[list] = None) -> dict:
+def run_config(user_id: str, nid: str, where: Optional[dict], lang: str, callbacks: Optional[list] = None,
+               resume_tool_call: Optional[str] = None) -> dict:
     cfg = {"configurable": {**store.THREAD, "user_id": user_id, "novel_id": nid,
-                            "where": dict(where or {}), "lang": lang},
+                            "where": dict(where or {}), "lang": lang, "resume_tool_call": resume_tool_call},
            "recursion_limit": RECURSION_LIMIT}
     if callbacks:
         cfg["callbacks"] = callbacks
