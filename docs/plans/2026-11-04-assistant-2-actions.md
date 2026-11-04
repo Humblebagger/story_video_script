@@ -58,10 +58,10 @@
    - 之后 `agent.get_state(cfg).interrupts` 是这些 `Interrupt`，`.next == ("tools",)`。
    - 恢复用 `agent.stream(Command(resume={interrupt_id: value}), cfg, ...)`。
    - 恢复时**工具从头重跑**：`interrupt()` 之前的代码会再执行一遍，第一次 `interrupt()` 直接返回 `value`。一个工具里可以按顺序调多次 `interrupt()`，各自对应一次恢复。
-   - 同一次工具调用里先后几次中断，**中断编号相同**；每次用 `Command(resume={编号: 值})` 恢复，前面的回答会按顺序重放，已验证。所以重新出的卡和原来的卡 `id` 一样，前端按 `tool_call_id` 替换即可。
+   - 同一次工具调用里先后几次中断，**中断编号相同**；每次用 `Command(resume={编号: 值})` 恢复，前面的回答会按顺序重放，已验证。正因为重放，同一次调用里多次中断不安全，见裁定 12。
    - 项目的 `_tool` 装饰器设了 `handle_tool_error=True`，只吞 `ToolException`；中断照常冒泡。
 2. **工具调用编号**：工具参数声明 `tool_call_id: Annotated[str, InjectedToolCallId]` 可以拿到本次调用的编号。它和 `config` 一样，不出现在给模型的参数说明里。
-3. **卡以服务端存档为准**：恢复时，`resume` 接口从存档里取这张中断卡的原值，作为 `{"decision", "card"}` 传给工具，不收前端传来的卡。工具重跑时，用这张「用户看到的卡」和重算的预估比较，对不上就重新出卡（spec §7.1）。
+3. **卡以服务端存档为准**：恢复时，`resume` 接口从存档里取这张中断卡的原值，作为 `{"decision", "card"}` 传给工具，不收前端传来的卡。工具重跑时，用这张「用户看到的卡」和重算的预估比较，对不上就不执行，报「预估变了」（spec §7.1、裁定 12）。
 4. **关掉并行工具调用**：`build_agent` 先调用 `model.bind_tools(ALL_TOOLS, parallel_tool_calls=False)` 再交给 `create_react_agent`。
    - 原因：同一步里两个工具各自中断时，恢复其中一个会让整个工具节点重跑，已执行的那个会再执行一次。
    - 已验证：`ChatAnthropic` 这样绑定后，`tool_choice` 带 `disable_parallel_tool_use: True`，`create_react_agent` 接受已绑定的模型。
@@ -76,6 +76,13 @@
 9. **合成金额为 0 不出卡**：配音都已缓存，或这个声音模式不配音时，直接执行，`outcome="done"`。
 10. **任务卡不复用 `useFilm` / `useCompose`**：spec 原则里写了「复用 `useJob`、`useFilm`、`useCompose`」，但这两个钩子会取片段文件、建 blob URL，太重。任务卡改用轻量轮询（`getJob`、`getFilm`），状态判断写成纯函数，可单测。spec §7.3 已按此写。
 11. **`render_keyframes` 不做**：服务端没有出图，spec §7 已删。
+12. **每次工具调用只中断一次**（Task 2 审查后改的，spec §7.1 已同步）：
+    - 原写法在同一次调用里「金额变了就再中断出新卡」。恢复时 LangGraph 会按顺序重放旧回答，而重放时重算的预估可能已经变回原值，于是第一轮的「确认」直接放行，用户在新卡上点的「取消」被跳过。已复现。
+    - 现在的做法：确认后重算预估，对不上就不执行，工具报错「预估变了（¥x → ¥y），没有执行；要的话我再出一张新卡」。系统提示要求助手接着再调一次同一个工具，出新卡。
+    - 卡片不再有 `changed` / `previous_amount` 字段。
+13. **恢复的那次调用一律走确认**：
+    - 问题：合成金额为 0 时不出卡。但恢复时如果配音刚好变成已缓存（金额变 0），工具重跑会跳过 `interrupt`，无视用户的「取消」。
+    - 做法：`run_config` 多一个参数 `resume_tool_call`，`resume` 接口填上被恢复的那张卡的 `tool_call_id`。工具发现自己就是被恢复的那次调用时，不管金额多少都先 `interrupt` 取回答。
 
 ## 文件结构
 
@@ -470,7 +477,7 @@ git commit -m "出片、合成、导出检查与转换本章抽成内部函数�
 
 ---
 
-### Task 2: 操作工具（确认卡与重新出卡）
+### Task 2: 操作工具（确认卡）
 
 **Files:**
 - Create: `backend/assistant/actions.py`
@@ -482,8 +489,8 @@ git commit -m "出片、合成、导出检查与转换本章抽成内部函数�
 
 ```python
 #!/usr/bin/env python3
-"""助手的操作工具：出卡字段、确认后执行、取消不执行、金额变了重新出卡（以服务端给的卡为准）、连变 3 次不执行、
-合成金额为 0 不出卡、生成分镜（没原文报错、无金额、本章已有采用版）、导出直接放下载按钮、执行函数的 HTTP 报错转述、
+"""助手的操作工具：出卡字段、确认后执行、取消不执行、金额变了不执行（以服务端给的卡为准）、
+金额变了又变回时取消仍有效、合成金额为 0 不出卡（恢复时变免费也尊重取消）、生成分镜（没原文报错、无金额、本章已有采用版）、导出直接放下载按钮、执行函数的 HTTP 报错转述、
 工具参数说明里没有 config 与 tool_call_id。执行函数用替身（ops），不碰出片与模型。
 用法: python3 tests/assistant/test_actions.py
 """
@@ -593,34 +600,27 @@ def main() -> int:
     assert calls == [] and m.artifact["outcome"] == "rejected" and "取消" in m.content
     print("2. 取消不执行 ✓")
 
-    # 3. 金额变了：重新出卡（带原金额），再确认才按新金额执行
+    # 3. 金额变了：不执行，工具报「预估变了」（带新旧金额）；每次调用只中断一次
     C = cfg()
     ag = agent_for([call("film_run", {}, "f3"), AIMessage("好")])
     its = run(ag, C, {"messages": [HumanMessage("出片")]})
     film["amount"] = 2.0
-    its2 = run(ag, C, answer(its[0]))
-    assert calls == [] and len(its2) == 1
-    assert its2[0].value["amount"] == 2.0 and its2[0].value["changed"] is True and its2[0].value["previous_amount"] == 1.5
-    run(ag, C, answer(its2[0]))
-    assert calls == [("film", "v1", None, 2.0)], calls
-    print("3. 金额变了重新出卡 ✓")
-
-    # 4. 连变 3 次：不执行，工具报错
-    calls.clear()
-    seq = iter(range(10, 100))
-    film["next"] = lambda: float(next(seq))
-    C = cfg()
-    ag = agent_for([call("film_run", {}, "f4"), AIMessage("好")])
-    its = run(ag, C, {"messages": [HumanMessage("出片")]})
-    shown = 1
-    while its:
-        its = run(ag, C, answer(its[0]))
-        shown += bool(its)
-    film.pop("next")
-    film["amount"] = 1.5
+    assert run(ag, C, answer(its[0])) == [], "不再在同一次调用里出第二张卡"
     m = result(ag, C)
-    assert shown == 3 and calls == [] and m.status == "error" and "一直在变" in m.content, (shown, m.content)
-    print("4. 连变 3 次不执行 ✓")
+    assert calls == [] and m.status == "error" and "预估变了" in m.content and "1.50" in m.content and "2.00" in m.content, m.content
+    film["amount"] = 1.5
+    print("3. 金额变了不执行 ✓")
+
+    # 4. 生成分镜的要点变了（原文字数）：同样不执行
+    c3 = novels.create_chapter(uid, nid, "第三章 坟地", text="原文三")["id"]   # 没有采用版，原文还能改
+    C = cfg()
+    ag = agent_for([call("generate_storyboard", {"chapter": c3}, "g0"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("生成第三章")]})
+    novels.update_chapter(uid, nid, c3, text="原文三改长了")
+    run(ag, C, answer(its[0]))
+    m = result(ag, C)
+    assert calls == [] and m.status == "error" and "预估变了" in m.content, m.content
+    print("4. 要点变了不执行 ✓")
 
     # 5. 合成：金额为 0 不出卡直接执行；大于 0 出卡，确认后带金额
     C = cfg()
@@ -637,6 +637,16 @@ def main() -> int:
     assert its[0].value["detail"] == {"chars": 120, "draft": False} and its[0].value["amount"] == 0.3
     run(ag, C, answer(its[0]))
     assert calls == [("compose", False, 0.3)], calls
+    # 恢复时配音刚好变成已缓存（金额 0）：被恢复的这次调用照样取回答，用户取消就不合成
+    calls.clear()
+    C = cfg()
+    ag = agent_for([call("compose", {}, "m3"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("合成")]})
+    comp.update(amount=0.0, chars=0)
+    C["configurable"]["resume_tool_call"] = "m3"
+    run(ag, C, answer(its[0], "reject"))
+    m = result(ag, C)
+    assert calls == [] and m.artifact["outcome"] == "rejected", (calls, m.content)
     print("5. 合成 ✓")
 
     # 6. 生成分镜：没原文报错不出卡；有原文出卡（无金额、已有采用版），确认后开任务
@@ -708,8 +718,10 @@ Expected: FAIL，`ImportError: cannot import name 'actions' from 'assistant'`
 """助手的操作工具（spec §7）：生成分镜、出片、配音合成先出确认卡，用户点确认才执行；导出不花钱，直接放下载按钮。
 
 确认：服务端先算预估，interrupt(卡) 暂停这一轮；用户点按钮后接口用 Command(resume={中断编号: {decision, card}})
-接着跑，card 是接口从存档里取的那张（不信前端）。恢复时工具从头重跑：重算预估，与用户确认的卡对不上就带原金额
-重新出卡，连变 MAX_RECARD 次不执行。
+接着跑，card 是接口从存档里取的那张（不信前端）。恢复时工具从头重跑：重算预估，与用户确认的卡对不上就不执行，
+报「预估变了」，由助手再调一次工具出新卡。每次调用只中断一次：多次中断时恢复会按顺序重放旧回答，
+重放时的重算可能已经不同，用户最后的「取消」会被前面的「确认」盖掉。
+被恢复的那次调用（configurable.resume_tool_call）不管金额多少都先取回答，免得「恢复时变免费」跳过用户的取消。
 执行函数在 server/app.py（与接口同一份：鉴权、验证门、上限、确认金额都一样），由 app 在导入时填进 ops——
 本包不能反过来导入 app（循环导入）。
 """
@@ -725,7 +737,6 @@ from server import summary
 
 # 名字 → app 里的执行函数：start_version / film_quote / film_run / compose_quote / compose_start / export_check
 ops: dict = {}
-MAX_RECARD = 3
 
 
 def _op(name: str, *args):
@@ -763,18 +774,26 @@ def _same(a: dict, b: dict) -> bool:
     return a["detail"] == b["detail"]
 
 
+def _money(q: dict) -> str:
+    return "按模型用量计费" if q["amount"] is None else f"¥{q['amount']:.2f}"
+
+
 def _ask(card: dict, quote: Callable[[], dict]) -> tuple:
-    """出卡等用户确认 → (是否确认, 用户最后确认或取消的那张卡)。确认后重算预估，对不上就带原金额重新出卡。"""
-    for _ in range(MAX_RECARD):
-        answer = interrupt(card) or {}
-        seen = answer.get("card") or card
-        if answer.get("decision") != "approve":
-            return False, seen
-        fresh = quote()
-        if _same(fresh, seen):
-            return True, seen
-        card = {**seen, **fresh, "changed": True, "previous_amount": seen["amount"]}
-    raise ToolException("预估一直在变，先不执行；稍后再让我试一次")
+    """出卡等用户确认 → (是否确认, 用户确认或取消的那张卡)。确认后重算预估，对不上就不执行（报错，由助手再出新卡）。"""
+    answer = interrupt(card) or {}
+    seen = answer.get("card") or card
+    if answer.get("decision") != "approve":
+        return False, seen
+    fresh = quote()
+    if not _same(fresh, seen):
+        raise ToolException(f"预估变了（{_money(seen)} → {_money(fresh)}，要点 {seen['detail']} → {fresh['detail']}），"
+                            "没有执行；要的话我再出一张新卡")
+    return True, seen
+
+
+def _resuming(config: RunnableConfig, tool_call_id: str) -> bool:
+    """这次调用是不是正被恢复的那次（resume 接口在 configurable 里标明）。"""
+    return (config.get("configurable") or {}).get("resume_tool_call") == tool_call_id
 
 
 def _result(text: str, card: dict, outcome: str, task: Optional[dict] = None) -> tuple:
@@ -838,12 +857,12 @@ def compose(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolCal
 
     card = _card(tool_call_id, "compose", ch, vid, quote())
     outcome = "done"
-    if card["amount"] > 0:
+    if card["amount"] > 0 or _resuming(config, tool_call_id):
         ok, card = _ask(card, quote)
         if not ok:
             return _result("用户取消了，没有合成", card, "rejected")
         outcome = "approved"
-    _op("compose_start", user, nid, ch["id"], vid, draft, card["amount"] if card["amount"] > 0 else None)
+    _op("compose_start", user, nid, ch["id"], vid, draft, card["amount"] or None)
     return _result(f"已开始合成「{ch['title']}」，进度在任务卡上", card, outcome,
                    {"kind": "compose", "chapter_id": ch["id"], "version_id": vid})
 
@@ -873,7 +892,7 @@ Expected: 9 行 ✓，最后 `ALL PASS`。然后跑全局约束里的全部后�
 
 ```bash
 git add backend/assistant/actions.py backend/tests/assistant/test_actions.py
-git commit -m "助手操作工具：生成分镜、出片、配音合成先出确认卡（interrupt 暂停），确认后按卡上金额执行，金额或要点变了带原金额重新出卡、连变 3 次不执行；合成配音不花钱直接开始；导出检查后放下载按钮；执行函数由 app 注入"
+git commit -m "助手操作工具：生成分镜、出片、配音合成先出确认卡（interrupt 暂停），确认后按卡上金额执行，金额或要点变了不执行、报「预估变了」由助手再出新卡；被恢复的那次调用一律取回答；合成配音不花钱直接开始；导出检查后放下载按钮；执行函数由 app 注入"
 ```
 
 ---
@@ -940,7 +959,9 @@ from server import auth, novels  # noqa: E402
     with store.saver(uid, nid) as cp:
         agent = graph.build_agent(model, cp)
         card = graph.pending(agent, cfg)[0].value
-        evs = list(events.stream(agent, cfg, Command(resume={conf["id"]: {"decision": "approve", "card": card}})))
+        rcfg = graph.run_config(uid, nid, {"chapter_id": cid}, "zh", resume_tool_call="g1")
+        assert rcfg["configurable"]["resume_tool_call"] == "g1" and cfg["configurable"]["resume_tool_call"] is None
+        evs = list(events.stream(agent, rcfg, Command(resume={conf["id"]: {"decision": "approve", "card": card}})))
         assert [e["event"] for e in evs] == ["action", "token", "done"], evs
         act = evs[0]["data"]
         assert act["outcome"] == "approved" and act["tool_call_id"] == "g1" and act["action"] == "generate_storyboard"
@@ -1043,6 +1064,19 @@ def cancel_pending(agent, config: dict) -> int:
 ```
 
 `NullModel.bind_tools(self, tools, **kwargs)` 已经接受关键字参数，不用改。
+
+`run_config` 多一个参数，放进 configurable（实施裁定 13；操作工具据此认出被恢复的那次调用）：
+
+```python
+def run_config(user_id: str, nid: str, where: Optional[dict], lang: str, callbacks: Optional[list] = None,
+               resume_tool_call: Optional[str] = None) -> dict:
+    cfg = {"configurable": {**store.THREAD, "user_id": user_id, "novel_id": nid,
+                            "where": dict(where or {}), "lang": lang, "resume_tool_call": resume_tool_call},
+           "recursion_limit": RECURSION_LIMIT}
+    if callbacks:
+        cfg["callbacks"] = callbacks
+    return cfg
+```
 
 - [ ] **Step 4: 改 `events.py`**
 
@@ -1184,6 +1218,7 @@ def history(agent, config: dict, hide: Optional[str] = None) -> list:
   - 花钱的操作会自动给用户一张确认卡，由用户在卡上点确认，你不用再问「确定吗」。
   - 工具返回「已开始」才算开始，不要提前说做完了；进度在任务卡上，不必反复去查。
   - 用户取消了就不要再发起同一个操作，除非用户再次提出。
+  - 工具报「预估变了」时，告诉用户金额变了，并立刻再调用一次同一个工具（参数不变）给用户出一张新卡；同一个操作最多这样重来两次。
   - 前提不满足（没有原文、还没有出片会话、缺音色、成片过期等）时，说明原因，并用 goto 放跳转按钮让用户去处理。
 - 你不能出关键帧图，不能改镜头、资产卡、剧情和设置，也不能删除任何东西；用户要做这些时说明怎么做，并用 goto 放跳转按钮。
 ```
@@ -1378,9 +1413,10 @@ def _assistant_pending(user_id: str, nid: str) -> dict:
 
 
 def _assistant_stream(user: dict, nid: str, where: dict, lang: str, payload, token: float, model,
-                      before=None) -> StreamingResponse:
+                      before=None, resume_tool_call: Optional[str] = None) -> StreamingResponse:
     """跑一轮（发消息或确认卡恢复）→ SSE 响应。payload：用户文字或 Command。
-    before(agent, cfg)：开跑前在同一份存档上做的事（发新消息时取消待确认的卡）。"""
+    before(agent, cfg)：开跑前在同一份存档上做的事（发新消息时取消待确认的卡）。
+    resume_tool_call：恢复时被恢复的那次工具调用（工具据此不管金额都先取回答）。"""
     root = str(auth.DATA_DIR)   # 整个数据根：用户目录、密钥文件等任何服务器路径都隐去
 
     def gen():
@@ -1389,7 +1425,7 @@ def _assistant_stream(user: dict, nid: str, where: dict, lang: str, payload, tok
         try:
             with assistant_store.saver(user["id"], nid) as cp:
                 agent = assistant_graph.build_agent(model, cp)
-                cfg = assistant_graph.run_config(user["id"], nid, where, lang, [cb])
+                cfg = assistant_graph.run_config(user["id"], nid, where, lang, [cb], resume_tool_call)
                 try:
                     if before:
                         before(agent, cfg)
@@ -1461,7 +1497,7 @@ def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(nove
         raise HTTPException(409, "这张确认卡已经处理过")
     model = _assistant_model_or_503(user, nid, token)
     cmd = Command(resume={iid: {"decision": decision, "card": card}})
-    return _assistant_stream(user, nid, where, lang, cmd, token, model)
+    return _assistant_stream(user, nid, where, lang, cmd, token, model, resume_tool_call=card["tool_call_id"])
 ```
 
 要点：
@@ -1578,9 +1614,6 @@ export interface AssistantCardInfo {
   amount: number | null
   currency: 'cny' | 'usd' | null
   detail: { clips?: number; chars?: number; archived?: boolean; draft?: boolean }
-  /** 恢复时预估变了，重新出的卡 */
-  changed?: boolean
-  previous_amount?: number | null
 }
 export interface AssistantCard {
   tool_call_id: string
@@ -1986,7 +2019,7 @@ let jobState: unknown = null
   must($$('assistant-card')[0].getAttribute('data-outcome') === 'rejected', '发新消息后待确认的卡变已取消')
   await act(async () => { root.unmount() })
 
-  // 历史里待确认的卡能直接点；金额变了的卡有提示；没做成的卡显示原因；导出给下载按钮；生成分镜写按用量计费
+  // 历史里待确认的卡能直接点；没做成的卡显示原因；导出给下载按钮；生成分镜写按用量计费
   history = [
     { role: 'user', text: '做几件事' },
     { role: 'assistant', text: '', tools: [], goto: [], cards: [
@@ -1998,7 +2031,7 @@ let jobState: unknown = null
         card: { ...card, tool_call_id: 'x3', action: 'generate_storyboard', amount: null, currency: 'usd', detail: { chars: 300, archived: true } },
         task: { kind: 'job', chapter_id: 'c1', version_id: 'j1', job_id: 'j1' } },
       { tool_call_id: 'x4', action: 'film_run', outcome: 'pending',
-        card: { ...card, id: 'i4', tool_call_id: 'x4', amount: 2, changed: true, previous_amount: 1.5 } },
+        card: { ...card, id: 'i4', tool_call_id: 'x4', amount: 2 } },
     ] },
   ]
   jobState = { id: 'j1', status: 'running', log: [], result: null, quality_report: null, error: null,
@@ -2009,7 +2042,6 @@ let jobState: unknown = null
   must(!!$('assistant-card-failed') && ($('assistant-card-failed')!.textContent ?? '').includes('音色'), '没做成的原因')
   must(!!$('assistant-download'), '导出给下载按钮')
   must(cards[2].textContent!.includes('40'), '生成分镜的进度百分比')
-  must(!!$('assistant-card-changed') && $('assistant-card-changed')!.textContent!.includes('1.50'), '金额变了的提示带原金额')
   must(!($('assistant-card-approve') as HTMLButtonElement).disabled, '历史里待确认的卡能点')
   must(!$$('assistant-error').some((e) => e.textContent?.includes('重试')), '有待确认的卡时不给重试')
   jobState = null
@@ -2048,7 +2080,6 @@ Expected: `assistant.test.tsx` 失败于「✗ 待确认的卡」（还没有卡
       ttsChars: '配音 {n} 字',
       archived: '本章已有采用版，新版本只存档',
       draft: '草稿合成（缺视频的段用关键帧补位）',
-      changed: '金额有变化（原 ¥{n}），请重新确认',
       approved: '已确认',
       rejected: '已取消',
       failed: '没做成：{msg}',
@@ -2090,7 +2121,6 @@ Expected: `assistant.test.tsx` 失败于「✗ 待确认的卡」（还没有卡
       ttsChars: '{n} characters to voice',
       archived: 'This chapter already has an adopted version; the new one is only archived',
       draft: 'Draft mix (clips without video use keyframes)',
-      changed: 'The estimate changed (was ¥{n}); please confirm again',
       approved: 'Confirmed',
       rejected: 'Cancelled',
       failed: 'Did not go through: {msg}',
@@ -2239,11 +2269,6 @@ export function ActionCard({ novelId, c, busy, onDecide, onGoto }: {
       <p className="font-medium">{title}</p>
       {cost && <p data-testid="assistant-card-cost">{cost}</p>}
       {!!notes.length && <p className="text-xs text-muted-foreground">{notes.join(t('common.listSep'))}</p>}
-      {info?.changed && (
-        <p className="text-xs text-warning" data-testid="assistant-card-changed">
-          {t('assistant.card.changed', { n: (info.previous_amount ?? 0).toFixed(2) })}
-        </p>
-      )}
       {c.outcome === 'pending' && (
         <div className="flex gap-2">
           <Button size="sm" disabled={locked} data-testid="assistant-card-approve" onClick={() => onDecide('approve')}>
@@ -2310,7 +2335,7 @@ Expected: 17 套全过，`assistant.test.tsx` 多出「✓ 确认卡与任务卡
 
 ```bash
 git add frontend/src/components/assistant/ActionCard.tsx frontend/src/components/assistant/TaskCard.tsx frontend/src/components/assistant/AssistantPanel.tsx frontend/src/styles/workspace.css frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/assistant.test.tsx
-git commit -m "助手确认卡与任务卡：卡上写操作、章节、金额（生成分镜写按用量计费）与要点，金额变了提示原金额；待确认时确认与取消，请求回来之前禁用；确认后挂任务卡（生成分镜百分比、出片段数、合成步骤），结束后给跳转；导出给下载按钮；有待确认的卡时不给重试"
+git commit -m "助手确认卡与任务卡：卡上写操作、章节、金额（生成分镜写按用量计费）与要点；待确认时确认与取消，请求回来之前禁用；确认后挂任务卡（生成分镜百分比、出片段数、合成步骤），结束后给跳转；导出给下载按钮；有待确认的卡时不给重试"
 ```
 
 ---
@@ -2397,7 +2422,7 @@ git commit -m "助手发起操作后页面联动：转换让任务巡检立刻�
 - **spec 覆盖**：
   - §7.1 四个操作与前提 → Task 1、2；
   - 关并行 → Task 3；
-  - 重新出卡、确认金额二次校验 → Task 2；
+  - 金额变了不执行（裁定 12）、确认金额二次校验 → Task 2；
   - §7.2 事件 → Task 3；`resume` 接口 → Task 4；历史 `cards` → Task 3；
   - 发新消息取消 → Task 3（`cancel_pending`）、Task 4（接口）、Task 5（前端本地）；
   - §7.3 确认卡、任务卡 → Task 6；页面联动 → Task 7；文案 → Task 6；
