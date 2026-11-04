@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """助手接口：未登录 401、别人的小说 404、空历史、发消息流式返回事件、历史接上、清空、每日上限 429、
 同一部小说并发 409、用量记 purpose=assistant、正文过长 422、where.step 非法 422、流里没有服务器路径、
-关闭流不卡事件循环、where 消毒、助手模型带 SDK 重试。
+关闭流不卡事件循环、where 消毒、助手模型带 SDK 重试、
+出卡与恢复（确认、取消、处理过的卡 409、同一张卡只接受一次恢复）。
 假模型（tests/assistant/fake_model.py），不调真实模型。
 用法: python3 tests/server/test_assistant.py
 """
@@ -297,6 +298,44 @@ def main() -> int:
         else:
             os.environ["STORYBOARD_ASSISTANT_DAILY"] = saved_daily
     print("20. 恢复受每日上限 ✓")
+
+    # 21. 恢复（取消）：action 事件 outcome=rejected、没开任务、记一笔用量、历史里卡是已取消
+    app_mod._run_version_job = lambda *a, **k: None
+    c3 = novels.create_chapter(uid, nid, "第三章 坟地", text="原文三")["id"]   # 第一章还挂着 17 开的任务
+    script[:] = [call("generate_storyboard", {}, "g3"), AIMessage("要生成吗？")]
+    evs = events_of(c.post(A + "/messages", headers=H, json={"text": "生成第一章", "lang": "zh",
+                                                             "where": {"chapter_id": c3}}))
+    assert [e for e, _ in evs] == ["confirm", "done"], evs
+    rid = evs[0][1]["id"]
+    n_jobs = len(app_mod._jobs)
+    n_usage = len([x for x in usage.read(user_id=uid) if x["purpose"] == "assistant"])
+    script[:] = [AIMessage("好的，不生成了。")]
+    evs = events_of(c.post(R2, headers=H, json={"id": rid, "decision": "reject", "lang": "zh",
+                                                "where": {"chapter_id": c3}}))
+    assert evs[0][0] == "action" and evs[0][1]["outcome"] == "rejected", evs
+    assert len(app_mod._jobs) == n_jobs
+    assert len([x for x in usage.read(user_id=uid) if x["purpose"] == "assistant"]) == n_usage + 1
+    h = c.get(A, headers=H).json()["messages"]
+    card_rows = [x for m in h for x in (m.get("cards") or []) if x["card"]["tool_call_id"] == "g3"]
+    assert [x["outcome"] for x in card_rows] == ["rejected"], card_rows
+    print("21. 恢复取消 ✓")
+
+    # 22. 同一张卡只接受一次恢复：第一次恢复中途断开（存档里卡还待确认），再点一次也 409
+    script[:] = [call("generate_storyboard", {}, "g4"), AIMessage("要生成吗？")]
+    evs = events_of(c.post(A + "/messages", headers=H, json={"text": "生成第一章", "lang": "zh",
+                                                             "where": {"chapter_id": c3}}))
+    did = evs[0][1]["id"]
+    resp = app_mod.assistant_resume(nid, {"id": did, "decision": "approve", "lang": "zh",
+                                          "where": {"chapter_id": c3}}, user)
+    asyncio.run(resp.body_iterator.aclose())          # 一块都没读就断开：工具没跑
+    assert c.get(A, headers=H).json()["messages"][-1]["cards"][0]["outcome"] == "pending"
+    n_jobs = len(app_mod._jobs)
+    r = c.post(R2, headers=H, json={"id": did, "decision": "approve", "lang": "zh", "where": {"chapter_id": c3}})
+    assert r.status_code == 409 and "处理过" in r.json()["detail"], (r.status_code, r.text)
+    assert len(app_mod._jobs) == n_jobs
+    assert store.try_begin(uid, nid) and store.end(uid, nid) is None
+    app_mod._run_version_job = real_job
+    print("22. 同一张卡不能恢复两次 ✓")
 
     print("\nALL PASS")
     return 0

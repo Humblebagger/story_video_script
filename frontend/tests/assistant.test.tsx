@@ -372,7 +372,7 @@ const enter = async (composing = false, keyCode = 13) => {
   // 历史里待确认的卡能直接点；没做成的卡显示原因；导出给下载按钮；生成分镜写按用量计费
   history = [
     { role: 'user', text: '做几件事' },
-    { role: 'assistant', text: '', tools: [], goto: [], cards: [
+    { role: 'assistant', text: '', error: 'x', tools: [], goto: [], cards: [
       { tool_call_id: 'x1', action: 'compose', outcome: 'failed', error: '还有说话人没选音色' },
       { tool_call_id: 'x2', action: 'export_fcpxml', outcome: 'done',
         card: { ...card, tool_call_id: 'x2', action: 'export_fcpxml', amount: null, currency: null, detail: {} },
@@ -393,7 +393,8 @@ const enter = async (composing = false, keyCode = 13) => {
   must(!!$('assistant-download'), '导出给下载按钮')
   must(cards[2].textContent!.includes('40'), '生成分镜的进度百分比')
   must(!($('assistant-card-approve') as HTMLButtonElement).disabled, '历史里待确认的卡能点')
-  must(!$$('assistant-error').some((e) => e.textContent?.includes('重试')), '有待确认的卡时不给重试')
+  must($$('assistant-error').length === 1, '这条回答带报错，报错行要显示')
+  must(!$('assistant-error')!.querySelector('button'), '有待确认的卡时不给重试')
   jobState = null
   await act(async () => { root.unmount() })
   offTask()

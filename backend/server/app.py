@@ -1570,6 +1570,11 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
     return _assistant_stream(user, nid, where, lang, text, token, model, before=assistant_graph.cancel_pending)
 
 
+# 已接受过恢复的中断 (user_id, nid, 中断编号)：第一次恢复中途断开时存档里卡还待确认，再点一次也不能再跑
+_assistant_resumed: set = set()
+_assistant_resumed_lock = threading.Lock()
+
+
 @app.post("/novels/{nid}/assistant/resume")
 def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(novel_user)):
     """点了确认卡上的按钮：接着跑被中断的那一轮（spec §7.2）。卡以存档为准，不收前端传来的卡。"""
@@ -1584,11 +1589,16 @@ def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(nove
     except Exception:
         assistant_store.end(user["id"], nid, token)
         raise
-    if card is None:
+    key = (user["id"], nid, iid)
+    with _assistant_resumed_lock:
+        done = key in _assistant_resumed
+    if card is None or done:
         assistant_store.end(user["id"], nid, token)
         raise HTTPException(409, "这张确认卡已经处理过")
     model = _assistant_model_or_503(user, nid, token)
     cmd = Command(resume={iid: {"decision": decision, "card": card}})
+    with _assistant_resumed_lock:   # 校验都过了才记：校验失败（503 等）的还能再点
+        _assistant_resumed.add(key)
     return _assistant_stream(user, nid, where, lang, cmd, token, model, resume_tool_call=card["tool_call_id"])
 
 # ---------- 探针 ----------
