@@ -528,13 +528,10 @@ export const getAssistant = (nid: string) =>
 export const clearAssistant = (nid: string) =>
   req<{ ok: true }>(`/novels/${encodeURIComponent(nid)}/assistant`, { method: 'DELETE' })
 
-/** 发一条消息并逐个回调事件；signal 中止即停止（服务端跑完当前这一步就停）。
- *  429 / 409 / 422 等在开始流之前就会以 ApiError 抛出。 */
-export async function streamAssistant(
-  nid: string, body: { text: string; lang: string; where: AssistantWhere },
-  onEvent: (e: AssistantEvent) => void, signal?: AbortSignal,
-): Promise<void> {
-  const res = await send(`/novels/${encodeURIComponent(nid)}/assistant/messages`, { ...jsonPost(body), signal })
+/** POST 一个 JSON，逐个回调返回的 SSE 事件；signal 中止即停止。429 / 409 / 422 等在开始流之前以 ApiError 抛出。 */
+async function streamSse(path: string, body: unknown, onEvent: (e: AssistantEvent) => void,
+                         signal?: AbortSignal): Promise<void> {
+  const res = await send(path, { ...jsonPost(body), signal })
   const reader = res.body?.getReader()
   if (!reader) return
   const dec = new TextDecoder()
@@ -550,3 +547,15 @@ export async function streamAssistant(
   const { events } = parseSse(buf + '\n\n')
   events.forEach(onEvent)
 }
+
+/** 发一条消息并逐个回调事件；signal 中止即停止（服务端跑完当前这一步就停）。 */
+export const streamAssistant = (
+  nid: string, body: { text: string; lang: string; where: AssistantWhere },
+  onEvent: (e: AssistantEvent) => void, signal?: AbortSignal,
+) => streamSse(`/novels/${encodeURIComponent(nid)}/assistant/messages`, body, onEvent, signal)
+
+/** 确认卡上点了确认或取消：接着跑被中断的那一轮，同样流式返回 */
+export const resumeAssistant = (
+  nid: string, body: { id: string; decision: 'approve' | 'reject'; lang: string; where: AssistantWhere },
+  onEvent: (e: AssistantEvent) => void, signal?: AbortSignal,
+) => streamSse(`/novels/${encodeURIComponent(nid)}/assistant/resume`, body, onEvent, signal)

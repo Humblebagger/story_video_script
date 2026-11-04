@@ -1,6 +1,6 @@
-/** 章节工作台 ↔ 助手：当前位置（工作台发布、助手读）与跳转请求（助手发出、工作台接）。模块级小存储，不需要 Provider。 */
+/** 章节工作台 ↔ 助手：当前位置（工作台发布、助手读）与跳转请求（助手发出、工作台接），助手发起的操作（助手发出、App 与画布接）。模块级小存储，不需要 Provider。 */
 import { useSyncExternalStore } from 'react'
-import type { AssistantStep, AssistantWhere } from '@/types'
+import type { AssistantStep, AssistantTask, AssistantWhere } from '@/types'
 
 let where: AssistantWhere = {}
 const whereSubs = new Set<() => void>()
@@ -43,4 +43,16 @@ export function cancelStep(chapter_id: string): void {
 export function onStepRequest(cb: () => void): () => void {
   wantSubs.add(cb)
   return () => { wantSubs.delete(cb) }
+}
+
+const taskSubs = new Set<(t: AssistantTask) => void>()
+
+/** 助手发起的操作开始了：App 刷新任务巡检，画布重读出片会话 */
+export function notifyTask(t: AssistantTask): void {
+  taskSubs.forEach((f) => f(t))
+}
+
+export function onTask(cb: (t: AssistantTask) => void): () => void {
+  taskSubs.add(cb)
+  return () => { taskSubs.delete(cb) }
 }

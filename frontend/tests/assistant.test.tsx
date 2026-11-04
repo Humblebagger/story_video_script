@@ -1,6 +1,9 @@
 /** 助手：SSE 解析、极简渲染、位置与跳转存储；面板交互（Task 6 追加）。跑法：npm test */
 import { parseSse } from '../src/lib/sse'
-import { cancelStep, getWhere, onStepRequest, requestStep, setWhere, takeStep } from '../src/lib/assistantBridge'
+import { cancelStep, getWhere, notifyTask, onStepRequest, onTask, requestStep, setWhere, takeStep } from '../src/lib/assistantBridge'
+
+import { composeView, filmView, jobView } from '../src/lib/assistantTask'
+import type { AssistantTask, FilmSession, Job } from '../src/types'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
 
@@ -34,6 +37,45 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   must(takeStep('c3') === null, '打开没成功：请求撤掉')
   off()
   console.log('✓ 位置与跳转')
+}
+
+// ---------- 任务通知 ----------
+{
+  const got: AssistantTask[] = []
+  const off = onTask((t) => got.push(t))
+  notifyTask({ kind: 'film', chapter_id: 'c1', version_id: 'v1' })
+  off()
+  notifyTask({ kind: 'job', chapter_id: 'c1', version_id: 'j1', job_id: 'j1' })
+  must(got.length === 1 && got[0].kind === 'film', '订阅者收到、退订后不再收到')
+  console.log('✓ 任务通知')
+}
+
+// ---------- 任务进度 ----------
+{
+  const job = (o: Partial<Job>) => ({ id: 'j1', status: 'running', log: [], result: null, quality_report: null, error: null, ...o }) as Job
+  const prog = { batches: 2, batch: 1, total_chars: 200, done_chars: 50, attempt: 1, max_attempts: 3, phase: 'generating' as const }
+  must(jobView(job({ progress: prog })).state === 'running' && jobView(job({ progress: prog })).pct === 25, '生成中百分比')
+  must(jobView(job({ status: 'queued' })).pct === null, '还没进度')
+  must(jobView(job({ status: 'succeeded' })).state === 'ok', '完成')
+  must(jobView(job({ status: 'completed_with_warnings' })).state === 'ok', '带警告也算完成')
+  const f = jobView(job({ status: 'failed', error: '模型超时\n详细' }))
+  must(f.state === 'failed' && f.error === '模型超时', '失败取第一行')
+
+  const clip = (state: string) => ({ id: state, state }) as unknown as FilmSession['clips'][number]
+  const film = (states: string[], final: FilmSession['final'] = null) => ({ clips: states.map(clip), final }) as FilmSession
+  const r = filmView(film(['done', 'running', 'queued', 'planned']))
+  must(r.state === 'running' && r.done === 1 && r.total === 4 && r.flying === 2, '出片在跑')
+  must(filmView(film(['done', 'done'])).state === 'ok', '出完')
+  const ff = filmView(film(['done', 'failed']))
+  must(ff.state === 'failed' && ff.failed === 1, '有失败的段')
+  const fin = (state: 'queued' | 'running' | 'done' | 'failed', o = {}) =>
+    ({ state, files: [], report: null, error: null, detail: null, ...o })
+  must(composeView(film([], fin('running', { step: '配音 3 条' }))).state === 'running', '合成中')
+  must(composeView(film([], fin('running', { step: '配音 3 条' }))).step === '配音 3 条', '合成步骤')
+  must(composeView(film([], fin('done'))).state === 'ok', '合成完')
+  must(composeView(film([], fin('failed', { error: 'ffmpeg 出错' }))).error === 'ffmpeg 出错', '合成失败原因')
+  must(composeView(film([])).state === 'gone', '没有合成记录')
+  console.log('✓ 任务进度')
 }
 
 // ---------- 极简渲染 ----------

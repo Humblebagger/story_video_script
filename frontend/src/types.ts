@@ -885,6 +885,37 @@ export interface AssistantTool {
   ok: boolean | null
   summary: string
 }
+export type AssistantAction = 'generate_storyboard' | 'film_run' | 'compose' | 'export_fcpxml'
+/** 操作开始后要跟进度的任务：job 跟 /jobs，film / compose 跟出片会话，export 只是一个下载按钮 */
+export interface AssistantTask {
+  kind: 'job' | 'film' | 'compose' | 'export'
+  chapter_id: string
+  version_id: string | null
+  job_id?: string
+}
+/** 确认卡上的内容（服务端算好的预估）；待确认时带 id（中断编号，恢复时用） */
+export interface AssistantCardInfo {
+  id?: string
+  tool_call_id: string
+  action: AssistantAction
+  chapter_id: string
+  chapter: string
+  version_id: string | null
+  /** 生成分镜为 null（按模型用量计费，无法预估） */
+  amount: number | null
+  currency: 'cny' | 'usd' | null
+  detail: { clips?: number; chars?: number; archived?: boolean; draft?: boolean }
+}
+export interface AssistantCard {
+  tool_call_id: string
+  action: AssistantAction
+  outcome: 'pending' | 'approved' | 'rejected' | 'done' | 'failed'
+  card?: AssistantCardInfo | null
+  task?: AssistantTask | null
+  error?: string
+  /** 本地标记：点了按钮，恢复请求还没回来 */
+  sending?: boolean
+}
 export interface AssistantMsg {
   role: 'user' | 'assistant'
   text: string
@@ -894,11 +925,15 @@ export interface AssistantMsg {
   interrupted?: boolean
   /** 本地标记：这一轮出错（显示报错与重试） */
   error?: string
+  cards?: AssistantCard[]
 }
 export type AssistantEvent =
   | { event: 'token'; data: { text: string } }
   | { event: 'tool_start'; data: { id: string; name: string; args: Record<string, unknown> } }
   | { event: 'tool_end'; data: { id: string; ok: boolean; summary: string } }
   | { event: 'goto'; data: AssistantGoto }
+  | { event: 'confirm'; data: AssistantCardInfo & { id: string } }
+  | { event: 'action'; data: AssistantCard }
+
   | { event: 'done'; data: Record<string, never> }
   | { event: 'error'; data: { message: string } }
