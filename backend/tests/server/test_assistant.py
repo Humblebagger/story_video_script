@@ -337,6 +337,49 @@ def main() -> int:
     app_mod._run_version_job = real_job
     print("22. 同一张卡不能恢复两次 ✓")
 
+    # 23. 撤销接口：应用一次改剧情后撤销；撤销两次 409；别人的小说 404；找不到 404；参数非法 422；正在回答 409
+    store.clear(uid, nid)
+    app_mod._assistant_model = lambda: ScriptedChat(script=script)
+    novels.set_outline(uid, nid, "旧梗概")
+    script[:] = [call("plot_edit", {"outline": "新梗概"}, "pe1")]
+    conf = events_of(c.post(A + "/messages", headers=H, json={"text": "改梗概", "lang": "zh"}))[0][1]
+    script[:] = [AIMessage("改好了。")]
+    evs = events_of(c.post(A + "/resume", headers=H,
+                           json={"id": conf["id"], "decision": "approve", "lang": "zh", "where": {}}))
+    assert evs[0][1]["outcome"] == "approved", evs
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "新梗概"
+    U = A + "/undo"
+    n_usage = len(usage.read(user_id=uid))
+    assert c.post(U, json={"tool_call_id": "pe1"}).status_code == 401
+    assert c.post(U, headers=HB, json={"tool_call_id": "pe1"}).status_code == 404
+    assert c.post(U, headers=H, json={}).status_code == 422
+    assert c.post(U, headers=H, json={"tool_call_id": "nope"}).status_code == 404
+    token = store.try_begin(uid, nid)
+    assert c.post(U, headers=H, json={"tool_call_id": "pe1"}).status_code == 409
+    store.end(uid, nid, token)
+    r = c.post(U, headers=H, json={"tool_call_id": "pe1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True and r.json()["task"] == {"kind": "edit", "chapter_id": None, "version_id": None}
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "旧梗概"
+    assert len(usage.read(user_id=uid)) == n_usage, "撤销不调模型、不记用量"
+    r = c.post(U, headers=H, json={"tool_call_id": "pe1"})
+    assert r.status_code == 409 and "撤销过" in r.json()["detail"]
+    h = c.get(A, headers=H).json()["messages"]
+    assert h[-1]["cards"][0]["outcome"] == "undone"
+    assert store.try_begin(uid, nid) and store.end(uid, nid) is None
+    print("23. 撤销接口 ✓")
+
+    # 24. 之后被别处改过：撤销 409 并说明原因
+    script[:] = [call("plot_edit", {"outline": "第二版梗概"}, "pe2")]
+    conf = events_of(c.post(A + "/messages", headers=H, json={"text": "再改", "lang": "zh"}))[0][1]
+    script[:] = [AIMessage("好。")]
+    events_of(c.post(A + "/resume", headers=H, json={"id": conf["id"], "decision": "approve", "lang": "zh", "where": {}}))
+    novels.set_outline(uid, nid, "别处改的")
+    r = c.post(U, headers=H, json={"tool_call_id": "pe2"})
+    assert r.status_code == 409 and "改过" in r.json()["detail"], r.text
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "别处改的"
+    print("24. 撤销被拒 ✓")
+
     print("\nALL PASS")
     return 0
 

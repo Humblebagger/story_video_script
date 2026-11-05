@@ -18,7 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from fake_model import ScriptedChat, call  # noqa: E402
-from assistant import actions, events, graph, store  # noqa: E402
+from assistant import actions, edits, events, graph, store  # noqa: E402
 from server import auth, novels  # noqa: E402
 
 
@@ -149,7 +149,7 @@ def main() -> int:
     r = Rec(script=[])
     graph.build_agent(r, InMemorySaver())
     assert r.bound.get("parallel_tool_calls") is False
-    assert [t.name for t in graph.ALL_TOOLS][-4:] == list(actions.ACTIONS)
+    assert [t.name for t in graph.ALL_TOOLS][-7:-3] == list(actions.ACTIONS)
     print("11. 关并行 ✓")
 
     # 12. 操作工具出卡：只发 confirm（不发 tool_start），流以 done 结束；历史里是待确认的卡
@@ -224,6 +224,30 @@ def main() -> int:
     assert h[-1]["cards"][-1] == {"tool_call_id": "f9", "action": "film_run", "outcome": "failed",
                                    "error": events.INTERRUPTED}, h[-1]
     print("15. 操作报错与被停掉 ✓")
+
+    # 16. 改内容工具在智能体里：出卡发 confirm（不出工具行），应用后发 action（不带撤销数据）；历史里撤销过的卡标 undone
+    assert [t.name for t in graph.ALL_TOOLS][-3:] == list(edits.EDITS)
+    novels.set_outline(uid, nid, "旧梗概")
+    store.clear(uid, nid)
+    model = ScriptedChat(script=[call("plot_edit", {"outline": "新梗概"}, "p1"), AIMessage("改好了。")])
+    cfg = graph.run_config(uid, nid, {"chapter_id": cid}, "zh")
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(model, cp)
+        evs = list(events.stream(agent, cfg, "改梗概"))
+        assert [e["event"] for e in evs] == ["confirm", "done"], evs
+        conf = evs[0]["data"]
+        assert conf["action"] == "plot_edit" and conf["diff"][0]["after"] == "新梗概"
+        card = graph.pending(agent, cfg)[0].value
+        evs = list(events.stream(agent, graph.run_config(uid, nid, {}, "zh", resume_tool_call="p1"),
+                                 Command(resume={conf["id"]: {"decision": "approve", "card": card}})))
+        assert [e["event"] for e in evs] == ["action", "token", "done"], evs
+        assert evs[0]["data"]["outcome"] == "approved" and "undo" not in evs[0]["data"]
+        assert evs[0]["data"]["task"] == {"kind": "edit", "chapter_id": None, "version_id": None}
+        h = events.history(agent, cfg)
+        assert h[-1]["cards"][0]["outcome"] == "approved" and "undo" not in h[-1]["cards"][0]
+        h = events.history(agent, cfg, undone={"p1"})
+        assert h[-1]["cards"][0]["outcome"] == "undone"
+    print("16. 改内容工具 ✓")
 
     print("\nALL PASS")
     return 0

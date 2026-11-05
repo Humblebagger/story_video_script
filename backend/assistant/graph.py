@@ -7,11 +7,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import create_react_agent
 
-from assistant import actions, store
+from assistant import actions, edits, store
 from assistant.tools import TOOLS
 from server import novels
 
-ALL_TOOLS = TOOLS + actions.TOOLS
+ALL_TOOLS = TOOLS + actions.TOOLS + edits.TOOLS
 CANCELLED = "用户没有确认，发了新消息；这个操作已取消"
 
 HISTORY = 20                  # 发给模型的最近消息数（存档保留全量）

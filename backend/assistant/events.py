@@ -1,7 +1,7 @@
 """LangGraph 流 → SSE 事件；存档 → 界面历史。
 
 事件（spec §5）：token {text} / tool_start {id,name,args} / tool_end {id,ok,summary} / goto {chapter_id,step} /
-confirm {卡, id} / action {tool_call_id, action, outcome, card?, task?, error?} / done {} / error {message}。
+confirm {卡, id} / action {tool_call_id, action, outcome, card?, task?, error?}（outcome 在历史里撤销过的修改为 undone）/ done {} / error {message}。
 操作工具不发 tool_start / tool_end（用卡片表示）。文字只从 messages 流取（逐字），工具起止从 updates 流取，避免重复。
 """
 import json
@@ -12,6 +12,9 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 from langgraph.errors import GraphRecursionError
 
 from assistant.actions import ACTIONS
+from assistant.edits import EDITS
+
+CARD_TOOLS = ACTIONS + EDITS    # 出卡片的工具：不发 tool_start / tool_end，历史里进 cards
 
 TOO_MANY = "步骤太多，先停在这里。可以换个更具体的问法再问我。"
 INTERRUPTED = "（已中断）"
@@ -68,10 +71,10 @@ def stream(agent, config: dict, payload, hide: Optional[str] = None) -> Iterator
                 for m in (update or {}).get("messages") or []:
                     if node == "agent" and isinstance(m, AIMessage):
                         for tc in m.tool_calls or []:
-                            if tc["name"] not in ACTIONS:
+                            if tc["name"] not in CARD_TOOLS:
                                 yield {"event": "tool_start", "data": {"id": tc["id"], "name": tc["name"], "args": tc["args"]}}
                     elif node == "tools" and isinstance(m, ToolMessage):
-                        if m.name in ACTIONS:
+                        if m.name in CARD_TOOLS:
                             yield {"event": "action", "data": action_view(m, hide)}
                             continue
                         ok = m.status != "error"
@@ -91,7 +94,7 @@ def sse(ev: dict) -> str:
     return f"event: {ev['event']}\ndata: {json.dumps(ev['data'], ensure_ascii=False)}\n\n"
 
 
-def history(agent, config: dict, hide: Optional[str] = None) -> list:
+def history(agent, config: dict, hide: Optional[str] = None, undone: Optional[set] = None) -> list:
     """存档 → [{role, text, tools?, goto?}]：一条用户消息之后、下一条用户消息之前的都算一条助手回答。
     同一回答里几条 AI 消息的文字用空行隔开；没有结果的工具调用（被停掉、步骤超限）标成失败「（已中断）」，
     免得界面上一直转圈。操作工具不进 tools，进 cards：待确认的带中断编号，被停掉没结果的标失败「（已中断）」。"""
@@ -113,7 +116,7 @@ def history(agent, config: dict, hide: Optional[str] = None) -> list:
             if t:
                 cur["text"] += ("\n\n" if cur["text"] else "") + t
             for tc in m.tool_calls or []:
-                if tc["name"] in ACTIONS:
+                if tc["name"] in CARD_TOOLS:
                     it = waiting.get(tc["id"])
                     cur["cards"].append(
                         {"tool_call_id": tc["id"], "action": tc["name"], "outcome": "pending", "card": confirm_view(it)}
@@ -122,8 +125,10 @@ def history(agent, config: dict, hide: Optional[str] = None) -> list:
                 else:
                     cur["tools"].append({"id": tc["id"], "name": tc["name"], "args": tc["args"], "ok": None, "summary": ""})
         elif isinstance(m, ToolMessage):
-            if m.name in ACTIONS:
+            if m.name in CARD_TOOLS:
                 view = action_view(m, hide)
+                if undone and view["outcome"] == "approved" and m.tool_call_id in undone:
+                    view["outcome"] = "undone"
                 cur["cards"] = [view if c["tool_call_id"] == m.tool_call_id else c for c in cur["cards"]]
                 continue
             for t in cur["tools"]:

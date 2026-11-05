@@ -51,6 +51,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   GET/DELETE  /novels/{nid}/assistant            历史 / 清空
   POST        /novels/{nid}/assistant/messages   发消息（SSE）；有待确认的卡时先按取消处理
   POST        /novels/{nid}/assistant/resume     确认卡上点了确认或取消，接着跑（SSE）
+  POST        /novels/{nid}/assistant/undo       撤销助手的一次修改（不调模型）
 
 以上全部需要登录，且只能看到自己的数据：
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
@@ -87,6 +88,7 @@ from pipeline.chat import ChatInvoker, UsageCallback, build_chat_model, replace_
 from assistant import events as assistant_events, graph as assistant_graph, store as assistant_store
 from assistant import tools as assistant_tools
 from assistant import actions as assistant_actions
+from assistant import edits as assistant_edits
 from langgraph.types import Command
 from render import keyframes as keyframes_mod
 from render import plan as render_plan_mod
@@ -1395,7 +1397,8 @@ def constraints_delete(nid: str, kid: str, user: dict = Depends(novel_user)):
 # 操作工具调这些（与接口同一份）；assistant 包不能反过来导入 app
 assistant_actions.ops.update(start_version=_start_version, film_quote=_film_quote, film_run=_film_run,
                              compose_quote=_compose_quote, compose_start=_compose_start,
-                             export_check=_export_check)
+                             export_check=_export_check, version_check=_check_version_doc,
+                             version_save=_save_version_doc)
 
 _ASSISTANT_STEPS = ("import", "storyboard", "review", "render", "compose", "download")
 _ASSISTANT_MAX = 2000
@@ -1443,7 +1446,8 @@ def assistant_history(nid: str, user: dict = Depends(novel_user)):
     with assistant_store.saver(user["id"], nid) as cp:
         agent = assistant_graph.build_agent(assistant_graph.NullModel(), cp)
         cfg = assistant_graph.run_config(user["id"], nid, {}, "zh")
-        return {"messages": assistant_events.history(agent, cfg, hide=str(auth.DATA_DIR))}
+        return {"messages": assistant_events.history(agent, cfg, hide=str(auth.DATA_DIR),
+                                                     undone=assistant_store.undone(user["id"], nid))}
 
 
 @app.delete("/novels/{nid}/assistant")
@@ -1614,6 +1618,48 @@ def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(nove
     with _assistant_resumed_lock:   # 校验都过了才记：校验失败（503 等）的还能再点
         _assistant_resumed.add(key)
     return _assistant_stream(user, nid, where, lang, cmd, token, model, resume_tool_call=card["tool_call_id"])
+
+
+def _assistant_undo_data(user_id: str, nid: str, tool_call_id: str) -> Optional[dict]:
+    """存档里这次修改的撤销数据：应用成功的改内容工具结果才有。"""
+    if not assistant_store.exists(user_id, nid):
+        return None
+    with assistant_store.saver(user_id, nid) as cp:
+        agent = assistant_graph.build_agent(assistant_graph.NullModel(), cp)
+        msgs = agent.get_state(assistant_graph.run_config(user_id, nid, {}, "zh")).values.get("messages") or []
+    for m in msgs:
+        if getattr(m, "tool_call_id", None) == tool_call_id and m.name in assistant_edits.EDITS:
+            a = m.artifact if m.status != "error" else None
+            return a["undo"] if a and a.get("outcome") == "approved" and a.get("undo") else None
+    return None
+
+
+@app.post("/novels/{nid}/assistant/undo")
+def assistant_undo(nid: str, body: dict = Body(...), user: dict = Depends(novel_user)):
+    """对比卡上点了「撤销」：把那次应用的改动写回去（spec §8.2）。不调模型、不记用量；之后被别处改过 409。"""
+    _assistant_db(user, nid)
+    tcid = body.get("tool_call_id")
+    if not isinstance(tcid, str) or not tcid:
+        raise HTTPException(422, "tool_call_id 不合法")
+    token = assistant_store.try_begin(user["id"], nid)
+    if not token:
+        raise HTTPException(409, "助手正在回答，等它说完再撤销")
+    try:
+        if tcid in assistant_store.undone(user["id"], nid):
+            raise HTTPException(409, "这次修改已经撤销过了")
+        data = _assistant_undo_data(user["id"], nid, tcid)
+        if data is None:
+            raise HTTPException(404, "找不到这次修改")
+        try:
+            message = assistant_edits.undo(user["id"], nid, data)
+        except assistant_edits.UndoError as e:
+            raise HTTPException(409, _hide_root(str(e), auth.DATA_DIR))
+        assistant_store.mark_undone(user["id"], nid, tcid)
+        return {"ok": True, "message": message,
+                "task": {"kind": "edit", "chapter_id": data.get("chapter_id"), "version_id": data.get("version_id")}}
+    finally:
+        assistant_store.end(user["id"], nid, token)
+
 
 # ---------- 探针 ----------
 
