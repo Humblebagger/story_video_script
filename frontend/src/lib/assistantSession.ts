@@ -2,7 +2,7 @@
  *  面板只是它的视图：关面板、切页签、Esc、点铃铛都不会中断回答；只有显式停止、换到别的小说、退出登录才中断。
  *  确认卡：decideAssistant 接着跑被中断的那一轮，输出接在同一条回答后面；发新消息时，本地把待确认的卡标成已取消（服务端同时取消）。 */
 import { useSyncExternalStore } from 'react'
-import { ApiError, clearAssistant, getAssistant, resumeAssistant, streamAssistant } from '@/api'
+import { ApiError, clearAssistant, getAssistant, resumeAssistant, streamAssistant, undoAssistant } from '@/api'
 import { notifyTask } from '@/lib/assistantBridge'
 import type { AssistantCard, AssistantEvent, AssistantMsg, AssistantWhere } from '@/types'
 
@@ -157,6 +157,25 @@ export function retryAssistant(nid: string, o: SendOpts): void {
   if (!lastUser || s.busy) return
   put(nid, (x) => ({ ...x, msgs: x.msgs.slice(0, -2) }))
   void sendAssistant(nid, lastUser.text, o)
+}
+
+/** 改一张卡（按 tool_call_id，在哪条消息里都行） */
+const patchCard = (nid: string, toolCallId: string, fn: (c: AssistantCard) => AssistantCard) =>
+  put(nid, (s) => ({ ...s, msgs: s.msgs.map((m) => (m.cards?.some((c) => c.tool_call_id === toolCallId)
+    ? { ...m, cards: m.cards.map((c) => (c.tool_call_id === toolCallId ? fn(c) : c)) } : m)) }))
+
+/** 对比卡上点了「撤销」：成功后卡变已撤销并通知工作台；失败时卡不变，原因抛给界面提示 */
+export async function undoAssistantCard(nid: string, toolCallId: string): Promise<void> {
+  if (getSession(nid).busy) return
+  patchCard(nid, toolCallId, (c) => ({ ...c, sending: true }))
+  try {
+    const r = await undoAssistant(nid, toolCallId)
+    patchCard(nid, toolCallId, (c) => ({ ...c, sending: false, outcome: 'undone' }))
+    notifyTask(r.task)
+  } catch (e) {
+    patchCard(nid, toolCallId, (c) => ({ ...c, sending: false }))
+    throw e
+  }
 }
 
 /** 显式停止 */

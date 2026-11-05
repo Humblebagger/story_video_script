@@ -13,7 +13,7 @@ import type {
   FilmSession, FilmSettings, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
   AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
-  AssistantEvent, AssistantMsg, AssistantWhere,
+  AssistantEvent, AssistantMsg, AssistantTask, AssistantWhere,
 } from './types'
 
 /** 带结构化 detail 的接口错误。
@@ -527,6 +527,11 @@ export const getAssistant = (nid: string) =>
 
 export const clearAssistant = (nid: string) =>
   req<{ ok: true }>(`/novels/${encodeURIComponent(nid)}/assistant`, { method: 'DELETE' })
+
+/** 撤销助手的一次修改（不调模型）。之后被别处改过等情况以 ApiError（409，带原因）抛出 */
+export const undoAssistant = (nid: string, toolCallId: string) =>
+  req<{ ok: true; message: string; task: AssistantTask }>(`/novels/${encodeURIComponent(nid)}/assistant/undo`,
+                                                          jsonPost({ tool_call_id: toolCallId }))
 
 /** POST 一个 JSON，逐个回调返回的 SSE 事件；signal 中止即停止。429 / 409 / 422 等在开始流之前以 ApiError 抛出。 */
 async function streamSse(path: string, body: unknown, onEvent: (e: AssistantEvent) => void,

@@ -11,7 +11,7 @@ import type { TaskView } from '@/lib/assistantTask'
 import type { AssistantGoto, AssistantStep, AssistantTask } from '@/types'
 
 /** 结束后去哪一步：分镜生成完去检查，出片去出片，合成完去下载（失败回合成） */
-const NEXT: Record<AssistantTask['kind'], AssistantStep> = { job: 'review', film: 'render', compose: 'download', export: 'download' }
+const NEXT: Record<AssistantTask['kind'], AssistantStep> = { job: 'review', film: 'render', compose: 'download', export: 'download', edit: 'review' }
 
 function taskText(t: (k: MsgKey, v?: Record<string, string | number>) => string, kind: AssistantTask['kind'], v: TaskView): string {
   if (v.state === 'loading') return t('assistant.task.loading')

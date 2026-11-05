@@ -7,16 +7,20 @@ import type { MsgKey } from '@/i18n/core'
 import type { AssistantCard, AssistantGoto } from '@/types'
 import { TaskCard } from './TaskCard'
 
-export function ActionCard({ novelId, c, busy, onDecide, onGoto }: {
+const EDITS = ['shots_edit', 'asset_edit', 'plot_edit']
+
+export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
   novelId: string
   c: AssistantCard
   /** 正在回答（或别的卡在发送）：按钮禁用 */
   busy: boolean
   onDecide: (decision: 'approve' | 'reject') => void
+  onUndo: () => void
   onGoto: (g: AssistantGoto) => void
 }) {
   const { t } = useI18n()
   const info = c.card
+  const edit = EDITS.includes(c.action)
   const title = t(`assistant.action.${c.action}` as MsgKey) + (info?.chapter ? ` · ${info.chapter}` : '')
   const cost = !info || info.currency === null ? null
     : info.amount === null ? t('assistant.card.modelCost') : t('assistant.card.cny', { n: info.amount.toFixed(2) })
@@ -24,34 +28,69 @@ export function ActionCard({ novelId, c, busy, onDecide, onGoto }: {
   const notes = [
     d.clips !== undefined ? t('assistant.card.clips', { n: d.clips }) : null,
     d.chars !== undefined ? t(c.action === 'compose' ? 'assistant.card.ttsChars' : 'assistant.card.chars', { n: d.chars }) : null,
+    d.edits !== undefined ? t('assistant.card.edits', { n: d.edits }) : null,
     d.archived ? t('assistant.card.archived') : null,
     c.action === 'compose' && d.draft ? t('assistant.card.draft') : null,
   ].filter((x): x is string => !!x)
+  const fieldName = (f: string) => {
+    const key = `assistant.field.${f}` as MsgKey
+    const s = t(key)
+    return s === key ? f : s
+  }
   const locked = busy || !!c.sending
   return (
     <div className="assistant__card" data-testid="assistant-card" data-outcome={c.outcome}>
       <p className="font-medium">{title}</p>
       {cost && <p data-testid="assistant-card-cost">{cost}</p>}
       {!!notes.length && <p className="text-xs text-muted-foreground">{notes.join(t('common.listSep'))}</p>}
+      {!!info?.diff?.length && (
+        <ul className="assistant__diff">
+          {info.diff.map((r, i) => (
+            <li key={i} data-testid="assistant-diff-row">
+              <p className="text-xs text-muted-foreground">{r.target} · {fieldName(r.field)}</p>
+              <p className="assistant__diff-before">{r.before}</p>
+              <p className="assistant__diff-after">{r.after}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!!info?.warnings?.length && (
+        <div className="assistant__warn" data-testid="assistant-card-warnings">
+          <p>{t('assistant.card.warnings')}</p>
+          <ul className="list-disc pl-4">{info.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+        </div>
+      )}
       {c.outcome === 'pending' && (
         <div className="flex gap-2">
           <Button size="sm" disabled={locked} data-testid="assistant-card-approve" onClick={() => onDecide('approve')}>
             {c.sending && <Loader2 className="size-3 animate-spin" />}
-            {t('assistant.card.confirm')}
+            {t(edit ? 'assistant.card.apply' : 'assistant.card.confirm')}
           </Button>
           <Button size="sm" variant="outline" disabled={locked} data-testid="assistant-card-reject" onClick={() => onDecide('reject')}>
-            {t('assistant.card.reject')}
+            {t(edit ? 'assistant.card.discard' : 'assistant.card.reject')}
           </Button>
         </div>
       )}
-      {c.outcome === 'approved' && <p className="text-xs text-muted-foreground">{t('assistant.card.approved')}</p>}
+      {c.outcome === 'approved' && !edit && <p className="text-xs text-muted-foreground">{t('assistant.card.approved')}</p>}
+      {c.outcome === 'approved' && edit && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{t('assistant.card.applied')}</span>
+          <Button size="sm" variant="ghost" disabled={locked} data-testid="assistant-card-undo" onClick={onUndo}>
+            {c.sending && <Loader2 className="size-3 animate-spin" />}
+            {t('assistant.card.undo')}
+          </Button>
+        </div>
+      )}
+      {c.outcome === 'undone' && (
+        <p className="text-xs text-muted-foreground" data-testid="assistant-card-undone">{t('assistant.card.undone')}</p>
+      )}
       {c.outcome === 'rejected' && (
         <p className="text-xs text-muted-foreground" data-testid="assistant-card-rejected">{t('assistant.card.rejected')}</p>
       )}
       {c.outcome === 'failed' && (
         <p className="text-xs text-destructive" data-testid="assistant-card-failed">{t('assistant.card.failed', { msg: c.error ?? '' })}</p>
       )}
-      {c.task && (c.outcome === 'approved' || c.outcome === 'done') && (
+      {c.task && c.task.kind !== 'edit' && (c.outcome === 'approved' || c.outcome === 'done') && (
         <TaskCard novelId={novelId} task={c.task} chapter={info?.chapter ?? ''} onGoto={onGoto} />
       )}
     </div>

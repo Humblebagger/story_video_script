@@ -144,6 +144,12 @@ export const en: Messages = {
     toolUnknown: 'Called {name}',
     action: {
       generate_storyboard: 'Generate storyboard', film_run: 'Render video', compose: 'Voice & mix', export_fcpxml: 'Export editing project',
+      shots_edit: 'Edit shots', asset_edit: 'Edit asset card', plot_edit: 'Edit plot',
+    },
+    field: {
+      action: 'Action', atmosphere: 'Atmosphere', shot_size: 'Shot size', duration_sec: 'Duration', camera_movement: 'Camera movement',
+      camera_angle: 'Camera angle', transition_out: 'Transition', sfx: 'Sound effects', outline: 'Book outline', synopsis: 'Chapter synopsis',
+      name: 'Name', aliases: 'Aliases', visual_prompt: 'Visual prompt',
     },
     card: {
       confirm: 'Confirm',
@@ -158,6 +164,8 @@ export const en: Messages = {
       approved: 'Confirmed',
       rejected: 'Cancelled',
       failed: 'Did not go through: {msg}',
+      apply: 'Apply', discard: 'Discard', applied: 'Applied', undo: 'Undo', undone: 'Undone',
+      undoFailed: 'Could not undo: {msg}', warnings: 'Fails verification; this version will be marked as a draft after applying:', edits: '{n} changes',
     },
     task: {
       loading: 'Checking…',

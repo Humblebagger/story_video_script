@@ -142,6 +142,12 @@ export const zh = {
     toolUnknown: '调用了 {name}',
     action: {
       generate_storyboard: '生成分镜', film_run: '出片', compose: '配音合成', export_fcpxml: '导出剪辑工程',
+      shots_edit: '改镜头', asset_edit: '改资产卡', plot_edit: '改剧情',
+    },
+    field: {
+      action: '画面', atmosphere: '氛围', shot_size: '景别', duration_sec: '时长', camera_movement: '运镜',
+      camera_angle: '机位', transition_out: '转场', sfx: '音效', outline: '全书梗概', synopsis: '本章梗概',
+      name: '名称', aliases: '别名', visual_prompt: '画面提示词',
     },
     card: {
       confirm: '确认',
@@ -156,6 +162,8 @@ export const zh = {
       approved: '已确认',
       rejected: '已取消',
       failed: '没做成：{msg}',
+      apply: '应用', discard: '放弃', applied: '已应用', undo: '撤销', undone: '已撤销',
+      undoFailed: '撤销失败：{msg}', warnings: '复验不通过，应用后这一版会标成草稿：', edits: '{n} 处修改',
     },
     task: {
       loading: '查询中…',

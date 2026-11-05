@@ -19,7 +19,7 @@ export interface TaskView {
   error?: string | null
 }
 
-export const TASK_POLL_MS: Record<AssistantTask['kind'], number> = { job: 1500, film: 5000, compose: 3000, export: 0 }
+export const TASK_POLL_MS: Record<AssistantTask['kind'], number> = { job: 1500, film: 5000, compose: 3000, export: 0, edit: 0 }
 
 export function jobView(j: Job): TaskView {
   if (!TERMINAL.includes(j.status)) {

@@ -886,9 +886,10 @@ export interface AssistantTool {
   summary: string
 }
 export type AssistantAction = 'generate_storyboard' | 'film_run' | 'compose' | 'export_fcpxml'
+  | 'shots_edit' | 'asset_edit' | 'plot_edit'
 /** 操作开始后要跟进度的任务：job 跟 /jobs，film / compose 跟出片会话，export 只是一个下载按钮 */
 export interface AssistantTask {
-  kind: 'job' | 'film' | 'compose' | 'export'
+  kind: 'job' | 'film' | 'compose' | 'export' | 'edit'
   chapter_id: string
   version_id: string | null
   job_id?: string
@@ -898,18 +899,22 @@ export interface AssistantCardInfo {
   id?: string
   tool_call_id: string
   action: AssistantAction
-  chapter_id: string
+  chapter_id: string | null
   chapter: string
   version_id: string | null
   /** 生成分镜为 null（按模型用量计费，无法预估） */
   amount: number | null
   currency: 'cny' | 'usd' | null
-  detail: { clips?: number; chars?: number; archived?: boolean; draft?: boolean }
+  detail: { clips?: number; chars?: number; archived?: boolean; draft?: boolean; edits?: number }
+  /** 改内容：逐条「原 → 新」（值都是显示用的文字） */
+  diff?: { target: string; field: string; before: string; after: string }[]
+  /** 改镜头：复验不过的原因（应用后版本会标草稿） */
+  warnings?: string[]
 }
 export interface AssistantCard {
   tool_call_id: string
   action: AssistantAction
-  outcome: 'pending' | 'approved' | 'rejected' | 'done' | 'failed'
+  outcome: 'pending' | 'approved' | 'rejected' | 'done' | 'failed' | 'undone'
   card?: AssistantCardInfo | null
   task?: AssistantTask | null
   error?: string

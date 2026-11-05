@@ -114,6 +114,7 @@ type Ev = { event: string; data: unknown }
 
 const realFetch = globalThis.fetch
 let history: unknown[] = []
+let undoReply: { status: number; body: unknown } = { status: 200, body: { ok: true, message: 'ok', task: { kind: 'edit', chapter_id: 'c1', version_id: 'v1' } } }
 let filmState: unknown = { clips: [{ id: 'C1', state: 'running' }, { id: 'C2', state: 'done' }], final: null }
 let jobState: unknown = null
 let script: Ev[] = []
@@ -133,6 +134,9 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
     return new Response(JSON.stringify({ messages: history }), { status: 200 })
   }
   if (method === 'DELETE') return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  if (method === 'POST' && String(url).endsWith('/assistant/undo')) {
+    return new Response(JSON.stringify(undoReply.body), { status: undoReply.status })
+  }
   if (status !== 200) return new Response(JSON.stringify({ detail: 'x' }), { status })
   const enc = new TextEncoder()
   const signal = init?.signal
@@ -399,6 +403,64 @@ const enter = async (composing = false, keyCode = 13) => {
   await act(async () => { root.unmount() })
   offTask()
   console.log('✓ 确认卡与任务卡')
+}
+
+{
+  // 对比卡：原 → 新、复验警告、应用 / 放弃；应用后撤销；撤销失败给提示；撤销成功通知工作台
+  const tasks: unknown[] = []
+  const offTask = onTask((t) => tasks.push(t))
+  const diffCard = { id: 'i9', tool_call_id: 'e1', action: 'shots_edit', chapter_id: 'c1', chapter: '第一章', version_id: 'v1',
+                     amount: null, currency: null, detail: { edits: 1 },
+                     diff: [{ target: 'E01-SH001', field: 'action', before: '旧画面', after: '新画面' }],
+                     warnings: ['episodes[0]: 时长对不上'] }
+  history = []
+  let root = await mount('n-edit')
+  script = [{ event: 'confirm', data: diffCard }]
+  await type('改第一个镜头')
+  await enter()
+  const box = () => $$('assistant-card').at(-1)!
+  const rows = $$('assistant-diff-row')
+  must(rows.length === 1 && rows[0].textContent!.includes('旧画面') && rows[0].textContent!.includes('新画面'), '原 → 新')
+  must(!!$('assistant-card-warnings') && $('assistant-card-warnings')!.textContent!.includes('时长'), '复验警告')
+  must(!$('assistant-card-cost'), '改内容没有金额行')
+  must(($('assistant-card-approve')!.textContent ?? '').length > 0 && !$('assistant-card-undo'), '待确认时没有撤销')
+  script = [{ event: 'action', data: { tool_call_id: 'e1', action: 'shots_edit', outcome: 'approved', card: diffCard,
+                                       task: { kind: 'edit', chapter_id: 'c1', version_id: 'v1' } } }]
+  await act(async () => { $('assistant-card-approve')!.click() })
+  await flush()
+  must(box().getAttribute('data-outcome') === 'approved' && !!$('assistant-card-undo'), '应用后有撤销')
+  must(!$('assistant-task'), '改内容不挂任务卡')
+  must(tasks.length === 1 && (tasks[0] as { kind: string }).kind === 'edit', '应用后通知工作台')
+
+  undoReply = { status: 409, body: { detail: '镜头 E01-SH001 在这之后又被改过，不能撤销' } }
+  await act(async () => { $('assistant-card-undo')!.click() })
+  await flush()
+  must(box().getAttribute('data-outcome') === 'approved' && !($('assistant-card-undo') as HTMLButtonElement).disabled,
+       '撤销失败：卡不变，还能再点')
+  must(calls.at(-1)!.url.endsWith('/assistant/undo') && JSON.parse(calls.at(-1)!.body!).tool_call_id === 'e1', '撤销请求带工具调用编号')
+  undoReply = { status: 200, body: { ok: true, message: 'ok', task: { kind: 'edit', chapter_id: 'c1', version_id: 'v1' } } }
+  await act(async () => { $('assistant-card-undo')!.click() })
+  await flush()
+  must(box().getAttribute('data-outcome') === 'undone' && !!$('assistant-card-undone') && !$('assistant-card-undo'), '撤销后变已撤销')
+  must(tasks.length === 2, '撤销后通知工作台')
+  await act(async () => { root.unmount() })
+
+  // 历史里撤销过的卡；放弃的卡
+  history = [
+    { role: 'user', text: '改' },
+    { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      { tool_call_id: 'e2', action: 'plot_edit', outcome: 'undone',
+        card: { ...diffCard, tool_call_id: 'e2', action: 'plot_edit', warnings: [],
+                diff: [{ target: 'all', field: 'outline', before: 'a', after: 'b' }] } },
+      { tool_call_id: 'e3', action: 'asset_edit', outcome: 'rejected', card: { ...diffCard, tool_call_id: 'e3', action: 'asset_edit', warnings: [] } },
+    ] },
+  ]
+  root = await mount('n-edit2')
+  must($$('assistant-card').map((x) => x.getAttribute('data-outcome')).join() === 'undone,rejected', '历史卡片状态')
+  must(!$('assistant-card-undo'), '撤销过、放弃的都没有撤销按钮')
+  await act(async () => { root.unmount() })
+  offTask()
+  console.log('✓ 对比卡与撤销')
 }
 globalThis.fetch = realFetch
 

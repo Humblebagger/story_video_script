@@ -11,7 +11,7 @@ import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { useWhere } from '@/lib/assistantBridge'
 import {
-  ASSISTANT_MAX as MAX, clearAssistantSession, decideAssistant, loadAssistant, retryAssistant, sendAssistant, setDraft, stopAssistant,
+  ASSISTANT_MAX as MAX, clearAssistantSession, decideAssistant, loadAssistant, retryAssistant, sendAssistant, setDraft, stopAssistant, undoAssistantCard,
   useAssistantSession,
 } from '@/lib/assistantSession'
 import type { SendOpts } from '@/lib/assistantSession'
@@ -97,7 +97,11 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
             {!!m.text && <MiniMd text={m.text} />}
             {(m.cards ?? []).map((c) => (
               <ActionCard key={c.tool_call_id} novelId={novelId} c={c} busy={busy} onGoto={onGoto}
-                          onDecide={(d) => void decideAssistant(novelId, c.tool_call_id, d, opts())} />
+                          onDecide={(d) => void decideAssistant(novelId, c.tool_call_id, d, opts())}
+                          onUndo={() => {
+                            undoAssistantCard(novelId, c.tool_call_id).catch((e) =>
+                              toast.error(t('assistant.card.undoFailed', { msg: e instanceof Error ? e.message : String(e) })))
+                          }} />
             ))}
             {(m.goto ?? []).map((g, j) => (
               <Button key={j} variant="outline" size="sm" className="self-start" data-testid="assistant-goto" onClick={() => onGoto(g)}>
