@@ -890,7 +890,8 @@ export type AssistantAction = 'generate_storyboard' | 'film_run' | 'compose' | '
 /** 操作开始后要跟进度的任务：job 跟 /jobs，film / compose 跟出片会话，export 只是一个下载按钮 */
 export interface AssistantTask {
   kind: 'job' | 'film' | 'compose' | 'export' | 'edit'
-  chapter_id: string
+  /** 改资产卡、改全书梗概时为 null（不属于某一章） */
+  chapter_id: string | null
   version_id: string | null
   job_id?: string
 }

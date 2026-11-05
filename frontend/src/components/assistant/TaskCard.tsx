@@ -11,7 +11,7 @@ import type { TaskView } from '@/lib/assistantTask'
 import type { AssistantGoto, AssistantStep, AssistantTask } from '@/types'
 
 /** 结束后去哪一步：分镜生成完去检查，出片去出片，合成完去下载（失败回合成） */
-const NEXT: Record<AssistantTask['kind'], AssistantStep> = { job: 'review', film: 'render', compose: 'download', export: 'download', edit: 'review' }
+const NEXT: Record<AssistantTask['kind'], AssistantStep> = { job: 'review', film: 'render', compose: 'download', export: 'download', edit: 'review' }  // edit 不挂任务卡，只为补全 Record
 
 function taskText(t: (k: MsgKey, v?: Record<string, string | number>) => string, kind: AssistantTask['kind'], v: TaskView): string {
   if (v.state === 'loading') return t('assistant.task.loading')
@@ -43,7 +43,7 @@ export function TaskCard({ novelId, task, chapter, onGoto }: {
     const save = async () => {
       setSaving(true)
       try {
-        await exportFcpxml(novelId, task.chapter_id, task.version_id ?? '')
+        await exportFcpxml(novelId, task.chapter_id ?? '', task.version_id ?? '')
       } catch (e) {
         toast.error(t('assistant.task.downloadFailed', { msg: e instanceof Error ? e.message : String(e) }))
       } finally {
@@ -69,7 +69,7 @@ export function TaskCard({ novelId, task, chapter, onGoto }: {
       </span>
       {!running && (
         <Button variant="outline" size="sm" className="self-start" data-testid="assistant-task-goto"
-                onClick={() => onGoto({ chapter_id: task.chapter_id, step })}>
+                onClick={() => onGoto({ chapter_id: task.chapter_id ?? '', step })}>
           {t('assistant.goto', { chapter, step: t(`flow.steps.${step}` as MsgKey) })}
         </Button>
       )}

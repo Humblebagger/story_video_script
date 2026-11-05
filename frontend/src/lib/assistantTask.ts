@@ -19,7 +19,7 @@ export interface TaskView {
   error?: string | null
 }
 
-export const TASK_POLL_MS: Record<AssistantTask['kind'], number> = { job: 1500, film: 5000, compose: 3000, export: 0, edit: 0 }
+export const TASK_POLL_MS: Record<AssistantTask['kind'], number> = { job: 1500, film: 5000, compose: 3000, export: 0, edit: 0 }  // export / edit 不轮询
 
 export function jobView(j: Job): TaskView {
   if (!TERMINAL.includes(j.status)) {
@@ -56,7 +56,7 @@ export function useTaskView(nid: string, task: AssistantTask): TaskView {
       try {
         if (kind === 'job') next = jobView(await getJob(jobId ?? ''))
         else {
-          const s = await getFilm(nid, cid, vid ?? '')
+          const s = await getFilm(nid, cid ?? '', vid ?? '')
           next = kind === 'film' ? filmView(s) : composeView(s)
         }
       } catch (e) {
