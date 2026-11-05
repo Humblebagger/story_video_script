@@ -114,6 +114,22 @@ def main() -> int:
         raise AssertionError("改过之后不能再撤")
     except E.UndoError as e:
         assert sid in str(e)
+    # 应用后别处又改了这个镜头：撤销被拒，点名镜头
+    C = cfg()
+    ag = agent_for([call("shots_edit", {"edits": [edits[0]]}, "s9"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("改")]})
+    run(ag, C, answer(its[0]))
+    u2 = result(ag, C).artifact["undo"]
+    doc = copy.deepcopy(novels.get_version(uid, nid, c1, "v1")["result"])
+    doc["episodes"][0]["shots"][0]["action"] = "别处又改的"
+    novels.update_version_result(uid, nid, c1, "v1", doc, verification={}, status="succeeded")
+    try:
+        E.undo(uid, nid, u2)
+        raise AssertionError("别处改过，不能撤")
+    except E.UndoError as e:
+        assert sid in str(e)
+    novels.update_version_result(uid, nid, c1, "v1", copy.deepcopy(DOC), verification={}, status="succeeded")
+    saves.clear()
     print("2. 改镜头撤销 ✓")
 
     # 3. 拒绝的情况：旁白锁死、不在白名单、枚举不对、时长越界、找不到镜头、没有变化 → 工具报错，不出卡
@@ -174,6 +190,14 @@ def main() -> int:
     assert m.artifact["task"] == {"kind": "edit", "chapter_id": None, "version_id": None}
     E.undo(uid, nid, m.artifact["undo"])
     assert novels.get_memory(uid, nid)["assets"]["characters"][0] == c0
+    sc = copy.deepcopy(DOC["assets"]["locations"][0])
+    novels.upsert_asset(uid, nid, "locations", sc)
+    C = cfg()
+    ag = agent_for([call("asset_edit", {"card_id": sc["id"], "fields": {"interior_exterior": "outside"}}, "ae"),
+                    AIMessage("好")])
+    assert run(ag, C, {"messages": [HumanMessage("改")]}) == []
+    m = result(ag, C)
+    assert m.status == "error" and "interior" in m.content, m.content
     for bad, word in [({"id": "C99"}, "不能改"), ({"outfits": "x"}, "不能改"), ({"nickname": "x"}, "没有"),
                       ({"appearance": "x"}, "文字"), ({"name": " "}, "名称")]:
         C = cfg()
@@ -208,6 +232,13 @@ def main() -> int:
         raise AssertionError("梗概被别处改过，不能撤")
     except E.UndoError as e:
         assert "梗概" in str(e)
+    C = cfg()
+    long = "长" * (novels.SYNOPSIS_MAX + 1)
+    ag = agent_for([call("plot_edit", {"outline": "不该生效", "synopsis": long}, "p3"), AIMessage("好")])
+    assert run(ag, C, {"messages": [HumanMessage("改")]}) == []
+    m = result(ag, C)
+    assert m.status == "error" and str(novels.SYNOPSIS_MAX) in m.content, m.content
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "又改了"
     C = cfg()
     ag = agent_for([call("plot_edit", {}, "p2"), AIMessage("好")])
     run(ag, C, {"messages": [HumanMessage("改")]})

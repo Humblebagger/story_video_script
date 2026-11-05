@@ -30,6 +30,7 @@ ENUMS = {
     "transition_out": ("cut", "dissolve", "fade_to_black", "match_cut", "whip_pan"),
 }
 LOCKED_SHOT = ("narration", "dialogue", "source")
+ASSET_ENUMS = {"interior_exterior": ("interior", "exterior", "both")}  # 取自 schema/storyboard.schema.json
 LOCKED_ASSET = ("id", "outfits", "states", "angles", "reference_images")
 _MISSING = object()
 
@@ -217,6 +218,8 @@ def asset_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
                 if not isinstance(value, str):
                     raise ToolException(f"{path} 要给文字")
                 value = value.strip()
+                if path in ASSET_ENUMS and value not in ASSET_ENUMS[path]:
+                    raise ToolException(f"{path} 只能是 {', '.join(ASSET_ENUMS[path])}")
                 if path == "name" and not value:
                     raise ToolException("名称不能为空")
             elif isinstance(old, list) and all(isinstance(x, str) for x in old):
@@ -267,6 +270,8 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
             cid, title = ch["id"], ch["title"]
             old = next((s.get("synopsis") or "" for s in plot.get("chapters") or [] if s.get("chapter_id") == cid), "")
             new = synopsis.strip()
+            if len(new) > novels.SYNOPSIS_MAX:
+                raise ToolException(f"章节梗概不超过 {novels.SYNOPSIS_MAX} 字（现在 {len(new)} 字）")
             if old != new:
                 diff.append({"target": f"{title} 梗概", "field": "synopsis", "before": old, "after": new})
                 undo["synopsis"] = {"chapter_id": cid, "before": old, "after": new}
@@ -279,10 +284,10 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
         return _done("用户放弃了，没有改", card, "rejected")
     u = plan["undo"]
     try:
+        if u["synopsis"]:  # 先写可能失败的这一段，失败时什么都没改
+            novels.set_synopsis(uid, nid, u["synopsis"]["chapter_id"], u["synopsis"]["after"])
         if u["outline"]:
             novels.set_outline(uid, nid, u["outline"]["after"])
-        if u["synopsis"]:
-            novels.set_synopsis(uid, nid, u["synopsis"]["chapter_id"], u["synopsis"]["after"])
     except novels.NovelError as e:
         raise ToolException(str(e))
     return _done("已改好剧情；用户可以在卡上撤销", card, "approved",
