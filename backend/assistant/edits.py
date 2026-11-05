@@ -13,7 +13,7 @@ from langchain_core.tools import InjectedToolCallId, ToolException
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
-from assistant.actions import _op, _version, _where
+from assistant.actions import _op, _resuming, _version, _where
 from assistant.tools import _ctx, _tool
 from server import novels
 from server.library import KINDS
@@ -124,10 +124,21 @@ def _edit_card(tool_call_id: str, action: str, chapter_id: Optional[str], chapte
             "diff": diff, "warnings": warnings}
 
 
-def _ask_edit(build: Callable[[], tuple]) -> tuple:
+def _ask_edit(build: Callable[[], tuple], resuming: bool = False) -> tuple:
     """出对比卡等用户点「应用」→ (是否应用, 用户看到的卡, 这次重算的应用计划)。确认后重算一遍，
-    章节、版本与每一处「原 / 新」都与卡相同才应用（实施裁定 8）。"""
-    card, plan = build()
+    章节、版本与每一处「原 / 新」都与卡相同才应用（实施裁定 8）。
+
+    恢复时第一次 build() 在取回答之前就会跑：要改的地方在出卡之后变了（镜头没了、已是改后的样子）
+    它会报错。这时先取回答，用户点的是「放弃」就照常算放弃，只有「应用」才报错。"""
+    try:
+        card, plan = build()
+    except ToolException:
+        if not resuming:
+            raise
+        answer = interrupt(None) or {}
+        if answer.get("decision") != "approve" and answer.get("card"):
+            return False, answer["card"], None
+        raise
     answer = interrupt(card) or {}
     seen = answer.get("card") or card
     if answer.get("decision") != "approve":
@@ -178,7 +189,7 @@ def shots_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
         card = _edit_card(tool_call_id, "shots_edit", ch["id"], ch["title"], vid, diff, chk["warnings"])
         return card, {"doc": new, "undo": {"kind": "shots", "chapter_id": ch["id"], "version_id": vid, "shots": shots}}
 
-    ok, card, plan = _ask_edit(build)
+    ok, card, plan = _ask_edit(build, _resuming(config, tool_call_id))
     if not ok:
         return _done("用户放弃了，没有改", card, "rejected")
     r = _op("version_save", user, nid, card["chapter_id"], card["version_id"], plan["doc"])
@@ -237,7 +248,7 @@ def asset_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
         return card, {"kind": kind, "undo": {"kind": "asset", "asset_kind": kind, "card_id": card_id,
                                              "before": cur, "after": new}}
 
-    ok, card, plan = _ask_edit(build)
+    ok, card, plan = _ask_edit(build, _resuming(config, tool_call_id))
     if not ok:
         return _done("用户放弃了，没有改", card, "rejected")
     try:
@@ -279,7 +290,7 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
             raise ToolException("剧情已经是要改成的样子，不用改")
         return _edit_card(tool_call_id, "plot_edit", cid, title, None, diff, []), {"undo": undo}
 
-    ok, card, plan = _ask_edit(build)
+    ok, card, plan = _ask_edit(build, _resuming(config, tool_call_id))
     if not ok:
         return _done("用户放弃了，没有改", card, "rejected")
     u = plan["undo"]
@@ -319,7 +330,10 @@ def undo(user_id: str, nid: str, data: dict) -> str:
         cur = next((c for c in cards if c.get("id") == data["card_id"]), None)
         if cur != data["after"]:
             raise UndoError(f"资产卡 {data['card_id']} 在这之后又被改过，不能撤销")
-        novels.upsert_asset(user_id, nid, data["asset_kind"], copy.deepcopy(data["before"]))
+        try:
+            novels.upsert_asset(user_id, nid, data["asset_kind"], copy.deepcopy(data["before"]))
+        except (novels.NovelError, novels.NotFound) as e:
+            raise UndoError(str(e))
         return f"已撤销 {data['card_id']} 的修改"
     if kind == "plot":
         plot = novels.get_memory(user_id, nid)["plot"]
@@ -331,10 +345,13 @@ def undo(user_id: str, nid: str, data: dict) -> str:
                         if x.get("chapter_id") == s["chapter_id"]), "")
             if cur != s["after"]:
                 raise UndoError("这一章的梗概在这之后又被改过，不能撤销")
-        if o:
-            novels.set_outline(user_id, nid, o["before"])
-        if s:
-            novels.set_synopsis(user_id, nid, s["chapter_id"], s["before"])
+        try:  # 与应用同序：先写可能失败的章节梗概，失败时什么都没改
+            if s:
+                novels.set_synopsis(user_id, nid, s["chapter_id"], s["before"])
+            if o:
+                novels.set_outline(user_id, nid, o["before"])
+        except (novels.NovelError, novels.NotFound) as e:
+            raise UndoError(str(e))
         return "已撤销剧情的修改"
     raise UndoError("这条修改不能撤销")
 

@@ -1627,7 +1627,8 @@ def _assistant_undo_data(user_id: str, nid: str, tool_call_id: str) -> Optional[
     with assistant_store.saver(user_id, nid) as cp:
         agent = assistant_graph.build_agent(assistant_graph.NullModel(), cp)
         msgs = agent.get_state(assistant_graph.run_config(user_id, nid, {}, "zh")).values.get("messages") or []
-    for m in msgs:
+    # 取最后一条匹配的：按约定 tool_call_id 在一次会话里唯一，但有的网关会复用编号，以最近的为准
+    for m in reversed(msgs):
         if getattr(m, "tool_call_id", None) == tool_call_id and m.name in assistant_edits.EDITS:
             a = m.artifact if m.status != "error" else None
             return a["undo"] if a and a.get("outcome") == "approved" and a.get("undo") else None
@@ -1652,7 +1653,7 @@ def assistant_undo(nid: str, body: dict = Body(...), user: dict = Depends(novel_
             raise HTTPException(404, "找不到这次修改")
         try:
             message = assistant_edits.undo(user["id"], nid, data)
-        except assistant_edits.UndoError as e:
+        except (assistant_edits.UndoError, novels.NovelError, novels.NotFound) as e:
             raise HTTPException(409, _hide_root(str(e), auth.DATA_DIR))
         assistant_store.mark_undone(user["id"], nid, tcid)
         return {"ok": True, "message": message,

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """助手的改内容工具：改镜头（对比字段、编号后半段、白名单与枚举、旁白锁死、没变化报错、复验警告、应用、取消、
 恢复时内容变了不应用、撤销与撤销被拒）、改资产卡（文字与列表字段、嵌套字段、锁死字段、应用与撤销）、
-改剧情（全书梗概与章节梗概、应用与撤销）、撤销数据只含改动的镜头。复验与保存用替身（ops）。
+改剧情（全书梗概与章节梗概、应用与撤销）、撤销数据只含改动的镜头；
+再保存采用版不把删掉的别名补回、恢复时重算报错仍可放弃、撤销剧情不留半截。复验与保存用替身（ops）。
 用法: python3 tests/assistant/test_edits.py
 """
 import copy
@@ -245,12 +246,78 @@ def main() -> int:
     assert result(ag, C).status == "error"
     print("7. 改剧情 ✓")
 
-    # 8. 参数说明里没有 config、tool_call_id；EDITS 名单
+    # 8. 改资产卡删掉别名后，再保存采用版（只改镜头）：长期记忆里的别名不被版本里的旧卡补回，撤销照常
+    assert len(c0["aliases"]) > 1
+    C = cfg()
+    ag = agent_for([call("asset_edit", {"card_id": c0["id"], "fields": {"aliases": [c0["name"]]}}, "a9"),
+                    AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("删别名")]})
+    run(ag, C, answer(its[0]))
+    u9 = result(ag, C).artifact["undo"]
+
+    def aliases():
+        return next(c for c in novels.get_memory(uid, nid)["assets"]["characters"] if c["id"] == c0["id"])["aliases"]
+    assert aliases() == [c0["name"]]
+    C = cfg()
+    ag = agent_for([call("shots_edit", {"edits": [edits[0]]}, "s9b"), AIMessage("好")])
+    its = run(ag, C, {"messages": [HumanMessage("改镜头")]})
+    run(ag, C, answer(its[0]))
+    assert result(ag, C).artifact["outcome"] == "approved"
+    assert aliases() == [c0["name"]], aliases()
+    E.undo(uid, nid, u9)
+    assert aliases() == c0["aliases"]
+    novels.update_version_result(uid, nid, c1, "v1", copy.deepcopy(DOC), verification={}, status="succeeded")
+    print("8. 再保存采用版不补回资产卡 ✓")
+
+    # 9. 出卡之后要改的地方变了（已是改后的样子，重算会报错）：点「放弃」照常算放弃，点「应用」才报错
+    for decision, tcid in (("reject", "s10"), ("approve", "s11")):
+        C = cfg()
+        ag = agent_for([call("shots_edit", {"edits": [edits[0]]}, tcid), AIMessage("好")])
+        its = run(ag, C, {"messages": [HumanMessage("改")]})
+        doc = copy.deepcopy(novels.get_version(uid, nid, c1, "v1")["result"])
+        doc["episodes"][0]["shots"][0]["action"] = edits[0]["value"]
+        novels.update_version_result(uid, nid, c1, "v1", doc, verification={}, status="succeeded")
+        saves.clear()
+        R = {"configurable": {**C["configurable"], "resume_tool_call": tcid}}
+        run(ag, R, answer(its[0], decision))
+        m = result(ag, R)
+        if decision == "reject":
+            assert m.status != "error" and m.artifact["outcome"] == "rejected", (m.status, m.content)
+            assert m.artifact["card"] == its[0].value
+        else:
+            assert m.status == "error" and "不用改" in m.content, m.content
+        assert saves == []
+        novels.update_version_result(uid, nid, c1, "v1", copy.deepcopy(DOC), verification={}, status="succeeded")
+    print("9. 恢复时重算报错：放弃仍算放弃 ✓")
+
+    # 10. 撤销剧情时写章节梗概失败：全书梗概也不动，报 UndoError
+    novels.set_outline(uid, nid, "新的全书")
+    novels.set_synopsis(uid, nid, c1, "新的本章")
+    data = {"kind": "plot", "outline": {"before": "旧的全书", "after": "新的全书"},
+            "synopsis": {"chapter_id": c1, "before": "旧的本章", "after": "新的本章"}}
+    real = novels.set_synopsis
+
+    def broken(*a, **k):
+        raise novels.NotFound("章节不存在")
+    novels.set_synopsis = broken
+    try:
+        E.undo(uid, nid, data)
+        raise AssertionError("写梗概失败应报 UndoError")
+    except E.UndoError as e:
+        assert "章节不存在" in str(e)
+    finally:
+        novels.set_synopsis = real
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "新的全书"
+    assert E.undo(uid, nid, data) == "已撤销剧情的修改"
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "旧的全书"
+    print("10. 撤销剧情不留半截 ✓")
+
+    # 11. 参数说明里没有 config、tool_call_id；EDITS 名单
     for t in E.TOOLS:
         props = t.tool_call_schema.model_json_schema().get("properties", {})
         assert "config" not in props and "tool_call_id" not in props, (t.name, props)
     assert E.EDITS == ("shots_edit", "asset_edit", "plot_edit")
-    print("8. 参数说明 ✓")
+    print("11. 参数说明 ✓")
 
     print("\nALL PASS")
     return 0

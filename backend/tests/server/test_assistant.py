@@ -380,6 +380,29 @@ def main() -> int:
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "别处改的"
     print("24. 撤销被拒 ✓")
 
+    # 25. 网关复用了 tool_call_id：撤销取最近那次；撤销时写入报业务错误也是 409，且不露服务器目录
+    for text in ("甲版", "乙版"):
+        script[:] = [call("plot_edit", {"outline": text}, "dup")]
+        conf = events_of(c.post(A + "/messages", headers=H, json={"text": "改", "lang": "zh"}))[0][1]
+        script[:] = [AIMessage("好。")]
+        events_of(c.post(A + "/resume", headers=H,
+                         json={"id": conf["id"], "decision": "approve", "lang": "zh", "where": {}}))
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "乙版"
+    real_undo = app_mod.assistant_edits.undo
+
+    def boom(*a, **k):
+        raise novels.NovelError(f"写不进 {auth.DATA_DIR}/x.json")
+    app_mod.assistant_edits.undo = boom
+    try:
+        r = c.post(U, headers=H, json={"tool_call_id": "dup"})
+    finally:
+        app_mod.assistant_edits.undo = real_undo
+    assert r.status_code == 409 and str(auth.DATA_DIR) not in r.json()["detail"], r.text
+    r = c.post(U, headers=H, json={"tool_call_id": "dup"})
+    assert r.status_code == 200, r.text
+    assert novels.get_memory(uid, nid)["plot"]["outline"] == "甲版"
+    print("25. 撤销取最近一次、业务错误 409 ✓")
+
     print("\nALL PASS")
     return 0
 

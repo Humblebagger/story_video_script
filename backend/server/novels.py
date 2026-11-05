@@ -375,6 +375,10 @@ def update_version_result(user_id: str, nid: str, cid: str, vid: str, result: di
     """
     with _lock:
         v = get_version(user_id, nid, cid, vid)
+        # 资产卡没变、能否采用也没变时，长期记忆里的资产不动：重新并入会把人（或助手）
+        # 从卡上删掉的别名、清空的字段按版本里的旧卡补回来（_merge_card 只做追加）
+        assets_same = ((v.get("result") or {}).get("assets") or {}) == ((result or {}).get("assets") or {}) \
+            and (v.get("status") in ADOPTABLE) == (status in ADOPTABLE)
         if frozen_units and not ((v.get("manifest") or {}).get("scope") or {}).get("units"):
             v["manifest"] = {**(v.get("manifest") or {}), "version": 1,
                              "state": "legacy_scope_frozen_on_edit",
@@ -388,9 +392,10 @@ def update_version_result(user_id: str, nid: str, cid: str, vid: str, result: di
         if chapter.get("adopted_version") == vid:
             # 采用版被人改过：资产卡与编号以改后的产物为准重新写入长期记忆
             novel = _load_novel(user_id, nid)
-            _retract(novel, cid)
-            if status in ADOPTABLE:
-                _absorb(novel, cid, vid, result)
+            if not assets_same:
+                _retract(novel, cid)
+                if status in ADOPTABLE:
+                    _absorb(novel, cid, vid, result)
             _recompute_numbering(user_id, novel)
             _save_novel(user_id, novel)
     return v
