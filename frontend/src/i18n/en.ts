@@ -114,6 +114,7 @@ export const en: Messages = {
     empty: 'No running jobs', emptyHint: 'Progress shows up here once a conversion or render starts',
   },
   assistant: {
+    editedDirty: 'The assistant changed this version while you have unsaved edits; saving will overwrite its changes',
     tab: 'Assistant',
     open: 'Open assistant',
     clear: 'Clear',

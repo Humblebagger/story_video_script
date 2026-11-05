@@ -112,6 +112,7 @@ export const zh = {
     empty: '没有在跑的任务', emptyHint: '开始转换或出片后，进度会出现在这里',
   },
   assistant: {
+    editedDirty: '助手改了这一版，你有未保存的修改；保存时会覆盖助手的改动',
     tab: '助手',
     open: '打开助手',
     clear: '清空',

@@ -264,12 +264,6 @@ export default function App() {
     }
   }, [announce, refreshNovels, reloadOpen, bumpSummary])
 
-  // 助手发起了操作：转换让任务巡检立刻刷新（动态里马上出现）；各种操作都让小说概览重算
-  useEffect(() => onTask((t) => {
-    if (t.kind === 'job') void watchJobs()
-    bumpSummary()
-  }), [watchJobs, bumpSummary])
-
   // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
   // 监听只订阅一次，所以通过 ref 拿到最新的重置函数；和退出共用，保证换账号不残留上一个人的小说与产物
   const resetRef = useRef<() => void>(() => {})
@@ -345,6 +339,20 @@ export default function App() {
       setAlert(t('app.err.version', { msg: msg(e) }))
     }
   }, [reset, t])
+
+  // 助手发起了操作或改了内容：转换让任务巡检立刻刷新；改内容重读小说，正在看的这一版没有未保存修改就重读
+  // （有就只提示，免得冲掉用户的修改）；各种操作都让小说概览重算
+  useEffect(() => onTask((task) => {
+    if (task.kind === 'job') void watchJobs()
+    if (task.kind === 'edit' && novel) {
+      void reloadOpen(novel.id, chapter?.id ?? null)
+      if (task.chapter_id && task.version_id && chapter?.id === task.chapter_id && docVid === task.version_id) {
+        if (dirty) notice.err(t('assistant.editedDirty'))
+        else void openVersion(novel.id, task.chapter_id, task.version_id)
+      }
+    }
+    bumpSummary()
+  }), [watchJobs, bumpSummary, novel, chapter?.id, docVid, dirty, reloadOpen, openVersion, t])
 
   const openNovel = async (nid: string) => {
     if (!(await confirmLeave())) return
