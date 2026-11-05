@@ -105,6 +105,16 @@ def main() -> int:
     store.end(uid, nid)
     print("6. 凭据 ✓")
 
+    # 撤销记录：没有时为空；记两次只算一次；清空对话一并删掉
+    assert store.undone(uid, nid) == set()
+    store.mark_undone(uid, nid, "t1")
+    store.mark_undone(uid, nid, "t1")
+    store.mark_undone(uid, nid, "t2")
+    assert store.undone(uid, nid) == {"t1", "t2"}
+    store.clear(uid, nid)
+    assert store.undone(uid, nid) == set()
+    print("撤销记录 ✓")
+
     print("\nALL PASS")
     return 0
 

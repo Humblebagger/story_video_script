@@ -621,18 +621,32 @@ def versions_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user))
     return _novel_call(novels.get_version, user["id"], nid, cid, vid)
 
 
+def _check_version_doc(user: dict, nid: str, cid: str, vid: str, doc: dict) -> dict:
+    """人工编辑后的整份复验，不保存（助手出对比卡时预先告诉用户）：{ok, warnings（最多 5 条，隐去服务器目录）}。"""
+    existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
+    context = _novel_call(novels.novel_context, user["id"], nid, cid)
+    _doc, report, _status, _frozen = _reverify(existing, doc, context)
+    return {"ok": report.ok,
+            "warnings": [_hide_root(f"{f.object_path}: {f.message}", auth.DATA_DIR) for f in report.errors][:5]}
+
+
+def _save_version_doc(user: dict, nid: str, cid: str, vid: str, doc: dict) -> dict:
+    """人工编辑 + 整份复验后保存（接口与助手共用）。不合格标 draft_invalid 但照样保存；采用版被改了，长期记忆随之更新。"""
+    existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
+    context = _novel_call(novels.novel_context, user["id"], nid, cid)
+    doc, report, status, frozen = _reverify(existing, doc, context)
+    v = _novel_call(novels.update_version_result, user["id"], nid, cid, vid, doc,
+                    verification=report.to_dict(), status=status, frozen_units=frozen)
+    return {"id": vid, "edited_at": v["edited_at"], "status": status,
+            "verification": report.to_dict()}
+
+
 @app.put("/novels/{nid}/chapters/{cid}/versions/{vid}")
 def versions_update(nid: str, cid: str, vid: str,
                     result: dict = Body(..., embed=False),
                     user: dict = Depends(novel_user)):
     """人工编辑 + 整份复验。采用版被改了，长期记忆随之按改后的产物更新。"""
-    existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
-    context = _novel_call(novels.novel_context, user["id"], nid, cid)
-    doc, report, status, frozen = _reverify(existing, result, context)
-    v = _novel_call(novels.update_version_result, user["id"], nid, cid, vid, doc,
-                    verification=report.to_dict(), status=status, frozen_units=frozen)
-    return {"id": vid, "edited_at": v["edited_at"], "status": status,
-            "verification": report.to_dict()}
+    return _save_version_doc(user, nid, cid, vid, result)
 
 
 @app.delete("/novels/{nid}/chapters/{cid}/versions/{vid}")

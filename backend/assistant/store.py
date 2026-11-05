@@ -3,7 +3,9 @@
 - 存档：LangGraph 的 SqliteSaver，每部小说一个文件（novels.assistant_db），thread_id 固定为 main。
 - 每日上限：当天（UTC）purpose=assistant 的用量记录条数，每轮对话记一条（见 server/app.py）。
 - 并发：同一部小说同时只跑一轮（进程内）。
+- 撤销记录：撤销过的修改的工具调用编号，存在 assistant.sqlite.undone.json，清空对话时一起删。
 """
+import json
 import os
 import sqlite3
 import threading
@@ -45,8 +47,29 @@ def saver(user_id: str, nid: str) -> Iterator[SqliteSaver]:
 def clear(user_id: str, nid: str) -> None:
     """清空对话：删存档文件（含 SQLite 的附属文件）。没有也不报错。"""
     path = novels.assistant_db(user_id, nid)
-    for suffix in ("", "-wal", "-shm", "-journal"):
+    for suffix in ("", "-wal", "-shm", "-journal", ".undone.json"):
         path.with_name(path.name + suffix).unlink(missing_ok=True)
+
+
+def _undone_path(user_id: str, nid: str):
+    db = novels.assistant_db(user_id, nid)
+    return db.with_name(db.name + ".undone.json")
+
+
+def undone(user_id: str, nid: str) -> set:
+    """撤销过的修改（工具调用编号）。存在存档旁边的小文件里：不改存档消息，免得影响图的下一步。"""
+    try:
+        return set(json.loads(_undone_path(user_id, nid).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return set()
+
+
+def mark_undone(user_id: str, nid: str, tool_call_id: str) -> None:
+    ids = undone(user_id, nid) | {tool_call_id}
+    path = _undone_path(user_id, nid)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(sorted(ids)), encoding="utf-8")
+    tmp.replace(path)
 
 
 def used_today(user_id: str, now: Optional[datetime] = None) -> int:

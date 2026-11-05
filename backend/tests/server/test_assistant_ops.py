@@ -108,6 +108,26 @@ def main() -> int:
         app_mod._run_version_job = real
     print("5. 转换本章 ✓")
 
+    # 6. 复验与保存（接口与助手共用）：只复验不改版本；保存后状态与复验一致；改坏了照样保存、标草稿
+    doc = copy.deepcopy(novels.get_version(uid, nid, cid, "v1")["result"])
+    shot = doc["episodes"][0]["shots"][0]
+    shot["action"] = "改过的画面"
+    chk = app_mod._check_version_doc(user, nid, cid, "v1", doc)
+    assert chk == {"ok": True, "warnings": []}, chk
+    assert novels.get_version(uid, nid, cid, "v1")["result"]["episodes"][0]["shots"][0]["action"] != "改过的画面"
+    r = app_mod._save_version_doc(user, nid, cid, "v1", doc)
+    assert r["status"] in ("succeeded", "completed_with_warnings") and r["id"] == "v1"
+    assert novels.get_version(uid, nid, cid, "v1")["result"]["episodes"][0]["shots"][0]["action"] == "改过的画面"
+    bad = copy.deepcopy(doc)
+    bad["episodes"][0]["shots"][0]["narration"]["text"] = "完全不是原文"
+    bad["episodes"][0]["shots"][0]["narration"]["unit_refs"] = ["u99999"]   # 引用不存在的句单元：高危，才算不合格
+    chk = app_mod._check_version_doc(user, nid, cid, "v1", bad)
+    assert chk["ok"] is False and chk["warnings"] and len(chk["warnings"]) <= 5, chk
+    assert all(isinstance(w, str) and _TMP.name not in w for w in chk["warnings"])
+    assert app_mod._save_version_doc(user, nid, cid, "v1", bad)["status"] == "draft_invalid"
+    app_mod._save_version_doc(user, nid, cid, "v1", doc)      # 改回去，免得影响后面
+    print("6. 复验与保存 ✓")
+
     print("\nALL PASS")
     return 0
 
