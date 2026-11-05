@@ -410,8 +410,9 @@ const enter = async (composing = false, keyCode = 13) => {
   const tasks: unknown[] = []
   const offTask = onTask((t) => tasks.push(t))
   const diffCard = { id: 'i9', tool_call_id: 'e1', action: 'shots_edit', chapter_id: 'c1', chapter: '第一章', version_id: 'v1',
-                     amount: null, currency: null, detail: { edits: 1 },
-                     diff: [{ target: 'E01-SH001', field: 'action', before: '旧画面', after: '新画面' }],
+                     amount: null, currency: null, detail: { edits: 2 },
+                     diff: [{ target: 'E01-SH001', field: 'action', before: '旧画面', after: '新画面' },
+                            { target: 'E01-SH001', field: 'camera.movement', before: 'static', after: 'push_in' }],
                      warnings: ['episodes[0]: 时长对不上'] }
   history = []
   let root = await mount('n-edit')
@@ -420,7 +421,10 @@ const enter = async (composing = false, keyCode = 13) => {
   await enter()
   const box = () => $$('assistant-card').at(-1)!
   const rows = $$('assistant-diff-row')
-  must(rows.length === 1 && rows[0].textContent!.includes('旧画面') && rows[0].textContent!.includes('新画面'), '原 → 新')
+  must(rows.length === 2 && rows[0].textContent!.includes('旧画面') && rows[0].textContent!.includes('新画面'), '原 → 新')
+  // 嵌套字段（camera.movement）也要显示译名：t() 按点号分层，键里的点换成下划线
+  must(rows[1].textContent!.includes('Camera movement') && !rows[1].textContent!.includes('camera.movement'),
+       '运镜字段名 ' + rows[1].textContent)
   must(!!$('assistant-card-warnings') && $('assistant-card-warnings')!.textContent!.includes('时长'), '复验警告')
   must(!$('assistant-card-cost'), '改内容没有金额行')
   must(($('assistant-card-approve')!.textContent ?? '').length > 0 && !$('assistant-card-undo'), '待确认时没有撤销')

@@ -33,7 +33,7 @@ export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
     c.action === 'compose' && d.draft ? t('assistant.card.draft') : null,
   ].filter((x): x is string => !!x)
   const fieldName = (f: string) => {
-    const key = `assistant.field.${f}` as MsgKey
+    const key = `assistant.field.${f.replace(/\./g, '_')}` as MsgKey  // t() splits keys on '.'
     const s = t(key)
     return s === key ? f : s
   }

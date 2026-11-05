@@ -198,7 +198,15 @@ export function PlotTab({ novel, busy, run }: TabProps) {
   const { t } = useI18n()
   const [outline, setOutlineText] = useState(novel.memory.plot.outline)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  useEffect(() => { setOutlineText(novel.memory.plot.outline) }, [novel.memory.plot.outline])
+  // Server value changed (e.g. the assistant edited it): follow it only when there is no unsaved typing,
+  // i.e. the local text still equals the previous server value.
+  const serverOutline = novel.memory.plot.outline
+  const lastServerOutline = useRef(serverOutline)
+  useEffect(() => {
+    const prev = lastServerOutline.current
+    lastServerOutline.current = serverOutline
+    setOutlineText((cur) => (cur === prev ? serverOutline : cur))
+  }, [serverOutline])
   const synopsis = Object.fromEntries(novel.memory.plot.chapters.map((s) => [s.chapter_id, s]))
   return (
     <div className="plot">

@@ -806,6 +806,23 @@ must(has('老栓推门进屋。') && has('自动'), '逐章摘要应列出（采
 await type(container.querySelector('.plot textarea') as unknown as HTMLElement, '华老栓买药救子。')
 await click(findByText('button', '保存梗概'))
 must(shelf('alice')[0].memory.plot.outline === '华老栓买药救子。', '全书梗概应写回')
+// 页面重读时服务端梗概变了（如助手改的）：有没保存的输入就留着输入；没有才跟着服务端
+{
+  const outlineBox = () => container.querySelector('.plot textarea') as unknown as HTMLTextAreaElement
+  const reloadViaSynopsis = async (text: string) => {
+    await type([...container.querySelectorAll('.plot textarea')][1] as unknown as HTMLElement, text)
+    await click(findByText('button', '保存摘要'))
+  }
+  await type(outlineBox(), '没保存的梗概')
+  shelf('alice')[0].memory.plot.outline = '服务端改的梗概'
+  await reloadViaSynopsis('老栓推门进屋，天还没亮。')
+  must(outlineBox().value === '没保存的梗概', '重读不应冲掉没保存的梗概输入：' + outlineBox().value)
+  await type(outlineBox(), '服务端改的梗概')
+  shelf('alice')[0].memory.plot.outline = '服务端又改的梗概'
+  await reloadViaSynopsis('老栓推门进屋。')
+  must(outlineBox().value === '服务端又改的梗概', '没有未保存输入时应跟着服务端：' + outlineBox().value)
+  shelf('alice')[0].memory.plot.outline = '华老栓买药救子。'
+}
 console.log('11b. 创作限制（负面提示词/关键词/停用）/ 主线剧情（梗概 + 逐章摘要）✓')
 
 // 11c. 章节卡片在左栏：含编号、标题与所在步骤，点卡片进入章节；回到小说层默认是概览
