@@ -282,6 +282,18 @@ def free_slots_needed(refs: list, first_frame: Optional[str], caps) -> int:
     return len(refs) + (1 if first_frame and refs and not caps.frame_with_refs else 0)
 
 
+ASSET_ROLES = {"characters": "character", "creatures": "creature", "locations": "location", "props": "prop"}
+
+
+def asset_slot(assets_idx: dict, asset_id: str) -> Optional[dict]:
+    """自由节点按资产 id 取参考位：类别由 id 所在的那一类决定，不分着装 / 机位（image_for 取第一张可用图）。"""
+    for kind, role in ASSET_ROLES.items():
+        card = assets_idx[kind].get(asset_id)
+        if card is not None:
+            return {"asset_id": asset_id, "role": role, "variant": None, "name": card.get("name", asset_id)}
+    return None
+
+
 def describe(slot: dict, assets_idx: dict) -> str:
     """没有参考图（或被裁掉）的资产：用资产卡的文字描述代替。"""
     aid, role, var = slot["asset_id"], slot["role"], slot["variant"]
@@ -403,6 +415,10 @@ class Stale(Exception):
     """分镜、关键帧或设置变了：这一段的指纹与会话里的对不上，不能按旧的确认去花钱。"""
 
 
+class FreeInvalid(Exception):
+    """自由节点提交前复查没过（参考图或尾帧没了、参考位不够、提示词为空）：记失败、不提交、不花钱。"""
+
+
 def request_for(doc: dict, session: dict, clip: dict, *, keyframes: dict, relay_frame,
                 caps, rewrite, cps: float = DEFAULT_SPEECH_CPS,
                 style: Optional[dict] = None) -> tuple:
@@ -430,4 +446,63 @@ def request_for(doc: dict, session: dict, clip: dict, *, keyframes: dict, relay_
                       resolution=session["resolution"], aspect=aspect,
                       audio=session["audio_mode"] != "silent" and caps.native_audio,
                       refs=refs, first_frame=image, style_ref=c["style_hash"])
+    return req, used
+
+
+def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, tail_frame,
+                     caps, rewrite, style: Optional[dict] = None) -> tuple:
+    """自由节点 → 厂商请求。返回 (ClipRequest, 实际使用的首帧来源或 None)。
+
+    node["prompt"] 只是正文；这里按 refs 顺序补【首帧】/【参考】行再整体改写，占位符编号与请求里
+    图片的顺序一致（Seedance 按出现顺序编 @图片n）。tail_frame：首帧为 tail:<id> 时那次尝试的尾帧文件。
+    """
+    if not (node.get("prompt") or "").strip():
+        raise FreeInvalid("提示词是空的")
+    idx = assets_index(doc)
+    slots = []
+    for aid in node.get("refs") or []:
+        if aid == STYLE_ID:
+            if not style:
+                raise FreeInvalid("风格图已删除，请从参考里去掉它")
+            slots.append({"asset_id": STYLE_ID, "role": "style", "text": STYLE_TEXT, "source": style["source"]})
+            continue
+        slot = asset_slot(idx, aid)
+        src = image_for(slot, idx) if slot else None
+        if not src:
+            raise FreeInvalid(f"{aid} 没有可用的参考图了")
+        slots.append({**slot, "text": slot["name"], "source": src})
+    ff = node.get("first_frame")
+    image, used = None, None
+    if ff:
+        if not caps.first_frame:
+            raise FreeInvalid("当前厂商不支持指定首帧")
+        if ff.startswith("keyframe:"):
+            path = keyframes.get(ff[len("keyframe:"):])
+            if not path or not Path(path).is_file():
+                raise FreeInvalid(f"首帧用的关键帧没了：{ff[len('keyframe:'):]}")
+        elif ff.startswith("tail:"):
+            path = tail_frame
+            if path is None or not Path(path).is_file():
+                raise FreeInvalid(f"首帧用的尾帧找不到了：{ff[len('tail:'):]}")
+        else:
+            raise FreeInvalid(f"看不懂的首帧来源：{ff}")
+        image, used = data_uri(Path(path)), ff
+    frame_mode = ("ref" if slots and not caps.frame_with_refs else "frame") if image else None
+    need = len(slots) + (1 if frame_mode == "ref" else 0)
+    if need > caps.max_refs:
+        raise FreeInvalid(f"参考超出当前厂商上限（{need} / {caps.max_refs}）")
+    lines, refs = [node["prompt"].strip()], []
+    if frame_mode == "ref":
+        lines.append(f"【首帧】{ref(FIRST)} 本段开场画面，保持构图与人物位置")
+        refs.append(RefImage(FIRST, "first_frame", image))
+        image = None
+    for sl in slots:
+        lines.append(f"【参考】{ref(sl['asset_id'])} {sl['text']}")
+        refs.append(RefImage(sl["asset_id"], sl["role"], sl["source"]))
+    aspect = (doc.get("meta") or {}).get("video", {}).get("aspect_ratio", "9:16")
+    req = ClipRequest(prompt=rewrite("\n".join(lines)), model=session["model"], duration=node["duration"],
+                      resolution=session["resolution"], aspect=aspect,
+                      audio=session["audio_mode"] != "silent" and caps.native_audio,
+                      refs=refs, first_frame=image,
+                      style_ref=style["hash"] if style and STYLE_ID in (node.get("refs") or []) else None)
     return req, used
