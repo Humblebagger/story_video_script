@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 
-from render import providers, session as sess  # noqa: E402
+from render import compose, free, providers, session as sess  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
 
@@ -187,8 +187,130 @@ def part_session():
     print("8. 合成互锁与上限 ✓")
 
 
+def part_crud():
+    root = new_root("crud")
+    doc = rich(DOC)
+    s = build(root, doc)
+    ctx = free.Ctx(doc, {}, False)
+    caps = FAKE.caps("fake-1")
+    clips = s["clips"]
+    with_refs = next(c for c in clips if c["refs"])
+    ids = [c["id"] for c in doc["assets"]["characters"]]
+
+    # 9. 新建空白节点：编号递增，默认 5 秒、带预估
+    s = free.create(root, ctx)
+    f1 = item(s, "F01")
+    assert (f1["target"], f1["prompt"], f1["refs"], f1["duration"], f1["state"]) == (None, "", [], 5.0, "planned")
+    assert f1["estimate_cny"] == base.estimate_cny(5.0, caps, "720p") and s["free_seq"] == 1
+    print("9. 新建 ✓")
+
+    # 10. 派生：预填正文（去掉参考行与占位）、参考、时长、挂靠
+    assert free.derive_prompt("雨夜\n【参考】@图片1 角色\n【首帧】{ref:__first__} 开场\n他看向@图片2 的方向") \
+        == "雨夜\n他看向 的方向"
+    s = free.create(root, ctx, with_refs["id"])
+    f2 = item(s, "F02")
+    assert f2["target"] == with_refs["id"] and f2["target_shots"] == with_refs["shots"]
+    assert f2["refs"] == with_refs["refs"] and f2["duration"] == with_refs["duration"]
+    assert f2["prompt"] and "【参考】" not in f2["prompt"] and "[参考" not in f2["prompt"]
+    must_raise(sess.NotFound, free.create, root, ctx, "E99-C01")
+    print("10. 派生 ✓")
+
+    # 11. 派生时接力换成尾帧：上一段还没出 → 不带；出完 → tail:<上一段>
+    root2 = new_root("relay")
+    s2 = build(root2)
+    relay = next(c for c in s2["clips"] if (c.get("first_frame") or "").startswith("relay:"))
+    prev = relay["first_frame"][len("relay:"):]
+    ctx2 = free.Ctx(DOC, {}, False)
+    assert item(free.create(root2, ctx2, relay["id"]), "F01")["first_frame"] is None
+    sess.queue_run(root2, [prev])
+    finish(root2, prev)
+    assert item(free.create(root2, ctx2, relay["id"]), "F02")["first_frame"] == f"tail:{prev}"
+    print("11. 接力换尾帧 ✓")
+
+    # 12. 修改与校验：不合法整条不写
+    s = free.update(root, ctx, "F01", {"prompt": "雨夜街头", "refs": with_refs["refs"][:1]})
+    assert item(s, "F01")["prompt"] == "雨夜街头" and item(s, "F01")["refs"] == with_refs["refs"][:1]
+    for bad in ({"refs": ["ZZ"]}, {"refs": [ids[0], ids[0]]}, {"refs": ids[:4]}, {"refs": [compose.STYLE_ID]},
+                {"first_frame": f"keyframe:{clips[0]['shots'][0]}"}, {"first_frame": "tail:F01"},
+                {"first_frame": f"tail:{clips[0]['id']}"}, {"first_frame": "foo"},
+                {"duration": 0.5}, {"duration": 11}, {"prompt": "长" * 2001}, {"bogus": 1}):
+        must_raise(sess.SessionError, free.update, root, ctx, "F01", bad)
+    must_raise(sess.SessionError, free.update, root, free.Ctx(DOC, {}, False), "F01", {"refs": [ids[0]]})
+    assert item(sess.load(root), "F01")["prompt"] == "雨夜街头", "校验不过不写"
+    s = free.update(root, free.Ctx(doc, {}, True), "F01", {"refs": [compose.STYLE_ID]})
+    assert item(s, "F01")["refs"] == [compose.STYLE_ID]
+    kshot = clips[0]["shots"][0]
+    s = free.update(root, free.Ctx(doc, {kshot: "/kf.png"}, False), "F01", {"first_frame": f"keyframe:{kshot}"})
+    assert item(s, "F01")["first_frame"] == f"keyframe:{kshot}"
+    s = free.update(root, ctx, "F01", {"duration": 3})
+    assert item(s, "F01")["duration"] == 3.0 and item(s, "F01")["estimate_cny"] == base.estimate_cny(3.0, caps, "720p")
+    must_raise(sess.SessionError, free.update, root, ctx, "F02", {"duration": 3})   # 挂靠的跟随目标段
+    s = free.update(root, ctx, "F01", {"target": with_refs["id"]})
+    assert item(s, "F01")["duration"] == with_refs["duration"] and item(s, "F01")["target_shots"] == with_refs["shots"]
+    s = free.update(root, ctx, "F01", {"target": None})
+    assert item(s, "F01")["target"] is None
+    must_raise(sess.NotFound, free.update, root, ctx, "F01", {"target": "E99-C01"})
+    must_raise(sess.NotFound, free.update, root, ctx, "F09", {"prompt": "x"})
+    print("12. 修改与校验 ✓")
+
+    # 13. 排队：没写提示词不能生成；超确认线要带金额，金额不符重新确认；上限；在跑时不能再排、不能改、不能删；合成中不能生成
+    free.create(root, ctx)                                              # F03 空白
+    must_raise(sess.SessionError, free.queue, root, ctx, "F03")
+    free.update(root, ctx, "F03", {"prompt": "空镜：河面", "duration": 10})
+    with sess.mutate(root) as raw:
+        raw["confirm_over_cny"] = 5.0
+    e = must_raise(sess.Conflict, free.queue, root, ctx, "F03")
+    total = item(sess.load(root), "F03")["estimate_cny"]
+    assert e.expected_cny == total
+    must_raise(sess.Conflict, free.queue, root, ctx, "F03", total + 1)
+    with sess.mutate(root) as raw:
+        raw["budget_cny"] = raw["spent_cny"] + total - 0.01
+    must_raise(sess.BudgetExceeded, free.queue, root, ctx, "F03", total)
+    with sess.mutate(root) as raw:
+        raw["budget_cny"] = 100000.0
+    s = free.queue(root, ctx, "F03", total)
+    assert item(s, "F03")["state"] == "queued"
+    must_raise(sess.Conflict, free.queue, root, ctx, "F03", total)
+    must_raise(sess.Conflict, free.update, root, ctx, "F03", {"prompt": "改"})
+    must_raise(sess.Conflict, free.delete, root, "F03")
+    with sess.mutate(root) as raw:
+        raw["final"] = {"state": "running"}
+    must_raise(sess.Conflict, free.queue, root, ctx, "F01")
+    with sess.mutate(root) as raw:
+        raw["final"] = None
+    print("13. 排队 ✓")
+
+    # 14. 采用：只能采用成功的那次
+    finish(root, "F03")
+    assert item(free.set_chosen(root, "F03", 0), "F03")["chosen"] == 0
+    must_raise(sess.SessionError, free.set_chosen, root, "F03", 3)
+    print("14. 采用 ✓")
+
+    # 15. 删除：被别的节点当尾帧来源时不能删；只删属于它自己的文件；编号不复用
+    free.update(root, ctx, "F01", {"first_frame": "tail:F03"})
+    must_raise(sess.Conflict, free.delete, root, "F03")
+    free.update(root, ctx, "F01", {"first_frame": None})
+    f3 = item(sess.load(root), "F03")
+    own = root / f3["attempts"][0]["file"]
+    with sess.mutate(root) as raw:          # 模拟已复制进剧本段的一次：共用同一文件
+        raw["clips"][0]["attempts"].append(dict(f3["attempts"][0], free_id="F03", cost_cny=0.0))
+    s = free.delete(root, "F03")
+    assert "F03" not in [x["id"] for x in s["free"]] and own.is_file(), "共用的文件保留"
+    s = free.create(root, ctx)
+    assert s["free"][-1]["id"] == "F04" and s["free_seq"] == 4, "编号不复用"
+    with sess.mutate(root) as raw:
+        item(raw, "F04").update(prompt="x", state="queued")
+    finish(root, "F04")
+    a4 = item(sess.load(root), "F04")["attempts"][0]
+    paths = [root / a4["file"], root / a4["last_frame"]]
+    free.delete(root, "F04")
+    assert not any(p.exists() for p in paths), "只属于它的文件一并删掉"
+    print("15. 删除 ✓")
+
+
 def main() -> int:
     part_session()
+    part_crud()
     print("\nALL PASS")
     return 0
 
