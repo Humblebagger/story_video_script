@@ -405,6 +405,39 @@ def part_deliver():
     assert not item(v, x["id"])["style_outdated"]
     print("19. 风格图不误报 ✓")
 
+    # 20. 目标段下载中（clip 状态 downloading，最后一次尝试仍是 running）：复制照样插在它前面，
+    #     随后的下载写回落到原来那次，复制件原样不动
+    root = new_root("deliver-dl")
+    doc = rich(DOC)
+    s = build(root, doc)
+    ctx = free.Ctx(doc, {}, False)
+    z = s["clips"][0]
+    sess.queue_run(root, [z["id"]])
+    snap = sess.begin_submit(root, z["id"])
+    s_now = sess.load(root)
+    req = base.ClipRequest(prompt=snap["prompt"], model=s_now["model"], duration=snap["duration"],
+                           resolution=s_now["resolution"])
+    real = FAKE.submit(req)
+    sess.submitted(root, z["id"], real, None)
+    st = FAKE.poll(real)
+    sess.poll_update(root, z["id"], st)
+    cz = item(sess.load(root), z["id"])
+    assert cz["state"] == "downloading" and cz["attempts"][-1]["state"] == "running"
+    free.create(root, ctx, z["id"])                                     # F01
+    free.update(root, ctx, "F01", {"prompt": "下载中重拍"})
+    free.queue(root, ctx, "F01")
+    finish(root, "F01")
+    cz = item(sess.load(root), z["id"])
+    assert [a.get("free_id") for a in cz["attempts"]] == ["F01", None]
+    assert cz["attempts"][-1]["task_id"] == real and cz["attempts"][-1]["state"] == "running"
+    copy_before = dict(cz["attempts"][0])
+    sess.downloaded(root, z["id"], FAKE.download(st, sess.clip_dest(root, z["id"], real)), FAKE.cost(st, req))
+    cz = item(sess.load(root), z["id"])
+    assert cz["attempts"][-1]["state"] == "succeeded" and cz["attempts"][-1]["file"]
+    assert cz["attempts"][-1]["task_id"] == real and cz["chosen"] == 1
+    assert cz["attempts"][0] == copy_before and cz["attempts"][0]["free_id"] == "F01"
+    print("20. 目标段下载中 ✓")
+
 
 def main() -> int:
     part_session()
