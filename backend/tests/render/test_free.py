@@ -333,9 +333,83 @@ def part_crud():
     print("17. 共用尾帧 ✓")
 
 
+def part_deliver():
+    root = new_root("deliver")
+    doc = rich(DOC)
+    s = build(root, doc)
+    ctx = free.Ctx(doc, {}, False)
+    x, y = s["clips"][0], s["clips"][1]
+
+    # 16. 目标段空闲：复制追加到末尾，花费记 0、带 free_id、指纹为目标段当前指纹；不自动采用
+    free.create(root, ctx, x["id"])
+    free.update(root, ctx, "F01", {"prompt": "重拍"})
+    free.queue(root, ctx, "F01")
+    tid = finish(root, "F01")
+    s = sess.load(root)
+    cx = item(s, x["id"])
+    cp = cx["attempts"][-1]
+    assert cp["free_id"] == "F01" and cp["task_id"] == tid and cp["cost_cny"] == 0.0
+    assert cp["fingerprint"] == cx["fingerprint"] and cx["chosen"] is None and cx["state"] == "planned"
+    assert item(s, "F01")["attempts"][0]["cost_cny"] > 0
+    s = sess.set_chosen(root, x["id"], len(cx["attempts"]) - 1)
+    assert item(s, x["id"])["state"] == "done"
+    print("16. 复制到空闲的目标段 ✓")
+
+    # 17. 目标段在提交窗口（排队、最后一次是 submitting）或生成中：复制插在在跑那次之前，随后的写回落到真正那次
+    sess.queue_run(root, [y["id"]])
+    assert sess.begin_submit(root, y["id"]) is not None
+    free.create(root, ctx, y["id"])                                     # F02
+    free.update(root, ctx, "F02", {"prompt": "重拍二"})
+    free.queue(root, ctx, "F02")
+    finish(root, "F02")
+    cy = item(sess.load(root), y["id"])
+    assert [a.get("free_id") for a in cy["attempts"]] == ["F02", None]
+    assert cy["attempts"][-1]["state"] == "submitting"
+    s_now = sess.load(root)
+    req = base.ClipRequest(prompt=cy["prompt"], model=s_now["model"], duration=cy["duration"],
+                           resolution=s_now["resolution"])
+    real = FAKE.submit(req)
+    sess.submitted(root, y["id"], real, None)
+    free.queue(root, ctx, "F02")
+    finish(root, "F02")
+    cy = item(sess.load(root), y["id"])
+    assert [a.get("free_id") for a in cy["attempts"]] == ["F02", "F02", None]
+    assert cy["attempts"][-1]["task_id"] == real
+    st = FAKE.poll(real)
+    sess.poll_update(root, y["id"], st)
+    sess.downloaded(root, y["id"], FAKE.download(st, sess.clip_dest(root, y["id"], real)), FAKE.cost(st, req))
+    cy = item(sess.load(root), y["id"])
+    assert cy["chosen"] == 2 and cy["attempts"][2]["task_id"] == real and cy["attempts"][0]["free_id"] == "F02"
+    assert cy["attempts"][0]["file"] != cy["attempts"][2]["file"]
+    print("17. 提交窗口与生成中 ✓")
+
+    # 18. 交付前目标段换了镜头：不复制，节点转独立素材
+    free.create(root, ctx, x["id"])                                     # F03
+    free.update(root, ctx, "F03", {"prompt": "三"})
+    with sess.mutate(root) as raw:
+        item(raw, "F03")["target_shots"] = ["E01-SH999"]
+    n_before = len(item(sess.load(root), x["id"])["attempts"])
+    free.queue(root, ctx, "F03")
+    finish(root, "F03")
+    s = sess.load(root)
+    assert len(item(s, x["id"])["attempts"]) == n_before
+    f3 = item(s, "F03")
+    assert f3["target"] is None and f3["target_lost"] and f3["state"] == "done"
+    print("18. 目标段变了不复制 ✓")
+
+    # 19. 采用复制件的段不因风格图误报「可按新图重出」
+    with sess.mutate(root) as raw:
+        cx = item(raw, x["id"])
+        cx["style"], cx["style_hash"] = "used", "h-new"
+    v = sess.view(sess.load(root))
+    assert not item(v, x["id"])["style_outdated"]
+    print("19. 风格图不误报 ✓")
+
+
 def main() -> int:
     part_session()
     part_crud()
+    part_deliver()
     print("\nALL PASS")
     return 0
 

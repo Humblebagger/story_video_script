@@ -301,10 +301,14 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
 
 
 def _style_outdated(c: dict) -> bool:
-    """已出完、本段带风格图，但采用的那次尝试用的不是当前风格图（旧会话没记录按 None 算）。"""
+    """已出完、本段带风格图，但采用的那次尝试用的不是当前风格图（旧会话没记录按 None 算）。
+    采用的是自由节点复制来的那次：带不带风格图由用户在节点上定，不算过期。"""
     if c["state"] != "done" or c.get("style") != "used" or c.get("chosen") is None:
         return False
-    return c["attempts"][c["chosen"]].get("style_ref") != c.get("style_hash")
+    a = c["attempts"][c["chosen"]]
+    if a.get("free_id"):
+        return False
+    return a.get("style_ref") != c.get("style_hash")
 
 
 def view(s: dict) -> dict:
@@ -493,6 +497,25 @@ def _rel(root, p) -> Optional[str]:
     return Path(p).resolve().relative_to(Path(root).resolve()).as_posix() if p else None
 
 
+def _deliver(s: dict, node: dict, a: dict) -> None:
+    """挂靠的自由节点成功一次：把这次尝试复制进目标段（free_id 标来源，花费记在节点上这里为 0，
+    指纹记目标段此刻的指纹），不自动采用。目标段不在了或镜头变了：不复制，节点转为独立素材。
+
+    目标段最后一次尝试正在提交或生成（runner 认 attempts[-1] 为在跑的那次）：插到它前面。
+    chosen 只可能指向更早的尝试，下标不受影响。
+    """
+    t = next((c for c in s["clips"] if c["id"] == node.get("target")), None)
+    if t is None or t["shots"] != node.get("target_shots"):
+        node.update(target=None, target_shots=None, target_lost=True)
+        return
+    cp = dict(a, free_id=node["id"], cost_cny=0.0, fingerprint=t["fingerprint"])
+    last = t["attempts"][-1] if t["attempts"] else None
+    if last and last.get("state") in ("submitting", "running"):
+        t["attempts"].insert(len(t["attempts"]) - 1, cp)
+    else:
+        t["attempts"].append(cp)
+
+
 def downloaded(root, clip_id: str, files: dict, cost: float) -> None:
     with mutate(root) as s:
         c = _item(s, clip_id)
@@ -505,6 +528,8 @@ def downloaded(root, clip_id: str, files: dict, cost: float) -> None:
         c["chosen"] = len(c["attempts"]) - 1
         if is_free(c["id"]):
             c["state"] = "done"         # 自由节点不依赖分镜，没有过期
+            if c.get("target"):
+                _deliver(s, c, a)
         else:
             c["state"] = "done" if a["fingerprint"] == c["fingerprint"] else "stale"
         c["error"] = None
