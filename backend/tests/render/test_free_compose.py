@@ -138,6 +138,18 @@ def main() -> int:
     assert re.findall(r"@图片(\d+)", req.prompt) == ["1"] and "{ref" not in req.prompt, req.prompt
     print("7. 占位符清理 ✓")
 
+    # 8. 清理要反复做到不再变化：拼回来的占位符也得清；清完为空照样报错
+    for body in ("让 {ref@图片9:C01} 转身", "看 @图{ref:x}片9"):
+        req, _ = req_for(node(prompt=body, refs=[chars[0]]))
+        assert re.findall(r"@图片(\d+)", req.prompt) == ["1"] and len(req.refs) == 1, req.prompt
+        assert "{ref" not in req.prompt, req.prompt
+    d3 = copy.deepcopy(doc)
+    d3["assets"]["characters"][0]["name"] = "甲{ref@图片9:x}"
+    req, _ = req_for(node(refs=[chars[0]]), d=d3)
+    assert re.findall(r"@图片(\d+)", req.prompt) == ["1"] and "{ref" not in req.prompt, req.prompt
+    must_raise(compose.FreeInvalid, req_for, node(prompt="{ref:C01} @图片1"))
+    print("8. 反复清理与清空 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -28,7 +28,11 @@ _PLACEHOLDER = re.compile(r"\{ref:[^}]*\}|@图片\d+")
 
 def strip_placeholders(text: str) -> str:
     """自由节点的正文与资产名里不许带占位符：改写会按出现次数编号，多出来的会和参考图对不上。"""
-    return _PLACEHOLDER.sub("", text)
+    while True:      # 清掉一层可能拼出新的占位符，反复清到不再变化
+        cleaned = _PLACEHOLDER.sub("", text)
+        if cleaned == text:
+            return text
+        text = cleaned
 
 
 def ref(asset_id: str) -> str:
@@ -465,7 +469,8 @@ def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, t
     node["prompt"] 只是正文；这里按 refs 顺序补【首帧】/【参考】行再整体改写，占位符编号与请求里
     图片的顺序一致（Seedance 按出现顺序编 @图片n）。tail_frame：首帧为 tail:<id> 时那次尝试的尾帧文件。
     """
-    if not (node.get("prompt") or "").strip():
+    body = strip_placeholders(node.get("prompt") or "").strip()
+    if not body:
         raise FreeInvalid("提示词是空的")
     idx = assets_index(doc)
     slots = []
@@ -500,7 +505,7 @@ def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, t
     need = len(slots) + (1 if frame_mode == "ref" else 0)
     if need > caps.max_refs:
         raise FreeInvalid(f"参考超出当前厂商上限（{need} / {caps.max_refs}）")
-    lines, refs = [strip_placeholders(node["prompt"]).strip()], []
+    lines, refs = [body], []
     if frame_mode == "ref":
         lines.append(f"【首帧】{ref(FIRST)} 本段开场画面，保持构图与人物位置")
         refs.append(RefImage(FIRST, "first_frame", image))
