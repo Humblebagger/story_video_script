@@ -28,6 +28,7 @@ DEFAULT_CONFIRM_OVER_CNY = 20.0
 SETTING_KEYS = ("provider", "model", "resolution", "audio_mode", "budget_cny", "confirm_over_cny")
 COMPOSE_BUSY = ("queued", "running")
 COMPOSE_INTERRUPTED = "合成时服务中断，请重新合成（已合成的配音与已规整的片段会复用）"
+FREE_PREFIX = "F"          # 自由节点 id 前缀（F01、F02…）；段 id 是 E01-C01，不会冲突
 
 
 class SessionError(ValueError):
@@ -121,6 +122,27 @@ def _clip(s: dict, clip_id: str) -> dict:
     raise NotFound(f"没有这一段：{clip_id}")
 
 
+def is_free(item_id: str) -> bool:
+    return str(item_id).startswith(FREE_PREFIX)
+
+
+def items(s: dict) -> list:
+    """出片线程要推进的全部条目：剧本段在前，自由节点在后。凡是「有没有在跑」「在跑预留多少」都按它算。"""
+    return list(s["clips"]) + list(s.get("free") or [])
+
+
+def any_in_flight(s: dict) -> bool:
+    return any(c["state"] in IN_FLIGHT for c in items(s))
+
+
+def _item(s: dict, item_id: str) -> dict:
+    """按 id 在剧本段与自由节点里找（出片线程的迁移函数用）。"""
+    for c in items(s):
+        if c["id"] == item_id:
+            return c
+    raise NotFound(f"没有这一段：{item_id}")
+
+
 def _provider(name: str):
     try:
         return get_video(name)
@@ -203,6 +225,23 @@ def _merge_orphan(orph: dict, o: dict) -> None:
         prev["chosen"] = o["chosen"] + n
 
 
+def _sync_free(nodes: list, clips: list, caps, resolution: str) -> list:
+    """重建会话时带上自由节点：在跑的原样不动（落地之后的下一次重建再同步）；挂靠的段不在了或同 id
+    换了镜头就转为独立素材（target_lost）；挂靠的时长跟随目标段；预估按当前设置重算。"""
+    by_id = {c["id"]: c for c in clips}
+    for n in nodes:
+        if n["state"] in IN_FLIGHT:
+            continue
+        if n.get("target"):
+            t = by_id.get(n["target"])
+            if t is None or t["shots"] != n.get("target_shots"):
+                n.update(target=None, target_shots=None, target_lost=True)
+            else:
+                n["duration"] = t["duration"]
+        n["estimate_cny"] = base.estimate_cny(n["duration"], caps, resolution)
+    return nodes
+
+
 def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
           allow_in_flight: bool = False, style: Optional[dict] = None) -> dict:
     """按已保存的分镜切段、组装提示词，生成或重建会话。不花钱。
@@ -221,7 +260,9 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
         settings, provider, caps = resolve_settings(old, patch)
         olds = {c["id"]: c for c in (old or {}).get("clips", [])}
         flying = {cid: c for cid, c in olds.items() if c["state"] in IN_FLIGHT}
-        if flying and (not allow_in_flight or any(v is not None for v in (patch or {}).values())):
+        old_free = list((old or {}).get("free") or [])
+        free_flying = any(n["state"] in IN_FLIGHT for n in old_free)
+        if (flying or free_flying) and (not allow_in_flight or any(v is not None for v in (patch or {}).values())):
             raise Conflict("有段在排队或生成中，等它们结束再改设置")
         try:
             built = compose.build_clips(doc, caps, provider=settings["provider"],
@@ -250,6 +291,8 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
         s = {"version": 1, "owner": owner, **settings,
              "spent_cny": (old or {}).get("spent_cny", 0.0), "clips": clips,
              "orphaned": list(orph.values()),
+             "free": _sync_free(old_free, clips, caps, settings["resolution"]),
+             "free_seq": int((old or {}).get("free_seq") or 0),
              "voices": (old or {}).get("voices", {}), "final": (old or {}).get("final"),
              "created_at": (old or {}).get("created_at") or _now()}
         root.mkdir(parents=True, exist_ok=True)
@@ -279,11 +322,17 @@ def view(s: dict) -> dict:
     out["counts"] = counts
     out["remaining_cny"] = round(sum(c["estimate_cny"] for c in _remaining(s)), 2)
     out["uncertain_count"] = sum(1 for c in s["clips"] if c.get("uncertain"))
-    out["reserved_cny"] = round(sum(c["estimate_cny"] for c in s["clips"]
+    out["reserved_cny"] = round(sum(c["estimate_cny"] for c in items(s)
                                     if c["state"] in IN_FLIGHT), 2)
+    # 自由节点：参考位超出当前厂商上限（改了设置）时标出来，删减之前生成会被拒
+    out["free"] = [dict(n, uncertain=bool(n.get("uncertain")),
+                        over_refs=compose.free_slots_needed(n["refs"], n.get("first_frame"), caps) > caps.max_refs)
+                   for n in s.get("free") or []]
+    out["free_seq"] = int(s.get("free_seq") or 0)
     out["options"] = {"providers": names(), "models": provider.models,
                       "resolutions": caps.resolutions, "cny_per_sec": caps.cny_per_sec,
                       "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
+                      "first_frame": caps.first_frame, "frame_with_refs": caps.frame_with_refs,
                       "audio_modes": list(compose.AUDIO_MODES),
                       "rate_note": getattr(provider, "rate_note", "")}
     return out
@@ -322,7 +371,7 @@ def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[floa
             raise Conflict(f"本次约 ¥{total:.2f}，请确认金额后再出片", total)
         if expected_cny is not None and abs(expected_cny - total) > 0.005:
             raise Conflict(f"预估金额已变为 ¥{total:.2f}，请重新确认", total)
-        reserved = sum(c["estimate_cny"] for c in s["clips"] if c["state"] in IN_FLIGHT)
+        reserved = sum(c["estimate_cny"] for c in items(s) if c["state"] in IN_FLIGHT)
         if s["spent_cny"] + reserved + total > s["budget_cny"] + 1e-9:
             raise BudgetExceeded(f"超出单章上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"
                                  f"在跑预留 ¥{reserved:.2f}，本次约 ¥{total:.2f}")
@@ -356,7 +405,7 @@ def begin_submit(root, clip_id: str) -> Optional[dict]:
     """提交前：再查一次上限（实际花费可能超过预估），追加一次「提交中」的尝试，返回段的快照。
     不该提交（不在排队、超上限）返回 None；超上限的段转 failed。"""
     with mutate(root) as s:
-        c = _clip(s, clip_id)
+        c = _item(s, clip_id)
         if c["state"] != "queued":
             return None
         last = c["attempts"][-1] if c["attempts"] else None
@@ -365,20 +414,20 @@ def begin_submit(root, clip_id: str) -> Optional[dict]:
             last.update(state="failed", error=INTERRUPTED_SUBMIT)
             c["state"], c["error"], c["uncertain"] = "failed", INTERRUPTED_SUBMIT, True
             return None
-        running = sum(x["estimate_cny"] for x in s["clips"] if x["state"] in ("running", "downloading"))
+        running = sum(x["estimate_cny"] for x in items(s) if x["state"] in ("running", "downloading"))
         if s["spent_cny"] + running + c["estimate_cny"] > s["budget_cny"] + 1e-9:
             c["state"], c["error"] = "failed", "超出单章上限，没有提交"
             return None
         c["attempts"].append({"task_id": None, "state": "submitting", "cost_cny": 0.0,
                               "file": None, "last_frame": None, "error": None, "at": _now(),
-                              "fingerprint": c["fingerprint"], "first_frame_used": None})
+                              "fingerprint": c.get("fingerprint"), "first_frame_used": None})
         return json.loads(json.dumps(c))
 
 
 def submitted(root, clip_id: str, task_id: str, first_frame_used: Optional[str],
               style_ref: Optional[str] = None) -> None:
     with mutate(root) as s:
-        c = _clip(s, clip_id)
+        c = _item(s, clip_id)
         c["attempts"][-1].update(task_id=task_id, state="running", first_frame_used=first_frame_used,
                                  style_ref=style_ref)
         c["state"] = "running"
@@ -389,7 +438,7 @@ def submit_failed(root, clip_id: str, error: str, *, stale: bool = False,
     """提交没成：stale=True（分镜已改）撤回这次尝试、退回待确认；否则记失败。
     uncertain=True：厂商可能已受理（提交结果不明），标待核对，批量出片跳过它。"""
     with mutate(root) as s:
-        c = _clip(s, clip_id)
+        c = _item(s, clip_id)
         pending = c["attempts"] and c["attempts"][-1]["state"] == "submitting"
         if stale:
             if pending:
@@ -408,7 +457,7 @@ def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0, *,
                 uncertain: bool = False) -> None:
     """uncertain=True：不是厂商报的终态（如多次查询失败后放弃），任务可能还在跑、在计费。"""
     with mutate(root) as s:
-        c = _clip(s, clip_id)
+        c = _item(s, clip_id)
         a = c["attempts"][-1] if c["attempts"] else {}
         if c["state"] != "running" or a.get("task_id") != st.task_id:
             return
@@ -426,7 +475,7 @@ def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0, *,
 def note_error(root, clip_id: str, msg: str) -> None:
     """只记一条给用户看的提示，不改状态（如厂商暂时不可达、正在重试）。"""
     with mutate(root) as s:
-        _clip(s, clip_id)["error"] = msg
+        _item(s, clip_id)["error"] = msg
 
 
 def clip_dest(root, clip_id: str, task_id: str) -> Path:
@@ -446,7 +495,7 @@ def _rel(root, p) -> Optional[str]:
 
 def downloaded(root, clip_id: str, files: dict, cost: float) -> None:
     with mutate(root) as s:
-        c = _clip(s, clip_id)
+        c = _item(s, clip_id)
         if c["state"] != "downloading":
             return
         a = c["attempts"][-1]
@@ -454,14 +503,17 @@ def downloaded(root, clip_id: str, files: dict, cost: float) -> None:
                  last_frame=_rel(root, files.get("last_frame")), cost_cny=cost)
         s["spent_cny"] = round(s["spent_cny"] + cost, 2)
         c["chosen"] = len(c["attempts"]) - 1
-        c["state"] = "done" if a["fingerprint"] == c["fingerprint"] else "stale"
+        if is_free(c["id"]):
+            c["state"] = "done"         # 自由节点不依赖分镜，没有过期
+        else:
+            c["state"] = "done" if a["fingerprint"] == c["fingerprint"] else "stale"
         c["error"] = None
 
 
 def download_failed(root, clip_id: str, error: str, cost: float) -> None:
     """已经生成、但下载或校验失败：生成费用照记。"""
     with mutate(root) as s:
-        c = _clip(s, clip_id)
+        c = _item(s, clip_id)
         c["attempts"][-1].update(state="failed", error=error, cost_cny=cost)
         s["spent_cny"] = round(s["spent_cny"] + cost, 2)
         c["state"], c["error"] = "failed", error
@@ -496,7 +548,7 @@ def recover(root) -> bool:
         if s is None:
             return False
         changed = False
-        for c in s["clips"]:
+        for c in items(s):
             a = c["attempts"][-1] if c["attempts"] else None
             if a and a["state"] == "submitting":
                 a.update(state="failed", error=INTERRUPTED_SUBMIT)
@@ -505,7 +557,7 @@ def recover(root) -> bool:
         changed = _fail_interrupted_compose(s) or changed
         if changed:
             _save(root, s)
-        return any(c["state"] in IN_FLIGHT for c in s["clips"])
+        return any_in_flight(s)
 
 
 def _fail_interrupted_compose(s: dict) -> bool:
@@ -549,7 +601,7 @@ def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool, voices
             raise Conflict("正在合成，等它结束再合成")
         if voices is not None and (s.get("voices") or {}) != voices:
             raise Conflict("音色刚被改过，请重新确认金额", expected_cny=None)
-        if any(c["state"] in IN_FLIGHT for c in s["clips"]):
+        if any_in_flight(s):
             raise Conflict("有段在排队或生成中，等它们结束再合成")
         if s["spent_cny"] + tts_cny > s["budget_cny"] + 1e-9:
             raise BudgetExceeded(f"超出上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"

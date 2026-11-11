@@ -276,6 +276,12 @@ def pick_refs(clip: list, assets_idx: dict, max_refs: int) -> dict:
             "missing": [sl for i, sl, src in found if not src]}
 
 
+def free_slots_needed(refs: list, first_frame: Optional[str], caps) -> int:
+    """自由节点要占几个参考位：参考图各一个；带首帧、又有参考图、厂商不能首帧与参考图同用时，
+    首帧再占一个（与剧本段 frame_mode="ref" 同规则）。"""
+    return len(refs) + (1 if first_frame and refs and not caps.frame_with_refs else 0)
+
+
 def describe(slot: dict, assets_idx: dict) -> str:
     """没有参考图（或被裁掉）的资产：用资产卡的文字描述代替。"""
     aid, role, var = slot["asset_id"], slot["role"], slot["variant"]
