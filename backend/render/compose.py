@@ -7,6 +7,7 @@
 import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,14 @@ AUDIO_MODES = ("tts_all", "dialogue_native", "all_native", "silent")
 STYLE_ID = "__style__"    # 风格参考图占用参考位时的占位 id
 STYLE_TEXT = "画风参考：沿用它的色调、线条与光影，不要照搬其中的人物或场景内容"
 FIRST = "__first__"        # 首帧图占用参考位时的占位 id
+
+
+_PLACEHOLDER = re.compile(r"\{ref:[^}]*\}|@图片\d+")
+
+
+def strip_placeholders(text: str) -> str:
+    """自由节点的正文与资产名里不许带占位符：改写会按出现次数编号，多出来的会和参考图对不上。"""
+    return _PLACEHOLDER.sub("", text)
 
 
 def ref(asset_id: str) -> str:
@@ -491,13 +500,13 @@ def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, t
     need = len(slots) + (1 if frame_mode == "ref" else 0)
     if need > caps.max_refs:
         raise FreeInvalid(f"参考超出当前厂商上限（{need} / {caps.max_refs}）")
-    lines, refs = [node["prompt"].strip()], []
+    lines, refs = [strip_placeholders(node["prompt"]).strip()], []
     if frame_mode == "ref":
         lines.append(f"【首帧】{ref(FIRST)} 本段开场画面，保持构图与人物位置")
         refs.append(RefImage(FIRST, "first_frame", image))
         image = None
     for sl in slots:
-        lines.append(f"【参考】{ref(sl['asset_id'])} {sl['text']}")
+        lines.append(f"【参考】{ref(sl['asset_id'])} {strip_placeholders(sl['text'])}")
         refs.append(RefImage(sl["asset_id"], sl["role"], sl["source"]))
     aspect = (doc.get("meta") or {}).get("video", {}).get("aspect_ratio", "9:16")
     req = ClipRequest(prompt=rewrite("\n".join(lines)), model=session["model"], duration=node["duration"],

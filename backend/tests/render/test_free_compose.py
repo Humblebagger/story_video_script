@@ -123,6 +123,21 @@ def main() -> int:
         must_raise(compose.FreeInvalid, req_for, n, **kw)
     print("6. 复查不过 ✓")
 
+    # 7. 正文与资产名里的占位符被清掉，@图片n 只剩生成的那些，按 1..n 顺序
+    import re
+    req, _ = req_for(node(prompt="让 {ref:C01} 转身，看 @图片3", refs=[chars[0], loc["id"]]))
+    nums = re.findall(r"@图片(\d+)", req.prompt)
+    assert nums == ["1", "2"] and len(req.refs) == 2, req.prompt
+    assert req.prompt.splitlines()[0] == "让  转身，看"
+    req, _ = req_for(node(prompt="{ref:C01}开场 @图片9", refs=chars[:2], first_frame=f"keyframe:{shot}"),
+                     keyframes={shot: kf})
+    assert re.findall(r"@图片(\d+)", req.prompt) == ["1", "2", "3"] and len(req.refs) == 3
+    d2 = copy.deepcopy(doc)
+    d2["assets"]["characters"][0]["name"] = "甲{ref:x}"
+    req, _ = req_for(node(refs=[chars[0]]), d=d2)
+    assert re.findall(r"@图片(\d+)", req.prompt) == ["1"] and "{ref" not in req.prompt, req.prompt
+    print("7. 占位符清理 ✓")
+
     print("\nALL PASS")
     return 0
 
