@@ -169,10 +169,9 @@ def delete(root, fid: str) -> dict:
         users = [x["id"] for x in s.get("free") or [] if x.get("first_frame") == f"tail:{fid}"]
         if users:
             raise sess.Conflict(f"{users[0]} 用它的尾帧作首帧，先改掉那边")
-        shared = {a.get("file") for c in list(s["clips"]) + list(s.get("orphaned") or [])
-                  for a in c.get("attempts") or [] if a.get("free_id") == fid}
-        doomed = [a[k] for a in n["attempts"] if a.get("file") not in shared
-                  for k in ("file", "last_frame") if a.get(k)]
+        shared = {a.get(k) for c in list(s["clips"]) + list(s.get("orphaned") or [])
+                  for a in c.get("attempts") or [] if a.get("free_id") == fid for k in ("file", "last_frame")}
+        doomed = [a[k] for a in n["attempts"] for k in ("file", "last_frame") if a.get(k) and a[k] not in shared]
         s["free"] = [x for x in s["free"] if x["id"] != fid]
     for rel in doomed:                      # 记录先改，文件后删：写回失败时不会留下指向已删文件的记录
         (Path(root) / rel).unlink(missing_ok=True)
@@ -209,4 +208,5 @@ def set_chosen(root, fid: str, index: int) -> dict:
         if not (0 <= index < len(n["attempts"])) or n["attempts"][index].get("state") != "succeeded":
             raise sess.SessionError("只能采用成功的那几次")
         n["chosen"] = index
+        n.update(state="done", error=None)      # 重试失败后采用先前成功的那次：回到完成（uncertain 不动）
         return s

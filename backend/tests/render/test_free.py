@@ -307,6 +307,31 @@ def part_crud():
     assert not any(p.exists() for p in paths), "只属于它的文件一并删掉"
     print("15. 删除 ✓")
 
+    # 16. 采用：重试失败后采用先前成功的那次 → 回到 done 并清错误
+    free.create(root, ctx)
+    fid = sess.load(root)["free"][-1]["id"]
+    with sess.mutate(root) as raw:
+        item(raw, fid).update(prompt="y", state="queued")
+    finish(root, fid)
+    with sess.mutate(root) as raw:
+        n = item(raw, fid)
+        n["attempts"].append({"state": "failed"})
+        n.update(state="failed", error="boom")
+    assert item(sess.load(root), fid)["state"] == "failed"
+    n = item(free.set_chosen(root, fid, 0), fid)
+    assert n["state"] == "done" and n["error"] is None and n["chosen"] == 0
+    print("16. 采用后回到 done ✓")
+
+    # 17. 删除：副本只共用尾帧时，尾帧也要保留
+    with sess.mutate(root) as raw:
+        raw["clips"][0]["attempts"].append(dict(item(raw, fid)["attempts"][0], file="elsewhere.mp4",
+                                                free_id=fid, cost_cny=0.0))
+    a = item(sess.load(root), fid)["attempts"][0]
+    video, tail = root / a["file"], root / a["last_frame"]
+    free.delete(root, fid)
+    assert tail.is_file() and not video.exists(), "副本还在用的尾帧保留，其余删掉"
+    print("17. 共用尾帧 ✓")
+
 
 def main() -> int:
     part_session()
