@@ -20,7 +20,8 @@ class Runner:
     def __init__(self, request_builder, *, poll_sec: float = 10.0, max_parallel: int = 2,
                  retries: int = 3, sleep=time.sleep, clock=time.monotonic,
                  poll_give_up_sec: float = 6 * 3600, download_give_up_sec: float = 20 * 3600):
-        """request_builder(root, session, clip) → (ClipRequest, 实际首帧来源)；分镜改了抛 compose.Stale。"""
+        """request_builder(root, session, item) → (ClipRequest, 实际首帧来源)；item 是剧本段或自由节点。
+        分镜改了抛 compose.Stale；自由节点复查不过抛 compose.FreeInvalid。"""
         self.request_builder = request_builder
         self.poll_sec = poll_sec
         self.max_parallel = max_parallel
@@ -112,7 +113,7 @@ class Runner:
             except Exception as e:
                 self._isolate(root, e)
                 continue
-            for c in s["clips"]:
+            for c in sess.items(s):
                 if c["state"] not in BUSY:
                     continue
                 try:
@@ -133,14 +134,14 @@ class Runner:
                 continue
             if s is not None:
                 loaded.append((root, s))
-        busy = sum(1 for _, s in loaded for c in s["clips"] if c["state"] in BUSY)
+        busy = sum(1 for _, s in loaded for c in sess.items(s) if c["state"] in BUSY)
         for root, s in loaded:
             try:
                 provider = get_video(s["provider"])
             except Exception as e:
                 self._isolate(root, e)
                 continue
-            for c in s["clips"]:
+            for c in sess.items(s):
                 if busy >= self.max_parallel:
                     break
                 try:
@@ -162,7 +163,7 @@ class Runner:
                 s = sess.load(root)
             except Exception:
                 s = None
-            if s is None or not any(c["state"] in sess.IN_FLIGHT for c in s["clips"]):
+            if s is None or not sess.any_in_flight(s):
                 self._roots.discard(Path(root))
 
     def _transient(self, kind, root, c, task_id, e, give_up) -> bool:
@@ -231,6 +232,9 @@ class Runner:
         except compose.Stale:
             sess.submit_failed(root, c["id"], "分镜或关键帧已改动，没有提交；请确认后重新出这一段",
                                stale=True)
+            return False
+        except compose.FreeInvalid as e:          # 自由节点的参考图、尾帧或关键帧没了：不提交、不花钱
+            sess.submit_failed(root, c["id"], str(e))
             return False
         except Exception as e:                     # 组装失败不能卡住整个队列
             sess.submit_failed(root, c["id"], f"组装请求失败：{e}")

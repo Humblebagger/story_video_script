@@ -96,6 +96,7 @@ from render import compose as render_compose
 from render import providers as render_providers
 from render import runner as render_runner
 from render import session as render_session
+from render import free as render_free
 from render import mix as render_mix
 from render import export_fcpxml as render_export_fcpxml
 from render import voice as render_voice
@@ -874,16 +875,20 @@ def _style_for(uid: str, nid: str) -> Optional[dict]:
 
 
 def _render_request(root, s: dict, clip: dict):
-    """出片线程提交前：按已保存的分镜与关键帧重建这一段的厂商请求。"""
+    """出片线程提交前：剧本段按已保存的分镜与关键帧重建厂商请求；自由节点按它存的正文与参考组装。"""
     o = s["owner"]
     record = novels.get_version(o["user_id"], o["nid"], o["cid"], o["vid"])
     provider = render_providers.get_video(s["provider"])
+    kfs = _keyframe_paths(o["user_id"], o["nid"], o["cid"], o["vid"])
+    style = _style_for(o["user_id"], o["nid"])
+    if render_session.is_free(clip["id"]):
+        return render_compose.request_for_free(
+            record.get("result") or {}, s, clip, keyframes=kfs, tail_frame=render_free.tail_frame(root, s, clip),
+            caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style)
     return render_compose.request_for(
         record.get("result") or {}, s, clip,
-        keyframes=_keyframe_paths(o["user_id"], o["nid"], o["cid"], o["vid"]),
-        relay_frame=render_session.relay_frame(root, s, clip),
-        caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt,
-        style=_style_for(o["user_id"], o["nid"]))
+        keyframes=kfs, relay_frame=render_session.relay_frame(root, s, clip),
+        caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style)
 
 
 _render_runner = render_runner.Runner(

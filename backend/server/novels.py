@@ -415,7 +415,7 @@ def delete_version(user_id: str, nid: str, cid: str, vid: str) -> None:
             from render import session as render_session        # 延迟导入，避免循环
             with render_session._lock(rdir):
                 s = render_session.load(rdir)
-                if s and any(c.get("state") in render_session.IN_FLIGHT for c in s.get("clips", [])):
+                if s and render_session.any_in_flight(s):
                     raise Busy("这个版本还有片段在出，等出完或失败后再删")
                 path.unlink()
                 shutil.rmtree(rdir, ignore_errors=True)
