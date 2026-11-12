@@ -321,7 +321,10 @@ export function TimelineCanvas({
       // 累计在 ref 里而不是读上一帧渲染出的 t：两帧之间不保证已经重新渲染过
       const end = Math.min(tl.total, stopAt.current ?? tl.total)
       // rAF 的时间戳是这一帧的起点，可能早于开播那一刻：不夹住的话首帧会倒退，从镜首开播会退回上一镜
-      const next = Math.min(end, tRef.current + Math.max(0, now - last) / 1000 * speed)
+      // Some test/browser shims return an unchanged rAF timestamp; always make
+      // forward progress so playback cannot spin forever at the same time.
+      const elapsed = Math.max(1, now - last)
+      const next = Math.min(end, tRef.current + elapsed / 1000 * speed)
       last = now
       tRef.current = next
       setT(next)
