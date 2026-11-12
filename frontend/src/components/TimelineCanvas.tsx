@@ -505,6 +505,8 @@ export function TimelineCanvas({
   return (
     <div className="tlc">
       <div className="tlc__main" ref={box}>
+      {/* 章节信息与工具条同一行：工具条变宽时把章节信息挤窄，而不是叠在上面 */}
+      <div className="tlc__bottom">
       {head && <div className="tlc__chead" onPointerDown={(e) => e.stopPropagation()}>{head}</div>}
       <div className="tlc__bar rounded-full border bg-card/80 px-2 py-1.5 shadow-xl backdrop-blur-md"
            onPointerDown={(e) => e.stopPropagation()}>
@@ -585,6 +587,7 @@ export function TimelineCanvas({
                 editing ? tt('canvas.help5') : ''].filter(Boolean).join('\n')}><CircleHelp size={16} aria-hidden /></span>
         <Button variant="ghost" size="icon-sm" className="tlc__close" title={tt('canvas.close')} aria-label={tt('canvas.close')}
                 onClick={onClose}><X aria-hidden /></Button>
+      </div>
       </div>
 
       <svg className="tlc__svg" width={width} height="100%"

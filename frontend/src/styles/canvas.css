@@ -19,10 +19,17 @@
 
 /* ---------- 底部悬浮胶囊工具条（外观的圆角、底色、模糊、阴影在组件上用工具类） ---------- */
 
+/* 底部一行：左侧章节信息（可选）+ 工具条。两者在同一个 flex 行里排，工具条变宽时挤窄章节信息而不是叠在上面；
+ * 行本身不接指针，空白处照样能拖画布 */
+.tlc__bottom {
+  position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 2;
+  display: flex; align-items: center; gap: 12px; min-width: 0; pointer-events: none;
+}
+.tlc__bottom > * { pointer-events: auto; }
 .tlc__bar {
-  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
+  flex: 0 1 auto; min-width: 0; margin-inline: auto;
   display: flex; gap: 4px; align-items: center;
-  white-space: nowrap; max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none;
+  white-space: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none;
 }
 .tlc__bar::-webkit-scrollbar { display: none; }
 /* 编辑按钮组与播放组之间 1px 竖分隔线 */

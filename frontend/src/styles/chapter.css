@@ -142,7 +142,7 @@
 .chead--compact .chead__title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 28ch; }
 .chead--compact .chead__money { font-size: 12px; color: var(--ui-muted-foreground); white-space: nowrap; }
 .chead--compact .chead__num { padding: 2px 6px; font-size: 12px; }
-.tlc__chead { position: absolute; left: 12px; bottom: 16px; z-index: 2; max-width: 30%; min-width: 0; }
+.tlc__chead { flex: 0 1 auto; max-width: 30%; min-width: 0; }
 @media (max-width: 899px) { .tlc__chead { display: none; } }
 
 /* 导入原文、生成分镜、下载：居中卡片，主按钮在卡片右下角 */
