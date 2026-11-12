@@ -108,7 +108,7 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n' + ET.tostring(root, encoding="unicode") + "\n"
 
 
-def readme(timeline: dict, title: str) -> str:
+def readme(timeline: dict, title: str, extras=()) -> str:
     ph = [f"{ep['episode']}/{s['clip']}" for ep in timeline["episodes"] for s in ep["segments"] if s.get("placeholder")]
     zh = [
         f"《{title}》剪辑工程说明",
@@ -131,7 +131,34 @@ def readme(timeline: dict, title: str) -> str:
     if ph:
         zh.append("- 这些段用的是关键帧静帧占位：" + " ".join(ph))
         en.append("- These segments use keyframe stills as placeholders: " + " ".join(ph))
+    if extras:
+        zh.append("- 补拍素材（不在时间线上，请自己摆位置）：")
+        en.append("- Extra footage (not on the timeline; place it yourself):")
+        for rel, line in extras:
+            zh.append(f"  - {rel}  {line}")
+            en.append(f"  - {rel}  {line}")
     return "\n".join(zh) + "\n\n----\n\n" + "\n".join(en) + "\n"
+
+
+def extra_media(root) -> list:
+    """独立素材（没挂靠的自由节点）采用的那次视频：[(包内路径, 磁盘文件, 提示词首行)]。
+    文件缺了就不附带，不拦导出；挂靠节点的结果已是剧本段的尝试，不重复导出。"""
+    try:
+        s = json.loads((Path(root) / "session.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for n in s.get("free") or []:
+        k = n.get("chosen")
+        if n.get("target") or k is None or not (0 <= k < len(n.get("attempts") or [])):
+            continue
+        a = n["attempts"][k]
+        disk = Path(root) / (a.get("file") or "")
+        if a.get("state") != "succeeded" or not a.get("file") or not disk.is_file():
+            continue
+        lines = (n.get("prompt") or "").strip().splitlines()
+        out.append((f"media/extra/{n['id']}.mp4", disk, lines[0] if lines else ""))
+    return out
 
 
 def _fast_voice(src: Path, speed: float, cache: Path, line: str, ffmpeg: str) -> Path:
@@ -193,8 +220,11 @@ def export(root, *, title: str, tools: tuple) -> Path:
         if ep.get("bgm"):
             put(ep["bgm"], f"media/bgm/{ep['episode']}{Path(ep['bgm']).suffix}", root / ep["bgm"], video=False)
 
+    extras = extra_media(root)
+    for rel, disk, _line in extras:
+        files[rel] = disk
     xml = build_fcpxml(tl, media, event=title)
-    text = readme(tl, title)
+    text = readme(tl, title, [(rel, line) for rel, _disk, line in extras])
     safe = re.sub(r'[\\/:*?"<>|\s]+', "_", title)[:80].strip(". _")
     if not safe.strip("."):
         safe = "storyboard-export"

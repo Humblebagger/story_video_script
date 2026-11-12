@@ -3,17 +3,19 @@
 
 用法: python3 tests/render/test_export_fcpxml.py
 """
+import json
 import random
 import re
 import xml.etree.ElementTree as ET
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from render.export_fcpxml import build_fcpxml, readme  # noqa: E402
+from render.export_fcpxml import build_fcpxml, extra_media, readme  # noqa: E402
 from fcpxml_check import check_structure, frames  # noqa: E402
 
 
@@ -128,6 +130,28 @@ def main() -> None:
     assert "E01/E01-C01" not in r
     tl2 = {**TL, "episodes": [{**TL["episodes"][0], "segments": [{**seg("K03", 0, 1, "a.mp4"), "placeholder": True}]}]}
     assert "E01/K03" in readme(tl2, "t")
+    # 补拍素材：只附带没挂靠、有采用结果且文件还在的自由节点；说明里列出来，不写进时间线
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "clips").mkdir()
+        (root / "clips" / "F01.t1.mp4").write_bytes(b"x")
+        (root / "clips" / "F02.t2.mp4").write_bytes(b"x")
+        s = {"free": [
+            {"id": "F01", "target": None, "chosen": 0, "prompt": "空镜：河面\n第二行",
+             "attempts": [{"state": "succeeded", "file": "clips/F01.t1.mp4"}]},
+            {"id": "F02", "target": "E01-C01", "chosen": 0, "prompt": "挂靠的",
+             "attempts": [{"state": "succeeded", "file": "clips/F02.t2.mp4"}]},
+            {"id": "F03", "target": None, "chosen": None, "prompt": "没出", "attempts": []},
+            {"id": "F04", "target": None, "chosen": 0, "prompt": "文件没了",
+             "attempts": [{"state": "succeeded", "file": "clips/gone.mp4"}]},
+        ]}
+        (root / "session.json").write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
+        ex = extra_media(root)
+        assert [(rel, disk.name, line) for rel, disk, line in ex] == [("media/extra/F01.mp4", "F01.t1.mp4", "空镜：河面")]
+        assert extra_media(root / "nope") == []
+    r = readme(TL, "t", [("media/extra/F01.mp4", "空镜：河面")])
+    assert "media/extra/F01.mp4" in r and "补拍素材" in r and "Extra footage" in r
+    assert "补拍素材" not in readme(TL, "t")
     print("ALL PASS")
 
 
