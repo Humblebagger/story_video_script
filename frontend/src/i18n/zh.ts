@@ -86,6 +86,16 @@ export const zh = {
     memoryPlot: '主线剧情与章节摘要',
     memoryLife: '人物状态',
   },
+  route: {
+    notFound: { title: '页面不存在', body: '这个地址没有对应的页面，可能链接有误或内容已删除。', back: '回到书架' },
+    err: {
+      novelGone: '这本小说不存在或已删除',
+      chapterGone: '这一章不存在或已删除',
+      adminOnly: '需要管理员权限',
+    },
+    title: { admin: '管理后台', canvas: '出片画布', notFound: '页面不存在' },
+    loading: '加载中…',
+  },
   overview: {
     continue: '继续：{chapter} · {step}',
     allDone: '全部完成',

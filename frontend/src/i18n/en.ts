@@ -88,6 +88,16 @@ export const en: Messages = {
     memoryPlot: 'Plot and chapter synopses',
     memoryLife: 'Character states',
   },
+  route: {
+    notFound: { title: 'Page not found', body: 'Nothing lives at this address. The link may be wrong or the content was deleted.', back: 'Back to shelf' },
+    err: {
+      novelGone: 'This novel does not exist or was deleted',
+      chapterGone: 'This chapter does not exist or was deleted',
+      adminOnly: 'Administrator access required',
+    },
+    title: { admin: 'Admin', canvas: 'Film canvas', notFound: 'Page not found' },
+    loading: 'Loading…',
+  },
   overview: {
     continue: 'Continue: {chapter} · {step}',
     allDone: 'All done',
