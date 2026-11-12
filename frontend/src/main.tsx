@@ -7,12 +7,10 @@ import { createBrowserRouter } from 'react-router'
 import { routes } from './routes'
 import { AppRoot } from './AppRoot'
 import { initTheme } from './theme'
-import { BRAND } from './brand'
 import { I18nProvider } from './i18n'
 import { Toaster } from './components/ui/sonner'
 import { TooltipProvider } from './components/ui/tooltip'
 
-document.title = BRAND.title
 initTheme()
 const router = createBrowserRouter(routes)
 

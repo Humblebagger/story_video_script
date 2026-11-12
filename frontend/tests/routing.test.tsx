@@ -428,6 +428,58 @@ console.log('开画布一次 push、后退一步 ✓')
 }
 console.log('换章时迟到的读版本不卡住规范化 ✓')
 
+// §12.3-7 有未保存修改时离开当前章节：确认；取消留在原地，确认后离开；force 的退出不确认
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  novel.chapters.push({ id: 'c2', title: '第二章', order: 2, text: '他出门。', adopted_version: null, digest: null, versions: [] })
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c2/import') })
+  await settle(200)
+  const ta = a.q('textarea')!
+  const set = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
+  await act(async () => { set.call(ta, '他推门。改'); ta.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event) })
+  await settle()
+  await act(async () => { void a.router.navigate('/novels/n1/overview') })
+  await settle()
+  const dlg = () => doc.body.querySelector('[data-testid="confirm-dialog"]')
+  must((dlg()?.textContent ?? '').includes('有未保存的修改'), '离开前应确认')
+  await click(doc.body.querySelector<HTMLElement>('[data-testid="confirm-cancel"]')!); await settle(300)
+  must(a.here() === '/novels/n1/chapters/c2/import', '取消后地址不变')
+  await act(async () => { void a.router.navigate('/novels/n1/overview') }); await settle()
+  await click(doc.body.querySelector<HTMLElement>('[data-testid="confirm-ok"]')!); await settle(300)
+  must(a.here() === '/novels/n1/overview', '确认后离开')
+  await a.done()
+}
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  novel.chapters.push({ id: 'c2', title: '第二章', order: 2, text: '他出门。', adopted_version: null, digest: null, versions: [] })
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c2/import') })
+  await settle(200)
+  const ta = a.q('textarea')!
+  const set = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
+  await act(async () => { set.call(ta, '又改'); ta.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event) })
+  await settle()
+  // 同一章内换步骤不拦（§7）
+  await act(async () => { void a.router.navigate('/novels/n1/chapters/c2/review') }); await settle()
+  must(a.here() === '/novels/n1/chapters/c2/review' && !doc.body.querySelector('[data-testid="confirm-dialog"]'), '同章换步骤不拦')
+  // 带 force 的程序性跳转放行
+  await act(async () => { void a.router.navigate('/', { state: { force: true } }) }); await settle()
+  must(a.here() === '/', 'force 放行')
+  await a.done()
+}
+console.log('7. 离开拦截 ✓')
+
+// §12.3-11 页面标题随位置变化
+{
+  const a = await boot('/novels/n1/props', 'alice')
+  must(doc.title === '道具 · 药 — Inkreel', `分区标题，实际 ${doc.title}`)
+  await act(async () => { void a.router.navigate('/novels/n1/chapters/c1/review/canvas') }); await settle(200)
+  must(doc.title === '出片画布 · 第一章 — Inkreel', `画布标题，实际 ${doc.title}`)
+  await act(async () => { void a.router.navigate('/nope') }); await settle()
+  must(doc.title === '页面不存在 — Inkreel', `404 标题，实际 ${doc.title}`)
+  await a.done()
+}
+console.log('11. 页面标题 ✓')
+
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 console.log('\nALL PASS')
 process.exit(0)

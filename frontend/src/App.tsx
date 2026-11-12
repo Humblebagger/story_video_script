@@ -18,6 +18,8 @@ import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
 import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
+import type { MsgKey } from './i18n/core'
+import { BRAND } from './brand'
 import { Tour } from './components/common/Tour'
 import { useConfirm } from './components/common/ConfirmDialog'
 import type { NewNovel } from './components/NewNovelComposer'
@@ -37,7 +39,7 @@ import { StoryboardView } from './components/StoryboardView'
 import type { Tab } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
 import { toast } from 'sonner'
-import { useLocation, useNavigate } from 'react-router'
+import { useBlocker, useLocation, useNavigate } from 'react-router'
 import { ApiError } from './api'
 import { NotFound } from './components/NotFound'
 import { Skeleton } from './components/ui/skeleton'
@@ -522,7 +524,6 @@ export default function App() {
       }
       return true
     }
-    if (!o.force && !(await confirmLeave())) return false      // 第 5 步换成 blocker 后删掉这一行
     go(chapterPath(nidT, cidT), { state: { ...(jobId ? { jobId } : {}), ...(vid ? { vid } : {}) }, force: o.force })
     return true
   }
@@ -560,7 +561,6 @@ export default function App() {
   }, [canvasStranded, nid, cid, navigate])
 
   const openNovel = async (target: string) => {
-    if (!(await confirmLeave())) return
     // 同一本：地址相同时不导航，默认分区 effect 也不会动，所以直接回到它的默认分区
     if (!go(novelPath(target)) && novel) {
       go(novelPath(target, novel.memory.lifecycle.some((e) => e.status === 'proposed') ? 'memory' : 'overview'))
@@ -583,7 +583,6 @@ export default function App() {
   /** 左栏点分区：在章节里就先离开章节（未保存走 confirmLeave），回到小说层的那个分区 */
   const gotoSection = async (sec: Section) => {
     if (!nid) return
-    if (chapter && !(await confirmLeave())) return
     go(novelPath(nid, sec))
   }
 
@@ -600,15 +599,50 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', h)
   }, [anyDirty])
 
+  // 有未保存修改时离开当前章节：统一在这里确认（§7）。判定读 ref，不读闭包；带 force 的程序性跳转放行
+  const dirtyRef = useRef(false)
+  dirtyRef.current = anyDirty
+  const chapterKey = (pathname: string) => {
+    const l = parseLocation(pathname).loc
+    return l.kind === 'chapter' ? `${l.nid}/${l.cid}` : null
+  }
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (!dirtyRef.current || (nextLocation.state as NavState | null)?.force) return false
+    const a = chapterKey(currentLocation.pathname)
+    return !(a !== null && a === chapterKey(nextLocation.pathname))
+  })
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    void ask({ title: t('confirm.leave.title'), body: t('confirm.leave.body'), action: t('confirm.leave.action'), danger: true })
+      .then((ok) => { if (ok) { clearWork(); blocker.proceed?.() } else blocker.reset?.() })
+  }, [blocker, ask, t, clearWork])
+
+  // 页面标题跟着位置走（§10）；加载中不显示上一本小说的名字
+  const sectionKey = loc.kind === 'novel' ? loc.section : null
+  const canvasKey = loc.kind === 'chapter' && loc.canvas
+  useEffect(() => {
+    const brand = BRAND.id
+    const novelName = novel && novel.id === nid ? novel.title : null
+    const chapterName = chapter && chapter.id === cid ? chapter.title : null
+    const join = (head: string, tail: string | null) => (tail ? `${head} · ${tail} — ${brand}` : `${head} — ${brand}`)
+    let title = BRAND.title
+    if (loc.kind === 'admin') title = `${t('route.title.admin')} — ${brand}`
+    else if (loc.kind === 'notFound') title = `${t('route.title.notFound')} — ${brand}`
+    else if (loc.kind === 'novel') title = join(t(`nav.${sectionKey ?? 'overview'}` as MsgKey), novelName)
+    else if (loc.kind === 'chapter') {
+      title = canvasKey ? join(t('route.title.canvas'), chapterName)
+        : chapterName ? join(chapterName, novelName) : brand
+    }
+    document.title = title
+  }, [loc.kind, nid, cid, sectionKey, canvasKey, novel, chapter, t])
+
   const newNovel = async () => {
-    if (!(await confirmLeave())) return
     setActivityTab('activity')
-    // 已经在 / 上（本地 JSON、无章节的任务面板）：同址不导航，直接清掉
-    if (!go('/')) { clearWork(); setNovel(null); setChapter(null) }
+    // 已经在 / 上（本地 JSON、无章节的任务面板）：同址不导航，直接清掉；不改地址就没有 blocker，自己确认
+    if (!go('/')) { if (!(await confirmLeave())) return; clearWork(); setNovel(null); setChapter(null) }
   }
 
-  const enterAdmin = async () => {
-    if (!(await confirmLeave())) return
+  const enterAdmin = () => {
     go('/admin')
   }
   const leaveAdmin = () => {
@@ -946,9 +980,7 @@ export default function App() {
                                            onGoto={(g) => {
                                              if (!nid) return
                                              if (g.chapter_id === cid) { go(chapterPath(nid, cid, { step: g.step }), { replace: true }); return }
-                                             void confirmLeave().then((ok) => {        // 第 5 步删掉这层确认
-                                               if (ok) go(chapterPath(nid, g.chapter_id, { step: g.step }))
-                                             })
+                                             go(chapterPath(nid, g.chapter_id, { step: g.step }))
                                            }} />
                          ) : undefined}
                          onOpenDone={(d) => openFromToast.current(d)}
