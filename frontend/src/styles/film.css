@@ -34,9 +34,10 @@
 .film p { margin: 0; }
 .film section { display: flex; flex-direction: column; gap: 8px; }
 .film__card {
-  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 12px;
   border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card);
 }
+.film__card p, .film__card td, .film__card th { min-width: 0; overflow-wrap: anywhere; }
 .film__settings summary { cursor: pointer; font-weight: 500; color: var(--foreground); }
 .film__settings[open] summary { margin-bottom: 4px; }
 .film__settings > .field { margin-top: 8px; }
@@ -60,7 +61,7 @@
 .film__count--failed { color: var(--destructive); }
 .film__count--stale { color: var(--tone-inferred); }
 .film__money {
-  display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ui-muted-foreground);
+  display: flex; min-width: 0; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ui-muted-foreground);
   font-variant-numeric: tabular-nums;
 }
 .film__bar { height: 6px; border-radius: 3px; background: var(--ui-muted); overflow: hidden; }
@@ -80,7 +81,7 @@
 @keyframes film-pulse { 50% { opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .film__dot { animation: none !important; } }
 .film__shots { display: flex; flex-wrap: wrap; gap: 4px; }
-.film__line { font-size: 12px; color: var(--ui-muted-foreground); }
+.film__line { min-width: 0; font-size: 12px; color: var(--ui-muted-foreground); overflow-wrap: anywhere; }
 .film__prompt {
   white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; max-height: 30vh; overflow: auto;
   background: var(--ui-muted); padding: 8px 10px; border-radius: calc(var(--ui-radius) - 2px); margin: 4px 0 0;

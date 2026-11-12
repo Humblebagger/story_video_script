@@ -13,29 +13,37 @@
 .ngv__edge.is-dim { opacity: .08; }
 .ngv__node {
   position: absolute; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 8px;
-  overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 12px;
+  min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 12px;
   cursor: default; transition: opacity .15s ease-out, box-shadow .15s ease-out;
 }
+.ngv__node > * { min-width: 0; max-width: 100%; }
+.ngv__node--episode { overflow: hidden; }
 .ngv__node--asset { flex-direction: row; align-items: center; }
 .ngv__node--episode { border: 0; background: none; padding: 4px 0; font-weight: 600; color: var(--ui-muted-foreground); }
 .ngv__node.is-on { box-shadow: 0 0 0 2px var(--primary); }
 .ngv__node.is-dim { opacity: .35; }
-.ngv__head { display: flex; align-items: center; gap: 6px; }
-.ngv__head b { font-family: ui-monospace, monospace; }
+.ngv__head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ngv__head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
 .ngv__media { flex: none; width: 100%; height: 72px; border-radius: 6px; object-fit: cover; background: var(--ui-muted); }
 .ngv__media--empty, .ngv__thumb--empty { display: grid; place-items: center; color: var(--ui-muted-foreground); }
 .ngv__thumb { flex: none; width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: var(--ui-muted); }
 .ngv__meta { display: flex; min-width: 0; flex-direction: column; gap: 2px; padding-left: 8px; }
+.ngv__prompt, .ngv__dim, .ngv__err, .ngv__warn { min-width: 0; overflow-wrap: anywhere; }
 .ngv__prompt { display: -webkit-box; margin: 0; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ngv__dim { margin: 0; color: var(--ui-muted-foreground); }
+.ngv__err, .ngv__warn { max-height: 3.2em; overflow: auto; }
 .ngv__err { margin: 0; color: var(--destructive); }
 .ngv__warn { margin: 0; color: var(--warning); }
-.ngv__form { display: flex; flex-direction: column; gap: 4px; }
-.ngv__text { width: 100%; min-height: 48px; resize: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; background: var(--background); }
-.ngv__field { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.ngv__field select, .ngv__field input { max-width: 150px; }
-.ngv__refs summary { cursor: pointer; }
+.ngv__form { display: flex; min-height: 0; flex-direction: column; gap: 4px; }
+.ngv__text { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; resize: vertical; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; background: var(--background); }
+.ngv__field { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
+.ngv__field select, .ngv__field input { min-width: 0; max-width: 150px; }
+.ngv__refs { min-width: 0; max-width: 100%; }
+.ngv__refs summary { cursor: pointer; overflow-wrap: anywhere; }
+.ngv__refs[open] { max-height: 128px; overflow: auto; }
+.ngv__refs .check { min-width: 0; overflow-wrap: anywhere; }
 .ngv__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: auto; }
-.ngv__nav { display: inline-flex; align-items: center; gap: 2px; }
-.ngv__ask { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ngv__nav { display: inline-flex; min-width: 0; align-items: center; gap: 2px; }
+.ngv__nav > span { white-space: nowrap; }
+.ngv__ask { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; overflow-wrap: anywhere; }
 .ngv__empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 8px; }

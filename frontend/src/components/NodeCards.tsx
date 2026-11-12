@@ -117,11 +117,11 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, onDerive }:
       </header>
       <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} />
       {chosen?.free_id && <p className="ngv__dim">{t('graph.fromFree', { id: chosen.free_id })}</p>}
-      <p className="ngv__prompt">{c.prompt}</p>
+      <p className="ngv__prompt" title={c.prompt}>{c.prompt}</p>
       <p className="ngv__dim">
         {t('graph.spent', { spent: yuan(spent), est: yuan(c.estimate_cny) })} · {t('graph.attempts', { n: c.attempts.length })}
       </p>
-      {c.error && <p className="ngv__err">{c.error}</p>}
+      {c.error && <p className="ngv__err" title={c.error}>{c.error}</p>}
       <div className="ngv__acts" onClick={(e) => e.stopPropagation()}>
         <SpendButton text={t(redo ? 'graph.redo' : 'graph.run', { cost: yuan(c.estimate_cny) })} cny={c.estimate_cny}
                      must={c.uncertain || needsConfirm(c, s)} disabled={lock}
@@ -235,7 +235,7 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
           </select>
         </label>
       </div>
-      {n.error && <p className="ngv__err">{n.error}</p>}
+      {n.error && <p className="ngv__err" title={n.error}>{n.error}</p>}
       <div className="ngv__acts" onClick={(e) => e.stopPropagation()}>
         <SpendButton text={t('graph.free.generate', { cost: yuan(n.estimate_cny) })} cny={n.estimate_cny}
                      must={n.uncertain || n.estimate_cny > s.confirm_over_cny}
