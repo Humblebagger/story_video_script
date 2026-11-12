@@ -205,13 +205,14 @@ def main() -> int:
         digests.append(chat)
         return ChatInvoker(Settings(), chat=chat)
 
-    def wait_digest(nid, cid):
-        for _ in range(200):
+    def wait_digest(nid, cid, vid=None):
+        for _ in range(500):
             d = app_mod.chapters_get(nid, cid, A).get("digest") or {}
-            if d.get("status") != "running":
+            # 只认终态 done：还没开始（没有 digest 记录）或 failed 都不算跑完，继续等到超时
+            if d.get("status") == "done" and (vid is None or d.get("version_id") == vid):
                 return d
             time.sleep(0.02)
-        raise AssertionError("章后整理没跑完")
+        raise AssertionError(f"章后整理没跑完：{d}")
 
     real_convert, real_digest = app_mod.convert_text, app_mod._digest_chat
     app_mod.convert_text = fake_convert
@@ -282,7 +283,7 @@ def main() -> int:
         app_mod.plot_synopsis(anid, ch["id"], app_mod.SynopsisBody(synopsis="人写的摘要。"), A)
         r = app_mod.versions_adopt(anid, ch["id"], vb, A)
         assert r["changed"] and r["digest"] == "running"
-        d = wait_digest(anid, ch["id"])
+        d = wait_digest(anid, ch["id"], vb)
         assert d["synopsis_kept_user"] and d["version_id"] == vb
         mem = app_mod.memory_get(anid, A)
         assert [e["written_by"]["version_id"] for e in mem["lifecycle"]] == [vb]

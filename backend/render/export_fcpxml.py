@@ -149,14 +149,20 @@ def extra_media(root) -> list:
         return []
     out = []
     for n in s.get("free") or []:
-        k = n.get("chosen")
-        if n.get("target") or k is None or not (0 <= k < len(n.get("attempts") or [])):
+        # 会话文件被改坏时跳过这一个节点，不拦导出
+        if not isinstance(n, dict) or not isinstance(n.get("id"), str):
             continue
-        a = n["attempts"][k]
-        disk = Path(root) / (a.get("file") or "")
-        if a.get("state") != "succeeded" or not a.get("file") or not disk.is_file():
+        k, atts = n.get("chosen"), n.get("attempts")
+        if n.get("target") or isinstance(k, bool) or not isinstance(k, int) or not isinstance(atts, list) \
+                or not (0 <= k < len(atts)):
             continue
-        lines = (n.get("prompt") or "").strip().splitlines()
+        a = atts[k]
+        if not isinstance(a, dict) or not isinstance(a.get("file"), str) or not a["file"]:
+            continue
+        disk = Path(root) / a["file"]
+        if a.get("state") != "succeeded" or not disk.is_file():
+            continue
+        lines = str(n.get("prompt") or "").strip().splitlines()
         out.append((f"media/extra/{n['id']}.mp4", disk, lines[0] if lines else ""))
     return out
 

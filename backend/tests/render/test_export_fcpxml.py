@@ -152,6 +152,25 @@ def main() -> None:
     r = readme(TL, "t", [("media/extra/F01.mp4", "空镜：河面")])
     assert "media/extra/F01.mp4" in r and "补拍素材" in r and "Extra footage" in r
     assert "补拍素材" not in readme(TL, "t")
+    # 会话文件被改坏：chosen 非整数/布尔、缺 id、尝试不是字典、file 不是字符串，都跳过而不是抛错
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "clips").mkdir()
+        (root / "clips" / "G01.mp4").write_bytes(b"x")
+        good = {"id": "G01", "target": None, "chosen": 0, "prompt": "好的",
+                "attempts": [{"state": "succeeded", "file": "clips/G01.mp4"}]}
+        bad = [
+            {**good, "id": "B1", "chosen": "0"},
+            {**good, "id": "B2", "chosen": True},
+            {**good, "id": "B3", "chosen": 0.5},
+            {k: v for k, v in good.items() if k != "id"},
+            {**good, "id": "B5", "attempts": ["oops"]},
+            {**good, "id": "B6", "attempts": [{"state": "succeeded", "file": 123}]},
+            {**good, "id": "B7", "attempts": None},
+            "not-a-dict",
+        ]
+        (root / "session.json").write_text(json.dumps({"free": bad + [good]}, ensure_ascii=False), encoding="utf-8")
+        assert [(rel, disk.name) for rel, disk, _ in extra_media(root)] == [("media/extra/G01.mp4", "G01.mp4")]
     print("ALL PASS")
 
 
