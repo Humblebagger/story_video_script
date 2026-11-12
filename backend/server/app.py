@@ -1034,6 +1034,74 @@ def render_clip_patch(nid: str, cid: str, vid: str, clip_id: str, body: RenderCl
     return _render_call(render_session.view, s)
 
 
+class FreeCreateBody(BaseModel):
+    from_clip: Optional[str] = None
+
+
+class FreePatchBody(BaseModel):
+    prompt: Optional[str] = Field(None, max_length=2000)
+    refs: Optional[list[str]] = Field(None, max_length=20)
+    first_frame: Optional[str] = None
+    duration: Optional[float] = Field(None, gt=0, le=600)
+    target: Optional[str] = None
+
+
+def _free_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = False) -> tuple:
+    """自由节点接口的前置：要有会话；按已保存的分镜刷新一次（挂靠段、时长、预估跟着走）；
+    返回 (会话目录, 校验用的分镜 / 关键帧 / 有无风格图)。生成时 gate=True 过验证门。"""
+    root, doc, kfs, owner = _render_ctx(user, nid, cid, vid, gate=gate)
+    if render_session.load(root) is None:
+        raise HTTPException(404, "还没有出片会话")
+    style = _style_for(owner["user_id"], owner["nid"])
+    _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
+                 allow_in_flight=True, style=style)
+    return root, render_free.Ctx(doc, kfs, style is not None)
+
+
+@app.post(_R + "/free")
+def render_free_create(nid: str, cid: str, vid: str, body: Optional[FreeCreateBody] = None,
+                       user: dict = Depends(novel_user)):
+    """新建自由节点；带 from_clip 时从这一段派生（预填正文、参考、时长，挂靠这一段）。不花钱。"""
+    root, ctx = _free_ctx(user, nid, cid, vid)
+    s = _render_call(render_free.create, root, ctx, body.from_clip if body else None)
+    return _render_call(render_session.view, s)
+
+
+@app.patch(_R + "/free/{fid}")
+def render_free_patch(nid: str, cid: str, vid: str, fid: str, body: FreePatchBody,
+                      user: dict = Depends(novel_user)):
+    """改正文、参考、首帧、时长、挂靠：只改传了的字段（显式传 null 为清掉）。在跑 409，校验不过 422。"""
+    root, ctx = _free_ctx(user, nid, cid, vid)
+    s = _render_call(render_free.update, root, ctx, fid, body.model_dump(exclude_unset=True))
+    return _render_call(render_session.view, s)
+
+
+@app.delete(_R + "/free/{fid}")
+def render_free_delete(nid: str, cid: str, vid: str, fid: str, user: dict = Depends(novel_user)):
+    """删节点与只属于它的文件。在跑或被别的节点当尾帧来源时 409。"""
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    s = _render_call(render_free.delete, root, fid)
+    return _render_call(render_session.view, s)
+
+
+@app.post(_R + "/free/{fid}/run")
+def render_free_run(nid: str, cid: str, vid: str, fid: str, body: Optional[RenderRunBody] = None,
+                    user: dict = Depends(novel_user)):
+    """生成一次（与单段出片同一套确认线与上限）。过验证门；超过确认线要带 expected_cny。"""
+    root, ctx = _free_ctx(user, nid, cid, vid, gate=True)
+    s = _render_call(render_free.queue, root, ctx, fid, body.expected_cny if body else None)
+    _render_runner.watch(root)
+    return _render_call(render_session.view, s)
+
+
+@app.put(_R + "/free/{fid}/chosen")
+def render_free_chosen(nid: str, cid: str, vid: str, fid: str, body: RenderChosenBody,
+                       user: dict = Depends(novel_user)):
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    s = _render_call(render_free.set_chosen, root, fid, body.attempt)
+    return _render_call(render_session.view, s)
+
+
 @app.get(_R + "/files/{path:path}")
 def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(novel_user)):
     """取本版本出片目录下的文件（片段、尾帧）。拒绝路径穿越。"""
