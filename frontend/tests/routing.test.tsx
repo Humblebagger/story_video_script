@@ -122,6 +122,9 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (!who || !users[who]) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
   if (path === '/auth/me') return json(userOf(who))
   if (path === '/jobs') return json({ jobs: [] })
+  if (path === '/admin/overview' && method === 'GET') {
+    return json({ users: 2, active_7d: 1, tokens_30d: 0, cost_30d: 0, running: 0, failed_7d: 0, daily: [], unpriced_models: [] })
+  }
   if (path === '/novels' && method === 'GET') return json({ novels: [{ id: novel.id, title: novel.title, updated_at: '', chapters: novel.chapters.length, asset_counts: counts(novel.memory.assets) }] })
   const m = path.match(/^\/novels\/([^/]+)(?:\/chapters\/([^/]+)(?:\/versions\/([^/]+)(\/.*)?)?)?(\/summary)?$/)
   if (m && method === 'GET') {
@@ -481,5 +484,30 @@ console.log('7. 离开拦截 ✓')
 console.log('11. 页面标题 ✓')
 
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
+// §12.3-3 非法 section / step / tab / view：规范化到上级（replace）
+for (const [from, to] of [
+  ['/novels/n1/bogus', '/novels/n1/overview'],
+  ['/novels/n1/chapters/c1/zzz', '/novels/n1/chapters/c1'],
+  ['/novels/n1/chapters/c1/review?tab=zzz', '/novels/n1/chapters/c1/review'],
+  ['/novels/n1/chapters/c1/review/canvas?view=zzz', '/novels/n1/chapters/c1/review/canvas'],
+] as const) {
+  const a = await boot(from, 'alice')
+  must(a.here() === to, `${from} 应规范化到 ${to}，实际 ${a.here()}`)
+  must(a.router.state.historyAction === 'REPLACE', `${from} 规范化是 replace`)
+  await a.done()
+}
+console.log('3b. 非法值规范化 ✓')
+
+// §12.3-10 同址再打开：在章节里点左栏同一章，不 push 新地址、仍在这一章
+// （重置后工作流按章节进度重新跟步，这一步是 replace，所以步骤段可以变，历史条数不增）
+{
+  const a = await boot('/novels/n1/chapters/c1/review', 'alice')
+  await click(a.q('[data-testid="chapter-card"]')!)
+  must(a.router.state.historyAction !== 'PUSH', `同址再打开不 push，实际 ${a.router.state.historyAction}`)
+  must(a.here().startsWith('/novels/n1/chapters/c1'), `同址再打开仍在这一章，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('10. 同址再打开不导航 ✓')
+
 console.log('\nALL PASS')
 process.exit(0)

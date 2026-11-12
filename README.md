@@ -97,6 +97,13 @@ cd frontend && npm install && npm run dev    # http://localhost:5173，/api 代�
 IR 声称「每句可溯源」，这一页就是当场查证它。顶栏「打开本地 JSON」可离线审阅归档产物，不花 API 费用。
 细节见 `frontend/README.md`。
 
+**部署前端（静态托管）**：前端用普通路径路由（如 `/novels/<id>/chapters/<id>/review/canvas`）。静态托管必须配置「找不到的路径一律返回 `index.html`」，否则直接打开深链接或在深链接上刷新会 404。常见写法：
+- Nginx：`try_files $uri /index.html;`
+- Netlify：`_redirects` 写 `/* /index.html 200`
+- Vercel、Cloudflare Pages：用各自的 rewrite 或 SPA 模式
+
+`vite.config.ts` 的 `base` 保持默认 `/`。`npm run dev` 与 `vite preview` 已自带这个回退。
+
 ### 方式三：手动流程（自备 LLM 会话）
 
 ```bash
