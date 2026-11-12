@@ -325,6 +325,10 @@ export function TimelineCanvas({
       // forward progress so playback cannot spin forever at the same time.
       const elapsed = Math.max(1, now - last)
       const next = Math.min(end, tRef.current + elapsed / 1000 * speed)
+      if (!Number.isFinite(end) || !Number.isFinite(next)) {
+        setPlaying(false)
+        return
+      }
       last = now
       tRef.current = next
       setT(next)
