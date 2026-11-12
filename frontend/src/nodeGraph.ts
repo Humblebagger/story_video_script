@@ -61,7 +61,8 @@ export function layoutGraph({ session, assets, hasStyle, styleUrl = null }: Grap
   const usedBy = new Map<string, number>()
   const mentioned = new Set<string>()
   for (const c of clips) {
-    for (const id of c.refs) usedBy.set(id, (usedBy.get(id) ?? 0) + 1)
+    // 同一段里重复引用（如同一场景两个机位）只算一段
+    for (const id of new Set(c.refs)) usedBy.set(id, (usedBy.get(id) ?? 0) + 1)
     for (const id of [...c.refs, ...c.dropped_refs, ...c.missing_refs]) mentioned.add(id)
   }
   for (const n of frees) for (const id of n.refs) mentioned.add(id)

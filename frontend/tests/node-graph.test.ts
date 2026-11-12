@@ -125,4 +125,14 @@ const g3 = layoutGraph({
   console.log('5. 空会话 ✓')
 }
 
+// 6. 同一段里重复引用同一资产（如同一场景两个机位）只算一段
+{
+  const s = session([clip('E01-C01', 'E01', { refs: ['C01', 'C01'] }), clip('E01-C02', 'E01', { refs: ['C01'] })])
+  const n = node(layoutGraph({ session: s, assets, hasStyle: false }), 'asset:C01')
+  must(n.kind === 'asset' && n.usedBy === 2, '两段用到，重复引用不重复计数')
+  const one = node(layoutGraph({ session: session([clip('E01-C01', 'E01', { refs: ['C01', 'C01'] })]), assets, hasStyle: false }), 'asset:C01')
+  must(one.kind === 'asset' && one.usedBy === 1, '一段里重复引用只算 1')
+  console.log('6. 被用段数按段去重 ✓')
+}
+
 console.log('\nALL PASS')
