@@ -83,10 +83,12 @@ export function AssetCard({ role, name, image, usedBy, onOpen }: {
       {image ? <img className="ngv__thumb" src={image} alt="" />
         : <div className="ngv__thumb ngv__thumb--empty">{t('graph.noImage')}</div>}
       <div className="ngv__meta">
-        <b>{role === 'style' ? t('graph.style') : name}</b>
-        <span className="ngv__dim">{t(`graph.kind.${role}` as MsgKey)} · {t('graph.usedBy', { n: usedBy })}</span>
+        <b title={role === 'style' ? t('graph.style') : name}>{role === 'style' ? t('graph.style') : name}</b>
+        <span className="ngv__dim" title={`${t(`graph.kind.${role}` as MsgKey)} · ${t('graph.usedBy', { n: usedBy })}`}>
+          {t(`graph.kind.${role}` as MsgKey)} · {t('graph.usedBy', { n: usedBy })}
+        </span>
         {role !== 'style' && (
-          <button type="button" className="tlc__linkbtn" onClick={(e) => { e.stopPropagation(); onOpen() }}>
+          <button type="button" className="tlc__linkbtn ngv__open" onClick={(e) => { e.stopPropagation(); onOpen() }}>
             {t('graph.openAssets')}
           </button>
         )}

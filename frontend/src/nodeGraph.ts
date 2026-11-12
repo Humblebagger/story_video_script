@@ -3,8 +3,8 @@
 import { STYLE_REF, freeNodes } from './film'
 import type { Assets, FilmClip, FilmFreeNode, FilmSession } from './types'
 
-export const ASSET_W = 180
-export const ASSET_H = 72
+export const ASSET_W = 220
+export const ASSET_H = 88
 export const CARD_W = 260
 /** 剧本段卡高；自由节点卡带编辑项，更高 */
 export const CARD_H = 208
