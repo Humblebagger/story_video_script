@@ -582,6 +582,9 @@ console.log('3. 放到后台 → 回到章节页，任务留在侧栏 ✓')
 // 4. 点左栏在生成的章节卡片：必须能回到任务面板
 await click(container.querySelector('[data-testid="chapter-card"]') as unknown as HTMLElement)
 must(has('放到后台'), '点左栏在生成的章节卡片应能回到任务面板')
+// 已经在任务面板上再点一次：同址再打开不能把面板清掉（§5.4）
+await click(container.querySelector('[data-testid="chapter-card"]') as unknown as HTMLElement)
+must(has('放到后台'), '任务面板已在时再点同一章应保持任务面板')
 console.log('4. 点左栏章节卡片 → 回到任务面板 ✓')
 
 // 4b. 进度可见：任务面板给出批次/尝试/阶段与剩余时间，侧栏给单行摘要

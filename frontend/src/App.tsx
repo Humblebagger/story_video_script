@@ -491,9 +491,12 @@ export default function App() {
         return true
       }
       const live = jobId ?? running.find((j) => j.chapter_id === cidT)?.id
-      if (live && job?.id !== live) {
-        if (!(await confirmLeave())) return false
-        clearWork(); attach(live)
+      if (live) {
+        // 已经挂着这个任务就保持任务面板
+        if (job?.id !== live) {
+          if (!(await confirmLeave())) return false
+          clearWork(); attach(live)
+        }
         return true
       }
       // 没有要接的任务：重置，重新摆出采用版（没有就最新一版），和进章节时一样
@@ -1020,7 +1023,7 @@ export default function App() {
                 onPreview={() => void loadPreview(job.id)}
               />
             )}
-            {!inWorkflow && board}
+            {!inWorkflow && (!cid || chapter?.id === cid) && board}
             {/* 章节打开时提示条由章节工作流摆（原文与分镜一起管） */}
             {!(novel && chapter) && (
               <UnsavedBar show={dirty && docVid !== null} saving={saving}

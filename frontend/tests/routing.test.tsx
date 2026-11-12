@@ -308,6 +308,25 @@ console.log('state 一次性参数消费 ✓')
 }
 console.log('步骤条 push / 后退 ✓')
 
+// 切章时不渲染上一章的分镜（§5.2）：换到另一章的第一帧起就只有骨架
+{
+  const a = await boot('/novels/n1/chapters/c1/review', 'alice')
+  novel.chapters.push({ id: 'c2', title: '第二章', order: 2, text: '他出门。', adopted_version: null, digest: null, versions: [] })
+  must(a.has('E01-SH001'), '前提：c1 的分镜已摆出')
+  let stale = false
+  const obs = new win.MutationObserver(() => {
+    if (a.here().includes('/chapters/c2') && a.has('E01-SH001')) stale = true
+  })
+  obs.observe(a.container as unknown as Node, { childList: true, subtree: true, characterData: true })
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c2') })
+  await settle(200)
+  obs.disconnect()
+  must(!stale, '切章途中不应渲染上一章的分镜')
+  must(a.here() === '/novels/n1/chapters/c2' && !a.has('E01-SH001'), '到了 c2 不应残留 c1 的分镜')
+  await a.done()
+}
+console.log('切章不闪上一章内容 ✓')
+
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 console.log('\nALL PASS')
 process.exit(0)
