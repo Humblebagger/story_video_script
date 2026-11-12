@@ -134,6 +134,15 @@ export default function App() {
   /** 异步回来时 URL 可能已经换了小说：只认地址里的那一本（§5.3） */
   const openNovelId = useRef<string | null>(null)
   openNovelId.current = nid
+  /** 会话代：退出、登录失效、换账号时加一；旧账号迟到的响应一律丢弃 */
+  const epoch = useRef(0)
+  const epochUid = useRef(user?.id)
+  if (epochUid.current !== user?.id) { epochUid.current = user?.id; epoch.current += 1 }
+  /** 工作代：(账号, 小说, 章节) 任何一个变了就加一；所有异步写回都核对它 */
+  const workGen = useRef(0)
+  const workKey = useRef('')
+  const wk = `${user?.id ?? ''}|${nid ?? ''}|${cid ?? ''}`
+  if (workKey.current !== wk) { workKey.current = wk; workGen.current += 1 }
   /** 打开本地 JSON：先回到 /，到了再摆出来（§5.5） */
   const pendingLocal = useRef<Storyboard | null>(null)
   const chapterRef = useRef<Chapter | null>(null)
@@ -151,27 +160,33 @@ export default function App() {
   const [textDirty, setTextDirty] = useState(false)
   /** 正附着着的任务（announce 用来判断「用户正看着它跑完」） */
   const attachedJob = useRef<string | null>(null)
+  const jobWork = useRef(-1)
+  const attachedFor = useRef<string | null>(null)
 
   const refreshNovels = useCallback(async () => {
+    const ep = epoch.current
     try {
-      setNovels((await listNovels()).novels)
+      const r = await listNovels()
+      if (epoch.current === ep) setNovels(r.novels)
     } catch {
       /* 服务未连通时由 svcDown 统一提示，这里不再重复报错 */
     } finally {
-      setNovelsLoading(false)
+      if (epoch.current === ep) setNovelsLoading(false)
     }
   }, [])
 
   /** 重新取打开着的小说与章节（转换完成、采用、改记忆之后） */
   const reloadOpen = useCallback(async (nid?: string, cid?: string | null) => {
+    const ep = epoch.current
+    const here = () => epoch.current === ep && openNovelId.current === nid
     try {
-      if (nid) { const n = await getNovel(nid); if (openNovelId.current === nid) setNovel(n) }
+      if (nid) { const n = await getNovel(nid); if (here()) setNovel(n) }
       if (nid && cid) {
         const c = await getChapter(nid, cid)
-        if (openChapterId.current === cid) setChapter(c)
+        if (here() && openChapterId.current === cid) setChapter(c)
       }
     } catch (e) {
-      setAlert(msg(e))
+      if (here() && (!cid || openChapterId.current === cid)) setAlert(msg(e))
     }
   }, [])
 
@@ -209,6 +224,8 @@ export default function App() {
 
   // 任务跑完且用户正看着它：直接把产物摆出来
   const onJobDone = useCallback((done: Job) => {
+    // 这个任务是在哪个工作代附着的：地址已经换了就只做全局收尾，不把产物写进现在的章节
+    const mine = jobWork.current === workGen.current && attachedFor.current === done.id
     void refreshNovels()
     bumpSummary()
     announce(done)
@@ -216,6 +233,7 @@ export default function App() {
     setRunning((list) => list.filter((j) => j.id !== done.id))
     const nid = novelRef.current?.id
     if (nid) void reloadOpen(nid, openChapterId.current)
+    if (!mine) return
     if (done.status === 'failed') return      // 失败时已打开的预览保留：已通过的批次照样能看
     previewFor.current = null
     setPreview(null)
@@ -225,8 +243,13 @@ export default function App() {
     setDirty(false)
   }, [refreshNovels, reloadOpen, announce, bumpSummary])
 
-  const { job, error, submitting, start, attach, reset } = useJob(onJobDone)
+  const { job, error, submitting, start, attach: attachRaw, reset } = useJob(onJobDone)
   attachedJob.current = job?.id ?? null
+  /** 附着任务时记下当时的工作代与任务号（onJobDone 回头核对） */
+  const attach = useCallback((jobId: string) => {
+    jobWork.current = workGen.current; attachedFor.current = jobId
+    attachRaw(jobId)
+  }, [attachRaw])
 
   /** 打开/刷新整章跑完之前的预览：已完成批次的合并结果，只读 */
   const loadPreview = useCallback(async (jobId: string) => {
@@ -270,8 +293,10 @@ export default function App() {
    *  否则一旦松开附着，任务就既看不见也回不去了。 */
   const prevRunning = useRef<Set<string>>(new Set())
   const watchJobs = useCallback(async () => {
+    const ep = epoch.current
     try {
       const { jobs } = await listJobs()
+      if (epoch.current !== ep) return
       const live = jobs.filter((x) => RUNNING.includes(x.status))
       setRunning(live)
       const liveIds = new Set(live.map((x) => x.id))
@@ -328,6 +353,8 @@ export default function App() {
   fns.current.t = t
   fns.current.clearWork = clearWork
   const userId = user?.id
+  /** 已由 me() 确认过角色的用户 id；缓存的角色可能过期，/admin 的守卫要等它 */
+  const [roleOf, setRoleOf] = useState<string | null>(null)
   const runningRef = useRef<JobSummary[]>([])
   runningRef.current = running
   // 按地址加载小说与章节（§5.1）：(nid, cid) 变了先清掉主区产物，迟到的响应一律丢弃（§5.3）
@@ -389,11 +416,12 @@ export default function App() {
 
   // /admin 只给管理员（§6）；缓存用户的角色以 me() 回来的为准，所以依赖 role
   const isAdminUser = user?.role === 'admin'
+  const roleConfirmed = !!user && roleOf === user.id
   useEffect(() => {
-    if (!user || loc.kind !== 'admin' || isAdminUser) return
+    if (!user || !roleConfirmed || loc.kind !== 'admin' || isAdminUser) return
     toast.error(fns.current.t('route.err.adminOnly'))
     navigate('/', { replace: true, state: { force: true } })
-  }, [user, loc.kind, isAdminUser, navigate])
+  }, [user, roleConfirmed, loc.kind, isAdminUser, navigate])
 
   // 未登录打开非首页的地址：自动弹一次登录框（每个地址只弹一次，用户关掉后不再弹）（§6）
   const prompted = useRef(new Set<string>())
@@ -414,7 +442,11 @@ export default function App() {
   useEffect(() => {
     if (!user) return
     // 缓存的用户信息可能已过期，向服务端确认一次
-    me().then(setUser).catch(() => { /* 401 已由 onUnauthorized 处理 */ })
+    const ep = epoch.current
+    me().then((u) => {
+      if (epoch.current !== ep) return
+      setUser(u); setRoleOf(u.id)
+    }).catch(() => { /* 401 已由 onUnauthorized 处理 */ })
     void refreshNovels()
     void watchJobs()
   }, [user?.id, refreshNovels, watchJobs])
@@ -440,9 +472,13 @@ export default function App() {
   const [versionLoading, setVersionLoading] = useState(false)
   /** 只有最近一次读版本的请求拥有 versionLoading；换章时一并清掉（新章可能根本没有版本要读） */
   const versionSeq = useRef(0)
-  useEffect(() => { versionSeq.current += 1; setVersionLoading(false) }, [cid])
+  useEffect(() => { versionSeq.current += 1; setVersionLoading(false) }, [userId, nid, cid])
   const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
     const seq = ++versionSeq.current
+    const ep = epoch.current
+    /** 这次请求是否仍是最近一次、且地址还指着它要的那一章 */
+    const current = () => versionSeq.current === seq && epoch.current === ep
+      && openNovelId.current === nid && openChapterId.current === cid
     setVersionLoading(true)
     reset()
     previewFor.current = null
@@ -451,7 +487,7 @@ export default function App() {
     setVerification(null)
     try {
       const v = await getVersion(nid, cid, vid)
-      if (openChapterId.current !== cid) return
+      if (!current()) return
       setDoc(v.result)
       savedDoc.current = v.result
       setDocVid(v.result ? v.id : null)
@@ -467,7 +503,7 @@ export default function App() {
           : t('app.versionEmpty'))
       }
     } catch (e) {
-      setAlert(t('app.err.version', { msg: msg(e) }))
+      if (current()) setAlert(t('app.err.version', { msg: msg(e) }))
     } finally {
       if (versionSeq.current === seq) setVersionLoading(false)
     }
@@ -512,9 +548,10 @@ export default function App() {
       // 没有要接的任务：重置，重新摆出采用版（没有就最新一版），和进章节时一样
       if (!(await confirmLeave())) return false
       clearWork()
+      const ep = epoch.current
       try {
         const c = await getChapter(nidT, cidT)
-        if (openChapterId.current !== cidT) return false
+        if (openChapterId.current !== cidT || openNovelId.current !== nidT || epoch.current !== ep) return false
         setChapter(c)
         const target = c.adopted_version ?? c.versions[0]?.id
         if (target) void openVersion(nidT, cidT, target)
@@ -606,8 +643,9 @@ export default function App() {
     const l = parseLocation(pathname).loc
     return l.kind === 'chapter' ? `${l.nid}/${l.cid}` : null
   }
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
-    if (!dirtyRef.current || (nextLocation.state as NavState | null)?.force) return false
+  const blocker = useBlocker(({ currentLocation, nextLocation, historyAction }) => {
+    // force 只对这一次程序性跳转有效；后退/前进（POP）回到带 force 的旧条目仍要拦
+    if (!dirtyRef.current || (historyAction !== 'POP' && (nextLocation.state as NavState | null)?.force)) return false
     const a = chapterKey(currentLocation.pathname)
     return !(a !== null && a === chapterKey(nextLocation.pathname))
   })
@@ -678,6 +716,7 @@ export default function App() {
     if (!novel || !list.length) return
     if (importing) return
     const nid = novel.id
+    const ep = epoch.current
     let made = 0
     setImporting(true)
     try {
@@ -691,7 +730,7 @@ export default function App() {
     } finally {
       // 已建出的章节无论成败都要显示出来，否则重试会重复建
       if (made) {
-        try { void refreshNovels(); const n = await getNovel(nid); if (openNovelId.current === nid) setNovel(n); bumpSummary() } catch { /* 刷新失败不覆盖上面的提示 */ }
+        try { void refreshNovels(); const n = await getNovel(nid); if (openNovelId.current === nid && epoch.current === ep) setNovel(n); bumpSummary() } catch { /* 刷新失败不覆盖上面的提示 */ }
       }
       setImporting(false)
     }
@@ -716,7 +755,11 @@ export default function App() {
     if (keepDoc) { reset(); setAlert(null); setVerification(null) } else clearWork()
     const { strict, ...overrides } = opts
     const [nid, cid] = [novel.id, chapter.id]
-    void start(() => convertChapter(nid, cid, { overrides, strict }),
+    const gen = workGen.current
+    void start(() => convertChapter(nid, cid, { overrides, strict }).then((r) => {
+      jobWork.current = gen; attachedFor.current = r.job_id
+      return r
+    }),
                { work_title: novel.title, chapter: chapter.title })
       .then(() => reloadOpen(nid, cid))
     void watchJobs()                 // 立刻让它出现在侧栏，随时可以放后台再点回来
@@ -827,6 +870,7 @@ export default function App() {
   }
 
   const resetSignedOut = () => {
+    epoch.current += 1
     keepOnlyAssistant(null)   // 退出登录：中断助手回答，丢掉所有对话
     clearWork()
     setUser(null)

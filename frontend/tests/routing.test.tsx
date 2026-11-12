@@ -106,6 +106,12 @@ const unhandled = new Set<string>()
 /** 测试用：让章节与版本的读取慢下来（lag 毫秒），或卡在 gate 上直到放行 */
 let lag = 0
 let gate: Promise<void> | null = null
+/** 按版本号卡住读版本；me 与任务轮询也可卡住 */
+const vgate: Record<string, Promise<void>> = {}
+let meGate: Promise<void> | null = null
+let jobGate: Promise<void> | null = null
+const jobsById: Record<string, unknown> = {}
+let jobsList: unknown[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '').split('?')[0]
   const method = init?.method ?? 'GET'
@@ -120,8 +126,14 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   const h = init?.headers?.Authorization ?? ''
   const who = h.startsWith('Bearer tok-') ? h.slice(11) : null
   if (!who || !users[who]) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
-  if (path === '/auth/me') return json(userOf(who))
-  if (path === '/jobs') return json({ jobs: [] })
+  if (path === '/auth/me') { if (meGate) await meGate; return json(userOf(who)) }
+  if (path === '/jobs') return json({ jobs: jobsList })
+  const jm = path.match(/^\/jobs\/([^/]+)$/)
+  if (jm && method === 'GET') {
+    if (jobGate) await jobGate
+    return jobsById[jm[1]] ? json(jobsById[jm[1]]) : err(404, 'stub')
+  }
+  if (path === '/render/keyframes' && method === 'POST') return json({ keyframes: [] })
   if (path === '/admin/overview' && method === 'GET') {
     return json({ users: 2, active_7d: 1, tokens_30d: 0, cost_30d: 0, running: 0, failed_7d: 0, daily: [], unpriced_models: [] })
   }
@@ -134,6 +146,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     if (!cid) return json(novelView(novel))
     if (lag) await new Promise((r) => setTimeout(r, lag))
     if (vid && gate) await gate
+    if (vid && vgate[vid]) await vgate[vid]
     const c = novel.chapters.find((x) => x.id === cid)
     if (!c) return err(404, '章节不存在')
     if (!vid) return json(chapterView(c))
@@ -161,11 +174,13 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
 const settle = async (ms = 80) => { await act(async () => { await new Promise((r) => setTimeout(r, ms)) }) }
 
 /** 从某个地址起一个全新的应用；who 为空 = 未登录 */
-async function boot(path: string, who?: string) {
+async function boot(path: string, who?: string, cached?: Record<string, unknown>) {
   resetData()
   win.localStorage.clear()
   clearSession()
-  if (who) setSession(`tok-${who}`, userOf(who))
+  jobsList = []
+  for (const k of Object.keys(jobsById)) delete jobsById[k]
+  if (who) setSession(`tok-${who}`, (cached ?? userOf(who)) as ReturnType<typeof userOf>)
   const container = doc.createElement('div')
   doc.body.appendChild(container)
   const root = createRoot(container)
@@ -482,6 +497,92 @@ console.log('7. 离开拦截 ✓')
   await a.done()
 }
 console.log('11. 页面标题 ✓')
+
+// ===== 终审修复回归 =====
+
+// C1：同一章里快速换版本，慢的那次迟到回来不能覆盖新的
+{
+  const a = await boot('/novels/n1/chapters/c1/review', 'alice')
+  const mk = (id: string, action: string) => {
+    const d = JSON.parse(JSON.stringify(DOC)); d.episodes[0].shots[0].action = action
+    return { id, created_at: '', edited_at: null, status: 'succeeded', result: d, verification: VERIFIED, error: null }
+  }
+  novel.chapters[0].versions.push(mk('v2', '动作甲'), mk('v3', '动作乙'))
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c1/render'); await a.router.navigate('/novels/n1/chapters/c1/review') })
+  await settle(200)
+  // 重新取一遍章节，让版本条出现 v2 v3
+  await click(a.q('[data-testid="chapter-card"]') ?? a.q('[data-step="review"]')!)
+  await settle(200)
+  let release!: () => void
+  vgate.v2 = new Promise<void>((r) => { release = r })
+  const chip = (t: string) => [...a.container.querySelectorAll('.vchip')].find((b) => (b.textContent ?? '').startsWith(t)) as unknown as HTMLElement | undefined
+  must(!!chip('v2') && !!chip('v3'), '前提：版本条有 v2 v3')
+  await click(chip('v2')!)
+  await click(chip('v3')!)
+  await settle(100)
+  must(a.has('动作乙'), '前提：v3 已摆出')
+  release(); delete vgate.v2
+  await settle(200)
+  must(a.has('动作乙') && !a.has('动作甲'), 'v2 迟到的响应不能覆盖 v3')
+  await a.done()
+}
+console.log('C1. 快速换版本，迟到响应被丢弃 ✓')
+
+// C2：附着着任务时换章，旧任务迟到的轮询结果不写进新章
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  novel.chapters.push({ id: 'c2', title: '第二章', order: 2, text: '他出门。', adopted_version: null, digest: null, versions: [] })
+  jobsList = [{ id: 'j1', status: 'running', novel_id: 'n1', chapter_id: 'c1', work_title: '药', chapter: '第一章' }]
+  let release!: () => void
+  jobGate = new Promise<void>((r) => { release = r })
+  jobsById.j1 = { id: 'j1', status: 'succeeded', log: [], result: JSON.parse(JSON.stringify(DOC)),
+                  quality_report: null, error: null, work_title: '药', chapter: '第一章' }
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c1', { state: { jobId: 'j1' } }) })
+  await settle(250)
+  must(!a.has('1 镜约'), '前提：任务还没回来，c1 没有产物')
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c2') })
+  await settle(250)
+  release(); jobGate = null
+  await settle(300)
+  must(a.here() === '/novels/n1/chapters/c2', '前提：停在 c2')
+  must(!a.has('关闭任务面板') && !a.has('1 镜约'), '旧任务迟到的结果不能写进 c2（任务面板与产物都不该出现）')
+  await a.done()
+}
+console.log('C2. 换章后旧任务迟到的轮询被丢弃 ✓')
+
+// I2：缓存的用户没有角色字段：me() 确认之前不能被赶出 /admin
+{
+  let release!: () => void
+  meGate = new Promise<void>((r) => { release = r })
+  const a = await boot('/admin', 'root', { id: 'root', username: 'root', created_at: '' })
+  must(a.here() === '/admin', `me() 回来前不应离开 /admin，实际 ${a.here()}`)
+  release(); meGate = null
+  await settle(300)
+  must(a.here() === '/admin' && a.has('管理后台'), 'me() 确认是管理员后留在后台')
+  await a.done()
+}
+console.log('I2. /admin 等角色确认 ✓')
+
+// I3：force 只管那一次跳转；后退回到带 force 的旧条目，有未保存修改仍要拦
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  novel.chapters.push({ id: 'c2', title: '第二章', order: 2, text: '他出门。', adopted_version: null, digest: null, versions: [] })
+  await act(async () => { await a.router.navigate('/novels/n1/props', { state: { force: true } }) })
+  await settle()
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c2/import') })
+  await settle(200)
+  const ta = a.q('textarea')!
+  const set = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
+  await act(async () => { set.call(ta, '后退测试'); ta.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event) })
+  await settle()
+  await act(async () => { void a.router.navigate(-1) })
+  await settle(200)
+  must(!!doc.body.querySelector('[data-testid="confirm-dialog"]'), '后退进带 force 的旧条目仍应确认')
+  must(a.here() === '/novels/n1/chapters/c2/import', `确认前留在原地，实际 ${a.here()}`)
+  await click(doc.body.querySelector<HTMLElement>('[data-testid="confirm-cancel"]')!); await settle(300)
+  await a.done()
+}
+console.log('I3. force 不污染历史条目 ✓')
 
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 // §12.3-3 非法 section / step / tab / view：规范化到上级（replace）

@@ -15,6 +15,8 @@ export function useJob(onDone?: (job: Job) => void) {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const timer = useRef<number | null>(null)
+  /** 轮询代：reset / 重新 attach / 重新 start 都会换代，旧代的迟到响应一律丢弃 */
+  const gen = useRef(0)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
 
@@ -29,15 +31,18 @@ export function useJob(onDone?: (job: Job) => void) {
 
   const poll = useCallback((jobId: string) => {
     stop()
+    const mine = ++gen.current
     const tick = async () => {
       try {
         const next = await getJob(jobId)
+        if (gen.current !== mine) return
         setJob(next)
         if (TERMINAL.includes(next.status)) {
           stop()
           doneRef.current?.(next)
         }
       } catch (e) {
+        if (gen.current !== mine) return
         setError(e instanceof Error ? e.message : String(e))
         stop()
       }
@@ -51,13 +56,16 @@ export function useJob(onDone?: (job: Job) => void) {
                                    meta: { work_title: string; chapter: string }) => {
     setError(null)
     setSubmitting(true)
+    const before = gen.current
     try {
       const { job_id } = await submit()
+      // 提交途中被 reset / 换章了：任务照常在后台跑（侧栏巡检会发现），但不再接到当前页面
+      if (gen.current !== before) return
       setJob({ id: job_id, status: 'queued', log: [], result: null,
                quality_report: null, error: null, ...meta })
       poll(job_id)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (gen.current === before) setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSubmitting(false)
     }
@@ -70,6 +78,7 @@ export function useJob(onDone?: (job: Job) => void) {
   }, [poll])
 
   const reset = useCallback(() => {
+    gen.current += 1
     stop()
     setJob(null)
     setError(null)
