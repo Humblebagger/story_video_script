@@ -40,10 +40,10 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   useEffect(() => { setFocus(selected) }, [selected])
   const box = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null)
-  // Esc 先取消选中：捕获阶段抢在画布的「Esc 关闭」前面，preventDefault 后画布就不处理了
+  // Esc 先取消选中（只有选中时才拦，仅悬停放行给画布关闭）：捕获阶段抢在画布的「Esc 关闭」前面，preventDefault 后画布就不处理了
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || (!focus && !hover)) return
+      if (e.key !== 'Escape' || !focus) return
       e.preventDefault()
       setFocus(null)
       setHover(null)
