@@ -429,7 +429,10 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
 
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
-const { default: App } = await import('../src/App')
+const { createMemoryRouter } = await import('react-router')
+const { routes } = await import('../src/routes')
+const { AppRoot } = await import('../src/AppRoot')
+const router = createMemoryRouter(routes, { initialEntries: ['/'] })
 const { notifyUnauthorized } = await import('../src/auth')
 const { NovelPage } = await import('../src/components/NovelPage')
 const { I18nProvider } = await import('../src/i18n')
@@ -484,7 +487,7 @@ const mouseDown = async (el: HTMLElement) => {
   await settle()
 }
 
-await act(async () => { root.render(<App />) })
+await act(async () => { root.render(<AppRoot router={router} />) })
 await settle()
 
 // 0. 未登录：只能看到登录页，看不到任何业务界面
