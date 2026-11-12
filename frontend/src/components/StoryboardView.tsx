@@ -58,6 +58,18 @@ interface Props {
   /** 出片会话：三栏视图右栏切成片段 */
   film?: FilmSession | null
   defaultTab?: Tab
+  /** 页签（受控可选）：给了 onTab 就受控 */
+  tab?: Tab
+  onTab?: (t: Tab) => void
+  /** 画布开关（受控可选）：给了 onCanvas 就受控；关闭时的重读、图片刷新照常 */
+  canvasOpen?: boolean
+  onCanvas?: (open: boolean) => void
+  /** 画布打开时停在哪个侧栏页（受控时由上层给） */
+  canvasPanel?: 'film'
+  canvasView?: 'timeline' | 'graph'
+  onCanvasView?: (v: 'timeline' | 'graph') => void
+  /** 从画布跳回某个镜头（受控时由上层一次 replace 到 /:step，页签 focus）（§4.3） */
+  onJumpShot?: () => void
   /** 小说风格参考图：画布关键帧区显示与下载 */
   styleUrl?: string | null
   styleMime?: string
@@ -66,23 +78,37 @@ interface Props {
 export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
   bench = null, openFilm, onCanvasClose, report = null, film = null, defaultTab, styleUrl = null, styleMime,
+  tab: tabProp, onTab, canvasOpen, onCanvas, canvasPanel: canvasPanelProp, canvasView, onCanvasView, onJumpShot,
 }: Props) {
   const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>(defaultTab ?? 'focus')
+  const [tabLocal, setTabLocal] = useState<Tab>(defaultTab ?? 'focus')
+  const tab = onTab ? (tabProp ?? 'focus') : tabLocal
+  const setTab = (next: Tab) => { if (onTab) onTab(next); else setTabLocal(next) }
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
-  const [canvas, setCanvas] = useState(false)
-  const [canvasPanel, setCanvasPanel] = useState<'film' | undefined>(undefined)
-  // 只认挂载之后的新信号：计数在挂载前就大于 0（比如换步骤后重新挂载）不能自己打开画布
+  const [canvasLocal, setCanvasLocal] = useState(false)
+  const canvas = onCanvas ? !!canvasOpen : canvasLocal
+  const [panelLocal, setPanelLocal] = useState<'film' | undefined>(undefined)
+  const canvasPanel = onCanvas ? canvasPanelProp : panelLocal
+  // 只认挂载之后的新信号：计数在挂载前就大于 0（比如换步骤后重新挂载）不能自己打开画布；受控时上层直接给地址
   const seenOpenFilm = useRef(openFilm)
   useEffect(() => {
     if (!openFilm || openFilm === seenOpenFilm.current) return
     seenOpenFilm.current = openFilm
-    setCanvasPanel('film')
-    setCanvas(true)
+    setPanelLocal('film')
+    setCanvasLocal(true)
   }, [openFilm])
   const [imagesKey, setImagesKey] = useState(0)
-  const closeCanvas = () => { setImagesKey((k) => k + 1); setCanvas(false); setCanvasPanel(undefined); onCanvasClose?.() }
+  // 画布从开到关（点关闭、浏览器后退都算）：刷新关键帧图，并让上层重读出片状态
+  const closeRef = useRef(onCanvasClose)
+  closeRef.current = onCanvasClose
+  const wasOpen = useRef(canvas)
+  useEffect(() => {
+    if (wasOpen.current && !canvas) { setImagesKey((k) => k + 1); setPanelLocal(undefined); closeRef.current?.() }
+    wasOpen.current = canvas
+  }, [canvas])
+  const openCanvas = () => { if (onCanvas) onCanvas(true); else setCanvasLocal(true) }
+  const closeCanvas = () => { if (onCanvas) onCanvas(false); else setCanvasLocal(false) }
   /** 从画布跳回来要定位的镜头 */
   const [focusShot, setFocusShot] = useState<{ id: string; n: number } | null>(null)
   const idx = useMemo(() => buildIndex(doc), [doc])
@@ -94,9 +120,9 @@ export function StoryboardView({
   }
 
   const jumpShot = (shotId: string) => {
-    closeCanvas()
-    setTab('focus')
     setFocusShot((prev) => ({ id: shotId, n: (prev?.n ?? 0) + 1 }))
+    if (onJumpShot) onJumpShot()        // 一次 replace：去掉 /canvas，页签回 focus
+    else { closeCanvas(); setTab('focus') }
   }
 
   // stampVersion：一旦用上 beats/constraints，产物就不该再自称 0.4
@@ -137,7 +163,7 @@ export function StoryboardView({
                 {saving ? t('board.saving') : dirty ? t('board.save') : t('board.saved')}
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => setCanvas(true)}
+            <Button size="sm" variant="ghost" onClick={openCanvas}
                     title={t('board.canvasTip')}>
               <Clapperboard />
               {t('board.canvas')}
@@ -205,7 +231,7 @@ export function StoryboardView({
           imagesKey={imagesKey} readOnly={!!preview} dirty={dirty} saving={saving}
           canSave={canSave && !preview} focusShot={focusShot}
           onShotChange={changeShot} onPickUnit={pickUnit} onSave={onSave}
-          onOpenCanvas={() => setCanvas(true)}
+          onOpenCanvas={openCanvas}
         />
       )}
       {tab === 'cards' && (
@@ -235,6 +261,7 @@ export function StoryboardView({
                         onChange={preview ? undefined : onChange}
                         canSave={canSave && !preview} dirty={dirty} saving={saving} onSave={onSave}
                         onClose={closeCanvas} onJumpShot={jumpShot} initialPanel={canvasPanel}
+                        view={onCanvasView ? canvasView : undefined} onView={onCanvasView}
                         styleUrl={styleUrl} styleMime={styleMime} />
       )}
     </div>

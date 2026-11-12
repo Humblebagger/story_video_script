@@ -327,6 +327,58 @@ console.log('步骤条 push / 后退 ✓')
 }
 console.log('切章不闪上一章内容 ✓')
 
+// §12.3-1 深链接到渲染步骤上的画布，节点图视图
+{
+  const a = await boot('/novels/n1/chapters/c1/render/canvas?view=graph', 'alice')
+  must(a.here() === '/novels/n1/chapters/c1/render/canvas?view=graph', `应停在原地址，实际 ${a.here()}`)
+  must(!!a.q('.tlc'), '画布打开')
+  must(!!a.q('[data-testid="node-graph"]'), '节点图视图')
+  await a.done()
+}
+console.log('1b. 画布加节点图深链接 ✓')
+
+// §12.3-8 画布内切节点图：replace，fromChapter 仍在
+{
+  const a = await boot('/novels/n1/chapters/c1/review', 'alice')
+  const open = button(a.container, '时间轴画布') ?? a.q('[title*="画布"]')
+  await click(open!)
+  must(a.here() === '/novels/n1/chapters/c1/review/canvas' && a.router.state.historyAction === 'PUSH', '打开画布是 push')
+  const graphBtn = [...a.container.querySelectorAll('.tlc__bar button')].find((b) => b.textContent === '节点图') as unknown as HTMLElement
+  await click(graphBtn)
+  must(a.here() === '/novels/n1/chapters/c1/review/canvas?view=graph', `切到节点图，实际 ${a.here()}`)
+  must(a.router.state.historyAction === 'REPLACE', '切视图是 replace')
+  must((a.router.state.location.state as { fromChapter?: boolean } | null)?.fromChapter === true, 'fromChapter 透传')
+  // §12.3-9 关闭画布：回到原步骤
+  await click(a.q('.tlc__close')!)
+  await settle(200)
+  must(a.here() === '/novels/n1/chapters/c1/review', `关闭画布回原步骤，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('8/9a. 画布视图 replace、关闭回原步骤 ✓')
+
+// §12.3-9 jumpShot：一次 replace 到 /:step（页签 focus）
+{
+  const a = await boot('/novels/n1/chapters/c1/render/canvas?tab=cards', 'alice')
+  const shot = a.q('.tlc__shot')!
+  await act(async () => { shot.dispatchEvent(new win.MouseEvent('dblclick', { bubbles: true }) as unknown as Event) })
+  await settle(200)
+  must(a.here() === '/novels/n1/chapters/c1/render', `双击镜头跳回聚焦页签，实际 ${a.here()}`)
+  must(a.router.state.historyAction === 'REPLACE', 'jumpShot 是一次 replace')
+  await a.done()
+}
+console.log('9b. jumpShot ✓')
+
+// §12.3-3 不能开画布时规范化：章节没有版本
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  novel.chapters[0].versions = []; novel.chapters[0].adopted_version = null
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c1/review/canvas') })
+  await settle(200)
+  must(a.here() === '/novels/n1/chapters/c1', `没有版本时画布地址应规范化，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('3. 不能开画布 → 规范化 ✓')
+
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 console.log('\nALL PASS')
 process.exit(0)

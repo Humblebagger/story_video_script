@@ -72,7 +72,7 @@ interface Props {
   /** 实际显示的步骤（上层拼页签、画布地址用） */
   onViewChange?: (s: StepId) => void
   /** 打开画布并切到「出片」页 */
-  openFilm: () => void
+  openFilm: (step?: StepId) => void
   flow: ReturnType<typeof useChapterFlow>
 }
 
@@ -251,10 +251,11 @@ export function ChapterWorkflow({
     : primary.action === 'save' ? saving
     : primary.action === 'saveText' ? savingText : false
   const fix = (f: Fix) => {
-    if (f.step) go(f.step)
+    // 受控且要开画布：一次 push 到 /:step/canvas；否则先换步骤再开
+    if (f.step && !(f.openFilm && onStep)) go(f.step)
+    if (f.openFilm) openFilm(f.step)
     const target = f.target
     if (target) nextFrame(() => flashTarget(target))
-    if (f.openFilm) openFilm()
   }
   /** ⑥「回到画布重新合成」：先回到 ⑤ 把分镜视图挂上，下一帧再打开画布（同一帧里加的计数会被新挂载的视图当成旧的） */
   const recompose = () => {

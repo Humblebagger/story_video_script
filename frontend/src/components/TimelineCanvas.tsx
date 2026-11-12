@@ -47,6 +47,9 @@ interface Props {
   /** 小说的风格参考图（blob URL）；有才在关键帧区显示缩略图与下载 */
   styleUrl?: string | null
   styleMime?: string
+  /** 画布视图（受控可选，§4.1）：给了就受控，不给用组件内状态 */
+  view?: 'timeline' | 'graph'
+  onView?: (v: 'timeline' | 'graph') => void
 }
 
 /** 连续打字时把一串改动并成一步撤销 */
@@ -117,7 +120,7 @@ function downloadText(name: string, text: string) {
 export function TimelineCanvas({
   doc, onClose, onJumpShot, bench = null, version = null,
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
-  styleUrl = null, styleMime,
+  styleUrl = null, styleMime, view: viewProp, onView,
 }: Props) {
   const { t: tt } = useI18n()
   const head = useContext(ChapterHeadContext)
@@ -131,7 +134,9 @@ export function TimelineCanvas({
   /** 实际显示的页签：没有可出片的版本时「出片」页签不存在，停在「本镜」而不是空白（与 film.enabled 同一判断） */
   const shown: PanelTab = panel === 'film' && !(version?.nid && version.cid && version.vid) ? 'shot' : panel
   /** 画布视图：时间轴（播放、对齐、合成）或节点图（谁参考了谁、补拍） */
-  const [view, setView] = useState<'timeline' | 'graph'>('timeline')
+  const [viewLocal, setViewLocal] = useState<'timeline' | 'graph'>('timeline')
+  const view = viewProp ?? viewLocal
+  const setView = (v: 'timeline' | 'graph') => { if (onView) onView(v); else setViewLocal(v) }
   /** 出片会话（只有存进后端的版本才有）；「出片」页签或节点图开着时轮询更勤 */
   const film = useFilm(version, { active: shown === 'film' || view === 'graph' })
   /** 「成片」泳道上选中的段 */

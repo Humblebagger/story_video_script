@@ -34,13 +34,14 @@ import { readLastChapter, writeLastChapter } from './lastChapter'
 import type { Section } from './section'
 import { useStyleImage } from './useStyleImage'
 import { StoryboardView } from './components/StoryboardView'
+import type { Tab } from './components/StoryboardView'
 import { VerificationPanel } from './components/VerificationPanel'
 import { toast } from 'sonner'
 import { useLocation, useNavigate } from 'react-router'
 import { ApiError } from './api'
 import { NotFound } from './components/NotFound'
 import { Skeleton } from './components/ui/skeleton'
-import { chapterPath, novelPath, parseLocation, passState } from './paths'
+import { chapterPath, isCanvasStep, novelPath, parseLocation, passState } from './paths'
 import type { NavState } from './paths'
 import { notice } from './lib/notice'
 import { UnsavedBar } from './components/workflow/UnsavedBar'
@@ -144,8 +145,6 @@ export default function App() {
   const styleUrl = useStyleImage(novel?.id ?? '', novel?.style_image?.hash)
   const flowReload = flow.reload
   const reloadFlow = useCallback(async () => { await flowReload(); bumpSummary() }, [flowReload, bumpSummary])
-  /** 递增一次 = 打开画布并切到「出片」页 */
-  const [openFilmN, setOpenFilmN] = useState(0)
   /** 章节原文框里有没保存的改动（由章节工作流报上来）；和分镜的 dirty 一起管离开提醒 */
   const [textDirty, setTextDirty] = useState(false)
   /** 正附着着的任务（announce 用来判断「用户正看着它跑完」） */
@@ -435,7 +434,10 @@ export default function App() {
   const confirmLeave = async () => !(dirty || textDirty) || ask({
     title: t('confirm.leave.title'), body: t('confirm.leave.body'), action: t('confirm.leave.action'), danger: true })
 
+  /** 正在读某一版（画布地址要等它读完才能判断挂不挂得上） */
+  const [versionLoading, setVersionLoading] = useState(false)
   const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
+    setVersionLoading(true)
     reset()
     previewFor.current = null
     setPreview(null)
@@ -460,6 +462,8 @@ export default function App() {
       }
     } catch (e) {
       setAlert(t('app.err.version', { msg: msg(e) }))
+    } finally {
+      if (openChapterId.current === cid) setVersionLoading(false)
     }
   }, [reset, t])
   fns.current.attach = attach
@@ -528,6 +532,28 @@ export default function App() {
     // 在 ③④⑤ 之间切换时页签保留（分镜视图不重新挂载）；其它步骤不带页签
     go(chapterPath(nid, cid, { step: s, tab: urlTab }), { replace: how === 'replace' })
   }, [nid, cid, go, urlTab])
+
+  /** 画布挂在哪一步：地址步骤是 ③④⑤ 就用它；否则用工作流实际步骤；都不是就 ⑤（§4.2 openFilm） */
+  const boardStep = (): StepId => {
+    if (loc.kind === 'chapter' && isCanvasStep(loc.step)) return loc.step
+    return isCanvasStep(viewRef.current) ? viewRef.current : 'compose'
+  }
+  const openCanvas = (step: StepId = boardStep(), panel?: 'film') => {
+    if (!nid || !cid) return
+    go(chapterPath(nid, cid, { step, tab: urlTab, canvas: true }), { state: { fromChapter: true, ...(panel ? { panel } : {}) } })
+  }
+  const closeCanvas = () => {
+    if (!nid || !cid || loc.kind !== 'chapter') return
+    // 从章节里打开的：后退一步，视图和页签的 replace 不会把它弄丢；否则 replace 回原步骤与页签（§8）
+    if (navState?.fromChapter && location.key !== 'default') navigate(-1)
+    else go(chapterPath(nid, cid, { step: loc.step, tab: loc.tab }), { replace: true })
+  }
+  // 画布地址但画布挂不上（没有版本、分镜为空、在看分批预览）：等加载落定后规范化回章节地址（§3）
+  const canvasStranded = loc.kind === 'chapter' && loc.canvas && chapter?.id === cid
+    && !versionLoading && !job && (!doc || !docVid || !!preview)
+  useEffect(() => {
+    if (canvasStranded && nid && cid) navigate(chapterPath(nid, cid), { replace: true, state: { force: true } })
+  }, [canvasStranded, nid, cid, navigate])
 
   const openNovel = async (target: string) => {
     if (!(await confirmLeave())) return
@@ -832,8 +858,19 @@ export default function App() {
           saving={saving}
           onChange={(next) => { setDoc(next); setDirty(true) }}
           onSave={save}
-          openFilm={openFilmN}
           onCanvasClose={() => void reloadFlow()}
+          {...(inWorkflow && loc.kind === 'chapter' && nid && cid ? {
+            tab: loc.tab,
+            onTab: (tb: Tab) => go(chapterPath(nid, cid, { step: boardStep(), tab: tb, canvas: loc.canvas, view: loc.view }),
+                                   { replace: true }),
+            canvasOpen: loc.canvas,
+            onCanvas: (open: boolean) => { if (open) openCanvas(); else closeCanvas() },
+            canvasPanel: navState?.panel,
+            canvasView: loc.view,
+            onCanvasView: (v: 'timeline' | 'graph') =>
+              go(chapterPath(nid, cid, { step: boardStep(), tab: loc.tab, canvas: true, view: v }), { replace: true }),
+            onJumpShot: () => go(chapterPath(nid, cid, { step: boardStep() }), { replace: true }),
+          } : {})}
           bench={novel && chapter ? {
             novel, chapter, versionId: docVid, job, converting,
             disabled: submitting || svcDown,
@@ -1008,7 +1045,7 @@ export default function App() {
                 step={loc.kind === 'chapter' ? loc.step : null}
                 onStep={stepNav}
                 onViewChange={onViewChange}
-                openFilm={() => setOpenFilmN((n) => n + 1)}
+                openFilm={(s) => openCanvas(isCanvasStep(s) ? s : boardStep(), 'film')}
                 flow={flow}
               />
             )}
