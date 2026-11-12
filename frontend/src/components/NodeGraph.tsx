@@ -57,7 +57,7 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
   if (!s || !graph) {
     return (
-      <div className="ngv" data-testid="node-graph" onPointerDown={stop} onWheel={stop}>
+      <div className="ngv" role="region" aria-label={t('graph.viewAria')} data-testid="node-graph" onPointerDown={stop} onWheel={stop}>
         <div className="ngv__empty">
           <p>{t('graph.noSession')}</p>
           <Button size="sm" onClick={onOpenFilm}>{t('graph.openFilm')}</Button>
@@ -105,7 +105,7 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   const dimmed = lit.size > 0
 
   return (
-    <div className="ngv" ref={box} data-testid="node-graph" onPointerDown={down} onPointerMove={move}
+    <div className="ngv" ref={box} role="region" aria-label={t('graph.viewAria')} data-testid="node-graph" onPointerDown={down} onPointerMove={move}
          onPointerUp={up} onPointerLeave={up} onWheel={wheel}
          onClick={(e) => { if (!(e.target as HTMLElement).closest('.ngv__node, .ngv__tools')) setFocus(null) }}>
       <div className="ngv__tools">

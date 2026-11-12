@@ -57,16 +57,17 @@ function SpendButton({ text, cny, must, disabled, onSpend }: {
   return <Button size="sm" disabled={disabled} onClick={() => (must ? setAsking(cny) : void go(cny))}>{text}</Button>
 }
 
-/** 在成功的几次之间切换采用（at 为当前采用的那次在列表里的位置，没有为 -1） */
+/** 在成功的几次之间切换采用（at 为当前采用的那次在列表里的位置，没有为 -1，此时序号显示 –；没有可切换的成功尝试就不渲染） */
 function AttemptNav({ at, total, disabled, onPick }: {
   at: number; total: number; disabled: boolean; onPick: (k: number) => void
 }) {
   const { t } = useI18n()
+  if (total <= 0) return null
   return (
     <span className="ngv__nav">
       <button type="button" className="tlc__linkbtn" disabled={disabled || at <= 0} aria-label={t('graph.prev')}
               onClick={() => onPick(at - 1)}>‹</button>
-      <span>{t('graph.attemptOf', { n: at + 1, total })}</span>
+      <span>{t('graph.attemptOf', { n: at < 0 ? '–' : at + 1, total })}</span>
       <button type="button" className="tlc__linkbtn" disabled={disabled || at >= total - 1} aria-label={t('graph.next')}
               onClick={() => onPick(at + 1)}>›</button>
     </span>

@@ -316,6 +316,21 @@ await refresh()
 must(inCard('F03', '生成').disabled, 'over_refs 时生成按钮禁用')
 console.log('6b. 引用超限禁生成 ✓')
 
+// 6c. 采用位置不在成功的几次里：不显示 0/n，显示 –/n；采用其中一次后显示 n/total
+const other = film!.clips[1].id
+clipOf(other).attempts = [attempt(other, 1, 5), attempt(other, 2, 5)]
+clipOf(other).chosen = null
+await refresh()
+const navText = () => card(other).querySelector('.ngv__nav')?.textContent ?? ''
+must(navText().includes('–/2') && !navText().includes('0/2'), `没有采用时显示 –/2：${navText()}`)
+clipOf(other).chosen = 1
+await refresh()
+must(navText().includes('2/2'), `采用第二次时显示 2/2：${navText()}`)
+must(container.querySelector('[data-testid="node-graph"]')?.getAttribute('role') === 'region'
+     && container.querySelector('[data-testid="node-graph"]')?.getAttribute('aria-label') === '画布视图',
+     '节点图容器是带名字的 region')
+console.log('6c. 采用位置与无障碍 ✓')
+
 // 7. 切回时间轴：节点图收起
 await click(exact('时间轴'))
 must(!container.querySelector('[data-testid="node-graph"]'), '切回时间轴')
