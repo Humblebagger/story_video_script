@@ -268,6 +268,46 @@ console.log('5. 未登录深链接 → 登录后回到原地址，关掉后不�
 }
 console.log('6. 非管理员 /admin → 回首页 ✓')
 
+// §12.3-1（章节部分）深链接到章节的某一步
+{
+  const a = await boot('/novels/n1/chapters/c1/review', 'alice')
+  must(a.here() === '/novels/n1/chapters/c1/review', `应停在原地址，实际 ${a.here()}`)
+  must(!!a.q('[data-step="review"][aria-current="step"]'), '直接显示 ③')
+  await a.done()
+}
+console.log('1a. 章节步骤深链接 ✓')
+
+// §12.3-4（章节部分）不存在的章节：回这本小说的章节列表
+{
+  const a = await boot('/novels/n1/chapters/nope', 'alice')
+  must(a.here() === '/novels/n1/chapters', `不存在的章节应回章节列表，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('4b. 不存在的章节 → 回章节列表 ✓')
+
+// state.vid 是一次性参数：消费后 replace 清掉（§5.4）
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c1', { state: { vid: 'v1' } }) })
+  await settle(200)
+  const st = a.router.state.location.state as { vid?: string } | null
+  must(!st?.vid && a.router.state.historyAction === 'REPLACE', 'vid 消费后应被 replace 清掉')
+  await a.done()
+}
+console.log('state 一次性参数消费 ✓')
+
+// 点步骤条：push /:step；后退回到无步骤段
+{
+  const a = await boot('/novels/n1/chapters/c1', 'alice')
+  await click(a.q('[data-step="review"]')!)
+  must(a.here() === '/novels/n1/chapters/c1/review' && a.router.state.historyAction === 'PUSH', '步骤条是 push')
+  await act(async () => { await a.router.navigate(-1) })
+  await settle()
+  must(a.here() === '/novels/n1/chapters/c1', '后退回到章节地址')
+  await a.done()
+}
+console.log('步骤条 push / 后退 ✓')
+
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 console.log('\nALL PASS')
 process.exit(0)

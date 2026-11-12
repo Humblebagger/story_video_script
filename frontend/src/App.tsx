@@ -12,6 +12,7 @@ import { CostMeter } from './components/shell/CostMeter'
 import { ChapterCrumb, ProjectSwitcher } from './components/shell/ProjectSwitcher'
 import { AdminView } from './components/admin/AdminView'
 import { ChapterWorkflow } from './components/workflow/ChapterWorkflow'
+import type { StepId } from './workflow'
 import { JobPanel } from './components/JobPanel'
 import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
@@ -25,7 +26,7 @@ import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { ActivityPanel } from './components/shell/ActivityPanel'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
-import { cancelStep, onTask, requestStep } from './lib/assistantBridge'
+import { onTask } from './lib/assistantBridge'
 import { keepOnlyAssistant } from './lib/assistantSession'
 import type { DoneJob } from './components/shell/ActivityPanel'
 import { ProjectNav } from './components/shell/ProjectNav'
@@ -39,7 +40,7 @@ import { useLocation, useNavigate } from 'react-router'
 import { ApiError } from './api'
 import { NotFound } from './components/NotFound'
 import { Skeleton } from './components/ui/skeleton'
-import { novelPath, parseLocation, passState } from './paths'
+import { chapterPath, novelPath, parseLocation, passState } from './paths'
 import type { NavState } from './paths'
 import { notice } from './lib/notice'
 import { UnsavedBar } from './components/workflow/UnsavedBar'
@@ -81,6 +82,7 @@ export default function App() {
   }, [navigate])
   /** 当前地址指向的小说（URL 是唯一真相） */
   const nid = loc.kind === 'novel' || loc.kind === 'chapter' ? loc.nid : null
+  const cid = loc.kind === 'chapter' ? loc.cid : null
   const adminOpen = loc.kind === 'admin'
   const section: Section = loc.kind === 'novel' && loc.section ? loc.section : 'overview'
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
@@ -125,12 +127,10 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
   /** 异步回来时用户可能已经切走：只认仍然打开着的那一章 */
   const openChapterId = useRef<string | null>(null)
-  openChapterId.current = chapter?.id ?? null
+  openChapterId.current = cid
   /** 异步回来时 URL 可能已经换了小说：只认地址里的那一本（§5.3） */
   const openNovelId = useRef<string | null>(null)
   openNovelId.current = nid
-  /** 第 2 步过渡：跨小说打开章节时先换地址，小说加载完再打开这一章（第 3 步删除） */
-  const pendingChapter = useRef<{ cid: string; jobId?: string; vid?: string } | null>(null)
   /** 打开本地 JSON：先回到 /，到了再摆出来（§5.5） */
   const pendingLocal = useRef<Storyboard | null>(null)
   const chapterRef = useRef<Chapter | null>(null)
@@ -319,43 +319,63 @@ export default function App() {
     if (fix) navigate(fix, { replace: true, state: { ...passState(navStateRef.current), force: true } })
   }, [fix, navigate])
 
-  /** 加载 effect 里要用的最新函数：放进 ref，effect 只按 (user, nid) 重跑 */
+  /** 加载 effect 里要用的最新函数：放进 ref，effect 只按 (user, nid, cid) 重跑 */
   // t 也从这里取：语言切换会换 t 的引用，不能让加载 effect 因此重跑（重跑会清空主区）
   const fns = useRef({ clearWork: () => {}, t,
-                       openChapterIn: async (n: Novel, p: { cid: string; jobId?: string; vid?: string }): Promise<boolean> => { void n; void p; return false } })
+                       attach: (id: string) => { void id },
+                       openVersion: async (n: string, c: string, v: string) => { void n; void c; void v } })
   fns.current.t = t
   fns.current.clearWork = clearWork
   const userId = user?.id
-  // 按地址加载小说（§5.1）。第 3 步把章节也并进来
+  const runningRef = useRef<JobSummary[]>([])
+  runningRef.current = running
+  // 按地址加载小说与章节（§5.1）：(nid, cid) 变了先清掉主区产物，迟到的响应一律丢弃（§5.3）
   useEffect(() => {
     if (!userId) return
+    const f = fns.current
+    f.clearWork()
     if (!nid) {
-      if (novelRef.current || chapterRef.current) { fns.current.clearWork(); setNovel(null); setChapter(null) }
+      setNovel(null); setChapter(null)
       const local = pendingLocal.current
-      if (local) {
-        pendingLocal.current = null
-        fns.current.clearWork(); setDoc(local); savedDoc.current = local
-      }
+      if (local) { pendingLocal.current = null; setDoc(local); savedDoc.current = local }
       return
     }
-    if (novelRef.current?.id === nid && !pendingChapter.current) return
+    if (novelRef.current?.id !== nid) setNovel(null)
+    setChapter(null)
     let live = true
-    if (novelRef.current?.id !== nid) { fns.current.clearWork(); setChapter(null); setNovel(null) }
-    getNovel(nid).then((n) => {
-      if (!live || openNovelId.current !== nid) return
-      setNovel(n)
-      const p = pendingChapter.current
-      if (p) { pendingChapter.current = null; void fns.current.openChapterIn(n, p) }
-    }).catch((e) => {
+    const st = navStateRef.current
+    void (async () => {
+      const [nr, cr] = await Promise.allSettled([getNovel(nid), cid ? getChapter(nid, cid) : Promise.resolve(null)])
       if (!live) return
-      if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
-        pendingChapter.current = null
-        toast.error(fns.current.t('route.err.novelGone'))
-        navigate('/', { replace: true, state: { force: true } })
-      } else setAlert(fns.current.t('app.err.novel', { msg: msg(e) }))
-    })
+      const gone = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 403)
+      if (nr.status === 'rejected') {
+        if (gone(nr.reason)) { toast.error(f.t('route.err.novelGone')); navigate('/', { replace: true, state: { force: true } }) }
+        else setAlert(f.t('app.err.novel', { msg: msg(nr.reason) }))
+        return
+      }
+      setNovel(nr.value)
+      if (!cid) return
+      if (cr.status === 'rejected') {
+        if (gone(cr.reason)) {
+          toast.error(f.t('route.err.chapterGone'))
+          navigate(novelPath(nid, 'chapters'), { replace: true, state: { force: true } })
+        } else setAlert(f.t('app.err.chapter', { msg: msg(cr.reason) }))
+        return
+      }
+      const c = cr.value!
+      writeLastChapter(nid, c.id)
+      setChapter(c)
+      const liveJob = st?.vid ? undefined : st?.jobId ?? runningRef.current.find((j) => j.chapter_id === c.id)?.id
+      if (liveJob) f.attach(liveJob)
+      else {
+        const target = st?.vid ?? c.adopted_version ?? c.versions[0]?.id
+        if (target) void f.openVersion(nid, c.id, target)
+      }
+      // 一次性参数用完就清掉：刷新、后退时不会再接一次已结束的任务或打开已删的版本（§5.4）
+      if (st?.vid || st?.jobId) navigate(hereRef.current, { replace: true, state: passState(st) })
+    })()
     return () => { live = false }
-  }, [userId, nid, navigate])
+  }, [userId, nid, cid, navigate])
 
   // /novels/:nid 没有分区：小说加载完 replace 到默认分区（§3）
   const locNid = loc.kind === 'novel' ? loc.nid : null
@@ -442,6 +462,8 @@ export default function App() {
       setAlert(t('app.err.version', { msg: msg(e) }))
     }
   }, [reset, t])
+  fns.current.attach = attach
+  fns.current.openVersion = openVersion
 
   // 助手发起了操作或改了内容：转换让任务巡检立刻刷新；改内容重读小说，正在看的这一版没有未保存修改就重读
   // （有就只提示，免得冲掉用户的修改）；各种操作都让小说概览重算
@@ -457,45 +479,55 @@ export default function App() {
     bumpSummary()
   }), [watchJobs, bumpSummary, novel, chapter?.id, docVid, dirty, reloadOpen, openVersion, t])
 
-  /** 在这本小说里打开某章（地址已经指向这本小说）：给了 vid 就开那一版；否则接上在跑的任务，再否则摆出采用版 */
-  const openChapterIn = async (n: Novel, p: { cid: string; jobId?: string; vid?: string }): Promise<boolean> => {
-    clearWork()
-    try {
-      const c = await getChapter(n.id, p.cid)
-      if (openNovelId.current !== n.id) return false
-      openChapterId.current = c.id
-      writeLastChapter(n.id, c.id)
-      setChapter(c)
-      const live = p.vid ? undefined : p.jobId ?? running.find((j) => j.chapter_id === p.cid)?.id
-      if (live) attach(live)
-      else {
-        const target = p.vid ?? c.adopted_version ?? c.versions[0]?.id
-        if (target) void openVersion(n.id, p.cid, target)
+  /** 打开章节（§5.4）：跨地址就导航，vid / jobId 作一次性 state；目标就是地址里这一章时不导航，直接执行动作 */
+  const openChapter = async (cidT: string, nidT = nid ?? undefined, jobId?: string, vid?: string,
+                             o: { force?: boolean } = {}): Promise<boolean> => {
+    if (!nidT) return false
+    if (nidT === nid && cidT === cid) {
+      // 同址再打开：换版本、接任务都会丢掉未保存的修改，所以照样确认（§7 保留项）
+      if (vid) {
+        if (!(await confirmLeave())) return false
+        void openVersion(nidT, cidT, vid)
+        return true
+      }
+      const live = jobId ?? running.find((j) => j.chapter_id === cidT)?.id
+      if (live && job?.id !== live) {
+        if (!(await confirmLeave())) return false
+        clearWork(); attach(live)
+        return true
+      }
+      // 没有要接的任务：重置，重新摆出采用版（没有就最新一版），和进章节时一样
+      if (!(await confirmLeave())) return false
+      clearWork()
+      try {
+        const c = await getChapter(nidT, cidT)
+        if (openChapterId.current !== cidT) return false
+        setChapter(c)
+        const target = c.adopted_version ?? c.versions[0]?.id
+        if (target) void openVersion(nidT, cidT, target)
+      } catch (e) {
+        setAlert(t('app.err.chapter', { msg: msg(e) }))
+        return false
       }
       return true
-    } catch (e) {
-      setAlert(t('app.err.chapter', { msg: msg(e) }))
-      return false
     }
+    if (!o.force && !(await confirmLeave())) return false      // 第 5 步换成 blocker 后删掉这一行
+    go(chapterPath(nidT, cidT), { state: { ...(jobId ? { jobId } : {}), ...(vid ? { vid } : {}) }, force: o.force })
+    return true
   }
-  fns.current.openChapterIn = openChapterIn
 
-  /** 打开章节：给了 vid 就直接打开那一版；否则本章有转换在跑就接上任务面板，再否则摆出采用版（没有就最新一版） */
-  const openChapter = async (cid: string, nid0 = novel?.id, jobId?: string, vid?: string): Promise<boolean> => {
-    if (!nid0 || !(await confirmLeave())) return false
-    if (nid0 !== openNovelId.current || !novel) {
-      // 第 2 步过渡：跨小说先换地址，小说加载完由加载 effect 打开这一章
-      pendingChapter.current = { cid, jobId, vid }
-      go(novelPath(nid0, 'chapters'))
-      return true
-    }
-    return openChapterIn(novel, { cid, jobId, vid })
-  }
+  /** ChapterWorkflow 报上来的实际步骤（拼页签、画布地址用） */
+  const viewRef = useRef<StepId | null>(null)
+  const onViewChange = useCallback((v: StepId) => { viewRef.current = v }, [])
+  const urlTab = loc.kind === 'chapter' ? loc.tab : null
+  const stepNav = useCallback((s: StepId, how: 'push' | 'replace') => {
+    if (!nid || !cid) return
+    // 在 ③④⑤ 之间切换时页签保留（分镜视图不重新挂载）；其它步骤不带页签
+    go(chapterPath(nid, cid, { step: s, tab: urlTab }), { replace: how === 'replace' })
+  }, [nid, cid, go, urlTab])
 
   const openNovel = async (target: string) => {
     if (!(await confirmLeave())) return
-    clearWork()
-    setChapter(null)
     // 同一本：地址相同时不导航，默认分区 effect 也不会动，所以直接回到它的默认分区
     if (!go(novelPath(target)) && novel) {
       go(novelPath(target, novel.memory.lifecycle.some((e) => e.status === 'proposed') ? 'memory' : 'overview'))
@@ -510,24 +542,16 @@ export default function App() {
 
   // 成功的：直接打开它产出的那一版（版本号 = 任务号），不留一个跑完的任务面板；失败的接上任务面板看原因
   openFromToast.current = (j) => {
-    const { novel_id: nid, chapter_id: cid } = j
-    if (nid && cid) {
-      if (j.status === 'failed') void openChapter(cid, nid, j.id)
-      // 已经在这一章：和点版本条一样只换版本；否则和侧栏打开别的章节一样
-      else if (novel?.id === nid && chapter?.id === cid) { void confirmLeave().then((ok) => { if (ok) void openVersion(nid, cid, j.id) }) }
-      else void openChapter(cid, nid, undefined, j.id)
-    } else openJob(j as unknown as JobSummary)
+    const { novel_id: n, chapter_id: c } = j
+    if (n && c) void openChapter(c, n, j.status === 'failed' ? j.id : undefined, j.status === 'failed' ? undefined : j.id)
+    else openJob(j as unknown as JobSummary)
   }
 
   /** 左栏点分区：在章节里就先离开章节（未保存走 confirmLeave），回到小说层的那个分区 */
   const gotoSection = async (sec: Section) => {
-    if (chapter) {
-      if (!(await confirmLeave())) return
-      clearWork()
-      setChapter(null)
-      if (novel) void reloadOpen(novel.id)
-    }
-    if (novel) go(novelPath(novel.id, sec))
+    if (!nid) return
+    if (chapter && !(await confirmLeave())) return
+    go(novelPath(nid, sec))
   }
 
   const undo = () => {
@@ -611,9 +635,7 @@ export default function App() {
     try {
       const c = await createChapter(novel.id, t('app.chapterDefault', { n: novel.chapters.length + 1 }))
       await refreshNovels()
-      await openChapter(c.id, novel.id)
-      const n = await getNovel(novel.id)
-      if (openNovelId.current === novel.id) setNovel(n)
+      await openChapter(c.id, novel.id, undefined, undefined, { force: true })
       bumpSummary()
     } catch (e) {
       notice.err(t('app.err.createChapter', { msg: msg(e) }))
@@ -681,9 +703,7 @@ export default function App() {
     try {
       await deleteChapter(novel.id, chapter.id)
       bumpSummary()
-      clearWork()
-      setChapter(null)
-      await reloadOpen(novel.id)
+      navigate(novelPath(novel.id, 'chapters'), { replace: true, state: { force: true } })
       void refreshNovels()
     } catch (e) {
       notice.err(t('app.err.remove', { msg: msg(e) }))
@@ -789,7 +809,7 @@ export default function App() {
   const converting = !!chapter && (running.some((j) => j.chapter_id === chapter.id)
     || (!!job && RUNNING.includes(job.status)))
   /** 章节打开时复验报告与分镜视图进工作流的 ③④⑤；本地 JSON 与分批预览（属于 ② 的进度）留在原位 */
-  const inWorkflow = !!(novel && chapter && !preview)
+  const inWorkflow = !!(shown && chapter && chapter.id === cid && !preview)
   const board = (
     <>
       {verification && <div id="verification"><VerificationPanel report={verification} doc={doc} /></div>}
@@ -880,11 +900,11 @@ export default function App() {
                            <AssistantPanel novelId={shown.id}
                                            chapters={shown.chapters.map((c) => ({ id: c.id, title: c.title }))}
                                            onGoto={(g) => {
-                                             // 先登记再打开（工作台挂载时取走）；没打开成（离开被取消、读取失败）就撤掉，免得下次进这章才生效
-                                             requestStep(g.chapter_id, g.step)
-                                             if (g.chapter_id !== chapter?.id) {
-                                               void openChapter(g.chapter_id).then((ok) => { if (!ok) cancelStep(g.chapter_id) })
-                                             }
+                                             if (!nid) return
+                                             if (g.chapter_id === cid) { go(chapterPath(nid, cid, { step: g.step }), { replace: true }); return }
+                                             void confirmLeave().then((ok) => {        // 第 5 步删掉这层确认
+                                               if (ok) go(chapterPath(nid, g.chapter_id, { step: g.step }))
+                                             })
                                            }} />
                          ) : undefined}
                          onOpenDone={(d) => openFromToast.current(d)}
@@ -928,7 +948,7 @@ export default function App() {
         ) : (
           <div className="main">
             {loc.kind === 'notFound' && <NotFound onHome={() => go('/')} />}
-            {nid && novel?.id !== nid && (
+            {((nid && novel?.id !== nid) || (cid && chapter?.id !== cid)) && (
               <div className="flex flex-col gap-3" data-testid="route-loading" aria-label={t('route.loading')}>
                 <Skeleton className="h-8 w-1/3" /><Skeleton className="h-40 w-full" />
               </div>
@@ -937,7 +957,7 @@ export default function App() {
               <ShelfHome novels={novels} running={running} disabled={busy || svcDown}
                          onSubmit={(n) => void submitNovel(n)} onOpenNovel={(nid) => void openNovel(nid)} />
             )}
-            {novel && novel.id === nid && !chapter && (
+            {novel && novel.id === nid && loc.kind === 'novel' && (
               <NovelPage
                 key={novel.id}
                 novel={novel}
@@ -952,7 +972,7 @@ export default function App() {
                 onImportChapters={(list) => void importChapters(list)} importing={importing}
               />
             )}
-            {novel && novel.id === nid && chapter && (
+            {novel && novel.id === nid && chapter && chapter.id === cid && (
               <ChapterWorkflow
                 key={chapter.id}
                 novel={novel}
@@ -982,6 +1002,9 @@ export default function App() {
                   .then(() => reloadOpen(novel.id, chapter.id))
                   .catch((e) => setAlert(msg(e)))}
                 storyboard={inWorkflow ? board : null}
+                step={loc.kind === 'chapter' ? loc.step : null}
+                onStep={stepNav}
+                onViewChange={onViewChange}
                 openFilm={() => setOpenFilmN((n) => n + 1)}
                 flow={flow}
               />

@@ -65,6 +65,12 @@ interface Props {
   onRerunDigest: () => void
   /** ③④⑤ 的工作区：复验报告 + 分镜视图（App 组好传进来） */
   storyboard: ReactNode
+  /** 地址里的步骤段（§4.2）：给了就停在这一步，并当作助手请求（首次落地优先于自动跟步）；null/不给 = 步骤是组件内状态 */
+  step?: StepId | null
+  /** 用户换步骤时 push、自动跟步时 replace（只在地址带步骤段时）；不给 = 只改组件内状态 */
+  onStep?: (s: StepId, how: 'push' | 'replace') => void
+  /** 实际显示的步骤（上层拼页签、画布地址用） */
+  onViewChange?: (s: StepId) => void
   /** 打开画布并切到「出片」页 */
   openFilm: () => void
   flow: ReturnType<typeof useChapterFlow>
@@ -93,7 +99,7 @@ interface Seen {
 export function ChapterWorkflow({
   novel, chapter, docVid, doc, dirty, saving, verificationFailed, converting, disabled, running, liveJobId, onOpenJob,
   onConvert, onOpenVersion, onAdopt, onDeleteVersion, onSaveText, onSave, onUndo, onTextDirty, onDelete, onRerunDigest,
-  storyboard, openFilm, flow,
+  storyboard, step = null, onStep, onViewChange, openFilm, flow,
 }: Props) {
   const { t } = useI18n()
   const m = useMotionPresets()
@@ -127,7 +133,17 @@ export function ChapterWorkflow({
   const cur = currentStep(input)
   // 跟步只看「做完了什么」：未保存的修改不算（否则保存或撤销会被当成往后走）
   const followCur = currentStep({ ...input, dirty: false, textDirty: false })
-  const [view, setView] = useState<StepId>(cur)
+  const [view, setView] = useState<StepId>(step ?? cur)
+  const stepRef = useRef<StepId | null>(step)
+  stepRef.current = step
+  /** 程序换步骤（自动跟步、换版本落地）：地址带步骤段时用 replace 同步地址；否则只改组件内状态 */
+  const follow = useCallback((s: StepId) => {
+    setView(s)
+    if (stepRef.current && stepRef.current !== s) onStep?.(s, 'replace')
+  }, [onStep])
+  /** 用户换步骤（步骤条、主按钮、空态按钮、改原文）：受控时 push 地址，地址回来再切；不受控直接切 */
+  const go = (s: StepId) => { if (onStep) onStep(s, 'push'); else setView(s) }
+  useEffect(() => { onViewChange?.(view) }, [view, onViewChange])
 
   // 跟步与完成提示：只在「该做的那一步」往后走时跟；进章节的第一次计算、换版本后的首次读取都不提示
   const seen = useRef<Seen | null>(null)
@@ -139,6 +155,12 @@ export function ChapterWorkflow({
   useEffect(() => () => setWhere({}), [])
   // 助手要的那一步：出片状态落地前先记着，落地后的「停到该做的那一步」不能把它盖掉
   const asked = useRef<StepId | null>(null)
+  // 地址里的步骤变了（点步骤条、后退前进、助手跳步）：切过去，并当作助手请求
+  useEffect(() => {
+    if (!step) return
+    asked.current = step
+    setView(step)
+  }, [step])
   useEffect(() => {
     const take = () => { const s = takeStep(chapter.id); if (s) { asked.current = s; setView(s) } }
     take()
@@ -178,19 +200,19 @@ export function ChapterWorkflow({
     if (vid && before.vid !== vid) {
       // 换了版本（含进章节后第一次打开版本、生成完摆出新版本）：等同重新进章节，停到这一版该做的那一步；
       // 助手刚请求了某一步就停在那一步
-      setView(want ?? followCur)
+      follow(want ?? followCur)
     } else if (want) {
       // 已落地时收到的请求 take 里已经切过去了，这里不再往前跟
     } else if (idx(followCur) > idx(before.cur) && idx(followCur) > idx(view)) {
       // 只往前跟，且不把视图往回拉
-      setView(followCur)
+      follow(followCur)
     }
     if (before.vid === vid) {
       if (!before.render && now.render) toast.success(t('flow.done.render'))
       if (!before.compose && now.compose) toast.success(t('flow.done.compose'))
     }
     seen.current = { cur: followCur, vid, ...now, awaitingGen, genJob }
-  }, [followCur, view, vid, settled, converting, live, shots, genDone, renderDone, composeDone, genJobNow, hasVersions, t])
+  }, [followCur, view, vid, settled, converting, live, shots, genDone, renderDone, composeDone, genJobNow, hasVersions, t, follow])
 
   const saveText = async () => {
     setSavingText(true)
@@ -208,7 +230,7 @@ export function ChapterWorkflow({
   const run = () => {
     switch (primary.action) {
       case 'saveText': void saveText(); break
-      case 'goto': if (primary.goto) setView(primary.goto); break
+      case 'goto': if (primary.goto) go(primary.goto); break
       case 'generate': onConvert({ ...(mode ? { narration_mode: mode } : {}), strict }); break
       case 'save': onSave(); break
       case 'openFilm': openFilm(); break
@@ -229,14 +251,14 @@ export function ChapterWorkflow({
     : primary.action === 'save' ? saving
     : primary.action === 'saveText' ? savingText : false
   const fix = (f: Fix) => {
-    if (f.step) setView(f.step)
+    if (f.step) go(f.step)
     const target = f.target
     if (target) nextFrame(() => flashTarget(target))
     if (f.openFilm) openFilm()
   }
   /** ⑥「回到画布重新合成」：先回到 ⑤ 把分镜视图挂上，下一帧再打开画布（同一帧里加的计数会被新挂载的视图当成旧的） */
   const recompose = () => {
-    setView('compose')
+    go('compose')
     nextFrame(openFilm)
   }
 
@@ -264,7 +286,7 @@ export function ChapterWorkflow({
               <section className="chap">
                 <GenerateStep novel={novel} chars={chapter.text.trim().length} mode={mode} strict={strict}
                               converting={converting} onMode={setMode} onStrict={setStrict}
-                              onEditSource={() => setView('import')}
+                              onEditSource={() => go('import')}
                               onOpenJob={liveJob ? () => onOpenJob(liveJob) : undefined} />
               </section>
               {bar}
@@ -284,14 +306,14 @@ export function ChapterWorkflow({
           </div>
         ) : (
           <EmptyState icon={<Film className="size-6" />} title={t('flow.empty.film')} hint={t('flow.empty.filmHint')}
-                      action={<Button variant="outline" onClick={() => setView('compose')}>{t('flow.goNeeded', { n: 5 })}</Button>} />
+                      action={<Button variant="outline" onClick={() => go('compose')}>{t('flow.goNeeded', { n: 5 })}</Button>} />
         )
       default:
         return (
           <>
             {!doc && (
               <EmptyState icon={<Clapperboard className="size-6" />} title={t('flow.empty.board')} hint={t('flow.empty.boardHint')}
-                          action={<Button variant="outline" onClick={() => setView('storyboard')}>{t('flow.goNeeded', { n: 2 })}</Button>} />
+                          action={<Button variant="outline" onClick={() => go('storyboard')}>{t('flow.goNeeded', { n: 2 })}</Button>} />
             )}
             {storyboard}
           </>
@@ -300,7 +322,7 @@ export function ChapterWorkflow({
   })()
 
   // 步骤条在顶栏中间的插槽里；拿不到插槽（单测等）时留在章节页原位
-  const stepper = <Stepper states={stepStates(input)} view={view} onView={setView} compact={!!slot && (narrowBar || !barFits)} />
+  const stepper = <Stepper states={stepStates(input)} view={view} onView={go} compact={!!slot && (narrowBar || !barFits)} />
   const headShots = doc ? doc.episodes.reduce((n, e) => n + e.shots.length, 0) : version?.shots ?? null
   const headSeconds = doc ? doc.episodes.reduce((n, e) => n + e.shots.reduce((a, sh) => a + playableSeconds(sh), 0), 0) : null
   const headProps = {
