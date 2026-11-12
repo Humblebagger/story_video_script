@@ -464,5 +464,26 @@ must(calls.includes(`GET /files/clips/${first}.t1.mp4`), '取的是采用那次�
 await click(container.querySelector('.tlc__play')!)
 console.log('11. 播成片 ✓')
 
+// 12. 卡片内确认（runClipNow）：409 带新金额时返回新金额，不弹确认框；成功返回 null
+{
+  const { useFilm } = await import('../src/useFilm')
+  let hook: ReturnType<typeof useFilm> | null = null
+  function Probe() { hook = useFilm({ nid: 'n1', cid: 'c1', vid: 'v1' }, { active: true }); return null }
+  const probeRoot = createRoot(win.document.createElement('div') as unknown as HTMLElement)
+  await act(async () => { probeRoot.render(<Probe />) })
+  await settle()
+  const id = film!.clips[0].id
+  Object.assign(clipOf(id), { state: 'planned', error: null })
+  film = recount(film!)
+  nextConflict = 77.7
+  let got: number | null = null
+  await act(async () => { got = await hook!.runClipNow(id, 5) })
+  must(got === 77.7, '409 带新金额：返回新金额')
+  await act(async () => { got = await hook!.runClipNow(id, 77.7) })
+  must(got === null && clipOf(id).state === 'queued', '成功返回 null、段已排队')
+  await act(async () => { probeRoot.unmount() })
+  console.log('12. 卡片内确认的金额回传 ✓')
+}
+
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

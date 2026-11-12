@@ -108,29 +108,37 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     }
   }, [accept, fail])
 
-  /** 花钱的操作：409 带了重算金额就放回确认框，等用户再确认 */
-  const spend = async (fn: () => Promise<FilmSession>, again: (cny: number) => FilmConfirm) => {
+  /** 花钱请求的唯一执行体：返回结局，由两个薄封装各自处理确认框 / 卡片。
+   *  stale 为请求期间会话已换（切版本等），结果作废；revised 为服务端重算的金额对不上（409 带新金额） */
+  const runPaid = useCallback(async (fn: () => Promise<FilmSession>):
+      Promise<{ kind: 'ok' | 'stale' | 'failed' } | { kind: 'revised'; cny: number }> => {
     const mine = gen.current
     setBusy(true)
     setError(null)
     try {
       const got = await fn()
-      if (gen.current !== mine) return
+      if (gen.current !== mine) return { kind: 'stale' }
       accept(got, true)
-      setConfirm(null)
+      return { kind: 'ok' }
     } catch (e) {
-      if (gen.current !== mine) return
+      if (gen.current !== mine) return { kind: 'stale' }
       const fresh = conflictCny(e)
       if (fresh !== null) {
-        setConfirm(again(fresh))
         void load()
-      } else {
-        setConfirm(null)
-        fail(e)
+        return { kind: 'revised', cny: fresh }
       }
+      fail(e)
+      return { kind: 'failed' }
     } finally {
       if (gen.current === mine) setBusy(false)
     }
+  }, [accept, fail, load])
+
+  /** 花钱的操作（确认框）：409 带了重算金额就放回确认框，等用户再确认 */
+  const spend = async (fn: () => Promise<FilmSession>, again: (cny: number) => FilmConfirm) => {
+    const r = await runPaid(fn)
+    if (r.kind === 'ok' || r.kind === 'failed') setConfirm(null)
+    else if (r.kind === 'revised') setConfirm(again(r.cny))
   }
   const sendClip = (clipId: string, cny?: number) =>
     spend(() => runFilmClip(nid!, cid!, vid!, clipId, cny),
@@ -138,28 +146,11 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const sendRest = (cny: number) =>
     spend(() => runFilmRest(nid!, cid!, vid!, cny), (fresh) => ({ kind: 'rest', cny: fresh, changed: true }))
 
-  /** 卡片内确认的花钱操作（节点图）：成功返回 null；服务端重算的金额对不上（409 带新金额）返回新金额，由卡片再问一次 */
-  const spendInline = useCallback(async (fn: () => Promise<FilmSession>): Promise<number | null> => {
-    const mine = gen.current
-    setBusy(true)
-    setError(null)
-    try {
-      const got = await fn()
-      if (gen.current === mine) accept(got, true)
-      return null
-    } catch (e) {
-      if (gen.current !== mine) return null
-      const fresh = conflictCny(e)
-      if (fresh !== null) {
-        void load()
-        return fresh
-      }
-      fail(e)
-      return null
-    } finally {
-      if (gen.current === mine) setBusy(false)
-    }
-  }, [accept, fail, load])
+  /** 卡片内确认的花钱操作（节点图）：成功返回 null；服务端重算的金额对不上返回新金额，由卡片再问一次 */
+  const spendInline = async (fn: () => Promise<FilmSession>): Promise<number | null> => {
+    const r = await runPaid(fn)
+    return r.kind === 'revised' ? r.cny : null
+  }
   /** 改自由节点（卡片上的防抖保存要用稳定的引用） */
   const patchFree = useCallback((fid: string, patch: FreePatch) =>
     apply(() => patchFreeNode(nid!, cid!, vid!, fid, patch)), [apply, nid, cid, vid])
