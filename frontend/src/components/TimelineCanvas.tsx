@@ -315,7 +315,9 @@ export function TimelineCanvas({
     if (!playing) return
     let last = performance.now()
     let raf = 0
+    let cancelled = false
     const tick = (now: number) => {
+      if (cancelled) return
       // 累计在 ref 里而不是读上一帧渲染出的 t：两帧之间不保证已经重新渲染过
       const end = Math.min(tl.total, stopAt.current ?? tl.total)
       // rAF 的时间戳是这一帧的起点，可能早于开播那一刻：不夹住的话首帧会倒退，从镜首开播会退回上一镜
@@ -327,10 +329,10 @@ export function TimelineCanvas({
         setPlaying(false)
         return
       }
-      raf = requestAnimationFrame(tick)
+      if (!cancelled) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    return () => { cancelled = true; cancelAnimationFrame(raf) }
   }, [playing, speed, tl.total])
 
   const x = (sec: number) => GUTTER + tx + sec * pps

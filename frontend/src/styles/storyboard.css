@@ -112,7 +112,7 @@
 }
 .ep__caret.is-open { transform: rotate(90deg); }
 .ep__id { font-family: var(--font-mono); font-size: 12px; color: var(--ui-muted-foreground); }
-.ep__title { font-size: 15px; font-weight: 600; line-height: 1.4; }
+.ep__title { min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .ep__count { font-variant-numeric: tabular-nums; }
 .ep__mood { margin-left: auto; }
 .ep__mood i {
