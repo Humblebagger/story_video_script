@@ -436,7 +436,11 @@ export default function App() {
 
   /** 正在读某一版（画布地址要等它读完才能判断挂不挂得上） */
   const [versionLoading, setVersionLoading] = useState(false)
+  /** 只有最近一次读版本的请求拥有 versionLoading；换章时一并清掉（新章可能根本没有版本要读） */
+  const versionSeq = useRef(0)
+  useEffect(() => { versionSeq.current += 1; setVersionLoading(false) }, [cid])
   const openVersion = useCallback(async (nid: string, cid: string, vid: string) => {
+    const seq = ++versionSeq.current
     setVersionLoading(true)
     reset()
     previewFor.current = null
@@ -463,7 +467,7 @@ export default function App() {
     } catch (e) {
       setAlert(t('app.err.version', { msg: msg(e) }))
     } finally {
-      if (openChapterId.current === cid) setVersionLoading(false)
+      if (versionSeq.current === seq) setVersionLoading(false)
     }
   }, [reset, t])
   fns.current.attach = attach

@@ -257,10 +257,11 @@ export function ChapterWorkflow({
     const target = f.target
     if (target) nextFrame(() => flashTarget(target))
   }
-  /** ⑥「回到画布重新合成」：先回到 ⑤ 把分镜视图挂上，下一帧再打开画布（同一帧里加的计数会被新挂载的视图当成旧的） */
+  /** ⑥「回到画布重新合成」：受控时一次 push /compose/canvas；不受控时先回 ⑤ 挂上分镜视图，下一帧再开画布 */
   const recompose = () => {
+    if (onStep) { openFilm('compose'); return }
     go('compose')
-    nextFrame(openFilm)
+    nextFrame(() => openFilm())
   }
 
   const inlineBar = CARD.includes(view)

@@ -155,13 +155,13 @@ console.log('4. flashTarget ✓')
   const flowOf = (f: FilmSession | null, loaded = true) =>
     ({ film: f, compose: null, finalStale: false, reload: async () => {}, loaded, pending: false })
   let films = 0
-  const wf = (p: { docVid: string | null; dirty?: boolean; flow: ReturnType<typeof flowOf> }) => (
+  const wf = (p: { docVid: string | null; dirty?: boolean; flow: ReturnType<typeof flowOf>; ctl?: object; films?: (s?: string) => void }) => (
     <ChapterWorkflow novel={novel} chapter={chapter} docVid={p.docVid} doc={null} dirty={!!p.dirty} saving={false}
                      verificationFailed={false} converting={false} disabled={false} running={[]} liveJobId={null}
                      onOpenJob={() => {}} onConvert={() => {}} onOpenVersion={() => {}} onAdopt={() => {}}
                      onDeleteVersion={() => {}} onSaveText={async () => {}} onSave={() => {}} onUndo={() => {}}
                      onTextDirty={() => {}} onDelete={() => {}} onRerunDigest={() => {}}
-                     storyboard={<div data-testid="board" />} openFilm={() => { films++ }} flow={p.flow as never} />
+                     storyboard={<div data-testid="board" />} openFilm={(s) => { films++; p.films?.(s) }} flow={p.flow as never} {...p.ctl} />
   )
   const on = (id: string) => !!q(`[data-step="${id}"][aria-current="step"]`)
   await render(null)
@@ -199,6 +199,19 @@ console.log('4. flashTarget ✓')
   must(on('render'), '换到没出过片的版本：重新停到 ④，不停在灰掉的 ⑥ 或用户之前看的步骤')
   await render(null)
   console.log('5. ChapterWorkflow 跟步 ✓')
+
+  // 5a. 受控（给了 onStep）：回到画布重新合成 = 只调一次 openFilm('compose')，不先 onStep（否则成两次 push）
+  {
+    const steps: string[] = []; const opened: (string | undefined)[] = []
+    await render(wf({ docVid: 'v1', flow: flowOf(full), films: (s) => opened.push(s),
+      ctl: { step: 'download', onStep: (s: string, how: string) => steps.push(`${how}:${s}`) } }))
+    await click(qa('[data-testid="download-step"] button').find((b) => (b.textContent ?? '').includes('回到画布重新合成')))
+    await settle()
+    must(opened.length === 1 && opened[0] === 'compose', `受控 recompose 应只 openFilm('compose')，实际 ${opened}`)
+    must(!steps.some((x) => x.startsWith('push')), `受控 recompose 不应先 push 步骤：${steps}`)
+    await render(null)
+  }
+  console.log('5a. 受控 recompose 单次导航 ✓')
 
   // 5b. 助手跳进还没打开的章：版本与出片状态后到，也停在请求的那一步，不被「该做的那一步」盖掉；之后照常跟步
   const { requestStep } = await import('../src/lib/assistantBridge')

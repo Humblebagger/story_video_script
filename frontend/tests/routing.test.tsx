@@ -103,6 +103,9 @@ function resetData() {
   }
 }
 const unhandled = new Set<string>()
+/** 测试用：让章节与版本的读取慢下来（lag 毫秒），或卡在 gate 上直到放行 */
+let lag = 0
+let gate: Promise<void> | null = null
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '').split('?')[0]
   const method = init?.method ?? 'GET'
@@ -126,6 +129,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     if (nid !== novel.id) return err(404, '小说不存在')
     if (summary) return err(404, 'stub')                                  // 费用表拿不到就不显示
     if (!cid) return json(novelView(novel))
+    if (lag) await new Promise((r) => setTimeout(r, lag))
+    if (vid && gate) await gate
     const c = novel.chapters.find((x) => x.id === cid)
     if (!c) return err(404, '章节不存在')
     if (!vid) return json(chapterView(c))
@@ -378,6 +383,50 @@ console.log('9b. jumpShot ✓')
   await a.done()
 }
 console.log('3. 不能开画布 → 规范化 ✓')
+
+// 深链接首帧：章节与版本都慢到（异步），画布地址不能被规范化掉
+{
+  lag = 60
+  const a = await boot('/novels/n1/chapters/c1/render/canvas?view=graph', 'alice')
+  await settle(400)
+  lag = 0
+  must(a.here() === '/novels/n1/chapters/c1/render/canvas?view=graph', `慢加载期间画布地址不应被改，实际 ${a.here()}`)
+  must(!!a.q('.tlc'), '加载完画布打开')
+  await a.done()
+}
+console.log('1c. 深链接首帧不误规范化 ✓')
+
+// 受控 recompose 在 workflow-ui.test 里覆盖；这里覆盖 openFilm 一次 push 到画布地址
+{
+  const a = await boot('/novels/n1/chapters/c1/compose', 'alice')
+  const before = a.router.state.historyAction
+  void before
+  const open = button(a.container, '时间轴画布') ?? a.q('[title*="画布"]')
+  await click(open!)
+  must(a.here() === '/novels/n1/chapters/c1/compose/canvas' && a.router.state.historyAction === 'PUSH', '⑤ 上开画布是一次 push')
+  await act(async () => { await a.router.navigate(-1) })
+  await settle()
+  must(a.here() === '/novels/n1/chapters/c1/compose', `后退一步直接回 ⑤，没有中间项，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('开画布一次 push、后退一步 ✓')
+
+// 换章时旧章的读版本还没回来；新章没有版本：深链接的画布地址仍要规范化
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  novel.chapters.push({ id: 'c2', title: '第二章', order: 2, text: '他出门。', adopted_version: null, digest: null, versions: [] })
+  let release!: () => void
+  gate = new Promise<void>((r) => { release = r })
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c1/review') })
+  await settle(150)
+  await act(async () => { await a.router.navigate('/novels/n1/chapters/c2/review/canvas') })
+  await settle(200)
+  release(); gate = null
+  await settle(300)
+  must(a.here() === '/novels/n1/chapters/c2', `旧章读版本迟到后，新章画布地址仍应规范化，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('换章时迟到的读版本不卡住规范化 ✓')
 
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 console.log('\nALL PASS')
