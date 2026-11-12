@@ -93,6 +93,12 @@ def main() -> int:
     r = c.patch(R + "/free/F02", headers=H, json={"target": None})
     assert pick(r.json(), "F02")["target"] is None
     assert c.patch(R + "/free/F09", headers=H, json={"prompt": "x"}).status_code == 404
+    # 时长传 null 或非数字：422，已存的时长不变
+    before = pick(c.get(R + "/session", headers=H).json(), "F02")["duration"]
+    for bad in (None, "abc"):
+        r = c.patch(R + "/free/F02", headers=H, json={"duration": bad})
+        assert r.status_code == 422, r.text      # "abc" 在请求体校验层就被拒，null 由 free.update 兜住
+        assert pick(c.get(R + "/session", headers=H).json(), "F02")["duration"] == before
     print("2. 修改 ✓")
 
     # 3. 生成：没写提示词 422；超确认线 409 带金额；带上金额排队；出片线程按节点组装请求；取文件

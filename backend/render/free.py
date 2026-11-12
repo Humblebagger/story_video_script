@@ -148,7 +148,11 @@ def update(root, ctx: Ctx, fid: str, patch: dict) -> dict:
         if "duration" in patch:
             if n.get("target"):
                 raise sess.SessionError("挂靠某一段的节点时长跟随那一段，不能单独改")
-            n["duration"] = round(float(patch["duration"]), 1)
+            try:
+                dur = round(float(patch["duration"]), 1)
+            except (TypeError, ValueError):
+                raise sess.SessionError(f"时长要在 1 到 {caps.max_clip_sec:g} 秒之间")
+            n["duration"] = dur
         if "prompt" in patch:
             n["prompt"] = str(patch["prompt"] or "")
         if "refs" in patch:
