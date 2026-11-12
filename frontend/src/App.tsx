@@ -371,10 +371,11 @@ export default function App() {
     if (novelRef.current?.id !== nid) setNovel(null)
     setChapter(null)
     let live = true
+    const ep = epoch.current
     const st = navStateRef.current
     void (async () => {
       const [nr, cr] = await Promise.allSettled([getNovel(nid), cid ? getChapter(nid, cid) : Promise.resolve(null)])
-      if (!live) return
+      if (!live || epoch.current !== ep) return
       const gone = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 403)
       if (nr.status === 'rejected') {
         if (gone(nr.reason)) { toast.error(f.t('route.err.novelGone')); navigate('/', { replace: true, state: { force: true } }) }
@@ -871,6 +872,7 @@ export default function App() {
 
   const resetSignedOut = () => {
     epoch.current += 1
+    setRoleOf(null)           // 旧会话的角色确认不带到下一次登录
     keepOnlyAssistant(null)   // 退出登录：中断助手回答，丢掉所有对话
     clearWork()
     setUser(null)

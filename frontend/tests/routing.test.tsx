@@ -584,6 +584,45 @@ console.log('I2. /admin 等角色确认 ✓')
 }
 console.log('I3. force 不污染历史条目 ✓')
 
+const openLogin = async (box: HTMLElement) => {
+  const b = [...box.querySelectorAll('button')].find((x) => (x.textContent ?? '').trim() === '登录') as unknown as HTMLElement | undefined
+  if (b) await click(b)
+}
+// I2 补：退出再以同一账号登录，旧会话的角色确认不带过来；/admin 等新的 me() 回来再判定
+{
+  const a = await boot('/novels/n1/overview', 'alice')
+  await click(a.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
+  await settle(200)
+  let release!: () => void
+  meGate = new Promise<void>((r) => { release = r })
+  await act(async () => { await a.router.navigate('/') }); await settle()
+  await openLogin(a.container)
+  await loginAs('alice', 'pw')
+  await settle(600)
+  await act(async () => { await a.router.navigate('/admin') }); await settle(100)
+  must(a.here() === '/admin', `新会话 me() 回来前不应重定向，实际 ${a.here()}`)
+  release(); meGate = null
+  await settle(300)
+  must(a.here() === '/', `确认非管理员后才离开，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('I2b. 重登后角色确认重新等待 ✓')
+
+// I4 补：加载章节途中退出再以同一账号登录，旧会话的响应不写进新会话
+{
+  lag = 300
+  const a = await boot('/novels/n1/chapters/c1', 'alice')
+  await click(a.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
+  await settle(100)
+  await openLogin(a.container)
+  await loginAs('alice', 'pw')
+  await settle(900)
+  lag = 0
+  must(a.here() === '/' && !a.has('生成分镜'), `旧会话的章节不应出现在新会话，实际 ${a.here()}`)
+  await a.done()
+}
+console.log('I4b. 重登后旧会话的加载响应被丢弃 ✓')
+
 if (unhandled.size) console.log('（桩后端未处理：' + [...unhandled].join('，') + '）')
 // §12.3-3 非法 section / step / tab / view：规范化到上级（replace）
 for (const [from, to] of [
