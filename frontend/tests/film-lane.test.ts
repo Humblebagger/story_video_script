@@ -3,10 +3,11 @@
 import { readFileSync } from 'node:fs'
 import { buildTimeline } from '../src/timeline'
 import {
-  batchSummary, chosenAttempt, clipOffset, clipSpans, firstFrameText, laneKind, laneText, laneTitle,
-  mainAction, needsConfirm, pollDelay, POLL_FAST_MS, POLL_SLOW_MS, precheck, spanAt,
+  anyInFlight, batchSummary, chosenAttempt, clipOffset, clipSpans, copyIndex, firstFrameText, laneKind, laneText,
+  laneTitle, mainAction, needsConfirm, pollDelay, POLL_FAST_MS, POLL_SLOW_MS, precheck, slotsNeeded, spanAt,
+  tailSources,
 } from '../src/film'
-import type { FilmAttempt, FilmClip, FilmSession, Storyboard } from '../src/types'
+import type { FilmAttempt, FilmClip, FilmFreeNode, FilmSession, Storyboard } from '../src/types'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
 const doc: Storyboard = JSON.parse(
@@ -110,6 +111,33 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
        === '接力上一段（E01-C01）的尾帧', '尾帧接力')
   must(firstFrameText(clip('x', [])) === '不带首帧', '无首帧')
   console.log('5. 轮询、前置检查、首帧 ✓')
+}
+
+// 6. 自由节点：在跑也快轮询；复制件不算「试段已出」；尾帧来源；参考位；首帧说明；复制件下标
+{
+  const n = (over: Partial<FilmFreeNode> = {}): FilmFreeNode => ({
+    id: 'F01', target: null, target_shots: null, target_lost: false, prompt: 'p', refs: [], first_frame: null,
+    duration: 5, estimate_cny: 5, state: 'planned', error: null, uncertain: false, attempts: [], chosen: null,
+    created_at: '', over_refs: false, ...over,
+  })
+  const s = session([clip('C1', [])], { free: [n({ state: 'running' })] })
+  must(anyInFlight(s) && pollDelay(s, true) === POLL_FAST_MS, '自由节点在跑也快轮询')
+  must(!anyInFlight(session([clip('C1', [])], { free: [n()] })), '没在跑')
+  const copied = session([clip('C1', [], { attempts: [{ ...ok, free_id: 'F01', cost_cny: 0 }] }), clip('C2', [])])
+  must(mainAction(copied, null).kind === 'try', '复制件不算试段已出')
+  const src = session([clip('C1', [], { attempts: [ok], chosen: 0, state: 'done' }), clip('C2', [])],
+                      { free: [n({ id: 'F02', attempts: [ok], chosen: 0, state: 'done' }), n({ id: 'F03' })] })
+  must(tailSources(src).join() === 'C1,F02', '有尾帧的才能作首帧来源')
+  must(slotsNeeded(['a', 'b'], 'keyframe:x', src) === 3 && slotsNeeded([], 'keyframe:x', src) === 0
+       && slotsNeeded(['a'], null, src) === 1, '首帧与参考图不能同用时首帧占一位')
+  must(slotsNeeded(['a'], 'k', session([], { options: { ...src.options, frame_with_refs: true } })) === 1,
+       '能同用时首帧不占位')
+  must(firstFrameText({ first_frame: 'tail:F02', frame_mode: null }) === 'F02 的尾帧', '尾帧首帧说明')
+  must(chosenAttempt(n({ attempts: [ok], chosen: 0 }))?.task_id === 't1', '自由节点也能取采用的那次')
+  const att = session([clip('C1', [], { attempts: [ok, { ...ok, task_id: 't9', free_id: 'F01' }] })])
+  must(copyIndex(att, n({ target: 'C1' }), { ...ok, task_id: 't9' }) === 1, '找到复制进段里的那次')
+  must(copyIndex(att, n({ target: 'C1' }), ok) === -1 && copyIndex(att, n(), ok) === -1, '找不到为 -1')
+  console.log('6. 自由节点 ✓')
 }
 
 console.log('\nALL PASS')

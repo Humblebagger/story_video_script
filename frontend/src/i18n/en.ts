@@ -1116,6 +1116,7 @@ export const en: Messages = {
     keyframe: 'Keyframe {id}',
     keyframeRefSlot: ' (uses the first reference slot)',
     relay: 'Last frame of the previous clip ({id})',
+    tail: 'Last frame of {id}',
     gateFailed: 'The storyboard did not pass the integrity check',
     readClipFailed: 'Could not read the clip file: {error}',
     style: {

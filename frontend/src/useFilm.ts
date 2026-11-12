@@ -5,12 +5,12 @@
  *  服务端重算的金额对不上（409）就把新金额放回 confirm 让用户再确认。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ApiError, chooseFilmAttempt, conflictCny, createFilm, filmFileUrl, getFilm, muteFilmClip, patchFilm,
-  runFilmClip, runFilmRest,
+  ApiError, chooseFilmAttempt, chooseFreeAttempt, conflictCny, createFilm, createFreeNode, deleteFreeNode,
+  filmFileUrl, getFilm, muteFilmClip, patchFilm, patchFreeNode, runFilmClip, runFilmRest, runFreeNode,
 } from './api'
 import { tr } from './i18n/core'
 import { needsConfirm, pollDelay } from './film'
-import type { FilmClip, FilmSession, FilmSettings, VersionRef } from './types'
+import type { FilmClip, FilmSession, FilmSettings, FreePatch, VersionRef } from './types'
 
 export type FilmConfirm =
   | { kind: 'clip'; clipId: string; cny: number; changed: boolean; uncertain?: boolean }
@@ -138,6 +138,32 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const sendRest = (cny: number) =>
     spend(() => runFilmRest(nid!, cid!, vid!, cny), (fresh) => ({ kind: 'rest', cny: fresh, changed: true }))
 
+  /** 卡片内确认的花钱操作（节点图）：成功返回 null；服务端重算的金额对不上（409 带新金额）返回新金额，由卡片再问一次 */
+  const spendInline = useCallback(async (fn: () => Promise<FilmSession>): Promise<number | null> => {
+    const mine = gen.current
+    setBusy(true)
+    setError(null)
+    try {
+      const got = await fn()
+      if (gen.current === mine) accept(got, true)
+      return null
+    } catch (e) {
+      if (gen.current !== mine) return null
+      const fresh = conflictCny(e)
+      if (fresh !== null) {
+        void load()
+        return fresh
+      }
+      fail(e)
+      return null
+    } finally {
+      if (gen.current === mine) setBusy(false)
+    }
+  }, [accept, fail, load])
+  /** 改自由节点（卡片上的防抖保存要用稳定的引用） */
+  const patchFree = useCallback((fid: string, patch: FreePatch) =>
+    apply(() => patchFreeNode(nid!, cid!, vid!, fid, patch)), [apply, nid, cid, vid])
+
   /** 取一个片段文件（视频、尾帧）的 blob URL：每个只取一次 */
   const ensure = useCallback((path: string | null | undefined) => {
     if (!path || !nid || !cid || !vid || live.current[path] || asking.current.has(path)) return
@@ -186,6 +212,13 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     choose: (clipId: string, attempt: number) =>
       apply(() => chooseFilmAttempt(nid!, cid!, vid!, clipId, attempt)),
     mute: (clipId: string, mute: boolean) => apply(() => muteFilmClip(nid!, cid!, vid!, clipId, mute)),
+    /** 节点图卡片：确认过金额后直接出这一段 */
+    runClipNow: (clipId: string, cny: number) => spendInline(() => runFilmClip(nid!, cid!, vid!, clipId, cny)),
+    createFree: (fromClip?: string) => apply(() => createFreeNode(nid!, cid!, vid!, fromClip)),
+    patchFree,
+    deleteFree: (fid: string) => apply(() => deleteFreeNode(nid!, cid!, vid!, fid)),
+    runFree: (fid: string, cny: number) => spendInline(() => runFreeNode(nid!, cid!, vid!, fid, cny)),
+    chooseFree: (fid: string, attempt: number) => apply(() => chooseFreeAttempt(nid!, cid!, vid!, fid, attempt)),
   }
 }
 

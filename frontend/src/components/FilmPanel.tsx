@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
-import { batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
+import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
 import type { AudioMode, FilmClip, FilmSession, FilmSettings } from '../types'
@@ -72,7 +72,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const { t } = useI18n()
   const [draft, setDraft] = useState<FilmSettings>({})
   const val = <K extends keyof FilmSettings>(k: K) => draft[k] ?? s[k]
-  const flying = s.clips.some(inFlight)
+  const flying = anyInFlight(s)
   const tried = s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))
   const otherProvider = !!draft.provider && draft.provider !== s.provider
   return (

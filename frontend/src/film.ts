@@ -3,7 +3,7 @@
 import { tr } from './i18n/core'
 import { fmtClock } from './timeline'
 import type { TShot, Timeline } from './timeline'
-import type { FilmAttempt, FilmClip, FilmSession } from './types'
+import type { FilmAttempt, FilmClip, FilmClipState, FilmFreeNode, FilmSession } from './types'
 
 export const IN_FLIGHT: FilmClip['state'][] = ['queued', 'running', 'downloading']
 /** 「出片」页签开着且有段在跑时 5 秒轮询一次，否则 30 秒 */
@@ -32,10 +32,18 @@ export function spanAt(spans: ClipSpan[], t: number): ClipSpan | undefined {
 /** 播放头在段内的偏移（秒）：视频从这里开始播 */
 export const clipOffset = (span: ClipSpan, t: number) => Math.max(0, t - span.start)
 
-export const inFlight = (c: FilmClip) => IN_FLIGHT.includes(c.state)
+export const inFlight = (c: { state: FilmClipState }) => IN_FLIGHT.includes(c.state)
+
+/** 风格图占参考位时的 id（与后端 compose.STYLE_ID 一致） */
+export const STYLE_REF = '__style__'
+
+export const freeNodes = (s: FilmSession) => s.free ?? []
+
+/** 剧本段或自由节点有在排队 / 生成中的 */
+export const anyInFlight = (s: FilmSession) => s.clips.some(inFlight) || freeNodes(s).some(inFlight)
 
 /** 采用的那一次（成功且有文件）；没有就 null */
-export function chosenAttempt(c: FilmClip): FilmAttempt | null {
+export function chosenAttempt(c: { chosen: number | null; attempts: FilmAttempt[] }): FilmAttempt | null {
   const a = c.chosen === null ? undefined : c.attempts[c.chosen]
   return a && a.state === 'succeeded' && a.file ? a : null
 }
@@ -93,7 +101,8 @@ export type MainAction =
 export function mainAction(s: FilmSession, selected: string | null): MainAction {
   const rest = remainingClips(s)
   if (!rest.length) return { kind: 'none' }
-  if (!s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))) {
+  // 自由节点复制进来的那次不算试段（它没按分镜出过）
+  if (!s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded' && !a.free_id))) {
     // 试段已排队但还没出结果：不能再提供第二次付费试段
     if (s.clips.some(inFlight)) return { kind: 'none' }
     return { kind: 'try', clip: rest.find((c) => c.id === selected) ?? rest[0] }
@@ -113,9 +122,9 @@ export function batchSummary(s: FilmSession) {
 /** 单段出片要不要先弹确认：预估超过确认线（默认 20 元） */
 export const needsConfirm = (c: FilmClip, s: FilmSession) => c.estimate_cny > s.confirm_over_cny
 
-/** 下一次轮询隔多久 */
+/** 下一次轮询隔多久：页签（或节点图）开着且有段或自由节点在跑时快 */
 export function pollDelay(s: FilmSession | null, tabOpen: boolean): number {
-  return s && tabOpen && s.clips.some(inFlight) ? POLL_FAST_MS : POLL_SLOW_MS
+  return s && tabOpen && anyInFlight(s) ? POLL_FAST_MS : POLL_SLOW_MS
 }
 
 /** 前置检查：缺参考图的资产、参考图被裁的段、被截断的段 */
@@ -128,12 +137,29 @@ export function precheck(s: FilmSession) {
 }
 
 /** 首帧来源的中文说明 */
-export function firstFrameText(c: FilmClip): string {
+export function firstFrameText(c: Pick<FilmClip, 'first_frame' | 'frame_mode'>): string {
   const f = c.first_frame
   if (!f) return tr('film.noFirstFrame')
   if (f.startsWith('keyframe:')) {
     return tr('film.keyframe', { id: f.slice('keyframe:'.length) }) + (c.frame_mode === 'ref' ? tr('film.keyframeRefSlot') : '')
   }
   if (f.startsWith('relay:')) return tr('film.relay', { id: f.slice('relay:'.length) })
+  if (f.startsWith('tail:')) return tr('film.tail', { id: f.slice('tail:'.length) })
   return f
+}
+
+/** 自由节点要占几个参考位：参考图各一个；带首帧、又有参考图、厂商不能同用时首帧再占一个（与后端同规则） */
+export function slotsNeeded(refs: string[], firstFrame: string | null, s: FilmSession): number {
+  return refs.length + (firstFrame && refs.length && !s.options.frame_with_refs ? 1 : 0)
+}
+
+/** 可作「尾帧首帧」来源的：采用的那次有尾帧的段与自由节点 */
+export function tailSources(s: FilmSession): string[] {
+  return [...s.clips, ...freeNodes(s)].filter((x) => chosenAttempt(x)?.last_frame).map((x) => x.id)
+}
+
+/** 自由节点的某次尝试复制进挂靠段后，在那一段尝试里的下标；没有为 -1 */
+export function copyIndex(s: FilmSession, node: FilmFreeNode, a: FilmAttempt): number {
+  const t = s.clips.find((c) => c.id === node.target)
+  return t ? t.attempts.findIndex((x) => x.free_id === node.id && x.task_id === a.task_id) : -1
 }

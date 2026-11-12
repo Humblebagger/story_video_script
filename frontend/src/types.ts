@@ -686,10 +686,13 @@ export interface FilmAttempt {
   last_frame: string | null
   error: string | null
   at: string
-  fingerprint: string
+  /** 自由节点的尝试没有分镜指纹，存 null */
+  fingerprint: string | null
   first_frame_used: string | null
   /** 这次实际带上的风格图哈希（没带为 null） */
   style_ref?: string | null
+  /** 自由节点生成后复制进剧本段的那次：来自哪个节点（花费记在节点上，这里为 0） */
+  free_id?: string
 }
 
 export interface FilmClip {
@@ -725,6 +728,42 @@ export interface FilmClip {
   style_outdated?: boolean
 }
 
+/** 自由节点（剧本之外补拍或重做一段）：target 为空是独立素材，否则成功的每一次都复制进那一段的尝试 */
+export interface FilmFreeNode {
+  id: string
+  target: string | null
+  /** 挂靠时那一段的镜头：重新切段后同 id 换了内容就转为独立素材 */
+  target_shots: string[] | null
+  /** 挂靠的段已不存在或换了镜头（此时 target 已为 null） */
+  target_lost: boolean
+  /** 画面描述正文（参考行在生成时按 refs 顺序拼上） */
+  prompt: string
+  /** 资产 id，顺序即发给厂商的顺序；风格图为 __style__ */
+  refs: string[]
+  /** keyframe:<镜头 id> | tail:<段或自由节点 id> | null */
+  first_frame: string | null
+  duration: number
+  estimate_cny: number
+  state: FilmClipState
+  error: string | null
+  uncertain: boolean
+  attempts: FilmAttempt[]
+  chosen: number | null
+  created_at: string
+  queued_at?: string
+  /** 参考位超出当前厂商上限：删减之前不能生成 */
+  over_refs: boolean
+}
+
+/** 改自由节点：传了哪些改哪些；null 为清掉 */
+export interface FreePatch {
+  prompt?: string
+  refs?: string[]
+  first_frame?: string | null
+  duration?: number
+  target?: string | null
+}
+
 export interface FilmSettings {
   provider?: string
   model?: string
@@ -749,6 +788,9 @@ export interface FilmSession {
   /** 合成状态与成片（没合成过为 null 或没有） */
   final?: FinalState | null
   clips: FilmClip[]
+  /** 自由节点（旧会话没有） */
+  free?: FilmFreeNode[]
+  free_seq?: number
   orphaned: { id: string; shots: string[]; attempts: FilmAttempt[]; chosen: number | null }[]
   counts: Partial<Record<FilmClipState, number>>
   /** 批量「出剩余各段」的预估（不含待核对的段） */
@@ -767,6 +809,9 @@ export interface FilmSession {
     cny_per_sec: Record<string, number>
     max_clip_sec: number
     max_refs: number
+    /** 厂商能否指定首帧；首帧与参考图能否同用（不能时首帧占一个参考位） */
+    first_frame?: boolean
+    frame_with_refs?: boolean
     audio_modes: AudioMode[]
     rate_note: string
   }

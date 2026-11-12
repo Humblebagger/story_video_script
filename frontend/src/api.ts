@@ -10,7 +10,7 @@ import type { User } from './auth'
 import type {
   Chapter, Constraint, NovelSummaryData, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
-  FilmSession, FilmSettings, StyleImageMeta, ComposePreview, VoicesInfo,
+  FilmSession, FilmSettings, FreePatch, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
   AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
   AssistantEvent, AssistantMsg, AssistantTask, AssistantWhere,
@@ -387,6 +387,35 @@ export function chooseFilmAttempt(nid: string, cid: string, vid: string, clipId:
 export function muteFilmClip(nid: string, cid: string, vid: string, clipId: string,
                              mute: boolean): Promise<FilmSession> {
   return req(`${filmPath(nid, cid, vid)}/clips/${enc(clipId)}`, jsonBody('PATCH', { mute_native: mute }))
+}
+
+/** 新建自由节点；带 fromClip 时从这一段派生（不花钱） */
+export function createFreeNode(nid: string, cid: string, vid: string, fromClip?: string): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/free`, jsonPost(fromClip ? { from_clip: fromClip } : {}))
+}
+
+/** 改自由节点（正文、参考、首帧、时长、挂靠）；在跑时 409 */
+export function patchFreeNode(nid: string, cid: string, vid: string, fid: string,
+                              patch: FreePatch): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/free/${enc(fid)}`, jsonBody('PATCH', patch))
+}
+
+/** 删自由节点（只属于它的视频一并删掉） */
+export function deleteFreeNode(nid: string, cid: string, vid: string, fid: string): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/free/${enc(fid)}`, { method: 'DELETE' })
+}
+
+/** 生成一次。超过确认线时要带用户确认过的金额 */
+export function runFreeNode(nid: string, cid: string, vid: string, fid: string,
+                            expectedCny?: number): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/free/${enc(fid)}/run`,
+             jsonPost(expectedCny === undefined ? {} : { expected_cny: expectedCny }))
+}
+
+/** 自由节点自身采用第几次 */
+export function chooseFreeAttempt(nid: string, cid: string, vid: string, fid: string,
+                                  attempt: number): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/free/${enc(fid)}/chosen`, jsonBody('PUT', { attempt }))
 }
 
 /** 取会话目录下的文件（片段视频、尾帧）。<video>/<image> 带不了 token，转成 blob URL（用完要 revoke） */

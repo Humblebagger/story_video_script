@@ -1110,6 +1110,7 @@ export const zh = {
     keyframe: '关键帧 {id}',
     keyframeRefSlot: '（占第一个参考位）',
     relay: '接力上一段（{id}）的尾帧',
+    tail: '{id} 的尾帧',
     gateFailed: '分镜没通过完整性检查',
     readClipFailed: '读取片段文件失败：{error}',
     style: {
