@@ -13,6 +13,7 @@ import { chosenAttempt, clipOffset, clipSpans, laneKind, laneText, laneTitle, sp
 import { useFilm } from '../useFilm'
 import { onTask } from '@/lib/assistantBridge'
 import { FilmPanel } from './FilmPanel'
+import { NodeGraph } from './NodeGraph'
 import { ChapterHeadContext } from './workflow/chapterHead'
 import { buildTimeline, fitText, fmtClock, previewFrom, shotSpan, speechAt, textPx, litFraction, shotIndexAt } from '../timeline'
 import { applyOp } from '../timelineOps'
@@ -129,8 +130,10 @@ export function TimelineCanvas({
   const [focusUnit, setFocusUnit] = useState<string | null>(null)
   /** 实际显示的页签：没有可出片的版本时「出片」页签不存在，停在「本镜」而不是空白（与 film.enabled 同一判断） */
   const shown: PanelTab = panel === 'film' && !(version?.nid && version.cid && version.vid) ? 'shot' : panel
-  /** 出片会话（只有存进后端的版本才有）；「出片」页签开着时轮询更勤 */
-  const film = useFilm(version, { active: shown === 'film' })
+  /** 画布视图：时间轴（播放、对齐、合成）或节点图（谁参考了谁、补拍） */
+  const [view, setView] = useState<'timeline' | 'graph'>('timeline')
+  /** 出片会话（只有存进后端的版本才有）；「出片」页签或节点图开着时轮询更勤 */
+  const film = useFilm(version, { active: shown === 'film' || view === 'graph' })
   /** 「成片」泳道上选中的段 */
   const [clipSel, setClipSel] = useState<string | null>(null)
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
@@ -496,6 +499,14 @@ export function TimelineCanvas({
       {head && <div className="tlc__chead" onPointerDown={(e) => e.stopPropagation()}>{head}</div>}
       <div className="tlc__bar rounded-full border bg-card/80 px-2 py-1.5 shadow-xl backdrop-blur-md"
            onPointerDown={(e) => e.stopPropagation()}>
+        {film.enabled && (
+          <span className="tlc__speed" role="group" aria-label={tt('graph.viewAria')}>
+            {(['timeline', 'graph'] as const).map((v) => (
+              <button key={v} type="button" aria-pressed={view === v} className={view === v ? 'is-on' : ''}
+                      onClick={() => setView(v)}>{tt(v === 'timeline' ? 'graph.timeline' : 'graph.graph')}</button>
+            ))}
+          </span>
+        )}
         {editable && (
           <span className="tlc__editbar">
             <Button variant={editing ? 'secondary' : 'ghost'} size="sm" aria-pressed={editing}
@@ -892,6 +903,14 @@ export function TimelineCanvas({
                  if (e.key === 'Escape') finishNodeEdit(false)
                }}
                onBlur={() => finishNodeEdit(true)} />
+      )}
+
+      {view === 'graph' && film.enabled && (
+        <NodeGraph film={film} doc={doc} styleUrl={styleUrl} kfUrls={kf.urls} selected={clipSel}
+                   blocked={dirty ? tt('film.panel.blockedDirty')
+                     : film.gate ? tt('film.panel.blockedGate', { gate: film.gate }) : null}
+                   onSelect={(id) => { setClipSel(id); setPanel('film') }}
+                   onOpenAssets={() => setPanel('assets')} onOpenFilm={() => setPanel('film')} />
       )}
 
       </div>

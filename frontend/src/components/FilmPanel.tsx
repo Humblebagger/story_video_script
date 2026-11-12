@@ -11,7 +11,7 @@ import { useI18n } from '@/i18n/core'
 import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
-import type { AudioMode, FilmClip, FilmSession, FilmSettings } from '../types'
+import type { AudioMode, FilmClip, FilmFreeNode, FilmSession, FilmSettings } from '../types'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
 const p2 = (n: number) => String(n).padStart(2, '0')
@@ -39,6 +39,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
   const blocked = dirty ? t('film.panel.blockedDirty')
     : film.gate ? t('film.panel.blockedGate', { gate: film.gate }) : null
   const clip = s?.clips.find((c) => c.id === selected)
+  const freeSel = s?.free?.find((n) => n.id === selected)
   return (
     <div className="film">
       {film.error && <p className="tlc__kferr">{film.error}</p>}
@@ -59,6 +60,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
           <Overview s={s} film={film} selected={selected} blocked={blocked} />
           {clip
             ? <ClipDetail key={clip.id} c={clip} film={film} blocked={blocked} onPickShot={onPickShot} />
+            : freeSel ? <FreeDetail key={freeSel.id} n={freeSel} film={film} />
             : <p className="tlc__kfnote">{t('film.panel.pickClip')}</p>}
           <ComposePanel film={film} dirty={dirty} />
         </>
@@ -297,6 +299,50 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
           {t('film.panel.mute')}
         </label>
       </div>
+    </section>
+  )
+}
+
+/** 选中的自由节点：完整正文、参考、首帧、全部尝试（可播放）、失败原因；编辑与生成在节点图的卡片上 */
+function FreeDetail({ n, film }: { n: FilmFreeNode; film: Film }) {
+  const { t } = useI18n()
+  const sep = t('common.listSep')
+  const [watch, setWatch] = useState<number | null>(null)
+  const file = watch === null ? null : (n.attempts[watch]?.file ?? null)
+  const { ensure } = film
+  useEffect(() => { ensure(file) }, [file, ensure])
+  return (
+    <section className="film__clip film__card" data-testid="free-detail">
+      <header>
+        <b><i className={`film__dot film__dot--${n.state}`} aria-hidden="true" />{t('graph.free.detail', { id: n.id })}</b>
+        <span>{label(FILM_STATE, n.state)} · {n.duration}s · {yuan(n.estimate_cny)}</span>
+      </header>
+      {n.error && <p className="tlc__kferr">{n.error}</p>}
+      <pre className="film__prompt">{n.prompt || t('film.panel.none')}</pre>
+      <p className="film__line">{t('film.panel.refs', { list: n.refs.length ? n.refs.join(sep) : t('film.panel.none') })}</p>
+      <p className="film__line">{t('film.panel.firstFrame', { v: firstFrameText({ first_frame: n.first_frame, frame_mode: null }) })}</p>
+      {!!n.attempts.length && (
+        <table className="film__attempts">
+          <tbody>
+            {n.attempts.map((a, i) => (
+              <tr key={i} className={i === n.chosen ? 'is-chosen' : ''}>
+                <td>{t('film.panel.attemptN', { n: i + 1 })}</td>
+                <td>{when(a.at)}</td>
+                <td>{label(ATTEMPT_STATE, a.state)}</td>
+                <td>{yuan(a.cost_cny)}</td>
+                <td>
+                  {a.state === 'succeeded' && a.file && (
+                    <button className="tlc__linkbtn" onClick={() => setWatch(i)}>{t('film.panel.play')}</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {file && (film.files[file]
+        ? <video className="film__video" src={film.files[file]} controls autoPlay muted />
+        : <p className="tlc__kfnote">{t('film.panel.readingVideo')}</p>)}
     </section>
   )
 }
