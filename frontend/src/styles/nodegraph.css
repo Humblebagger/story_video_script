@@ -1,0 +1,41 @@
+/* 出片画布「节点图」视图（NodeGraph.tsx）：盖在时间轴上（z-index 1，底部工具条 .tlc__bar 是 2，仍在上面），
+ * 三列卡片 + 连线。卡片尺寸由 nodeGraph.ts 的常量决定，这里只管样子。 */
+.ngv { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background); cursor: grab; touch-action: none; }
+.ngv__tools { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 6px; }
+.ngv__world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.ngv__edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.ngv__edge { fill: none; stroke: var(--ui-muted-foreground); stroke-width: 1.5; opacity: .35; transition: opacity .15s ease-out; }
+.ngv__edge--dropped { stroke-dasharray: 6 4; }
+.ngv__edge--missing { stroke-dasharray: 2 4; }
+.ngv__edge--frame { stroke: var(--primary); }
+.ngv__edge--target { stroke: var(--warning); stroke-width: 2.5; stroke-dasharray: 8 5; }
+.ngv__edge.is-lit { opacity: 1; }
+.ngv__edge.is-dim { opacity: .08; }
+.ngv__node {
+  position: absolute; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 8px;
+  overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 12px;
+  cursor: default; transition: opacity .15s ease-out, box-shadow .15s ease-out;
+}
+.ngv__node--asset { flex-direction: row; align-items: center; }
+.ngv__node--episode { border: 0; background: none; padding: 4px 0; font-weight: 600; color: var(--ui-muted-foreground); }
+.ngv__node.is-on { box-shadow: 0 0 0 2px var(--primary); }
+.ngv__node.is-dim { opacity: .35; }
+.ngv__head { display: flex; align-items: center; gap: 6px; }
+.ngv__head b { font-family: ui-monospace, monospace; }
+.ngv__media { flex: none; width: 100%; height: 72px; border-radius: 6px; object-fit: cover; background: var(--ui-muted); }
+.ngv__media--empty, .ngv__thumb--empty { display: grid; place-items: center; color: var(--ui-muted-foreground); }
+.ngv__thumb { flex: none; width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: var(--ui-muted); }
+.ngv__meta { display: flex; min-width: 0; flex-direction: column; gap: 2px; padding-left: 8px; }
+.ngv__prompt { display: -webkit-box; margin: 0; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ngv__dim { margin: 0; color: var(--ui-muted-foreground); }
+.ngv__err { margin: 0; color: var(--destructive); }
+.ngv__warn { margin: 0; color: var(--warning); }
+.ngv__form { display: flex; flex-direction: column; gap: 4px; }
+.ngv__text { width: 100%; min-height: 48px; resize: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; background: var(--background); }
+.ngv__field { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.ngv__field select, .ngv__field input { max-width: 150px; }
+.ngv__refs summary { cursor: pointer; }
+.ngv__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: auto; }
+.ngv__nav { display: inline-flex; align-items: center; gap: 2px; }
+.ngv__ask { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ngv__empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 8px; }

@@ -11,6 +11,7 @@
 @import "./views.css" layer(components);
 @import "./canvas.css" layer(components);
 @import "./film.css" layer(components);
+@import "./nodegraph.css" layer(components);
 @import "./admin.css" layer(components);
 @import "./novel.css" layer(components);
 @import "./shell.css" layer(components);
