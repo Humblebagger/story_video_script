@@ -70,12 +70,20 @@ docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 （美元，后台可改）现算。已有版本的历史用量补导一次：`.venv/bin/python -m server.admin backfill-usage`。月上限是软限制：只在提交时检查，并发提交可能都通过，未定价的模型按 $0 计；`backfill-usage` 部署时跑一次即可，之后重跑也安全，重跑会补上尚未登录的用户的旧版运行记录。
 管理员看不到小说原文与分镜内容。
 
-**出片（视频生成，后端）**：`backend/.env` 写 `ARK_API_KEY=…`（火山方舟），`STORYBOARD_VIDEO_PROVIDER` 选厂商（缺省 `seedance`；`fake` 为不联网的假厂商，本地演示用）。
-每个版本一个出片会话（`/novels/{nid}/chapters/{cid}/versions/{vid}/render/...`）：建会话时过验证门、按厂商能力把镜头切成段（时长按能念完旁白台词的可播时长），
-先试一段，满意后带上确认过的预估金额批量出剩余各段；单章上限默认 200 元，超过拒绝。后台线程提交、每 10 秒查询、成功即下载（结果地址 24 小时有效），
-服务重启后续跑不重复提交。改了分镜或设置，已出的段标「过期」，旧视频仍可播。片段在 `chapters/<cid>/render/<vid>/clips/`。
-费率为 2026-10 刊例价（fast 约 0.80 元/秒、mini 约 0.50 元/秒，720p），首次真实出片后用 `.venv/bin/python -m render.smoke` 的用量与账单核对、
-必要时用 `STORYBOARD_SEEDANCE_CNY_PER_M` 校准。画布上的出片界面、配音与合成另见后续计划。
+**出片（视频生成，后端）**：两家厂商并存，在出片设置里切换。`backend/.env` 写密钥：
+- `MINIMAX_API_KEY=…`（MiniMax 海螺 H3，**缺省厂商**）；可选 `STORYBOARD_MINIMAX_BASE_URL`（缺省 `https://api.minimax.cn`，为国际站预留）、`STORYBOARD_MINIMAX_PRICE_SCALE`（按账单校准单价的系数）、`STORYBOARD_MINIMAX_NATIVE_AUDIO=1`（真跑确认成片带原声后再开，开前只给「全部配音」「静音」）。费率为 2026-11 刊例价（H3 768P 0.50、2K 0.80 元/秒；Highspeed、Lite 更便宜；每段前 5 张参考图免费，超出每张 0.20 元，Lite 0.13 元），未经账单核对。MiniMax 不返回尾帧，下载后用 ffmpeg 截取供下一段接力；参考图超出尺寸或比例限制时用 ffmpeg 补边缩放后再发。
+- `ARK_API_KEY=…`（火山方舟 Seedance）。没配 MiniMax 而配了方舟时，新建的出片会话缺省用 Seedance，出片设置里会提示。Seedance 首次真实出片后用 `.venv/bin/python -m render.smoke [--provider minimax|seedance]`（花钱，上限 5 元，缺省厂商同新建会话）的用量、成片宽高与是否带音轨与账单核对。
+MiniMax 手动冒烟清单：
+1. `.env` 写 `MINIMAX_API_KEY`，跑 `render.smoke --provider minimax`（Lite 480P 约 ¥0.64），确认提交、查询、下载、可播放。
+2. 看输出是否带音轨；带则再用 H3 768P 出一段有台词的，台词与口型都对再加 `STORYBOARD_MINIMAX_NATIVE_AUDIO=1`。
+3. 看实际宽高，480P、768P 各出一次（2K 选做），与设计文档 §5.1 短边表核对。
+4. 带 2 个以上角色参考图的一段，看「参考图N」是否对上人物。
+5. 连出同一集两段，看第二段是否接上第一段尾帧。
+6. 与开放平台账单核对：一段实扣是否等于「秒数 × 单价 + 超出图片费」，失败任务是否扣费。
+7. 用 3:1 的宽场景图做参考，确认补边后被接受、成片无灰边。
+8. 故意用错误密钥提交一次，记下错误体结构，核对设计文档 §8.1。
+9. 切到 minimax 而没配密钥时，界面应提示缺密钥且原设置不变。
+画布上的出片界面、配音与合成另见后续计划。
 
 **出片（画布）**：在时间轴画布里出片，只对存进后端的版本出现。侧栏「出片」页签先「建立出片会话（不花钱）」，之后画布上多一条「成片」泳道（每段一条横条：虚线未出片、闪动生成中、填色已完成、红框失败、黄框过期），点横条看段详情。
 总览主按钮先「先试这一段」，出过后变「出剩余 N 段（约 ¥x）」；批量和单段超过确认线（默认 20 元）先弹确认框，列各段金额、执行后累计与上限、费率依据。有未保存的改动或分镜没过验证门时出片按钮禁用。
