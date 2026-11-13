@@ -439,10 +439,40 @@ def part_deliver():
     print("20. 目标段下载中 ✓")
 
 
+def part_image_counts():
+    """估价调用点都把图片张数传给了 estimate_cny（FakeVideo 图片单价为 0，漏传不会改变金额，故用桩记录）。"""
+    root = new_root("imgcount")
+    doc = rich(DOC)
+    s = build(root, doc)
+    ctx = free.Ctx(doc, {}, False)
+    with_refs = next(c for c in s["clips"] if c["refs"])
+    seen = []
+    real = base.estimate_cny
+    base.estimate_cny = lambda d, c, r, images=0: (seen.append(images), real(d, c, r, images))[1]
+    try:
+        seen.clear()
+        s = free.create(root, ctx, with_refs["id"])        # 派生：带参考
+        assert seen[-1] == compose.image_count(item(s, "F01")) and seen[-1] >= 1
+        seen.clear()
+        s = free.update(root, ctx, "F01", {"refs": []})    # 修改：张数随参考变
+        assert seen[-1] == 0
+        s = free.update(root, ctx, "F01", {"refs": list(with_refs["refs"][:1])})
+        assert seen[-1] == 1
+        seen.clear()
+        seen.clear()
+        build(root, doc)                                    # 重建时 _sync_free 重算挂靠节点
+        n = item(sess.load(root), "F01")
+        assert compose.image_count(n) == 1 and seen[-1] == 1, "_sync_free 是 build 里最后一次估价"
+    finally:
+        base.estimate_cny = real
+    print("21. 估价传图片张数 ✓")
+
+
 def main() -> int:
     part_session()
     part_crud()
     part_deliver()
+    part_image_counts()
     print("\nALL PASS")
     return 0
 
