@@ -21,6 +21,7 @@ from .config import Settings
 from .errors import ConversionError
 from .events import make_say
 from .prompt import load_system_prompt
+from render.providers.base import scrub_secrets
 from server.messages import REPORT_MAX, msg, vendor
 from .tools import REPAIR_TOOLS
 
@@ -141,6 +142,10 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
     在干什么」。phase ∈ generating / regenerating / checking / repairing。
     on_event(消息对象) 收给用户看的进度事件（pipeline/events.py）；细节仍直接 log。
     """
+    _raw_log = log
+
+    def log(text):                   # 调试日志的写入边界：评审原文可能带密钥，一律先脱敏
+        _raw_log(scrub_secrets(text))
     say = make_say(log, on_event)
     def emit(phase: str, attempt: int) -> None:
         if progress is not None:
@@ -253,7 +258,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             log("  （产物结构合法、逐字保真；--strict 可改为直接失败）")
             warning = msg("job.quality.degraded", batch=idx, retries=settings.max_retries,
                           attempt=best_attempt, candidates=len(state["candidates"]),
-                          report=vendor(report, limit=REPORT_MAX))
+                          report=vendor(scrub_secrets(report), limit=REPORT_MAX))
             return {"result": doc, "warnings": [warning]}
         (workdir / f"batch{idx}_failure_report.txt").write_text(
             state["report"] + "\n", encoding="utf-8")

@@ -112,6 +112,35 @@ def main() -> int:
         assert any(d in line for line in logs3), "工作目录仍在调试日志里"
         print("graph: 重试耗尽 → ConversionError + 报告落盘 ✓")
 
+    # 3b. 软质量门耗尽降级：评审原文里的密钥不进警告对象、事件与调试日志
+    import os
+    import pipeline.graph as graph_mod
+    from pipeline import verification
+    secret = "sk-synthetic-secret-0123456789"
+    bearer = "Bearer abcDEF123token456"
+    os.environ["ANTHROPIC_API_KEY"] = secret
+    orig_check = graph_mod._check_batch
+    graph_mod._check_batch = lambda *a, **kw: (
+        False, False, f"评审意见：请核对。key={secret} Authorization: {bearer}", (0,),
+        verification.VerificationReport())
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            logs3b, events3b, records = [], [], []
+            chat = ChatInvoker(settings, chat=FakeChat(responses=[archived]), log=logs3b.append)
+            graph = build_batch_graph(chat=chat, review_chat=chat, settings=settings,
+                                      params=params, workdir=Path(d), attempt_records=records,
+                                      log=logs3b.append, on_event=events3b.append)
+            _, warns = run_batch(graph, user="u", batch_text=batch, idx=1, frozen_units=None)
+            assert len(warns) == 1 and warns[0]["code"] == "job.quality.degraded"
+            blob = json.dumps(warns[0], ensure_ascii=False) + json.dumps(events3b, ensure_ascii=False) \
+                + "\n".join(logs3b)
+            assert secret not in blob and "abcDEF123token456" not in blob, "密钥不得进警告、事件与日志"
+            assert "评审意见" in warns[0]["params"]["report"]["text"]
+    finally:
+        graph_mod._check_batch = orig_check
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+    print("graph: 降级警告与调试日志脱敏 ✓")
+
     # ---- 修复循环 ----
     from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
     from pipeline.graph import _check_batch
