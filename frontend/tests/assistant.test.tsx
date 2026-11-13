@@ -2,6 +2,7 @@
 import { parseSse } from '../src/lib/sse'
 import { cancelStep, getWhere, notifyTask, onStepRequest, onTask, requestStep, setWhere, takeStep } from '../src/lib/assistantBridge'
 import { composeView, filmView, jobView } from '../src/lib/assistantTask'
+import { formatMsg } from '../src/i18n/serverMsg'
 import type { AssistantTask, FilmSession, Job } from '../src/types'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -59,6 +60,11 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   must(jobView(job({ status: 'completed_with_warnings' })).state === 'ok', '带警告也算完成')
   const f = jobView(job({ status: 'failed', error: '模型超时\n详细' }))
   must(f.state === 'failed' && f.error === '模型超时', '失败取第一行')
+  const reason = { code: 'job.batch_failed', params: { batch: 2, retries: 3 } }
+  const failed = { code: 'job.failed_report', params: { reason, report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+  const fm = jobView(job({ status: 'failed', error: '旧\n详细', error_msg: failed }))
+  must(JSON.stringify(fm.error) === JSON.stringify(reason) && formatMsg(fm.error, 'zh') === '批 2 重试 3 次后仍未通过校验',
+       '失败取原因消息对象 ' + JSON.stringify(fm.error))
 
   const clip = (state: string) => ({ id: state, state }) as unknown as FilmSession['clips'][number]
   const film = (states: string[], final: FilmSession['final'] = null) => ({ clips: states.map(clip), final }) as FilmSession
@@ -74,6 +80,10 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   must(composeView(film([], fin('done'))).state === 'ok', '合成完')
   must(composeView(film([], fin('failed', { error: 'ffmpeg 出错' }))).error === 'ffmpeg 出错', '合成失败原因')
   must(composeView(film([])).state === 'gone', '没有合成记录')
+  const stepMsg = { code: 'compose.step.voice', params: { n: 3 } }
+  const errMsg = { code: 'compose.crashed', params: {} }
+  must(JSON.stringify(composeView(film([], fin('running', { step: '配音 3 条', step_msg: stepMsg }))).step) === JSON.stringify(stepMsg), '合成步骤取消息对象')
+  must(JSON.stringify(composeView(film([], fin('failed', { error: 'x', error_msg: errMsg }))).error) === JSON.stringify(errMsg), '合成失败取消息对象')
   console.log('✓ 任务进度')
 }
 
@@ -467,6 +477,124 @@ const enter = async (composing = false, keyCode = 13) => {
   await act(async () => { root.unmount() })
   offTask()
   console.log('✓ 对比卡与撤销')
+}
+
+// ---------- 按代码渲染：随界面语言切换 ----------
+{
+  const { useI18n, setCurrentLocale } = await import('../src/i18n/core')
+  const { Toaster } = await import('../src/components/ui/sonner')
+  const { getSession } = await import('../src/lib/assistantSession')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  const Grab = () => { setLoc = useI18n().setLocale; return null }
+  const mountL = async (novelId: string) => {
+    const root = createRoot(panelBox as unknown as HTMLElement)
+    await act(async () => {
+      root.render(h(I18nProvider, { initial: 'zh' }, h(TooltipProvider, null, h(Grab), h(Toaster),
+        h(AssistantPanel, { novelId, chapters: [{ id: 'c1', title: '第一章' }], onGoto: () => {} }))))
+    })
+    await flush()
+    return root
+  }
+  const toEn = async () => { await act(async () => { setLoc('en') }); await flush() }
+  const txt = (id: string) => $(id)?.textContent ?? ''
+  const hasZh = (s: string) => /[一-鿿]/.test(s)
+
+  // 会话事件：notice 不拼进正文；error 带代码与编号
+  history = []
+  let root = await mountL('n-i18n')
+  script = [
+    { event: 'token', data: { text: '好的' } },
+    { event: 'tool_start', data: { id: 'a1', name: 'shots_get', args: {} } },
+    { event: 'tool_end', data: { id: 'a1', ok: false, summary: '（还没有章节）原文', msg: { code: 'assistant.tool.no_chapters', params: {} } } },
+    { event: 'tool_start', data: { id: 'a2', name: 'shots_get', args: {} } },
+    { event: 'tool_end', data: { id: 'a2', ok: false, summary: '旧摘要' } },
+    { event: 'notice', data: { code: 'assistant.too_many_steps', params: {} } },
+    { event: 'error', data: { code: 'assistant.crashed', params: {}, message: '助手出错了，请重试；仍失败请联系管理员', ref: 'K7Q2M9XD' } },
+  ]
+  await type('问')
+  await enter()
+  const m0 = getSession('n-i18n').msgs[1]
+  must(m0.text === '好的' && m0.notices?.length === 1 && m0.notices[0].code === 'assistant.too_many_steps', 'notice 进 notices，不进正文')
+  must(typeof m0.error === 'object' && (m0.error as { ref?: string }).ref === 'K7Q2M9XD', 'error 事件存为对象')
+  must(txt('assistant-notice').includes('步骤太多'), '中文提示')
+  must(txt('assistant-error').includes('助手出错了') && txt('assistant-error').includes('K7Q2M9XD'), '中文报错带编号 ' + txt('assistant-error'))
+  await act(async () => { $$('assistant-tool')[0].querySelector('button')!.click(); $$('assistant-tool')[1].querySelector('button')!.click() })
+  must(($$('assistant-tool')[0].textContent ?? '').includes('（还没有章节）') && !($$('assistant-tool')[0].textContent ?? '').includes('原文'), '工具失败按 msg 渲染')
+  must(($$('assistant-tool')[1].textContent ?? '').includes('旧摘要'), '没有 msg 显示 summary')
+  await toEn()
+  must(!hasZh(txt('assistant-error')) && txt('assistant-error').includes('K7Q2M9XD'), '英文报错带编号 ' + txt('assistant-error'))
+  must(!hasZh(txt('assistant-notice')) && txt('assistant-notice').length > 5, '英文提示 ' + txt('assistant-notice'))
+  must(($$('assistant-tool')[0].textContent ?? '').includes('(no chapters yet)'), '工具失败切英文')
+  await act(async () => { root.unmount() })
+  setCurrentLocale('zh')
+
+  // 旧后端：error 只有 message
+  history = []
+  root = await mountL('n-i18n2')
+  script = [{ event: 'error', data: { message: '旧文字' } }]
+  await type('问')
+  await enter()
+  must(txt('assistant-error').includes('旧文字'), '旧后端报错显示原文')
+  await toEn()
+  must(txt('assistant-error').includes('旧文字'), '旧后端报错英文界面仍原文')
+  await act(async () => { root.unmount() })
+  setCurrentLocale('zh')
+  script = []
+
+  // 操作卡：失败原因、复验警告、diff 目标
+  const base = { id: 'i1', tool_call_id: 'k', action: 'plot_edit', chapter_id: 'c1', chapter: '第一章', version_id: 'v1',
+                 amount: null, currency: null, detail: { edits: 2 } }
+  history = [
+    { role: 'user', text: '做' },
+    { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      { tool_call_id: 'f1', action: 'compose', outcome: 'failed', error: '小说不存在', error_msg: { code: 'novel.not_found', params: {} } },
+      { tool_call_id: 'f2', action: 'compose', outcome: 'failed', error: '旧存档原文' },
+      { tool_call_id: 'p1', action: 'plot_edit', outcome: 'pending',
+        card: { ...base, tool_call_id: 'p1',
+                warnings: [{ code: 'assistant.edit.nothing', params: {}, message: '没有要改的地方' }],
+                diff: [{ target: '全书梗概', field: 'outline', before: 'a', after: 'b' },
+                       { target: '第一章 梗概', field: 'synopsis', before: 'c', after: 'd' }] } },
+      { tool_call_id: 's1', action: 'shots_edit', outcome: 'pending',
+        card: { ...base, tool_call_id: 's1', action: 'shots_edit', warnings: [],
+                diff: [{ target: 'E01-SH003', field: 'action', before: 'e', after: 'f' }] } },
+    ] },
+  ]
+  root = await mountL('n-i18n3')
+  const fails = $$('assistant-card-failed')
+  must(fails[0].textContent!.includes('小说不存在') && fails[1].textContent!.includes('旧存档原文'), '失败卡中文')
+  const rowsT = () => $$('assistant-diff-row').map((r) => r.querySelector('p')!.textContent ?? '')
+  must(rowsT()[0].startsWith('全书梗概') && rowsT()[1].startsWith('第一章 梗概') && rowsT()[2].startsWith('E01-SH003'), 'diff 目标中文 ' + rowsT().join('|'))
+  must(txt('assistant-card-warnings').includes('没有要改的地方'), '警告中文')
+  await toEn()
+  const fe = $$('assistant-card-failed')
+  must(!hasZh(fe[0].textContent ?? '') && fe[0].textContent!.length > 10, '失败卡切英文 ' + fe[0].textContent)
+  must(fe[1].textContent!.includes('旧存档原文'), '没有 error_msg 显示原文')
+  must(rowsT()[0].startsWith('Book synopsis'), '全书梗概英文 ' + rowsT()[0])
+  must(rowsT()[1].startsWith('第一章 synopsis'), '章梗概英文 ' + rowsT()[1])
+  must(rowsT()[2].startsWith('E01-SH003'), '镜头目标原样 ' + rowsT()[2])
+  must(!txt('assistant-card-warnings').includes('没有要改的地方'), '警告切英文 ' + txt('assistant-card-warnings'))
+  await act(async () => { root.unmount() })
+  setCurrentLocale('zh')
+
+  // 撤销失败的 toast 按当前语言
+  history = [
+    { role: 'user', text: '改' },
+    { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      { tool_call_id: 'u1', action: 'shots_edit', outcome: 'approved',
+        card: { ...base, tool_call_id: 'u1', action: 'shots_edit', warnings: [], diff: [] } },
+    ] },
+  ]
+  undoReply = { status: 409, body: { detail: { code: 'assistant.undo.already', params: {}, message: '这次修改已经撤销过了' } } }
+  root = await mountL('n-i18n4')
+  await toEn()
+  await act(async () => { $('assistant-card-undo')!.click() })
+  await flush()
+  await act(async () => { await new Promise((r) => setTimeout(r, 100)) })
+  const body = doc.body.textContent ?? ''
+  must(body.includes('This change has already been undone') && !body.includes('撤销过了'), '撤销失败 toast 英文')
+  await act(async () => { root.unmount() })
+  setCurrentLocale('zh')
+  console.log('✓ 助手按代码渲染')
 }
 globalThis.fetch = realFetch
 

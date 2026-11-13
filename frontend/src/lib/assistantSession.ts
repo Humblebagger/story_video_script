@@ -3,6 +3,7 @@
  *  确认卡：decideAssistant 接着跑被中断的那一轮，输出接在同一条回答后面；发新消息时，本地把待确认的卡标成已取消（服务端同时取消）。 */
 import { useSyncExternalStore } from 'react'
 import { ApiError, clearAssistant, getAssistant, resumeAssistant, streamAssistant, undoAssistant } from '@/api'
+import { errValue, isServerMsg } from '@/i18n/serverMsg'
 import { notifyTask } from '@/lib/assistantBridge'
 import type { AssistantCard, AssistantEvent, AssistantMsg, AssistantWhere } from '@/types'
 
@@ -94,7 +95,8 @@ async function run(nid: string, o: SendOpts, resume: boolean, start: Starter, on
         gap = true
         patchLast((m) => ({ ...m, tools: [...(m.tools ?? []), { ...e.data, ok: null, summary: '' }] }))
       } else if (e.event === 'tool_end') {
-        patchLast((m) => ({ ...m, tools: (m.tools ?? []).map((x) => (x.id === e.data.id ? { ...x, ok: e.data.ok, summary: e.data.summary } : x)) }))
+        patchLast((m) => ({ ...m, tools: (m.tools ?? []).map((x) => (x.id === e.data.id
+        ? { ...x, ok: e.data.ok, summary: e.data.summary, ...(e.data.msg ? { msg: e.data.msg } : {}) } : x)) }))
       } else if (e.event === 'goto') patchLast((m) => ({ ...m, goto: [...(m.goto ?? []), e.data] }))
       else if (e.event === 'confirm') {
         gap = true
@@ -103,7 +105,12 @@ async function run(nid: string, o: SendOpts, resume: boolean, start: Starter, on
         gap = true
         patchLast((m) => upsertCard(m, { ...e.data, sending: false }))
         if (e.data.task && e.data.outcome !== 'failed' && alive()) notifyTask(e.data.task)
-      } else if (e.event === 'error') { ended = true; patchLast((m) => settleTools({ ...m, error: e.data.message })) }
+      } else if (e.event === 'notice') patchLast((m) => ({ ...m, notices: [...(m.notices ?? []), e.data] }))
+      else if (e.event === 'error') {
+        const d = e.data
+        ended = true
+        patchLast((m) => settleTools({ ...m, error: isServerMsg(d) ? d : (d as { message: string }).message }))
+      }
       else if (e.event === 'done') ended = true
     }, ctl.signal)
     // 流断了却既没有 done 也没有 error（代理掐断、服务重启）：给报错与重试，不留空泡泡
@@ -111,8 +118,8 @@ async function run(nid: string, o: SendOpts, resume: boolean, start: Starter, on
   } catch (err) {
     if (ctl.signal.aborted) patchLast((m) => settleTools({ ...m, interrupted: true }))
     else if (err instanceof ApiError && err.status === 429) { if (alive()) onLimited() }
-    else if (err instanceof ApiError && err.status === 409) patchLast((m) => settleTools({ ...m, error: resume ? err.message : o.busyText }))
-    else patchLast((m) => settleTools({ ...m, error: err instanceof Error ? err.message : String(err) }))
+    else if (err instanceof ApiError && err.status === 409) patchLast((m) => settleTools({ ...m, error: resume ? errValue(err) : o.busyText }))
+    else patchLast((m) => settleTools({ ...m, error: errValue(err) }))
   } finally {
     if (alive()) {
       ctls.delete(nid)

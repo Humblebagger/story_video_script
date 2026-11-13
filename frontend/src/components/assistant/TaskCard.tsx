@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import { exportFcpxml } from '@/api'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import type { Locale } from '@/i18n/core'
+import { errText, formatMsg } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import { useTaskView } from '@/lib/assistantTask'
 import type { TaskView } from '@/lib/assistantTask'
@@ -13,10 +15,10 @@ import type { AssistantGoto, AssistantStep, AssistantTask } from '@/types'
 /** 结束后去哪一步：分镜生成完去检查，出片去出片，合成完去下载（失败回合成） */
 const NEXT: Record<AssistantTask['kind'], AssistantStep> = { job: 'review', film: 'render', compose: 'download', export: 'download', edit: 'review' }  // edit 不挂任务卡，只为补全 Record
 
-function taskText(t: (k: MsgKey, v?: Record<string, string | number>) => string, kind: AssistantTask['kind'], v: TaskView): string {
+function taskText(t: (k: MsgKey, v?: Record<string, string | number>) => string, kind: AssistantTask['kind'], v: TaskView, locale: Locale): string {
   if (v.state === 'loading') return t('assistant.task.loading')
   if (v.state === 'gone') return t('assistant.task.gone')
-  const msg = v.error || t('assistant.task.unknownError')
+  const msg = formatMsg(v.error, locale) || t('assistant.task.unknownError')
   if (kind === 'job') {
     if (v.state === 'running') return v.pct == null ? t('assistant.task.jobStarting') : t('assistant.task.jobRunning', { pct: v.pct })
     return v.state === 'ok' ? t('assistant.task.jobOk') : t('assistant.task.jobFailed', { msg })
@@ -25,7 +27,7 @@ function taskText(t: (k: MsgKey, v?: Record<string, string | number>) => string,
     const n = { done: v.done ?? 0, total: v.total ?? 0, flying: v.flying ?? 0, failed: v.failed ?? 0 }
     return t(v.state === 'running' ? 'assistant.task.filmRunning' : v.state === 'ok' ? 'assistant.task.filmOk' : 'assistant.task.filmFailed', n)
   }
-  if (v.state === 'running') return t('assistant.task.composeRunning', { step: v.step ? t('common.paren', { text: v.step }) : '' })
+  if (v.state === 'running') return t('assistant.task.composeRunning', { step: v.step ? t('common.paren', { text: formatMsg(v.step, locale) }) : '' })
   return v.state === 'ok' ? t('assistant.task.composeOk') : t('assistant.task.composeFailed', { msg })
 }
 
@@ -35,7 +37,7 @@ export function TaskCard({ novelId, task, chapter, onGoto }: {
   chapter: string
   onGoto: (g: AssistantGoto) => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const v = useTaskView(novelId, task)
   const [saving, setSaving] = useState(false)
 
@@ -45,7 +47,7 @@ export function TaskCard({ novelId, task, chapter, onGoto }: {
       try {
         await exportFcpxml(novelId, task.chapter_id ?? '', task.version_id ?? '')
       } catch (e) {
-        toast.error(t('assistant.task.downloadFailed', { msg: e instanceof Error ? e.message : String(e) }))
+        toast.error(t('assistant.task.downloadFailed', { msg: errText(e) }))
       } finally {
         setSaving(false)
       }
@@ -65,7 +67,7 @@ export function TaskCard({ novelId, task, chapter, onGoto }: {
     <div className="assistant__task" data-testid="assistant-task" data-state={v.state}>
       <span className="inline-flex items-center gap-1">
         {running && <Loader2 className="size-3 animate-spin" />}
-        {taskText(t, task.kind, v)}
+        {taskText(t, task.kind, v, locale)}
       </span>
       {!running && (
         <Button variant="outline" size="sm" className="self-start" data-testid="assistant-task-goto"

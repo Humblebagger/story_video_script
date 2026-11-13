@@ -2,12 +2,14 @@
  *  确认后或不需确认的操作下面挂任务卡；没做成的写原因。 */
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useI18n } from '@/i18n/core'
+import { translate, useI18n } from '@/i18n/core'
 import { formatMsg } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import type { AssistantCard, AssistantGoto } from '@/types'
 import { TaskCard } from './TaskCard'
 
+/** 后端写进 diff.target 的中文后缀（内部值），取自中文语言包 */
+const ZH_SUFFIX = translate('zh', 'assistant.target.synopsis', { chapter: '' })
 const EDITS = ['shots_edit', 'asset_edit', 'plot_edit']
 
 export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
@@ -38,6 +40,12 @@ export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
     const s = t(key)
     return s === key ? f : s
   }
+  /** diff 的 target 是内部值（恢复时比对，不能改）：plot_edit 的两类按字段翻译，其余是数据原样显示 */
+  const targetOf = (r: { target: string; field: string }) =>
+    c.action !== 'plot_edit' ? r.target
+      : r.field === 'outline' ? t('assistant.target.outline')
+      : r.field === 'synopsis' ? t('assistant.target.synopsis', { chapter: info?.chapter || (r.target.endsWith(ZH_SUFFIX) ? r.target.slice(0, -ZH_SUFFIX.length) : r.target) })
+      : r.target
   const locked = busy || !!c.sending
   return (
     <div className="assistant__card" data-testid="assistant-card" data-outcome={c.outcome}>
@@ -48,7 +56,7 @@ export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
         <ul className="assistant__diff">
           {info.diff.map((r, i) => (
             <li key={i} data-testid="assistant-diff-row">
-              <p className="text-xs text-muted-foreground">{r.target} · {fieldName(r.field)}</p>
+              <p className="text-xs text-muted-foreground">{targetOf(r)} · {fieldName(r.field)}</p>
               <p className="assistant__diff-before">{r.before}</p>
               <p className="assistant__diff-after">{r.after}</p>
             </li>
@@ -89,7 +97,7 @@ export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
         <p className="text-xs text-muted-foreground" data-testid="assistant-card-rejected">{t('assistant.card.rejected')}</p>
       )}
       {c.outcome === 'failed' && (
-        <p className="text-xs text-destructive" data-testid="assistant-card-failed">{t('assistant.card.failed', { msg: c.error ?? '' })}</p>
+        <p className="text-xs text-destructive" data-testid="assistant-card-failed">{t('assistant.card.failed', { msg: c.error_msg ? formatMsg(c.error_msg, locale) : (c.error ?? '') })}</p>
       )}
       {c.task && c.task.kind !== 'edit' && (c.outcome === 'approved' || c.outcome === 'done') && (
         <TaskCard novelId={novelId} task={c.task} chapter={info?.chapter ?? ''} onGoto={onGoto} />

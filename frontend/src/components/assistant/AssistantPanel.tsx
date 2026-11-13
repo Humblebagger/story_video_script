@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/common/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
+import { errText, formatMsg } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import { useWhere } from '@/lib/assistantBridge'
 import {
@@ -49,10 +50,11 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
     try {
       await clearAssistantSession(novelId)
     } catch (e) {
-      toast.error(t('assistant.clearFailed', { msg: e instanceof Error ? e.message : String(e) }))
+      toast.error(t('assistant.clearFailed', { msg: errText(e) }))
     }
   }
 
+  const toolResult = (x: AssistantTool) => (x.msg ? formatMsg(x.msg, locale) : x.summary)
   const toolLabel = (x: AssistantTool) => {
     const key = `assistant.tool.${x.name}` as MsgKey
     const s = t(key)
@@ -91,16 +93,19 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
                   {toolLabel(x)}
                   {x.ok === null ? <Loader2 className="size-3 animate-spin" /> : x.ok ? <Check className="size-3" /> : <X className="size-3" />}
                 </button>
-                {open[x.id] && <pre>{JSON.stringify(x.args)}{x.summary ? `\n${x.summary}` : ''}</pre>}
+                {open[x.id] && <pre>{JSON.stringify(x.args)}{toolResult(x) ? `\n${toolResult(x)}` : ''}</pre>}
               </div>
             ))}
             {!!m.text && <MiniMd text={m.text} />}
+            {(m.notices ?? []).map((n, j) => (
+              <p key={j} className="text-xs text-muted-foreground" data-testid="assistant-notice">{formatMsg(n, locale)}</p>
+            ))}
             {(m.cards ?? []).map((c) => (
               <ActionCard key={c.tool_call_id} novelId={novelId} c={c} busy={busy} onGoto={onGoto}
                           onDecide={(d) => void decideAssistant(novelId, c.tool_call_id, d, opts())}
                           onUndo={() => {
                             undoAssistantCard(novelId, c.tool_call_id).catch((e) =>
-                              toast.error(t('assistant.card.undoFailed', { msg: e instanceof Error ? e.message : String(e) })))
+                              toast.error(t('assistant.card.undoFailed', { msg: errText(e) })))
                           }} />
             ))}
             {(m.goto ?? []).map((g, j) => (
@@ -111,7 +116,7 @@ export function AssistantPanel({ novelId, chapters, onGoto }: {
             {m.interrupted && <p className="text-xs text-muted-foreground" data-testid="assistant-interrupted">{t('assistant.interrupted')}</p>}
             {m.error && (
               <div className="flex items-center gap-2 text-xs text-destructive" data-testid="assistant-error">
-                <span>{m.error}</span>
+                <span>{formatMsg(m.error, locale)}</span>
                 {i === msgs.length - 1 && !busy && !(m.cards ?? []).some((c) => c.outcome === 'pending') && (
                   <Button variant="ghost" size="sm" onClick={retry}>{t('assistant.retry')}</Button>
                 )}

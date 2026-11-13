@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { ApiError, getFilm, getJob, TERMINAL } from '@/api'
 import { IN_FLIGHT } from '@/film'
+import { failHead } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 import type { AssistantTask, FilmSession, Job } from '@/types'
 
 export interface TaskView {
@@ -14,9 +16,9 @@ export interface TaskView {
   total?: number
   flying?: number
   failed?: number
-  /** 合成进行到哪一步（服务端给的文字） */
-  step?: string | null
-  error?: string | null
+  /** 合成进行到哪一步（消息对象；旧会话是服务端给的文字） */
+  step?: MsgLike
+  error?: MsgLike
 }
 
 export const TASK_POLL_MS: Record<AssistantTask['kind'], number> = { job: 1500, film: 5000, compose: 3000, export: 0, edit: 0 }  // export / edit 不轮询
@@ -26,7 +28,7 @@ export function jobView(j: Job): TaskView {
     const p = j.progress
     return { state: 'running', pct: p && p.total_chars ? Math.round((100 * p.done_chars) / p.total_chars) : null }
   }
-  return j.status === 'failed' ? { state: 'failed', error: (j.error ?? '').split('\n')[0] || null } : { state: 'ok' }
+  return j.status === 'failed' ? { state: 'failed', error: failHead(j.error_msg ?? j.error ?? '') || null } : { state: 'ok' }
 }
 
 export function filmView(s: FilmSession): TaskView {
@@ -40,8 +42,8 @@ export function filmView(s: FilmSession): TaskView {
 export function composeView(s: FilmSession): TaskView {
   const f = s.final
   if (!f) return { state: 'gone' }
-  if (f.state === 'queued' || f.state === 'running') return { state: 'running', step: f.step ?? null }
-  return f.state === 'failed' ? { state: 'failed', error: f.error } : { state: 'ok' }
+  if (f.state === 'queued' || f.state === 'running') return { state: 'running', step: f.step_msg ?? f.step ?? null }
+  return f.state === 'failed' ? { state: 'failed', error: f.error_msg ?? f.error } : { state: 'ok' }
 }
 
 export function useTaskView(nid: string, task: AssistantTask): TaskView {

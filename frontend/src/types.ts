@@ -964,6 +964,8 @@ export interface AssistantTool {
   /** null：进行中 */
   ok: boolean | null
   summary: string
+  /** 带代码的失败原因（新后端）；有就按代码渲染，没有（旧存档）显示 summary */
+  msg?: ServerMsg
 }
 export type AssistantAction = 'generate_storyboard' | 'film_run' | 'compose' | 'export_fcpxml'
   | 'shots_edit' | 'asset_edit' | 'plot_edit'
@@ -1000,6 +1002,7 @@ export interface AssistantCard {
   card?: AssistantCardInfo | null
   task?: AssistantTask | null
   error?: string
+  error_msg?: ServerMsg
   /** 本地标记：点了按钮，恢复请求还没回来 */
   sending?: boolean
 }
@@ -1011,15 +1014,18 @@ export interface AssistantMsg {
   /** 本地标记：用户点了停止 */
   interrupted?: boolean
   /** 本地标记：这一轮出错（显示报错与重试） */
-  error?: string
+  error?: MsgLike
+  /** 提示（如「步骤太多」）：不拼进回答正文 */
+  notices?: ServerMsg[]
   cards?: AssistantCard[]
 }
 export type AssistantEvent =
   | { event: 'token'; data: { text: string } }
   | { event: 'tool_start'; data: { id: string; name: string; args: Record<string, unknown> } }
-  | { event: 'tool_end'; data: { id: string; ok: boolean; summary: string } }
+  | { event: 'tool_end'; data: { id: string; ok: boolean; summary: string; msg?: ServerMsg } }
   | { event: 'goto'; data: AssistantGoto }
   | { event: 'confirm'; data: AssistantCardInfo & { id: string } }
   | { event: 'action'; data: AssistantCard }
   | { event: 'done'; data: Record<string, never> }
-  | { event: 'error'; data: { message: string } }
+  | { event: 'error'; data: ServerMsg | { message: string } }
+  | { event: 'notice'; data: ServerMsg }
