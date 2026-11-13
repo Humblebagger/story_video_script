@@ -111,8 +111,9 @@ def record(code: str, detail, *, params: Optional[dict] = None, user_id: Optiona
             if _rows[key] > 2 * MAX_ROWS:
                 _trim_locked(path)
                 _rows[key] = MAX_ROWS
-    except OSError:
-        log.exception("错误记录写盘失败 ref=%s", ref)  # i18n: internal
+    except OSError as werr:
+        # 不用 log.exception：exc_info 的 __context__ 链会带出正在处理的业务异常（可能含密钥），绕过脱敏
+        log.error("错误记录写盘失败 ref=%s %s", ref, _rel(scrub_secrets(f"{type(werr).__name__}: {werr}", secrets_extra)))  # i18n: internal
     return ref
 
 

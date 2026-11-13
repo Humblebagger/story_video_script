@@ -538,7 +538,9 @@ def main() -> int:
     print("16. 尝试记张数、计费桩带张数 ✓")
 
     # 17. 错误带代码：提交不明、查询放弃、重试提示、厂商失败、普通异常
-    r17, i17 = fresh("coded1")
+    # 这一例的会话放在配置的数据目录下，才能验证 <data> 替换与用户解析
+    r17 = Path(os.environ["STORYBOARD_DATA_DIR"]) / "users" / "a1b2c3d4e5f6" / "novels" / "n" / "chapters" / "c" / "render" / "coded1"
+    i17 = [x["id"] for x in sess.build(r17, doc, owner=dict(OWNER, vid="coded1"), patch={"budget_cny": 100000}, keyframes={})["clips"]]
     sess.queue_run(r17, [i17[0]])
     real_submit17 = fake.submit
 
@@ -570,10 +572,13 @@ def main() -> int:
     assert c["error_msg"]["code"] == "film.submit.crashed" and c["error_msg"]["params"] == {} and len(c["error_msg"]["ref"]) == 8, c["error_msg"]
     rec17 = error_refs.find(c["error_msg"]["ref"])
     assert rec17 and "ValueError" in rec17["detail"] and i17[0] in rec17["detail"], rec17
-    assert rec17["where"].startswith("submit ") and i17[0] in rec17["where"], rec17["where"]
+    assert rec17["where"].startswith("submit <data>/") and i17[0] in rec17["where"], rec17["where"]
+    assert rec17["user_id"] == "a1b2c3d4e5f6" and str(r17) not in rec17["detail"] and "<data>" in rec17["detail"], rec17
+    assert "Traceback" in rec17["detail"]
     errs = [r for r in g.records if r.levelno == logging.ERROR]
     assert len(errs) == 1 and errs[0].exc_info is None, g.lines
-    assert str(r17) in errs[0].getMessage() and i17[0] in errs[0].getMessage(), g.lines
+    assert "root=<data>/users/a1b2c3d4e5f6/" in errs[0].getMessage() and i17[0] in errs[0].getMessage(), g.lines
+    assert "Traceback" in errs[0].getMessage() and os.environ["STORYBOARD_DATA_DIR"] not in errs[0].getMessage(), g.lines
     assert "ValueError" in errs[0].getMessage() and "submit_crash17" in errs[0].getMessage(), g.lines   # 类型、原文、栈位置保留
 
     # 日志脱敏：直接异常与带 __cause__ 的链里的密钥、Bearer 凭据都不出现，落盘的报错也没有

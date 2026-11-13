@@ -94,6 +94,33 @@ def part_record():
     print("2. 记录：脱敏 / 截断 / 额外密钥 / 指定 logger / 查找不分大小写 ✓")
 
 
+def part_write_fail():
+    """写盘失败：日志不带 exc_info 链（链里有正在处理的业务异常和密钥），编号照常返回。"""
+    grab = _Grab()
+    fmt = logging.Formatter("%(message)s")
+    grab.emit = lambda rec: grab.lines.append(fmt.format(rec))   # 完整格式化，含 exc 文字
+    lg = logging.getLogger("server.errors")
+    lg.addHandler(grab)
+    orig = error_refs._file
+
+    def bad():
+        raise OSError(f"disk full {KEY} {auth.DATA_DIR}")
+    try:
+        try:
+            raise RuntimeError(f"business failure {KEY}")
+        except RuntimeError:
+            error_refs._file = bad
+            ref = error_refs.record("common.internal", "detail")
+    finally:
+        error_refs._file = orig
+        lg.removeHandler(grab)
+    assert len(ref) == 8
+    text = "\n".join(grab.lines)
+    assert "写盘失败" in text and KEY not in text, text
+    assert "business failure" not in text and "Traceback" not in text and str(auth.DATA_DIR) not in text, text
+    print("2b. 写盘失败：日志不带异常链、不含密钥，编号照常返回 ✓")
+
+
 def part_trim():
     old_max = error_refs.MAX_ROWS
     error_refs.MAX_ROWS = 5
@@ -148,6 +175,7 @@ def part_api():
 def main() -> int:
     part_ref()
     part_record()
+    part_write_fail()
     part_trim()
     part_api()
     print("\nALL PASS")
