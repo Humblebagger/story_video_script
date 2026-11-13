@@ -67,9 +67,12 @@ def digest_and_version_errors(app_mod, HTTPException) -> None:
     real = app_mod._digest_chat
     errs = Grab()
     logging.getLogger("server.errors").addHandler(errs)
+    SECRET = "zz-synthetic-anthropic-key-0123456789"
+    old_key = os.environ.get("ANTHROPIC_API_KEY")
+    os.environ["ANTHROPIC_API_KEY"] = SECRET
     try:
         def boom():
-            raise RuntimeError("model exploded sk-abcdefghijklmnop1234567890")
+            raise RuntimeError(f"model exploded key={SECRET}")
         app_mod._digest_chat = boom
         app_mod._run_digest(uid, nid, cid)
         d = novels.get_chapter(uid, nid, cid)["digest"]
@@ -78,11 +81,15 @@ def digest_and_version_errors(app_mod, HTTPException) -> None:
         ref = d["error_msg"]["ref"]
         assert len(ref) == 8
         assert d["error"].startswith("没有完成，可以稍后重跑；仍失败请联系管理员") and ref in d["error"]
-        assert "RuntimeError" not in d["error"] and "sk-" not in json.dumps(d)
+        assert "RuntimeError" not in d["error"]
+        assert SECRET not in json.dumps(novels.get_chapter(uid, nid, cid), ensure_ascii=False), "章节数据里没有密钥"
         row = error_refs.find(ref)
         assert "RuntimeError" in row["detail"] and row["where"].startswith("digest ")
         assert row["user_id"] == uid
-        assert any(ref in r.getMessage() for r in errs.records)
+        assert SECRET not in json.dumps(row, ensure_ascii=False), "错误记录里没有密钥"
+        fmt = logging.Formatter("%(levelname)s %(message)s")
+        out = "\n".join(fmt.format(r) for r in errs.records if ref in r.getMessage())
+        assert out and "RuntimeError" in out and SECRET not in out, "日志有编号与异常类型、没有密钥"
 
         # 可预期的失败（章节整理中途被删）：原因本身清楚，不记编号
         before = len(error_refs.recent(1000))
@@ -95,6 +102,10 @@ def digest_and_version_errors(app_mod, HTTPException) -> None:
         assert d["error_msg"] == {"code": "chapter.not_found", "params": {}}
         assert len(error_refs.recent(1000)) == before
     finally:
+        if old_key is None:
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+        else:
+            os.environ["ANTHROPIC_API_KEY"] = old_key
         app_mod._digest_chat = real
         logging.getLogger("server.errors").removeHandler(errs)
 
