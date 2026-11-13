@@ -52,14 +52,20 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         records = []
         logs = []
+        events = []
         chat = ChatInvoker(settings, chat=FakeChat(responses=[archived]),
                            log=logs.append)
         graph = build_batch_graph(chat=chat, review_chat=chat, settings=settings,
                                   params=params, workdir=Path(d),
-                                  attempt_records=records, log=logs.append)
+                                  attempt_records=records, log=logs.append,
+                                  on_event=events.append)
         doc, warnings = run_batch(graph, user="【小说原文】" + batch,
                                   batch_text=batch, idx=1, frozen_units=None)
         assert doc == expected, "一次就过时产物应与归档一致"
+        # 归档里有念不完的镜头，校验节点先拉长再通过
+        assert [e["code"] for e in events] == ["job.event.fitted", "job.event.passed"]
+        assert events[-1]["code"] == "job.event.passed"
+        assert events[-1]["params"] == {"batch": 1, "attempt": 1}
         assert warnings == []
         assert [r["status"] for r in records] == ["passed"]
         assert records[0]["mode"] == "generate" and records[0]["attempt"] == 1
@@ -70,33 +76,40 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         records = []
         logs = []
+        events = []
         s2 = Settings(api_key="k", max_retries=1, normalize_input=False,
                       freeze_source_units=False, repair_mode="rewrite")
         chat = ChatInvoker(s2, chat=FakeChat(responses=["我不输出 JSON", archived]),
                            log=logs.append)
         graph = build_batch_graph(chat=chat, review_chat=chat, settings=s2,
                                   params=params, workdir=Path(d),
-                                  attempt_records=records, log=logs.append)
+                                  attempt_records=records, log=logs.append,
+                                  on_event=events.append)
         doc, warnings = run_batch(graph, user="【小说原文】" + batch,
                                   batch_text=batch, idx=1, frozen_units=None)
         assert doc == expected
+        assert [e["code"] for e in events] == [
+            "job.event.unparseable", "job.event.repair_rewrite", "job.event.fitted", "job.event.passed"], [e["code"] for e in events]
         assert [r["status"] for r in records] == ["unparseable", "passed"]
         print("graph: 不可解析 → 重试 → 通过 ✓")
 
     # 3. 重试耗尽且无合法候选：抛 ConversionError，失败报告落盘
     with tempfile.TemporaryDirectory() as d:
         records = []
+        logs3 = []
         chat = ChatInvoker(settings, chat=FakeChat(responses=["坏输出"]),
                            log=lambda _: None)
         graph = build_batch_graph(chat=chat, review_chat=chat, settings=settings,
                                   params=params, workdir=Path(d),
-                                  attempt_records=records, log=lambda _: None)
+                                  attempt_records=records, log=logs3.append)
         try:
             run_batch(graph, user="u", batch_text=batch, idx=7, frozen_units=None)
             raise AssertionError("重试耗尽应抛 ConversionError")
         except ConversionError as e:
-            assert e.report
+            assert e.code == "job.batch_failed" and e.params == {"batch": 7, "retries": settings.max_retries}
+            assert e.report and d not in str(e) and "保留在" not in str(e), "工作目录只进调试日志"
             assert (Path(d) / "batch7_failure_report.txt").exists()
+        assert any(d in line for line in logs3), "工作目录仍在调试日志里"
         print("graph: 重试耗尽 → ConversionError + 报告落盘 ✓")
 
     # ---- 修复循环 ----

@@ -19,7 +19,9 @@ from . import novel_memory, quality, repair, review, validate, verification
 from .chat import check_truncation, extract_json, is_truncated
 from .config import Settings
 from .errors import ConversionError
+from .events import make_say
 from .prompt import load_system_prompt
+from server.messages import REPORT_MAX, msg, vendor
 from .tools import REPAIR_TOOLS
 
 _REPORT_LOG_LINES = 60
@@ -52,7 +54,7 @@ class BatchState(TypedDict):
     task_done: bool
     usage_mark: Optional[dict]
     result: Optional[dict]
-    warnings: List[str]
+    warnings: List[dict]      # 降级交付的质量警告（job.quality.degraded 消息对象）
 
 
 def _log_report(log, report: str, workdir: Path, idx: int, attempt: int) -> None:
@@ -132,12 +134,14 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
 
 def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                       workdir: Path, attempt_records: list, log=print,
-                      progress=None, negative_terms=()):
+                      progress=None, negative_terms=(), on_event=None):
     """编译单批状态图。跨批不变的依赖由闭包持有，不进状态。
 
     progress(phase, attempt) 在每个节点开工时被调用，供界面显示「第几次尝试、
     在干什么」。phase ∈ generating / regenerating / checking / repairing。
+    on_event(消息对象) 收给用户看的进度事件（pipeline/events.py）；细节仍直接 log。
     """
+    say = make_say(log, on_event)
     def emit(phase: str, attempt: int) -> None:
         if progress is not None:
             progress(phase, attempt)
@@ -185,13 +189,15 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             # 这一轮补丁修复没产出新底稿。底稿与结构化报告原样保留：
             # 下一次尝试仍从同一份底稿打补丁，与改造前一致
             report = state["report"]
-            log(f"批 {idx} 第 {attempt} 次生成：{report}")
+            say("job.event.repair_failed", batch=idx, attempt=attempt)
+            log(f"  {report}")
             _record({**state, "attempt": attempt}, "unparseable", report=report)
             return {"attempt": attempt, "report": report, "doc": state["doc"],
                     "used_tools": []}
         if state["doc"] is None:
             report = state["report"] or "输出无法解析为 JSON"
-            log(f"批 {idx} 第 {attempt} 次生成：{report}")
+            say("job.event.unparseable", batch=idx, attempt=attempt)
+            log(f"  {report}")
             _record({**state, "attempt": attempt}, "unparseable", report=report)
             # 没有可打补丁的底稿，下一轮只能整份重写
             return {"attempt": attempt, "mode": "generate", "report": report,
@@ -204,21 +210,19 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         # 程序算得对的呈现层字段直接改，不为它们花一轮修复
         fixed = quality.normalize_curve_refs(doc)
         if fixed:
-            log(f"批 {idx}：music.curve 有 {fixed} 处镜头引用写成序号或越界，已规整为本集镜头 ID")
+            say("job.event.fixed_curve", batch=idx, n=fixed)
         slips = quality.fix_known_slips(doc)
         if slips:
-            log(f"批 {idx}：修正 {slips} 处已知笔误（机位 reverse、运镜 whip_pan、景别 pov、空旁白字段）")
+            say("job.event.fixed_slips", batch=idx, n=slips)
         if settings.auto_prune_narration:
             # 先裁旁白再拉时长：旁白变短，镜头就不必拉那么长
             pruned = quality.prune_narration(doc, settings.narration_density_max)
             if pruned:
-                log(f"批 {idx}：旁白占比超过 {settings.narration_density_max:.0%}，"
-                    f"已把 {pruned} 句有画面承载的动作/描写句移出旁白")
+                say("job.event.pruned", batch=idx, max=f"{settings.narration_density_max:.0%}", n=pruned)
         if settings.auto_fit_duration:
             fitted = quality.fit_durations(doc, settings.speech_cps)
             if fitted:
-                log(f"批 {idx}：{fitted} 个镜头时长不够念完旁白/台词，已自动拉长"
-                    f"（单镜封顶 {quality.MAX_SHOT_SECONDS:g}s）")
+                say("job.event.fitted", batch=idx, n=fitted, cap=f"{quality.MAX_SHOT_SECONDS:g}")
         ok, hard, report, key, structured = _check_batch(
             doc, state["batch_text"], settings, workdir, idx, attempt,
             review_chat, log, state["frozen_units"])
@@ -226,14 +230,14 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                 "passed" if ok else ("hard_failed" if hard else "soft_failed"),
                 structured=structured, report=report)
         if ok:
-            log(f"批 {idx} 校验通过（第 {attempt} 次生成）")
+            say("job.event.passed", batch=idx, attempt=attempt)
             return {"attempt": attempt, "report": report, "doc": doc,
                     "structured": structured, "result": doc, "used_tools": []}
         candidates = list(state["candidates"])
         if not hard:
             candidates.append((key, attempt, doc, report))
-        log(f"批 {idx} 第 {attempt} 次生成未通过"
-            f"{'校验' if hard else '质量门'}，原因如下：")
+        say("job.event.check_failed" if hard else "job.event.gate_failed", batch=idx, attempt=attempt)
+        log("  原因如下：")
         _log_report(log, report, workdir, idx, attempt)
         return {"attempt": attempt, "report": report, "doc": doc,
                 "structured": structured, "candidates": candidates,
@@ -245,18 +249,17 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         if state["candidates"] and not settings.strict:
             key, best_attempt, doc, report = max(state["candidates"],
                                                  key=lambda c: c[0])
-            log(f"批 {idx} 软质量门重试耗尽，择优降级交付第 {best_attempt} 次生成"
-                f"（产物结构合法、逐字保真；--strict 可改为直接失败）")
-            warning = (f"批 {idx} 软质量门重试 {settings.max_retries} 次后仍未达标，"
-                       f"择优交付第 {best_attempt} 次生成"
-                       f"（共 {len(state['candidates'])} 个合法候选）。"
-                       f"产物结构合法、逐字保真，仅转换质量未达阈值：\n{report}")
+            say("job.event.degraded", batch=idx, attempt=best_attempt)
+            log("  （产物结构合法、逐字保真；--strict 可改为直接失败）")
+            warning = msg("job.quality.degraded", batch=idx, retries=settings.max_retries,
+                          attempt=best_attempt, candidates=len(state["candidates"]),
+                          report=vendor(report, limit=REPORT_MAX))
             return {"result": doc, "warnings": [warning]}
         (workdir / f"batch{idx}_failure_report.txt").write_text(
             state["report"] + "\n", encoding="utf-8")
-        raise ConversionError(
-            f"批 {idx} 重试 {settings.max_retries} 次后仍未通过校验"
-            f"（已通过批次与失败报告保留在 {workdir}）", state["report"])
+        log(f"批 {idx} 已通过批次与失败报告保留在 {workdir}")
+        raise ConversionError.of("job.batch_failed", state["report"],
+                                 batch=idx, retries=settings.max_retries)
 
     def route_after_check(state: BatchState) -> str:
         if state["result"] is not None:
@@ -274,8 +277,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                  "repair_failed": False, "used_tools": [],
                  "usage_mark": chat.usage_totals()}
         if state["doc"] is not None and settings.repair_mode == "patch":
-            log(f"批 {idx} 进入受限 JSON Patch 修复"
-                f"（{attempt + 1}/{settings.max_retries + 1}）…")
+            say("job.event.repair_patch", batch=idx, n=attempt + 1, total=settings.max_retries + 1)
             return {**reset, "mode": "patch", "messages": [
                 # 每轮补丁修复都从干净的三条消息开始，与改造前逐字一致。
                 # add_messages 默认是追加，要清空历史得先发一条 REMOVE_ALL_MESSAGES
@@ -287,8 +289,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             ]}
         # rewrite 模式，或从未解析出过 JSON（没有可打补丁的底稿）。这条路上历史里
         # 只有整份生成的往返、不含工具调用，直接追加回喂即可
-        log(f"批 {idx} 回喂校验报告重新输出整份"
-            f"（{attempt + 1}/{settings.max_retries + 1}）…")
+        say("job.event.repair_rewrite", batch=idx, n=attempt + 1, total=settings.max_retries + 1)
         return {**reset, "mode": "generate", "messages": [HumanMessage(
             "你的输出未通过自动校验，报告如下：\n\n" + state["report"] +
             "\n\n请修正全部问题后重新输出完整 JSON"
@@ -396,7 +397,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
 
 def run_batch(graph, *, user: str, batch_text: str, idx: int,
               frozen_units=None):
-    """跑一批，返回 (产物, 质量警告列表)。警告非空即降级交付。"""
+    """跑一批，返回 (产物, 质量警告列表)。警告是 job.quality.degraded 消息对象，非空即降级交付。"""
     state: BatchState = {
         "messages": [HumanMessage(user)], "user": user,
         "batch_text": batch_text, "idx": idx, "frozen_units": frozen_units,

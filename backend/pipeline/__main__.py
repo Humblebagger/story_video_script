@@ -83,7 +83,7 @@ def main(argv=None) -> int:
 
     if warnings:
         report_path = out.with_name(out.stem + ".quality-report.txt")
-        report_path.write_text("\n\n".join(warnings) + "\n", encoding="utf-8")
+        report_path.write_text("\n\n".join(w["message"] if isinstance(w, dict) else str(w) for w in warnings) + "\n", encoding="utf-8")
         print(f"⚠ 软质量门未达标，已择优降级交付（--strict 可改为直接失败），"
               f"质量报告：{report_path}", file=sys.stderr)
 

@@ -10,6 +10,7 @@ from . import novel_memory, validate, verification
 from .chat import ChatInvoker
 from .config import Settings, load_settings
 from .errors import ConversionError
+from .events import make_say
 from .graph import build_batch_graph, run_batch
 from .manifest import build_manifest, finish_manifest, sum_usage
 from .prompt import build_user_message
@@ -70,13 +71,14 @@ def convert_text(text: str,
                  batches: Optional[List[str]] = None,
                  workdir: Optional[Path] = None,
                  log=print,
-                 warnings_out: Optional[List[str]] = None,
+                 warnings_out: Optional[List[dict]] = None,
                  seed_assets: Optional[dict] = None,
                  manifest_out: Optional[dict] = None,
                  progress_out: Optional[dict] = None,
                  on_partial: Optional[Callable[[dict, int, int], None]] = None,
                  start_numbering: Optional[dict] = None,
-                 novel_context: Optional[novel_memory.NovelContext] = None) -> dict:
+                 novel_context: Optional[novel_memory.NovelContext] = None,
+                 on_event=None) -> dict:
     """小说纯文本 → 通过三层校验的分镜 JSON（dict）。
 
     llm 可注入任何 BaseChatModel（测试用 FakeChat）。
@@ -94,9 +96,12 @@ def convert_text(text: str,
     此前章节的编号（句单元、段落、分集），缺省从 1 起。
     novel_context：小说长期记忆（人物状态、主线剧情、创作限制），每批都注入；
     限制的负面提示词确定性并进 meta，关键词与已故角色出场做软核查（MEDIUM，不打回）。
+    on_event(消息对象)：给用户的进度事件（见 pipeline/events.py）；
+    warnings_out 收到的是 job.quality.degraded 消息对象。
     """
     params = params or ConvertParams()
     settings = settings or load_settings()
+    say = make_say(log, on_event)
     raw_text = text
     if settings.normalize_input:
         # 剔除后全链路（分批/LLM/保真检查）一律以清洗后文本为"原文"；
@@ -105,8 +110,8 @@ def convert_text(text: str,
         if batches is not None:
             batches = [normalize_source_text(b)[0] for b in batches]
         if removed:
-            log(f"输入归一化：剔除 {removed} 个零宽/BOM 噪声字符"
-                f"（STORYBOARD_NORMALIZE_INPUT=0 关闭）")
+            say("job.event.normalized", n=removed)
+            log("  （STORYBOARD_NORMALIZE_INPUT=0 关闭）")
     if llm is None:
         chat = ChatInvoker(settings, log=log)
     else:
@@ -122,7 +127,7 @@ def convert_text(text: str,
         batches = split_batches(text, settings.batch_target_chars,
                                 settings.single_batch_max_chars)
     if settings.freeze_source_units and "".join(batches) != text:
-        raise ConversionError("分批范围不确定：所有批次必须按顺序精确拼回归一化原文")
+        raise ConversionError("分批范围不确定：所有批次必须按顺序精确拼回归一化原文")  # i18n: internal
 
     start = {"next_unit": 1, "next_para": 1, "next_episode": 1, **(start_numbering or {})}
     continuing = any(v > 1 for v in start.values())
@@ -139,7 +144,8 @@ def convert_text(text: str,
     workdir = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="storyboard_"))
     workdir.mkdir(parents=True, exist_ok=True)
     attempt_records = run_manifest["attempts"]
-    log(f"输入 {len(text)} 字符 → {len(batches)} 批（工作目录 {workdir}）")
+    say("job.event.split", chars=len(text), batches=len(batches))
+    log(f"  工作目录 {workdir}")
     progress = progress_out if progress_out is not None else {}
     progress.update({"batches": len(batches), "batch": 0,
                      "total_chars": sum(len(b) for b in batches), "done_chars": 0,
@@ -152,7 +158,7 @@ def convert_text(text: str,
     graph = build_batch_graph(chat=chat, review_chat=review_chat,
                               settings=settings, params=params, workdir=workdir,
                               attempt_records=attempt_records, log=log,
-                              progress=on_progress,
+                              progress=on_progress, on_event=on_event,
                               negative_terms=novel_memory.negative_terms(novel_context))
     memory = novel_memory.memory_blocks(novel_context)
 
@@ -178,7 +184,7 @@ def convert_text(text: str,
         expected_units = prompt_units(frozen, i) if settings.freeze_source_units else None
         user = build_user_message(params, batch, assets_block, cont_block,
                                   expected_units, memory)
-        log(f"批 {i}/{len(batches)}（{len(batch)} 字符）：调用 LLM…")
+        say("job.event.batch_start", batch=i, batches=len(batches), chars=len(batch))
         progress.update({"batch": i, "batch_chars": len(batch)})
         doc, batch_warnings = run_batch(graph, user=user, batch_text=batch,
                                         idx=i, frozen_units=expected_units)
@@ -202,7 +208,7 @@ def convert_text(text: str,
         ok, out = validate.run_merge(batch_paths, merged_path)
         log(out.strip())
         if not ok:
-            raise ConversionError("分批结果合并失败（资产跨批不一致）", out)
+            raise ConversionError.of("job.merge_failed", out)
 
     merged_doc = json.loads(merged_path.read_text(encoding="utf-8"))
     expected_all = ([u.prompt_dict() for u in frozen]
@@ -223,15 +229,16 @@ def convert_text(text: str,
     if not final_report.ok:
         run_manifest["state"] = "failed"
         run_manifest["verification"] = final_report.to_dict()
-        raise ConversionError("合并后结构化终检未通过", final_report.render())
+        raise ConversionError.of("job.final_verify_failed", final_report.render())
     if not (lint_ok and fid_ok):
         run_manifest["state"] = "failed"
         run_manifest["verification"] = final_report.to_dict()
-        raise ConversionError("合并后整章终检未通过", lint_out + "\n" + fid_out)
+        raise ConversionError.of("job.final_check_failed", lint_out + "\n" + fid_out)
+    say("job.event.verified")
     soft = novel_memory.soft_findings(merged_doc, novel_context)
     if soft:
         final_report.findings.extend(soft)
-        log(f"长期记忆软核查：{len(soft)} 条待人工审阅（创作限制关键词 / 已故角色出场）")
+        say("job.event.soft_findings", n=len(soft))
     finish_manifest(run_manifest, merged_doc, final_report, "verified")
     progress.update({"phase": "done"})
     return merged_doc

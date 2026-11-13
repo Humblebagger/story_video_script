@@ -95,6 +95,7 @@ def main() -> int:
         (YAO / "output_batch2.json").read_text(encoding="utf-8"),
     ])
     logs = []
+    events = []
     progress = {}
     partials = []
     # 归档由未清洗原文转换（units 保留 U+200B），关闭入口归一化以逐字回放
@@ -103,8 +104,14 @@ def main() -> int:
                        settings=Settings(max_retries=0, normalize_input=False,
                                          freeze_source_units=False),
                        llm=mock, batches=[b1, b2],
-                       log=logs.append, progress_out=progress,
+                       log=logs.append, progress_out=progress, on_event=events.append,
                        on_partial=lambda d, k, n: partials.append((d, k, n)))
+    codes = [e["code"] for e in events]
+    assert codes[0] == "job.event.split" and codes.count("job.event.batch_start") == 2
+    assert codes.count("job.event.passed") == 2 and codes[-1] == "job.event.verified", codes
+    assert all(set(e) >= {"code", "params", "message"} for e in events)
+    assert any(e["message"] in logs for e in events), "事件的中文兜底同时进调试日志"
+    assert not any("工作目录" in e["message"] for e in events)
     # 分批先看：每批跑完（最后一批除外）把已完成的批次合并成部分产物交出去
     assert [(k, n) for _, k, n in partials] == [(1, 2)], "只在非末批之后交部分产物"
     part = partials[0][0]
@@ -351,8 +358,9 @@ def main() -> int:
         narrated = sum(len(s["narration"]["unit_refs"])
                        for s in doc3["episodes"][0]["shots"])
         assert narrated == 8, f"应择优交付 80% 那版，实际旁白句数 {narrated}"
-        assert len(warnings) == 1 and "择优交付第 2 次生成" in warnings[0]
-        assert "旁白占比 80%" in warnings[0]
+        assert len(warnings) == 1 and warnings[0]["code"] == "job.quality.degraded"
+        assert warnings[0]["params"]["attempt"] == 2 and "择优交付第 2 次生成" in warnings[0]["message"]
+        assert "旁白占比 80%" in warnings[0]["params"]["report"]["text"]
 
         # 修复轮次可以先读取结构化工具结果，再提交受限补丁；仍只占一次修复 attempt。
         tool_manifest = {}
@@ -652,7 +660,7 @@ def main() -> int:
                          llm=mock8, log=logs13.append)
             raise AssertionError("硬校验失败应抛 ConversionError")
         except ConversionError as e:
-            assert "C09" in e.report
+            assert e.code == "job.batch_failed" and e.params == {"batch": 1, "retries": 0} and "C09" in e.report
         blob = "\n".join(logs13)
         assert "原因如下" in blob, "日志未给出失败原因的引导句"
         assert "不存在的资产 C09" in blob and "u0007 未被任何镜头覆盖" in blob, \

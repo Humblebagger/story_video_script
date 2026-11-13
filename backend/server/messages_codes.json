@@ -959,6 +959,223 @@
     ],
     "zh": "厂商暂时不可用（已重试 {retries} 次）：{cause}"
   },
+  "job.batch_failed": {
+    "params": [
+      "batch",
+      "retries"
+    ],
+    "zh": "批 {batch} 重试 {retries} 次后仍未通过校验"
+  },
+  "job.crashed": {
+    "params": [],
+    "zh": "转换时出现意外错误，请重试；仍失败请联系管理员"
+  },
+  "job.event.adopted": {
+    "params": [
+      "added",
+      "merged"
+    ],
+    "zh": "已自动采用为本章首个成功版本：资产库新增 {added} 张、合并 {merged} 张"
+  },
+  "job.event.archived": {
+    "params": [],
+    "zh": "本章已有采用版，这一版仅存档；要用它请在版本列表里点「采用」"
+  },
+  "job.event.batch_start": {
+    "params": [
+      "batch",
+      "batches",
+      "chars"
+    ],
+    "zh": "批 {batch}/{batches}（{chars} 字符）：开始生成…"
+  },
+  "job.event.check_failed": {
+    "params": [
+      "batch",
+      "attempt"
+    ],
+    "zh": "批 {batch} 第 {attempt} 次生成未通过校验"
+  },
+  "job.event.degraded": {
+    "params": [
+      "batch",
+      "attempt"
+    ],
+    "zh": "批 {batch} 软质量门重试耗尽，择优降级交付第 {attempt} 次生成"
+  },
+  "job.event.digest_queued": {
+    "params": [],
+    "zh": "章后整理已排队：提取人物生命周期提议与本章摘要（待人工确认）"
+  },
+  "job.event.fitted": {
+    "params": [
+      "batch",
+      "n",
+      "cap"
+    ],
+    "zh": "批 {batch}：{n} 个镜头时长不够念完旁白/台词，已自动拉长（单镜封顶 {cap}s）"
+  },
+  "job.event.fixed_curve": {
+    "params": [
+      "batch",
+      "n"
+    ],
+    "zh": "批 {batch}：music.curve 有 {n} 处镜头引用写成序号或越界，已规整为本集镜头 ID"
+  },
+  "job.event.fixed_slips": {
+    "params": [
+      "batch",
+      "n"
+    ],
+    "zh": "批 {batch}：修正 {n} 处已知笔误（机位 reverse、运镜 whip_pan、景别 pov、空旁白字段）"
+  },
+  "job.event.gate_failed": {
+    "params": [
+      "batch",
+      "attempt"
+    ],
+    "zh": "批 {batch} 第 {attempt} 次生成未通过质量门"
+  },
+  "job.event.memory": {
+    "params": [
+      "lifecycle",
+      "synopses",
+      "outline",
+      "constraints"
+    ],
+    "zh": "注入长期记忆：人物状态 {lifecycle} 条、此前章节摘要 {synopses} 章{outline}、创作限制 {constraints} 条"
+  },
+  "job.event.memory_failed": {
+    "params": [],
+    "zh": "警告：写入长期记忆失败"
+  },
+  "job.event.normalized": {
+    "params": [
+      "n"
+    ],
+    "zh": "输入归一化：剔除 {n} 个零宽/BOM 噪声字符"
+  },
+  "job.event.numbering": {
+    "params": [
+      "unit",
+      "episode"
+    ],
+    "zh": "编号接续本书此前章节：句子从 {unit}、分集从 {episode} 起"
+  },
+  "job.event.passed": {
+    "params": [
+      "batch",
+      "attempt"
+    ],
+    "zh": "批 {batch} 校验通过（第 {attempt} 次生成）"
+  },
+  "job.event.persist_failed": {
+    "params": [],
+    "zh": "警告：记录落盘失败，产物仍可从本次结果取走"
+  },
+  "job.event.pruned": {
+    "params": [
+      "batch",
+      "max",
+      "n"
+    ],
+    "zh": "批 {batch}：旁白占比超过 {max}，已把 {n} 句有画面承载的动作/描写句移出旁白"
+  },
+  "job.event.repair_failed": {
+    "params": [
+      "batch",
+      "attempt"
+    ],
+    "zh": "批 {batch} 第 {attempt} 次修复没有产出新底稿"
+  },
+  "job.event.repair_patch": {
+    "params": [
+      "batch",
+      "n",
+      "total"
+    ],
+    "zh": "批 {batch} 进入受限 JSON Patch 修复（{n}/{total}）…"
+  },
+  "job.event.repair_rewrite": {
+    "params": [
+      "batch",
+      "n",
+      "total"
+    ],
+    "zh": "批 {batch} 回喂校验报告重新输出整份（{n}/{total}）…"
+  },
+  "job.event.seed_assets": {
+    "params": [
+      "title",
+      "n"
+    ],
+    "zh": "沿用《{title}》的资产库共 {n} 张卡（新分镜会沿用其编号与描述）"
+  },
+  "job.event.soft_findings": {
+    "params": [
+      "n"
+    ],
+    "zh": "长期记忆软核查：{n} 条待人工审阅（创作限制关键词 / 已故角色出场）"
+  },
+  "job.event.split": {
+    "params": [
+      "chars",
+      "batches"
+    ],
+    "zh": "输入 {chars} 字符 → {batches} 批"
+  },
+  "job.event.unparseable": {
+    "params": [
+      "batch",
+      "attempt"
+    ],
+    "zh": "批 {batch} 第 {attempt} 次生成：输出无法解析，准备重试"
+  },
+  "job.event.verified": {
+    "params": [],
+    "zh": "整章终检通过"
+  },
+  "job.event.with_outline": {
+    "params": [],
+    "zh": "、全书梗概"
+  },
+  "job.failed_report": {
+    "params": [
+      "reason",
+      "report"
+    ],
+    "zh": "{reason}\n{report}"
+  },
+  "job.final_check_failed": {
+    "params": [],
+    "zh": "合并后整章终检未通过"
+  },
+  "job.final_verify_failed": {
+    "params": [],
+    "zh": "合并后结构化终检未通过"
+  },
+  "job.merge_failed": {
+    "params": [],
+    "zh": "分批结果合并失败（资产跨批不一致）"
+  },
+  "job.no_partial": {
+    "params": [],
+    "zh": "暂无已完成的批次可预览"
+  },
+  "job.not_found": {
+    "params": [],
+    "zh": "任务不存在（服务重启会清空任务表）"
+  },
+  "job.quality.degraded": {
+    "params": [
+      "batch",
+      "retries",
+      "attempt",
+      "candidates",
+      "report"
+    ],
+    "zh": "批 {batch} 软质量门重试 {retries} 次后仍未达标，择优交付第 {attempt} 次生成（共 {candidates} 个合法候选）。产物结构合法、逐字保真，仅转换质量未达阈值：\n{report}"
+  },
   "library.empty_title": {
     "params": [],
     "zh": "作品名不能为空"
