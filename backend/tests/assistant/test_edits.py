@@ -329,6 +329,72 @@ def main() -> int:
     assert E.EDITS == ("shots_edit", "asset_edit", "plot_edit")
     print("11. 参数说明 ✓")
 
+    # 12. 下层带代码的异常：应用与撤销两条路径都要原样保留代码、参数与参考编号（recast），中文正文不变
+    from server.messages import msg, with_ref
+
+    def coded_low(cls):
+        return cls.from_msg(with_ref(msg("novel.asset.id_mismatch", got="C1", want="C2"), "R7"))
+
+    def want_msg(m):
+        assert m == {"code": "novel.asset.id_mismatch", "params": {"got": "C1", "want": "C2"},
+                     "message": "卡片 id 与路径不一致：C1 != C2（参考编号 R7）", "ref": "R7"}, m
+
+    def boom_low(cls):
+        def f(*a, **k):
+            raise coded_low(cls)
+        return f
+
+    real_upsert, real_outline = novels.upsert_asset, novels.set_outline
+    card0 = novels.get_memory(uid, nid)["assets"]["characters"][0]
+    try:
+        novels.upsert_asset = boom_low(novels.NovelError)
+        C = cfg()
+        ag = agent_for([call("asset_edit", {"card_id": card0["id"], "fields": {"name": "改名甲"}}, "r1"), AIMessage("好")])
+        run(ag, C, answer(run(ag, C, {"messages": [HumanMessage("改")]})[0]))
+        m = result(ag, C)
+        assert m.status == "error", m.content
+        want_msg(m.artifact["error"])
+        assert m.content == m.artifact["error"]["message"]
+        novels.set_outline = boom_low(novels.NovelError)
+        C = cfg()
+        ag = agent_for([call("plot_edit", {"outline": "改梗概乙"}, "r2"), AIMessage("好")])
+        run(ag, C, answer(run(ag, C, {"messages": [HumanMessage("改")]})[0]))
+        m = result(ag, C)
+        assert m.status == "error", m.content
+        want_msg(m.artifact["error"])
+        assert m.content == m.artifact["error"]["message"]
+
+        # 撤销：资产卡、剧情（下层 NovelError），镜头（version_save 的 ToolError）
+        novels.upsert_asset = boom_low(novels.NovelError)
+        try:
+            E.undo(uid, nid, {"kind": "asset", "asset_kind": "characters", "card_id": card0["id"],
+                              "before": {**card0, "name": "旧名"}, "after": card0})
+            raise AssertionError("应报 UndoError")
+        except E.UndoError as e:
+            want_msg(e.as_msg())
+            assert str(e) == e.as_msg()["message"]
+        outline = novels.get_memory(uid, nid)["plot"].get("outline") or ""
+        try:
+            E.undo(uid, nid, {"kind": "plot", "outline": {"before": "x", "after": outline}, "synopsis": None})
+            raise AssertionError("应报 UndoError")
+        except E.UndoError as e:
+            want_msg(e.as_msg())
+        real_save = A.ops["version_save"]
+        A.ops["version_save"] = boom_low(E.ToolError)
+        try:
+            cur = copy.deepcopy(shot(uid, nid, c1, sid))
+            E.undo(uid, nid, {"kind": "shots", "chapter_id": c1, "version_id": "v1",
+                              "shots": {sid: {"before": {**cur, "action": "旧画面"}, "after": cur}}})
+            raise AssertionError("应报 UndoError")
+        except E.UndoError as e:
+            want_msg(e.as_msg())
+            assert str(e) == e.as_msg()["message"]
+        finally:
+            A.ops["version_save"] = real_save
+    finally:
+        novels.upsert_asset, novels.set_outline = real_upsert, real_outline
+    print("12. 下层带代码的异常保留代码、参数与编号 ✓")
+
     print("\nALL PASS")
     return 0
 

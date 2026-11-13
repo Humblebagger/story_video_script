@@ -297,6 +297,22 @@ def main() -> int:
         assert h[-1]["cards"][0]["outcome"] == "undone"
     print("16. 改内容工具 ✓")
 
+    # 17. 生产 build_agent 的 ToolNode：带代码的工具报错落成 status=error 的 ToolMessage，正文是中文兜底，artifact 带完整消息对象
+    store.clear(uid, nid)
+    model = ScriptedChat(script=[call("goto", {"step": "bogus"}, "g17"), AIMessage("好。")])
+    cfg = graph.run_config(uid, nid, {"chapter_id": cid}, "zh")
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(model, cp)
+        list(events.stream(agent, cfg, "跳转"))
+        tm = [m for m in agent.get_state(cfg).values["messages"] if isinstance(m, ToolMessage)][-1]
+    options = "import, storyboard, review, render, compose, download"
+    body = f"step 只能是 {options}"
+    assert tm.status == "error" and tm.content == body, (tm.status, tm.content)
+    assert tm.tool_call_id == "g17" and tm.name == "goto", (tm.tool_call_id, tm.name)
+    assert tm.artifact == {"error": {"code": "assistant.tool.bad_step", "params": {"options": options},
+                                     "message": body}}, tm.artifact
+    print("17. 生产智能体的带代码工具报错 ✓")
+
     print("\nALL PASS")
     return 0
 
