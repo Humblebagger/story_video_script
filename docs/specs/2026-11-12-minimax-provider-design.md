@@ -5,11 +5,13 @@
 ## 1. 目标与范围
 
 - 出片多一家厂商 MiniMax（海螺 H3 系列），与现有 Seedance 并存。用户在出片设置里切换，会话里各段照常按厂商记账、出片、接力。
+- **系统缺省厂商改为 MiniMax**（`minimax-h3` + `768P`），只影响新建的出片会话；已有会话保持原厂商，不迁移（§3.1）。
 - 档位：`MiniMax-H3`（默认）、`MiniMax-H3-Highspeed`、`MiniMax-H3-Lite`。`MiniMax-H3-Max` 这次不接，理由是参考图按每张 ¥0.50 收费，且自动扩写提示词会改掉分镜原意。
 - 不在范围内：
   - 出片画布、节点图、自由节点、预算与确认、合成、导出的流程不变。它们只经 `Caps` 与 `VideoProvider` 接口跟厂商打交道。
   - 不用 MiniMax 的参考视频、参考音频、尾帧（`last_frame`）、回调、再生成接口。
-  - 不改 Seedance 的行为。
+  - 不改 Seedance 的行为（它从缺省厂商变为可选厂商）。
+  - 不改「生产包」（RenderView 的提示词包导出）里写死的 Seedance 档位：那是给外部工具用的提示词包，与出片会话的厂商无关。
 - 依据：本文的接口与价格事实核对自 platform.minimax.cn 官方文档，核对日期 2026-11-12。核对过的页面是 `guides/video-generation`、`api-reference/video-generation-v2-create`、`api-reference/video-generation-v2-query`、`guides/pricing-paygo`。
 
 ## 2. 官方事实摘要（实现以此为准）
@@ -37,6 +39,26 @@
   - `STORYBOARD_MINIMAX_BASE_URL`（可选，缺省 `https://api.minimax.cn`）：为国际站预留，换地址即可。
   - `STORYBOARD_MINIMAX_PRICE_SCALE`（可选，缺省 1.0）：所有单价乘以这个系数，用于按真实账单或折扣校准。解析失败时按 1.0 处理。
 - 缺密钥时，`from_env` 抛 `ProviderError("没有配置 MiniMax 密钥：在 backend/.env 写 MINIMAX_API_KEY=…")`。现有链路已经能处理这种情况：`session._provider` 把它转成 `SessionError`，出片设置切到 minimax 时界面显示这句提示，原设置保持不变。`names()` 仍然列出 minimax，用户能看到选项，选了才提示缺密钥。
+
+### 3.1 缺省厂商改为 MiniMax
+
+**落点**：只有一处，即 `providers/__init__.py` 的 `default_video_name()`。它只在 `session.resolve_settings` 遇到 `cur["provider"]` 为空时才被用到，也就是新建出片会话、还没有任何厂商设置的时候；此外还被 `get_video(None)` 和 `names()` 用到。改后的取值规则如下：
+
+1. 显式设置了 `STORYBOARD_VIDEO_PROVIDER`：照用，不做回落（测试里设成 `fake` 的写法照旧生效）。
+2. 没设置：先加载 `backend/.env`（与各厂商 `from_env` 用同一个 `_load_dotenv`，只把值放进进程环境，不读出、不打印），然后：
+   - 配了 `MINIMAX_API_KEY`：取 `minimax`；
+   - 没配 MiniMax、但配了 `ARK_API_KEY`：回落到 `seedance`；
+   - 两个都没配：取 `minimax`，让缺密钥的提示指向推荐厂商。
+3. 判断密钥是否存在，统一用 `providers._has_key(name)`，只看非空，不碰值，方便测试打桩。
+
+**界面提示**：发生第 2 步的回落时，`session.view` 的 `options` 增加 `default_note`，内容为「没有配置 MINIMAX_API_KEY，新会话先用 Seedance；配好后新建的会话会默认用 MiniMax」，其余情况为空串。出片面板设置区在有 `default_note` 时把它显示成一行提示，样式同现有的 `providerNote`。这是这次唯一的前端改动，需要中英文案各一条。
+
+**不受影响的部分**：
+- 已有会话：`session.json` 里已经存了 `provider`、`model`、`resolution`，`resolve_settings` 以已存的为准。所以已有会话保持原厂商、原档位、原分辨率，不迁移、不重估，已出的片段、指纹、费用都不动。用户要换，在出片设置里手动切，走现有的换厂商流程。
+- 小说参数（`novel.params`）：不存视频厂商，不受影响。
+- 助手发起的出片：通过同一个 `resolve_settings` 建会话，跟着新缺省走，同样会回落。
+
+**README**：出片一节改为「缺省 `minimax`（`MINIMAX_API_KEY`），没配 MiniMax 而配了 `ARK_API_KEY` 时回落到 `seedance`」。
 - `rate_note`：「2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；每段前 5 张参考图免费，超出另计），未经账单核对」。
 
 ## 4. Caps 映射
@@ -185,7 +207,7 @@ ffmpeg -y -v error -sseof -0.1 -i <video> -frames:v 1 -q:v 2 <last_frame_path(vi
 
 ## 9. 冒烟脚本
 
-`render/smoke.py` 增加 `--provider {seedance,minimax}`，缺省 seedance。
+`render/smoke.py` 增加 `--provider {seedance,minimax}`，缺省取 `default_video_name()`（与新会话一致），并把选中的厂商打印出来，再询问是否提交。
 
 - 按厂商取实例和缺省档位、分辨率：minimax 缺省 `minimax-h3-lite` 加 `480P`，最便宜。
 - 描述文字改为「视频厂商真实冒烟（花钱）」。
@@ -203,6 +225,9 @@ ffmpeg -y -v error -sseof -0.1 -i <video> -frames:v 1 -q:v 2 <last_frame_path(vi
   5. download：正常下载；地址过期后重新查询再下成功；重查仍失败报错；尾帧截取成功与失败（打桩 ffmpeg 不存在的情况）。
   6. cost：失败为 0；图片 ≤ 5 张不加钱；7 张加 2 张的钱；优先用 `usage.input_image_count`。
   7. 图片规范化：用 ffmpeg 生成过小（100×100）、过宽（3000×800）的测试图，规范化后都在限制之内，缓存命中时不重复处理。机器上没有 ffmpeg 时跳过并打印提示，与 mix 测试一致。
+- 改 `test_providers.py`，增加缺省厂商用例：给 `_has_key` 打桩、暂时清掉 `STORYBOARD_VIDEO_PROVIDER`，不读真实 `.env`。覆盖四种情况：显式设置照用；只有 MiniMax 密钥取 minimax；只有方舟密钥回落 seedance；都没有取 minimax。用例结束后恢复环境变量。
+- 改 `test_session.py`：发生回落时 `options.default_note` 非空，不回落时为空；已有会话（存的是 seedance）在缺省改为 minimax 后再读取，厂商、档位、分辨率都不变。
+- 前端 `film.test`：有 `default_note` 时出片设置区显示这条提示。
 - 改 `test_providers.py`：`estimate_cny` 的 images 参数（缺省 0 时结果与旧版相同）；注册表里能取到 minimax（没配密钥时得到 ProviderError，不是 KeyError）。
 - 改 `test_session.py`：不支持原生声音的厂商，`options.audio_modes` 只剩两项，继承下来的旧模式回落到 `tts_all`；切到 minimax 后默认分辨率为 `768P`。
 - 改 `test_runner.py`：AmbiguousSubmit 的提示用 `console_name`。
@@ -229,8 +254,8 @@ ffmpeg -y -v error -sseof -0.1 -i <video> -frames:v 1 -q:v 2 <last_frame_path(vi
 - **国际站**：只预留了 base URL。国际站价格是美元、接口可能不同，海外上线前要单独核对，届时在 `rate_note` 与单价里区分站点。
 - **参考图收费**：9 张参考图比 5 张每段多 ¥0.80（Lite 多 ¥0.52）。缺省仍按 `max_refs=9`，费用会如实进预估。是否默认少带几张，见开放问题。
 
-## 13. 开放问题（需用户拍板）
+## 13. 已决事项（用户 2026-11-12 拍板）
 
-1. **参考图上限**：缺省按 9 张（效果优先，超出部分如实计费），还是限到 5 张（不额外收费）？本设计按 9 张写。
-2. **原生声音**：在真跑确认之前，缺省关闭（只给「全部配音」和「静音」两种模式）是否接受？
-3. **系统缺省厂商**：仍用 Seedance，用户在出片设置里手动切换；还是把 `STORYBOARD_VIDEO_PROVIDER` 缺省改成 minimax？本设计保持 Seedance。
+1. **参考图上限**：用满 9 张，超出 5 张的部分如实计费并计入预估（§5）。
+2. **原生声音**：真跑确认之前缺省当作不带，只给「全部配音」和「静音」两种模式（§6）。
+3. **系统缺省厂商**：改为 MiniMax（`minimax-h3` + `768P`）。没配 MiniMax 密钥而配了方舟密钥时，回落到 Seedance 并在界面提示；已有会话不迁移（§3.1）。
