@@ -132,6 +132,9 @@ let hold: Promise<void> | null = null        // 设了就等它 resolve 再推 d
 let after: Ev[] = []                          // hold 放行之后、done 之前再推的事件
 const signals: AbortSignal[] = []
 let status = 200
+let statusDetail: unknown = 'x'                // 非 200 时 POST 流接口的 detail
+let clearReply: { status: number; body: unknown } = { status: 200, body: { ok: true } }
+let exportReply: { status: number; body: unknown } | null = null
 const calls: { method: string; url: string; body?: string }[] = []
 globalThis.fetch = (async (url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET'
@@ -140,14 +143,15 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
     const u = String(url)
     if (u.includes('/render/session')) return new Response(JSON.stringify(filmState), { status: 200 })
     if (u.includes('/jobs/')) return new Response(JSON.stringify(jobState), { status: jobState ? 200 : 404 })
+    if (u.includes('/export.zip') && exportReply) return new Response(JSON.stringify(exportReply.body), { status: exportReply.status })
     if (u.includes('/export.zip')) return new Response('zip', { status: 200, headers: { 'content-disposition': 'attachment; filename="p.zip"' } })
     return new Response(JSON.stringify({ messages: history }), { status: 200 })
   }
-  if (method === 'DELETE') return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  if (method === 'DELETE') return new Response(JSON.stringify(clearReply.body), { status: clearReply.status })
   if (method === 'POST' && String(url).endsWith('/assistant/undo')) {
     return new Response(JSON.stringify(undoReply.body), { status: undoReply.status })
   }
-  if (status !== 200) return new Response(JSON.stringify({ detail: 'x' }), { status })
+  if (status !== 200) return new Response(JSON.stringify({ detail: statusDetail }), { status })
   const enc = new TextEncoder()
   const signal = init?.signal
   if (signal) signals.push(signal)
@@ -594,6 +598,117 @@ const enter = async (composing = false, keyCode = 13) => {
   must(body.includes('This change has already been undone') && !body.includes('撤销过了'), '撤销失败 toast 英文')
   await act(async () => { root.unmount() })
   setCurrentLocale('zh')
+
+  // 清空失败的 toast：英文界面、消息对象 detail，对话不清
+  history = [{ role: 'user', text: '旧问题' }, { role: 'assistant', text: '旧回答', tools: [], goto: [] }]
+  clearReply = { status: 409, body: { detail: { code: 'assistant.busy_clear', params: {}, message: '助手正在回答，等它说完再清空' } } }
+  root = await mountL('n-i18n5')
+  await toEn()
+  await act(async () => { $('assistant-clear')!.click() })
+  await flush()
+  await act(async () => { ([...doc.querySelectorAll('[data-testid="confirm-ok"]')] as HTMLElement[])[0].click() })
+  await flush()
+  await act(async () => { await new Promise((r) => setTimeout(r, 100)) })
+  const body2 = doc.body.textContent ?? ''
+  must(body2.includes('Could not clear: ') && !body2.includes('等它说完再清空'), '清空失败 toast 英文 ' + body2.slice(-200))
+  must($$('assistant-user').length === 1, '清空失败时对话还在')
+  clearReply = { status: 200, body: { ok: true } }
+  await act(async () => { root.unmount() })
+  setCurrentLocale('zh')
+
+  // 发送、恢复的接口失败：会话保留消息对象与编号，按当前语言渲染
+  {
+    const { sendAssistant, decideAssistant } = await import('../src/lib/assistantSession')
+    const o = { lang: 'zh', where: {}, busyText: 'busy', cutOffText: 'cut' }
+    const coded = { code: 'assistant.crashed', params: {}, message: '助手出错了，请重试；仍失败请联系管理员', ref: 'R7K2M9XD' }
+    history = []
+    root = await mountL('n-i18n6')
+    status = 500; statusDetail = coded
+    script = []
+    await type('问')
+    await enter()
+    const e1 = getSession('n-i18n6').msgs[1].error as { ref?: string; code?: string }
+    must(typeof e1 === 'object' && e1.code === 'assistant.crashed' && e1.ref === 'R7K2M9XD', '发送失败保留消息对象与编号')
+    must(txt('assistant-error').includes('助手出错了') && txt('assistant-error').includes('R7K2M9XD'), '发送失败中文 ' + txt('assistant-error'))
+    await toEn()
+    must(!hasZh(txt('assistant-error')) && txt('assistant-error').includes('R7K2M9XD'), '发送失败切英文 ' + txt('assistant-error'))
+    await act(async () => { root.unmount() })
+    setCurrentLocale('zh')
+    status = 200; statusDetail = 'x'
+
+    const cardInfo = { id: 'ri1', tool_call_id: 'rc1', action: 'compose', chapter_id: 'c1', chapter: 'c', version_id: 'v1',
+                       amount: 1, currency: 'cny', detail: {} }
+    script = [{ event: 'confirm', data: cardInfo }, { event: 'done', data: {} }]
+    await sendAssistant('n-i18n7', 'go', o)
+    status = 409; statusDetail = { ...coded, ref: 'R9K2M9XD' }
+    await decideAssistant('n-i18n7', 'rc1', 'approve', o)
+    status = 200; statusDetail = 'x'
+    const e2 = getSession('n-i18n7').msgs[1].error as { ref?: string; code?: string }
+    must(typeof e2 === 'object' && e2.code === 'assistant.crashed' && e2.ref === 'R9K2M9XD', '恢复 409 保留消息对象与编号')
+    root = await mountL('n-i18n7')
+    must(txt('assistant-error').includes('助手出错了') && txt('assistant-error').includes('R9K2M9XD'), '恢复失败中文 ' + txt('assistant-error'))
+    await toEn()
+    must(!hasZh(txt('assistant-error')) && txt('assistant-error').includes('R9K2M9XD'), '恢复失败切英文 ' + txt('assistant-error'))
+    await act(async () => { root.unmount() })
+    setCurrentLocale('zh')
+    script = []
+  }
+
+  // 任务卡：失败原因与合成步骤按代码渲染，切语言后重画
+  {
+    const taskCard = (id: string, action: string, task: unknown) => ({ tool_call_id: id, action, outcome: 'approved',
+      card: { ...base, tool_call_id: id, action, detail: {} }, task })
+    history = [{ role: 'user', text: '做' }, { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      taskCard('t1', 'generate_storyboard', { kind: 'job', chapter_id: 'c1', version_id: 'j1', job_id: 'j1' }),
+    ] }]
+    jobState = { id: 'j1', status: 'failed', log: [], result: null, quality_report: null, error: '旧\n详细',
+                 error_msg: { code: 'job.failed_report', params: { reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+                                                                   report: { t: 'vendor', text: 'FAIL: E01' } } } }
+    root = await mountL('n-i18n8')
+    must(txt('assistant-task').includes('批 2 重试 3 次后仍未通过校验') && !txt('assistant-task').includes('FAIL'), '任务卡失败原因中文 ' + txt('assistant-task'))
+    await toEn()
+    must(!hasZh(txt('assistant-task').replace(/第一章/g, '')) && txt('assistant-task').includes('2') && !txt('assistant-task').includes('FAIL'), '任务卡失败原因英文 ' + txt('assistant-task'))
+    await act(async () => { root.unmount() })
+    setCurrentLocale('zh')
+    jobState = null
+
+    const fin = (o: object) => ({ state: 'running', files: [], report: null, error: null, detail: null, ...o })
+    history = [{ role: 'user', text: '做' }, { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      taskCard('t2', 'compose', { kind: 'compose', chapter_id: 'c1', version_id: 'v1' }),
+    ] }]
+    filmState = { clips: [], final: fin({ step: '配音 3 条', step_msg: { code: 'compose.step.voice', params: { n: 3 } } }) }
+    root = await mountL('n-i18n9')
+    must(txt('assistant-task').includes('配音 3 条'), '合成步骤中文 ' + txt('assistant-task'))
+    await toEn()
+    must(!hasZh(txt('assistant-task').replace(/第一章/g, '')) && txt('assistant-task').includes('3'), '合成步骤英文 ' + txt('assistant-task'))
+    await act(async () => { root.unmount() })
+    setCurrentLocale('zh')
+
+    filmState = { clips: [], final: fin({ state: 'failed', error: 'x', error_msg: { code: 'compose.crashed', params: {} } }) }
+    root = await mountL('n-i18n10')
+    must(txt('assistant-task').includes('合成时出现意外错误'), '合成失败中文 ' + txt('assistant-task'))
+    await toEn()
+    must(!hasZh(txt('assistant-task').replace(/第一章/g, '')) && txt('assistant-task').includes('Mix failed'), '合成失败英文 ' + txt('assistant-task'))
+    await act(async () => { root.unmount() })
+    setCurrentLocale('zh')
+    filmState = { clips: [{ id: 'C1', state: 'running' }, { id: 'C2', state: 'done' }], final: null }
+
+    // 下载失败 toast
+    history = [{ role: 'user', text: '做' }, { role: 'assistant', text: '', tools: [], goto: [], cards: [
+      taskCard('t3', 'export_fcpxml', { kind: 'export', chapter_id: 'c1', version_id: 'v1' }),
+    ] }]
+    exportReply = { status: 404, body: { detail: { code: 'novel.not_found', params: {}, message: '小说不存在' } } }
+    root = await mountL('n-i18n11')
+    await toEn()
+    await act(async () => { $('assistant-download')!.click() })
+    await flush()
+    await act(async () => { await new Promise((r) => setTimeout(r, 100)) })
+    const body3 = doc.body.textContent ?? ''
+    must(body3.includes('Download failed: ') && !body3.includes('小说不存在'), '下载失败 toast 英文 ' + body3.slice(-200))
+    exportReply = null
+    await act(async () => { root.unmount() })
+    setCurrentLocale('zh')
+  }
   console.log('✓ 助手按代码渲染')
 }
 globalThis.fetch = realFetch
