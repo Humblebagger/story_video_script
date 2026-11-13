@@ -11,6 +11,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+
+import os as _os, tempfile as _tempfile  # noqa: E402
+_os.environ["STORYBOARD_DATA_DIR"] = _tempfile.mkdtemp()   # 数据目录用临时目录，不碰真实 backend/data（必须在导入 server.*、render.* 之前）
+# 测试不读真实的 backend/.env：load_settings 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
+import pipeline.config as _pipeline_config  # noqa: E402
+_pipeline_config._load_dotenv = lambda *_a, **_k: None
 os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 
 from render import compose, free, providers, session as sess  # noqa: E402

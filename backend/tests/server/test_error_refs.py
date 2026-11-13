@@ -12,6 +12,10 @@ sys.path.insert(0, str(ROOT))
 
 _TMP = tempfile.TemporaryDirectory()
 os.environ["STORYBOARD_DATA_DIR"] = _TMP.name          # 必须在导入 server.* 之前
+
+# 测试不读真实的 backend/.env：load_settings 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
+import pipeline.config as _pipeline_config  # noqa: E402
+_pipeline_config._load_dotenv = lambda *_a, **_k: None
 KEY = "sk-ark-test-0123456789"
 os.environ["ARK_API_KEY"] = KEY                         # 只为验证脱敏；测试不联网
 LLM_KEY = "sk-ant-test-llm-0123456789"
