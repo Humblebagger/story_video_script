@@ -5,6 +5,7 @@
 已有任务 id 的接着查、接着下，不重复提交。
 """
 import logging
+import os
 import threading
 import time
 import traceback
@@ -23,6 +24,16 @@ def _coded(zh: str, code: str, **params) -> dict:
     m = msg(code, **params)
     m["message"] = zh
     return m
+
+
+def _scrub_secrets(text: str, provider) -> str:
+    """日志文字脱敏：抹掉 Bearer 凭据、厂商对象持有的密钥与环境里配置的厂商密钥。"""
+    out = base.scrub(text)
+    keys = [getattr(provider, "_key", "")] + [os.environ.get(k, "") for k in ("ARK_API_KEY", "MINIMAX_API_KEY")]
+    for k in keys:
+        if isinstance(k, str) and len(k.strip()) >= 4:
+            out = out.replace(k.strip(), "***")
+    return out
 
 
 def _console_ref(provider) -> dict:
@@ -282,8 +293,10 @@ class Runner:
             log.warning("段失败 root=%s clip=%s code=%s", root, c["id"], getattr(e, "code", None))  # i18n: internal
             sess.submit_failed(root, c["id"], e)
             return False
-        except Exception:
-            log.exception("提交异常 root=%s clip=%s", root, c["id"])  # i18n: internal
+        except Exception as e:
+            # 不把原始 exc_info 交给日志：堆栈文字（含 __cause__/__context__ 链）先脱敏再写
+            tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+            log.error("提交异常 root=%s clip=%s\n%s", root, c["id"], _scrub_secrets(tb, provider))  # i18n: internal
             sess.submit_failed(root, c["id"], msg("film.submit.crashed"))
             return False
         try:

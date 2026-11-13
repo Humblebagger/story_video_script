@@ -567,8 +567,33 @@ def main() -> int:
     c = clip(r17, i17[0])
     assert c["error_msg"] == {"code": "film.submit.crashed", "params": {}}, c["error_msg"]
     errs = [r for r in g.records if r.levelno == logging.ERROR]
-    assert len(errs) == 1 and errs[0].exc_info and errs[0].exc_info[0] is ValueError, g.lines
+    assert len(errs) == 1 and errs[0].exc_info is None, g.lines
     assert str(r17) in errs[0].getMessage() and i17[0] in errs[0].getMessage(), g.lines
+    assert "ValueError" in errs[0].getMessage() and "submit_crash17" in errs[0].getMessage(), g.lines   # 类型、原文、栈位置保留
+
+    # 日志脱敏：直接异常与带 __cause__ 的链里的密钥、Bearer 凭据都不出现，落盘的报错也没有
+    fake._key = "sk-SYNTH-KEY-12345"
+
+    def submit_leak17(req):
+        try:
+            raise OSError("inner Bearer SECRET_TOKEN with sk-SYNTH-KEY-12345")
+        except OSError as inner:
+            raise RuntimeError("outer sk-SYNTH-KEY-12345 Bearer SECRET_TOKEN") from inner
+
+    fake.submit = submit_leak17
+    sess.queue_run(r17, [i17[0]])
+    rn = quick()
+    rn.watch(r17)
+    with _LogGrab("render.runner") as g:
+        rn.tick()
+    text = "\n".join(g.lines)
+    assert "RuntimeError" in text and "OSError" in text and "submit_leak17" in text, text
+    assert "SECRET_TOKEN" not in text and "sk-SYNTH-KEY-12345" not in text, text
+    assert all(r.exc_info is None for r in g.records)
+    c = clip(r17, i17[0])
+    blob = json.dumps(c, ensure_ascii=False)
+    assert "SECRET_TOKEN" not in blob and "sk-SYNTH-KEY-12345" not in blob
+    del fake._key
 
     def submit_reject17(req):
         raise base.ProviderError.of("film.ark.auth")
@@ -604,7 +629,10 @@ def main() -> int:
     assert c["state"] == "running" and c["error_msg"]["code"] == "film.provider.retrying"
     assert c["error_msg"]["params"]["cause"]["code"] == "film.fake.no_task"
     now17[0] = 101
-    rn.tick()
+    with _LogGrab("render.runner") as g:
+        rn.tick()
+    tid18 = clip(r18, i18[0])["attempts"][-1]["task_id"]
+    assert any(str(r18) in x and i18[0] in x and tid18 in x for x in g.lines), g.lines
     c = clip(r18, i18[0])
     assert c["state"] == "failed" and c["error_msg"]["code"] == "film.poll.gave_up"
     assert c["error_msg"]["params"]["cause"]["code"] == "film.fake.no_task"
