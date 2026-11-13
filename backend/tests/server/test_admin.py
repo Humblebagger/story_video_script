@@ -190,6 +190,13 @@ def part_jobs_overview(root, bob, nid, cid):
     f = jobs["failed"][0]
     assert f["id"] == "v1" and f["novel_title"] == "药" and f["attempts"] == 2
     assert f["chars"] == 1234 and len(f["error"]) == 300 and f["error_msg"] is None
+    # 带消息对象的失败版本：error_msg 原样给出（含 ref）
+    em = {"code": "common.internal", "params": {}, "message": "x", "ref": "K7Q2M9XD"}
+    novels.create_version(bob["id"], nid, cid, "v2", {}, "原文很长")
+    novels.update_version_state(bob["id"], nid, cid, "v2", "failed", error="x", error_msg=em)
+    f2 = next(j for j in admin.jobs_view([])["failed"] if j["id"] == "v2")
+    assert f2["error_msg"] == em
+    novels.update_version_state(bob["id"], nid, cid, "v2", "succeeded")
     ov = admin.overview(table, running=1)
     assert ov["users"] == 2 and ov["running"] == 1 and ov["failed_7d"] == 1
     assert len(ov["daily"]) == 30 and ov["cost_30d"] > 0

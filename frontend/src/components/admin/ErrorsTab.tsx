@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Inbox, RefreshCw, Search } from 'lucide-react'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -17,14 +17,20 @@ function Detail({ r }: { r: ErrorRefRow }) {
   const { t, locale } = useI18n()
   const [text, setText] = useState<string | null>(r.detail ?? null)
   const [err, setErr] = useState<MsgLike>(null)
+  const busy = useRef(false)
   const open = (e: { currentTarget: HTMLDetailsElement }) => {
-    if (!e.currentTarget.open || text !== null) return
-    adminErrorRef(r.ref).then((x) => setText(x.detail ?? '')).catch((x) => setErr(errValue(x)))
+    if (!e.currentTarget.open || text !== null || busy.current) return
+    busy.current = true
+    setErr(null)
+    adminErrorRef(r.ref)
+      .then((x) => { setText(x.detail ?? ''); setErr(null) })
+      .catch((x) => setErr(errValue(x)))
+      .finally(() => { busy.current = false })
   }
   return (
     <details className="adm__err-detail" onToggle={open}>
       <summary>{t('admin.errors.detail')}</summary>
-      {err ? <p className="text-sm text-destructive">{formatMsg(err, locale)}</p> : <pre>{text ?? '…'}</pre>}
+      {err && text === null ? <p className="text-sm text-destructive">{formatMsg(err, locale)}</p> : <pre>{text ?? '…'}</pre>}
     </details>
   )
 }

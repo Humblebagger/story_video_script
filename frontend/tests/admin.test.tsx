@@ -26,6 +26,7 @@ const calls: string[] = []
 let slowMs = 0
 let failOverview = false
 let failPatch = false
+let failDetailOnce = false
 const REF = { ref: 'K7Q2M9XD', at: '2026-10-30T09:00:00+00:00', user_id: 'u-bob', username: 'bob',
   code: 'common.internal', params: {}, where: 'GET /novels' }
 const daily = Array.from({ length: 30 }, (_, i) => ({
@@ -54,6 +55,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   if (path === '/admin/errors') return json({ errors: [REF] })
   const em = path.match(/^\/admin\/errors\/(.+)$/)
   if (em) {
+    if (failDetailOnce) { failDetailOnce = false; return err(500, {
+      code: 'common.internal', params: {}, message: '服务器出了点问题，请稍后再试' }) }
     const norm = decodeURIComponent(em[1]).replace(/-/g, '').toUpperCase()
     return norm === 'K7Q2M9XD' ? json({ ...REF, detail: 'Traceback: boom' }) : err(404, {
       code: 'admin.error_ref.not_found', params: { ref: norm }, message: `没有这个参考编号：${norm}` })
@@ -385,6 +388,19 @@ const det = container.querySelector('details')! as unknown as HTMLDetailsElement
 await act(async () => { det.open = true; det.dispatchEvent(new win.Event('toggle') as unknown as Event) })
 await settle()
 must(calls.includes('GET /admin/errors/K7Q2M9XD') && text().includes('Traceback: boom'), '展开才取详情')
+// 详情取失败后重新展开：错误清掉并显示详情
+await remount(<I18nProvider initial="zh"><ErrorsTab /></I18nProvider>)
+const det2 = container.querySelector('details')! as unknown as HTMLDetailsElement
+const toggle = async (open: boolean) => {
+  await act(async () => { det2.open = open })
+  await settle()
+}
+failDetailOnce = true
+await toggle(true)
+must((det2.textContent ?? '').includes('服务器出了点问题') && !text().includes('Traceback'), '详情取失败显示错误')
+await toggle(false)
+await toggle(true)
+must((det2.textContent ?? '').includes('Traceback: boom') && !(det2.textContent ?? '').includes('服务器出了点问题'), '重试成功后错误清掉')
 calls.length = 0
 await type(container.querySelector('.adm__search')!, 'k7q2-m9xd')
 await act(async () => {
