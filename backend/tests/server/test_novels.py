@@ -18,6 +18,10 @@ sys.path.insert(0, str(ROOT / "tests" / "pipeline"))     # fakes.FakeChat
 _TMP = tempfile.TemporaryDirectory()
 os.environ["STORYBOARD_DATA_DIR"] = _TMP.name     # 必须在导入 server.* 之前
 
+# 测试不读真实的 backend/.env：load_settings 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
+import pipeline.config as _pipeline_config  # noqa: E402
+_pipeline_config._load_dotenv = lambda *_a, **_k: None
+
 from server import library, novels, store  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao"
@@ -124,9 +128,13 @@ def digest_and_version_errors(app_mod, HTTPException) -> None:
 def codes_and_api(app_mod, HTTPException) -> None:
     """报错带代码：存储层异常带 code/params，接口层 detail 是消息对象。"""
     uid = "b" * 12
-    E = lambda exc, code, fn, *a, **kw: (  # noqa: E731
-        lambda e: (e.code == code or (_ for _ in ()).throw(AssertionError((code, e.code)))) and e)(
-        must_raise(exc, fn, *a, **kw))
+
+    def E(exc, code, fn, *a, **kw):
+        """断言抛出 exc 且带指定代码，返回异常供继续检查。"""
+        error = must_raise(exc, fn, *a, **kw)
+        assert error.code == code, (code, error.code)
+        return error
+
     E(novels.NovelError, "novel.empty_title", novels.create_novel, uid, " ")
     E(novels.NotFound, "novel.not_found", novels.get_novel, uid, "nope")
     e = E(novels.NovelError, "novel.bad_id", novels.get_novel, uid, "../x")
