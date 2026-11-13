@@ -13,14 +13,22 @@ from typing import Optional
 
 from pipeline.manifest import sum_usage
 from server import audit, auth, novels, pricing, store, usage
+from server.messages import UserError
 
 
-class AdminError(Exception):
+class AdminError(UserError, Exception):
     """可预期的拒绝（400）。"""
 
 
 class NotFound(AdminError):
     """目标不存在（404）。"""
+
+
+def _as_admin(e: Exception) -> AdminError:
+    """下层（auth、usage）带代码的异常换成 AdminError（400），代码与参数不变；没带代码的照旧取原文。"""
+    if isinstance(e, UserError) and e.code:
+        return AdminError.of(e.code, **e.params)
+    return AdminError(str(e))
 
 
 PURPOSES = ("convert", "digest")
@@ -34,7 +42,7 @@ def _now() -> datetime:
 def _user(user_id: str) -> dict:
     u = auth.get_user_raw(user_id)
     if u is None:
-        raise NotFound("用户不存在")
+        raise NotFound.of("auth.user_not_found")
     return u
 
 
@@ -83,28 +91,28 @@ def _guard_last_admin(user_id: str) -> None:
     """user_id 将失去管理权（降级或停用）时，系统里必须还有别的未停用管理员。"""
     others = [u for u in _active_admins() if u["id"] != user_id]
     if not others:
-        raise AdminError("至少保留一个管理员")
+        raise AdminError.of("admin.last_admin")
 
 
 def patch_user(admin_user: dict, user_id: str, body: dict) -> dict:
     if len(body) != 1:
-        raise AdminError("一次只能修改一项")
+        raise AdminError.of("admin.one_field")
     (field, value), = body.items()
     target = _user(user_id)
     self_edit = user_id == admin_user["id"]
     if field == "disabled":
         if not isinstance(value, bool):
-            raise AdminError("disabled 必须是 true 或 false")
+            raise AdminError.of("admin.bad_disabled")
         if value and self_edit:
-            raise AdminError("不能停用自己")
+            raise AdminError.of("admin.self_disable")
         if value and target["role"] == "admin":
             _guard_last_admin(user_id)
         action = "disable" if value else "enable"
     elif field == "role":
         if value not in auth.ROLES:
-            raise AdminError("角色只能是 admin 或 user")
+            raise AdminError.of("admin.bad_role")
         if self_edit:
-            raise AdminError("不能修改自己的角色")
+            raise AdminError.of("admin.self_role")
         if value == "user" and target["role"] == "admin":
             _guard_last_admin(user_id)
         action = "grant_admin" if value == "admin" else "revoke_admin"
@@ -112,11 +120,11 @@ def patch_user(admin_user: dict, user_id: str, body: dict) -> dict:
         if value is not None:
             if isinstance(value, bool) or not isinstance(value, (int, float)) \
                     or not math.isfinite(value) or value < 0:
-                raise AdminError("月上限必须是非负数，或留空表示不限")
+                raise AdminError.of("admin.bad_cap")
             value = float(value)
         action = "set_cap"
     else:
-        raise AdminError(f"不支持修改 {field}")
+        raise AdminError.of("admin.bad_field", field=field)
     before = {field: target.get(field)}
     auth.update_user(user_id, **{field: value})
     audit.write(admin_user, action, target, before, {field: value})
@@ -128,7 +136,7 @@ def reset_password(admin_user: dict, user_id: str, password: str) -> None:
     try:
         auth.set_password(user_id, password)
     except auth.AuthError as e:
-        raise AdminError(str(e))
+        raise _as_admin(e) from e
     audit.write(admin_user, "reset_password", target)
 
 
@@ -179,7 +187,8 @@ def jobs_view(memory_jobs: list) -> dict:
                        "chars": (m.get("input") or {}).get("normalized_chars")
                        or len(v.get("input_text") or ""),
                        "attempts": len(m.get("attempts") or []),
-                       "error": (v.get("error") or "")[:300]})
+                       "error": (v.get("error") or "")[:300],
+                       "error_msg": v.get("error_msg")})
     failed.sort(key=lambda x: x["created_at"], reverse=True)
     return {"running": running, "failed": failed}
 
@@ -206,7 +215,7 @@ def usage_report(group: str, days: int, table: dict) -> dict:
     try:
         groups = usage.aggregate(rows, group, table)
     except ValueError as e:
-        raise AdminError(str(e))
+        raise _as_admin(e) from e
     names = {u["id"]: u["username"] for u in auth.list_users_safe()}
     for g in groups:
         g["label"] = names.get(g["key"], g["key"]) if group == "user" else g["key"]
@@ -268,32 +277,32 @@ def _find(username: str) -> Optional[dict]:
 
 def main(argv: list) -> int:
     if not argv or argv[0] not in ("promote", "demote", "list", "backfill-usage"):
-        print("用法: python -m server.admin promote|demote <用户名> | list | backfill-usage")
+        print("用法: python -m server.admin promote|demote <用户名> | list | backfill-usage")  # i18n: internal
         return 2
     cmd = argv[0]
     if cmd == "list":
         for u in auth.list_users_safe():
             flag = " [停用]" if u["disabled"] else ""
-            print(f"{u['id']}  {u['role']:5}  {u['username']}{flag}")
+            print(f"{u['id']}  {u['role']:5}  {u['username']}{flag}")  # i18n: internal
         return 0
     if cmd == "backfill-usage":
-        print(backfill_usage())
+        print(backfill_usage())  # i18n: internal
         return 0
     if len(argv) < 2:
-        print("缺少用户名")
+        print("缺少用户名")  # i18n: internal
         return 2
     u = _find(argv[1])
     if u is None:
-        print(f"找不到用户：{argv[1]}")
+        print(f"找不到用户：{argv[1]}")  # i18n: internal
         return 1
     if cmd == "demote" and u["role"] == "admin":
         try:
             _guard_last_admin(u["id"])
         except AdminError as e:
-            print(e)
+            print(e)  # i18n: internal
             return 1
     auth.update_user(u["id"], role="admin" if cmd == "promote" else "user")
-    print(f"{u['username']} → {'admin' if cmd == 'promote' else 'user'}")
+    print(f"{u['username']} → {'admin' if cmd == 'promote' else 'user'}")  # i18n: internal
     return 0
 
 

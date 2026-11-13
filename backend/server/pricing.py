@@ -9,7 +9,12 @@ import math
 from typing import Optional
 
 from server.auth import DATA_DIR
+from server.messages import UserError
 from server.store import now_iso
+
+class PricingError(UserError, ValueError):
+    """价格表校验不过（400）。"""
+
 
 PRICING_FILE = DATA_DIR / "pricing.json"
 KEYS = ("input", "output", "cache_read", "cache_write")
@@ -39,17 +44,17 @@ def load() -> dict:
 def _validate(table: dict) -> dict:
     models = table.get("models")
     if not isinstance(models, dict) or not models:
-        raise ValueError("价格表必须包含至少一个模型")
+        raise PricingError.of("admin.pricing.empty")
     clean = {}
     for name, price in models.items():
         if not isinstance(name, str) or not name.strip() or not isinstance(price, dict):
-            raise ValueError(f"模型 {name!r} 的单价格式不对")
+            raise PricingError.of("admin.pricing.bad_row", name=str(name))
         row = {}
         for k in KEYS:
             v = price.get(k)
             if (not isinstance(v, (int, float)) or isinstance(v, bool)
                     or not math.isfinite(v) or v < 0):
-                raise ValueError(f"模型 {name} 的 {k} 单价必须是非负数")
+                raise PricingError.of("admin.pricing.bad_price", name=name, key=k)
             row[k] = float(v)
         clean[name.strip()] = row
     return clean

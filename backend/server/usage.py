@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from server import pricing
+from server.messages import UserError
 from server.auth import DATA_DIR
 from server.store import now_iso
 
@@ -69,6 +70,10 @@ def read(since: Optional[datetime] = None, user_id: Optional[str] = None) -> lis
     return out
 
 
+class UsageError(UserError, ValueError):
+    """不支持的汇总方式（400）。"""
+
+
 _GROUPS = {"user": lambda r: r.get("user_id") or "",
            "day": lambda r: r["at"][:10],
            "model": lambda r: r.get("model") or ""}
@@ -76,7 +81,7 @@ _GROUPS = {"user": lambda r: r.get("user_id") or "",
 
 def aggregate(rows: list, group: str, table: dict) -> list:
     if group not in _GROUPS:
-        raise ValueError(f"不支持的分组：{group}")
+        raise UsageError.of("usage.bad_group", group=group)
     key = _GROUPS[group]
     buckets: dict = {}
     for r in rows:

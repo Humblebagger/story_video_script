@@ -33,6 +33,9 @@ MODULES: dict = {
     "server/novels.py": None,
     "server/library.py": None,
     "server/store.py": None,
+    "server/admin.py": None,
+    "server/usage.py": None,
+    "server/pricing.py": None,
     "render/providers/tts_base.py": None,
     "render/providers/tts_volc.py": None,
     "render/voice.py": None,
@@ -48,7 +51,9 @@ MODULES: dict = {
                       "render_compose_post", "render_bgm_put", "render_bgm_delete",
                       "current_user", "admin_user", "register", "login",
                       "novel_user", "_novel_call", "_clean_params", "_start_version",
-                      "memory_asset_upsert", "render_plan", "_run_digest", "chapters_digest"},
+                      "memory_asset_upsert", "render_plan", "_run_digest", "chapters_digest",
+                      "_admin_call", "admin_usage", "admin_usage_csv", "admin_pricing_put",
+                      "admin_errors", "admin_error_get"},
 }
 
 

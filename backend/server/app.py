@@ -1831,9 +1831,9 @@ def _admin_call(fn, *args):
     try:
         return fn(*args)
     except admin_mod.NotFound as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=to_detail(e))
     except admin_mod.AdminError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, detail=to_detail(e))
 
 
 def _running_jobs() -> list:
@@ -1874,14 +1874,14 @@ def admin_reset_password(uid: str, body: AdminPassword, user: dict = Depends(adm
 def admin_usage(group: str = "user", days: int = Query(30),
                 user: dict = Depends(admin_user)):
     if days not in (7, 30, 90):
-        raise HTTPException(422, "days 只能是 7、30、90")
+        raise HTTPException(422, detail=msg("admin.bad_days"))
     return _admin_call(admin_mod.usage_report, group, days, pricing.load())
 
 
 @app.get("/admin/usage.csv")
 def admin_usage_csv(days: int = Query(30), user: dict = Depends(admin_user)):
     if days not in (7, 30, 90):
-        raise HTTPException(422, "days 只能是 7、30、90")
+        raise HTTPException(422, detail=msg("admin.bad_days"))
     return Response(admin_mod.usage_csv(days, pricing.load()), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="usage-{days}d.csv"'})
 
@@ -1896,6 +1896,29 @@ def admin_audit(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(adm
     return {"audit": audit.read(limit)}
 
 
+def _with_username(rows: list) -> list:
+    names = {u["id"]: u["username"] for u in auth.list_users_safe()}
+    return [{**r, "username": names.get(r.get("user_id"))} for r in rows]
+
+
+@app.get("/admin/errors")
+def admin_errors(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(admin_user)):
+    """最近的错误记录摘要：不含 detail（堆栈可能带用户输入的片段），看详情走单条接口并留审计。"""
+    rows = [{k: v for k, v in r.items() if k != "detail"} for r in error_refs.recent(limit)]
+    return {"errors": _with_username(rows)}
+
+
+@app.get("/admin/errors/{ref}")
+def admin_error_get(ref: str, user: dict = Depends(admin_user)):
+    """单条错误记录（含脱敏后的 detail）。每次查看都写审计（商业化合约：排查要留访问日志）。"""
+    row = error_refs.find(ref)
+    if row is None:
+        raise HTTPException(404, detail=msg("admin.error_ref.not_found", ref=error_refs.normalize(ref)))
+    owner = auth.get_user_raw(row["user_id"]) if row.get("user_id") else None
+    audit.write(user, "view_error_ref", owner, None, {"ref": row["ref"]})
+    return _with_username([row])[0]
+
+
 @app.get("/admin/pricing")
 def admin_pricing(user: dict = Depends(admin_user)):
     return pricing.load()
@@ -1907,7 +1930,7 @@ def admin_pricing_put(table: dict = Body(...), user: dict = Depends(admin_user))
     try:
         saved = pricing.save(table)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, detail=to_detail(e))
     audit.write(user, "update_pricing", None, {"models": before.get("models")},
                 {"models": saved["models"]})
     return saved

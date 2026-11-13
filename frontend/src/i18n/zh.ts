@@ -1266,7 +1266,7 @@ export const zh = {
     title: '管理后台',
     back: '返回',
     tabsLabel: '后台页签',
-    tabs: { overview: '概览', users: '用户', usage: '用量', jobs: '任务', audit: '审计' },
+    tabs: { overview: '概览', users: '用户', usage: '用量', jobs: '任务', audit: '审计', errors: '错误记录' },
     empty: '—',
     deleted: '（已删除）',
     overview: {
@@ -1338,10 +1338,15 @@ export const zh = {
       emptyHint: '管理操作会记在这里。',
       cols: { time: '时间', admin: '管理员', action: '操作', target: '对象', before: '之前', after: '之后' },
     },
+    errors: {
+      refresh: '刷新', lookup: '查找', placeholder: '输入用户报来的参考编号',
+      empty: '还没有错误记录', emptyHint: '意外失败会带参考编号记在这里（保留最近 1000 条）。', detail: '详情',
+      cols: { time: '时间', user: '用户', ref: '参考编号', what: '说明', where: '位置', detail: '详情' },
+    },
     purpose: { convert: '转换', digest: '章后整理' },
     action: {
       disable: '停用', enable: '启用', set_cap: '设月上限', reset_password: '重置密码',
-      grant_admin: '设为管理员', revoke_admin: '取消管理员', update_pricing: '修改价格表',
+      grant_admin: '设为管理员', revoke_admin: '取消管理员', update_pricing: '修改价格表', view_error_ref: '查看错误详情',
     },
   },
   resolve: {
@@ -1603,7 +1608,17 @@ export const zh = {
         not_found: '这个镜头还没有关键帧',
       },
     },
-    usage: { monthly_cap: '本月用量已达上限，请联系管理员' },
+    usage: { monthly_cap: '本月用量已达上限，请联系管理员', bad_group: '不支持的分组：{group}' },
+    admin: {
+      one_field: '一次只能修改一项', bad_disabled: 'disabled 必须是 true 或 false', self_disable: '不能停用自己',
+      last_admin: '至少保留一个管理员', bad_role: '角色只能是 admin 或 user', self_role: '不能修改自己的角色',
+      bad_cap: '月上限必须是非负数，或留空表示不限', bad_field: '不支持修改 {field}', bad_days: 'days 只能是 7、30、90',
+      pricing: {
+        empty: '价格表必须包含至少一个模型', bad_row: '模型 {name} 的单价格式不对',
+        bad_price: '模型 {name} 的 {key} 单价必须是非负数',
+      },
+      error_ref: { not_found: '没有这个参考编号：{ref}' },
+    },
     library: { empty_title: '作品名不能为空' },
     voice: { narrator: '旁白', unlabeled: '（未标说话人）' },
   },

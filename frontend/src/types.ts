@@ -655,7 +655,14 @@ export interface AdminJobs {
              elapsed_sec: number | null }[]
   failed: { id: string; username: string | null; novel_title: string | null;
             chapter_title: string | null; created_at: string; chars: number;
-            attempts: number; error: string }[]
+            attempts: number; error: string; error_msg?: ServerMsg | null }[]
+}
+
+export interface ErrorRefRow {
+  ref: string; at: string; user_id: string | null; username: string | null
+  code: string; params: Record<string, unknown>; where: string
+  /** 只有单条接口返回（查看会写审计） */
+  detail?: string
 }
 
 export interface AuditEntry {

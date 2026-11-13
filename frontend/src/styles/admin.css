@@ -40,6 +40,7 @@
   font: inherit; color: inherit; cursor: pointer;
 }
 .adm__sort:hover { color: var(--foreground); }
+.adm__mono { font-family: var(--font-mono); font-size: 12px; }
 .adm__json { font-family: var(--font-mono); font-size: 12px; }
 
 .adm__detail { display: flex; flex-direction: column; gap: 10px; padding: 8px 4px 14px; }

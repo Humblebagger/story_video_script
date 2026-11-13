@@ -1,4 +1,65 @@
 {
+  "admin.bad_cap": {
+    "params": [],
+    "zh": "月上限必须是非负数，或留空表示不限"
+  },
+  "admin.bad_days": {
+    "params": [],
+    "zh": "days 只能是 7、30、90"
+  },
+  "admin.bad_disabled": {
+    "params": [],
+    "zh": "disabled 必须是 true 或 false"
+  },
+  "admin.bad_field": {
+    "params": [
+      "field"
+    ],
+    "zh": "不支持修改 {field}"
+  },
+  "admin.bad_role": {
+    "params": [],
+    "zh": "角色只能是 admin 或 user"
+  },
+  "admin.error_ref.not_found": {
+    "params": [
+      "ref"
+    ],
+    "zh": "没有这个参考编号：{ref}"
+  },
+  "admin.last_admin": {
+    "params": [],
+    "zh": "至少保留一个管理员"
+  },
+  "admin.one_field": {
+    "params": [],
+    "zh": "一次只能修改一项"
+  },
+  "admin.pricing.bad_price": {
+    "params": [
+      "name",
+      "key"
+    ],
+    "zh": "模型 {name} 的 {key} 单价必须是非负数"
+  },
+  "admin.pricing.bad_row": {
+    "params": [
+      "name"
+    ],
+    "zh": "模型 {name} 的单价格式不对"
+  },
+  "admin.pricing.empty": {
+    "params": [],
+    "zh": "价格表必须包含至少一个模型"
+  },
+  "admin.self_disable": {
+    "params": [],
+    "zh": "不能停用自己"
+  },
+  "admin.self_role": {
+    "params": [],
+    "zh": "不能修改自己的角色"
+  },
   "auth.admin_only": {
     "params": [],
     "zh": "需要管理员权限"
@@ -1103,6 +1164,12 @@
       "status"
     ],
     "zh": "豆包语音暂时不可用（HTTP {status}）"
+  },
+  "usage.bad_group": {
+    "params": [
+      "group"
+    ],
+    "zh": "不支持的分组：{group}"
   },
   "usage.monthly_cap": {
     "params": [],

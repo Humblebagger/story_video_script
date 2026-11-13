@@ -10,4 +10,4 @@ export const day = (iso?: string | null) => (iso ? iso.slice(0, 10) : '—')
 export const when = (iso?: string | null) => (iso ? iso.slice(0, 16).replace('T', ' ') : '—')
 export const PURPOSE: Record<string, string> = localized<string>(zh.admin.purpose, en.admin.purpose)
 export const ACTION: Record<string, string> = localized<string>(zh.admin.action, en.admin.action)
-export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+export { errText } from '@/i18n/serverMsg'

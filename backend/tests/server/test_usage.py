@@ -44,6 +44,12 @@ def main() -> int:
     must_raise(ValueError, pricing.save, {"models": {"m": {"input": -1, "output": 0,
                                                           "cache_read": 0, "cache_write": 0}}})
     must_raise(ValueError, pricing.save, {"models": {"m": {"input": 1}}})
+    e = must_raise(pricing.PricingError, pricing.save, {"models": {"m": {"input": -1, "output": 0,
+                                                                         "cache_read": 0, "cache_write": 0}}})
+    assert e.code == "admin.pricing.bad_price" and e.params == {"name": "m", "key": "input"}
+    assert must_raise(pricing.PricingError, pricing.save, {"models": {}}).code == "admin.pricing.empty"
+    e = must_raise(pricing.PricingError, pricing.save, {"models": {"m": "x"}})
+    assert e.code == "admin.pricing.bad_row" and e.params == {"name": "m"}
     saved = pricing.save({"models": {"claude-sonnet-5": {"input": 3, "output": 15,
                                                          "cache_read": 0.3, "cache_write": 3.75}}})
     assert saved["currency"] == "USD" and saved["updated_at"]
@@ -83,7 +89,8 @@ def main() -> int:
     assert days == sorted(days), "按天升序"
     by_model = {r["key"]: r for r in usage.aggregate(rows, "model", table)}
     assert by_model["mystery"]["cost_usd"] == 0 and by_model["mystery"]["unpriced"] == 1
-    must_raise(ValueError, usage.aggregate, rows, "bogus", table)
+    e = must_raise(usage.UsageError, usage.aggregate, rows, "bogus", table)
+    assert isinstance(e, ValueError) and e.code == "usage.bad_group" and e.params == {"group": "bogus"}
     print("3. 按用户 / 天 / 模型汇总，未定价不计金额 ✓")
 
     # 4. 每千字成本：只算成功的 convert、有字数、已定价

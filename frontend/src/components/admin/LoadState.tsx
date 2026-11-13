@@ -2,6 +2,8 @@
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 import { cn } from '@/lib/utils'
 
 export function TableSkeleton() {
@@ -12,11 +14,11 @@ export function TableSkeleton() {
   )
 }
 
-export function ErrorBar({ error, onRetry }: { error: string; onRetry: () => void }) {
-  const { t } = useI18n()
+export function ErrorBar({ error, onRetry }: { error: MsgLike; onRetry: () => void }) {
+  const { t, locale } = useI18n()
   return (
     <div className="flex items-center gap-3 py-3 text-sm text-destructive">
-      <span className="adm__err">{error}</span>
+      <span className="adm__err">{formatMsg(error, locale)}</span>
       <Button size="sm" variant="outline" onClick={onRetry}>{t('common.retry')}</Button>
     </div>
   )

@@ -1,0 +1,76 @@
+import { useState } from 'react'
+import { Inbox, RefreshCw, Search } from 'lucide-react'
+import { EmptyState } from '@/components/common/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useI18n } from '@/i18n/core'
+import { errValue, formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
+import { adminErrorRef, adminErrors } from '../../api'
+import type { ErrorRefRow } from '../../types'
+import { when } from './format'
+import { ErrorBar, TableSkeleton } from './LoadState'
+import { useLoad } from './useLoad'
+
+/** 展开时才取 detail：单条接口每次查看都写审计，列表不带 detail */
+function Detail({ r }: { r: ErrorRefRow }) {
+  const { t, locale } = useI18n()
+  const [text, setText] = useState<string | null>(r.detail ?? null)
+  const [err, setErr] = useState<MsgLike>(null)
+  const open = (e: { currentTarget: HTMLDetailsElement }) => {
+    if (!e.currentTarget.open || text !== null) return
+    adminErrorRef(r.ref).then((x) => setText(x.detail ?? '')).catch((x) => setErr(errValue(x)))
+  }
+  return (
+    <details className="adm__err-detail" onToggle={open}>
+      <summary>{t('admin.errors.detail')}</summary>
+      {err ? <p className="text-sm text-destructive">{formatMsg(err, locale)}</p> : <pre>{text ?? '…'}</pre>}
+    </details>
+  )
+}
+
+/** 错误记录：意外失败的参考编号（最新在前），可按编号查找；detail 已在服务端脱敏，展开时才取。 */
+export function ErrorsTab() {
+  const { t, locale } = useI18n()
+  const { data, error, reload } = useLoad(adminErrors, [])
+  const [q, setQ] = useState('')
+  const [hit, setHit] = useState<ErrorRefRow | null>(null)
+  const [miss, setMiss] = useState<MsgLike>(null)
+  const c = (k: string) => t(`admin.errors.cols.${k}` as 'admin.errors.cols.time')
+  const explain = (r: ErrorRefRow) => formatMsg({ code: r.code, params: r.params }, locale)
+  const lookup = async () => {
+    setHit(null); setMiss(null)
+    if (!q.trim()) return
+    try { setHit(await adminErrorRef(q)) } catch (e) { setMiss(errValue(e)) }
+  }
+  const row = (r: ErrorRefRow) => (
+    <tr key={r.ref}>
+      <td>{when(r.at)}</td><td>{r.username ?? r.user_id ?? '—'}</td>
+      <td className="adm__mono">{r.ref}</td><td>{explain(r)}</td><td className="adm__mono">{r.where || '—'}</td>
+      <td><Detail r={r} /></td>
+    </tr>
+  )
+  const head = (
+    <thead>
+      <tr><th>{c('time')}</th><th>{c('user')}</th><th>{c('ref')}</th><th>{c('what')}</th><th>{c('where')}</th><th>{c('detail')}</th></tr>
+    </thead>
+  )
+  let body
+  if (error) body = <ErrorBar error={error} onRetry={reload} />
+  else if (!data) body = <TableSkeleton />
+  else if (!data.length) body = <EmptyState icon={<Inbox aria-hidden />} title={t('admin.errors.empty')} hint={t('admin.errors.emptyHint')} />
+  else body = <table className="adm__table">{head}<tbody>{data.map(row)}</tbody></table>
+  return (
+    <section className="adm__sec">
+      <form className="adm__bar" onSubmit={(e) => { e.preventDefault(); void lookup() }}>
+        <Input className="adm__search h-9 w-64" value={q} onChange={(e) => setQ(e.target.value)}
+               placeholder={t('admin.errors.placeholder')} aria-label={t('admin.errors.lookup')} />
+        <Button size="sm" type="submit"><Search aria-hidden />{t('admin.errors.lookup')}</Button>
+        <Button size="sm" variant="outline" type="button" onClick={reload}><RefreshCw aria-hidden />{t('admin.errors.refresh')}</Button>
+      </form>
+      {miss && <p role="alert" className="text-sm text-destructive">{formatMsg(miss, locale)}</p>}
+      {hit && <table className="adm__table">{head}<tbody>{row(hit)}</tbody></table>}
+      {body}
+    </section>
+  )
+}

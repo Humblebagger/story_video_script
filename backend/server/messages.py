@@ -393,6 +393,21 @@ register("chapter.keyframe.no_shot", "这个版本里没有镜头 {shot}")
 register("chapter.keyframe.not_found", "这个镜头还没有关键帧")
 # 用量
 register("usage.monthly_cap", "本月用量已达上限，请联系管理员")
+# 管理后台
+register("admin.one_field", "一次只能修改一项")
+register("admin.bad_disabled", "disabled 必须是 true 或 false")
+register("admin.self_disable", "不能停用自己")
+register("admin.last_admin", "至少保留一个管理员")
+register("admin.bad_role", "角色只能是 admin 或 user")
+register("admin.self_role", "不能修改自己的角色")
+register("admin.bad_cap", "月上限必须是非负数，或留空表示不限")
+register("admin.bad_field", "不支持修改 {field}")
+register("admin.bad_days", "days 只能是 7、30、90")
+register("admin.pricing.empty", "价格表必须包含至少一个模型")
+register("admin.pricing.bad_row", "模型 {name} 的单价格式不对")
+register("admin.pricing.bad_price", "模型 {name} 的 {key} 单价必须是非负数")
+register("admin.error_ref.not_found", "没有这个参考编号：{ref}")
+register("usage.bad_group", "不支持的分组：{group}")
 # 旧资产库
 register("library.empty_title", "作品名不能为空")
 

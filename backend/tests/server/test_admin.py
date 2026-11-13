@@ -136,12 +136,19 @@ def part_admin(root, bob):
     must_raise(admin.NotFound, admin.user_detail, "f" * 12, table)
 
     # 操作与约束
-    must_raise(admin.AdminError, admin.patch_user, me, bob["id"], {"disabled": True, "role": "user"})
-    must_raise(admin.AdminError, admin.patch_user, me, root["id"], {"disabled": True})
-    must_raise(admin.AdminError, admin.patch_user, me, root["id"], {"role": "user"})
-    must_raise(admin.AdminError, admin.patch_user, me, bob["id"], {"role": "boss"})
-    must_raise(admin.AdminError, admin.patch_user, me, bob["id"], {"monthly_cap_usd": -1})
-    must_raise(admin.AdminError, admin.patch_user, me, bob["id"], {"username": "x"})
+    def code_of(*a, **kw):
+        e = must_raise(admin.AdminError, *a, **kw)
+        return e.code
+    assert code_of(admin.patch_user, me, bob["id"], {"disabled": True, "role": "user"}) == "admin.one_field"
+    assert code_of(admin.patch_user, me, bob["id"], {"disabled": "yes"}) == "admin.bad_disabled"
+    assert code_of(admin.patch_user, me, root["id"], {"disabled": True}) == "admin.self_disable"
+    assert code_of(admin.patch_user, me, root["id"], {"role": "user"}) == "admin.self_role"
+    assert code_of(admin.patch_user, me, bob["id"], {"role": "boss"}) == "admin.bad_role"
+    assert code_of(admin.patch_user, me, bob["id"], {"monthly_cap_usd": -1}) == "admin.bad_cap"
+    e = must_raise(admin.AdminError, admin.patch_user, me, bob["id"], {"username": "x"})
+    assert e.code == "admin.bad_field" and e.params == {"field": "username"}
+    e = must_raise(admin.NotFound, admin.patch_user, me, "ffffffffffff", {"disabled": True})
+    assert e.code == "auth.user_not_found"
     assert admin.patch_user(me, bob["id"], {"monthly_cap_usd": 3})["monthly_cap_usd"] == 3.0
     assert admin.patch_user(me, bob["id"], {"monthly_cap_usd": None})["monthly_cap_usd"] is None
     assert admin.patch_user(me, bob["id"], {"disabled": True})["disabled"] is True
@@ -153,11 +160,14 @@ def part_admin(root, bob):
     # 现在 bob 是唯一未停用的管理员；root（已停用）不能去掉 bob 的管理员——但 root 已停用、
     # 接口层根本进不来；这里直接验证「最后一个管理员」约束
     e = must_raise(admin.AdminError, admin._guard_last_admin, bob["id"])
-    assert "至少保留一个管理员" in str(e)
+    assert "至少保留一个管理员" in str(e) and e.code == "admin.last_admin"
     admin.patch_user(bob_me, root["id"], {"disabled": False})
     admin.reset_password(me, bob["id"], "another1")
     assert auth.authenticate("bob", "another1")["id"] == bob["id"]
-    must_raise(admin.AdminError, admin.reset_password, me, bob["id"], "1")
+    e = must_raise(admin.AdminError, admin.reset_password, me, bob["id"], "1")
+    assert e.code == "auth.password_short" and e.params == {"min": 6}
+    e = must_raise(admin.AdminError, admin.usage_report, "bogus", 30, table)
+    assert e.code == "usage.bad_group" and e.params == {"group": "bogus"}
 
     # 审计：每个成功操作都有一条，最新在前；重置密码不记密码
     log = audit.read(limit=100)
@@ -179,7 +189,7 @@ def part_jobs_overview(root, bob, nid, cid):
     assert [j["id"] for j in jobs["running"]] == ["j1"] and jobs["running"][0]["username"] == "bob"
     f = jobs["failed"][0]
     assert f["id"] == "v1" and f["novel_title"] == "药" and f["attempts"] == 2
-    assert f["chars"] == 1234 and len(f["error"]) == 300
+    assert f["chars"] == 1234 and len(f["error"]) == 300 and f["error_msg"] is None
     ov = admin.overview(table, running=1)
     assert ov["users"] == 2 and ov["running"] == 1 and ov["failed_7d"] == 1
     assert len(ov["daily"]) == 30 and ov["cost_30d"] > 0
@@ -236,10 +246,15 @@ def part_api():
     assert "原文很长" not in json.dumps(rows, ensure_ascii=False)
     bob_id = users["bob"]["id"]
     assert c.get(f"/admin/users/{bob_id}", headers=H).json()["user"]["username"] == "bob"
-    assert c.get("/admin/users/ffffffffffff", headers=H).status_code == 404
+    r = c.get("/admin/users/ffffffffffff", headers=H)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "auth.user_not_found"
     assert c.get("/admin/usage?group=day&days=7", headers=H).json()["group"] == "day"
-    assert c.get("/admin/usage?group=bogus&days=7", headers=H).status_code == 400
-    assert c.get("/admin/usage?group=user&days=5", headers=H).status_code == 422
+    r = c.get("/admin/usage?group=bogus&days=7", headers=H)
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "usage.bad_group"
+    r = c.get("/admin/usage?group=user&days=5", headers=H)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "admin.bad_days"
+    r = c.get("/admin/usage.csv?days=5", headers=H)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "admin.bad_days"
     r = c.get("/admin/usage.csv?days=30", headers=H)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
     assert "failed" in c.get("/admin/jobs", headers=H).json()
@@ -264,7 +279,10 @@ def part_api():
     assert c.put("/admin/pricing", json=t, headers=H).status_code == 200
     assert "mystery" in c.get("/admin/pricing", headers=H).json()["models"]
     bad = {"models": {"m": {"input": -1}}}
-    assert c.put("/admin/pricing", json=bad, headers=H).status_code == 400
+    r = c.put("/admin/pricing", json=bad, headers=H)
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "admin.pricing.bad_price"
+    r = c.put("/admin/pricing", json={"models": {}}, headers=H)
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "admin.pricing.empty"
     assert c.get("/admin/audit", headers=H).json()["audit"][0]["action"] == "update_pricing"
 
     # 非有限数 / disabled 非布尔：400，且列表接口不被毒化
@@ -316,7 +334,34 @@ def part_api():
     app_mod._record_usage(job, {"attempts": []}, ok=True)
     after = usage.read()
     assert len(after) == before + 1 and after[-1]["ok"] is False and after[-1]["input"] == 3
+    part_errors(c, H, carol_tok, users["bob"]["id"])
     print("5. 接口权限 / 只读接口 / 停用即时生效 / 重置密码 / 价格表 / 月上限 429 / 落账 ✓")
+
+
+def part_errors(c, H, plain_tok, bob_id):
+    from server import error_refs
+    ref = error_refs.record("common.internal", "boom", user_id=bob_id, where="GET /x")
+    n0 = len(c.get("/admin/audit", headers=H).json()["audit"])
+    rows = c.get("/admin/errors", headers=H).json()["errors"]
+    assert rows[0]["ref"] == ref and rows[0]["username"] == "bob" and "detail" not in rows[0]
+    assert len(c.get("/admin/audit", headers=H).json()["audit"]) == n0, "列表不写审计"
+    q = ref.lower()[:4] + "-" + ref.lower()[4:]
+    r = c.get(f"/admin/errors/{q}", headers=H)
+    assert r.status_code == 200, r.text
+    one = r.json()
+    assert one["ref"] == ref and "boom" in one["detail"] and one["username"] == "bob"
+    a = c.get("/admin/audit", headers=H).json()["audit"]
+    assert a[0]["action"] == "view_error_ref" and a[0]["target"] == "bob" and a[0]["after"] == {"ref": ref}
+    r = c.get("/admin/errors/zzzz-zzzz", headers=H)
+    d = r.json()["detail"]
+    assert r.status_code == 404 and d["code"] == "admin.error_ref.not_found" and d["params"]["ref"] == "ZZZZZZZZ"
+    assert len(c.get("/admin/audit", headers=H).json()["audit"]) == n0 + 1, "查不到不写审计"
+    PH = {"Authorization": f"Bearer {plain_tok}"}
+    for path in ("/admin/errors", f"/admin/errors/{ref}"):
+        r = c.get(path, headers=PH)
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "auth.admin_only"
+    assert c.get("/admin/errors?limit=0", headers=H).status_code == 422
+    assert c.get("/admin/errors?limit=1001", headers=H).status_code == 422
 
 
 def main() -> int:

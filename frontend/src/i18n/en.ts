@@ -1272,7 +1272,7 @@ export const en: Messages = {
     title: 'Admin console',
     back: 'Back',
     tabsLabel: 'Admin sections',
-    tabs: { overview: 'Overview', users: 'Users', usage: 'Usage', jobs: 'Jobs', audit: 'Audit' },
+    tabs: { overview: 'Overview', users: 'Users', usage: 'Usage', jobs: 'Jobs', audit: 'Audit', errors: 'Errors' },
     empty: '—',
     deleted: '(deleted)',
     overview: {
@@ -1344,10 +1344,15 @@ export const en: Messages = {
       emptyHint: 'Admin actions will show up here.',
       cols: { time: 'Time', admin: 'Admin', action: 'Action', target: 'Target', before: 'Before', after: 'After' },
     },
+    errors: {
+      refresh: 'Refresh', lookup: 'Look up', placeholder: 'Reference reported by the user',
+      empty: 'No error records yet', emptyHint: 'Unexpected failures are logged here with a reference (latest 1,000 kept).', detail: 'Details',
+      cols: { time: 'Time', user: 'User', ref: 'Reference', what: 'What', where: 'Where', detail: 'Details' },
+    },
     purpose: { convert: 'Generate', digest: 'Post-chapter digest' },
     action: {
       disable: 'Disable', enable: 'Enable', set_cap: 'Set monthly cap', reset_password: 'Reset password',
-      grant_admin: 'Make admin', revoke_admin: 'Remove admin', update_pricing: 'Edit price table',
+      grant_admin: 'Make admin', revoke_admin: 'Remove admin', update_pricing: 'Edit price table', view_error_ref: 'View error details',
     },
   },
   resolve: {
@@ -1613,7 +1618,22 @@ export const en: Messages = {
         not_found: 'This shot has no keyframe yet',
       },
     },
-    usage: { monthly_cap: 'You’ve reached this month’s usage limit. Please contact the administrator' },
+    usage: {
+      monthly_cap: 'You’ve reached this month’s usage limit. Please contact the administrator',
+      bad_group: 'Unsupported grouping: {group}',
+    },
+    admin: {
+      one_field: 'Only one field can be changed at a time', bad_disabled: 'disabled must be true or false',
+      self_disable: 'You can’t disable yourself', last_admin: 'At least one administrator must remain',
+      bad_role: 'The role must be admin or user', self_role: 'You can’t change your own role',
+      bad_cap: 'The monthly cap must be a non-negative number, or empty for no limit',
+      bad_field: 'Changing {field} isn’t supported', bad_days: 'days must be 7, 30 or 90',
+      pricing: {
+        empty: 'The price table must include at least one model', bad_row: 'The price format for model {name} is invalid',
+        bad_price: 'The {key} price for model {name} must be a non-negative number',
+      },
+      error_ref: { not_found: 'No error with reference {ref}' },
+    },
     library: { empty_title: 'The work name can’t be empty' },
     voice: { narrator: 'Narrator', unlabeled: '(no speaker)' },
   },

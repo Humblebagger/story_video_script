@@ -3,6 +3,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { itemError } from '@/i18n/serverMsg'
 import { adminJobs } from '../../api'
 import { int, when } from './format'
 import { ErrorBar, TableSkeleton } from './LoadState'
@@ -13,7 +14,7 @@ const clock = (s: number | null) =>
 
 /** 任务：运行中（内存任务表）与近 7 天失败（磁盘上的版本）。 */
 export function JobsTab() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { data, error, reload } = useLoad(adminJobs, [])
   if (error) return <ErrorBar error={error} onRetry={reload} />
   if (!data) return <section className="adm__sec"><TableSkeleton /></section>
@@ -61,7 +62,9 @@ export function JobsTab() {
             </tr>
           </thead>
           <tbody>
-            {data.failed.map((j) => (
+            {data.failed.map((j) => {
+              const text = itemError(j, locale)
+              return (
               <tr key={j.id}>
                 <td>{j.username ?? '—'}</td>
                 <td>{j.novel_title ?? t('admin.deleted')} / {j.chapter_title ?? '—'}</td>
@@ -69,12 +72,13 @@ export function JobsTab() {
                 <td className="is-num">{j.attempts}</td>
                 <td>
                   <details className="adm__err-detail">
-                    <summary>{j.error.slice(0, 40)}{j.error.length > 40 ? '…' : ''}</summary>
-                    <pre>{j.error}</pre>
+                    <summary>{text.slice(0, 40)}{text.length > 40 ? '…' : ''}</summary>
+                    <pre>{text}</pre>
                   </details>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       )}

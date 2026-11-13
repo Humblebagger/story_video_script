@@ -24,6 +24,10 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 /* ---------- 桩后端 ---------- */
 const calls: string[] = []
 let slowMs = 0
+let failOverview = false
+let failPatch = false
+const REF = { ref: 'K7Q2M9XD', at: '2026-10-30T09:00:00+00:00', user_id: 'u-bob', username: 'bob',
+  code: 'common.internal', params: {}, where: 'GET /novels' }
 const daily = Array.from({ length: 30 }, (_, i) => ({
   day: `2026-10-${String(i + 1).padStart(2, '0')}`, cost_usd: i === 29 ? 4.5 : 0 }))
 const users = [
@@ -43,8 +47,17 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   calls.push(`${method} ${path}${init?.body ? ' ' + init.body : ''}`)
   const json = (data: unknown) => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(data)),
                                      text: async () => JSON.stringify(data) })
-  const err = (status: number, detail: string) => ({
+  const err = (status: number, detail: unknown) => ({
     ok: false, status, text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) })
+  if (path === '/admin/overview' && failOverview) return err(500, {
+    code: 'common.internal', params: {}, message: '服务器出了点问题，请稍后再试（参考编号 K7Q2M9XD）', ref: 'K7Q2M9XD' })
+  if (path === '/admin/errors') return json({ errors: [REF] })
+  const em = path.match(/^\/admin\/errors\/(.+)$/)
+  if (em) {
+    const norm = decodeURIComponent(em[1]).replace(/-/g, '').toUpperCase()
+    return norm === 'K7Q2M9XD' ? json({ ...REF, detail: 'Traceback: boom' }) : err(404, {
+      code: 'admin.error_ref.not_found', params: { ref: norm }, message: `没有这个参考编号：${norm}` })
+  }
   if (path === '/admin/overview') await new Promise((r) => setTimeout(r, slowMs))
   if (path === '/admin/overview') return json({ users: 3, active_7d: 1, tokens_30d: 1234567,
     cost_30d: 13.5, running: 1, failed_7d: 2, daily, unpriced_models: ['mystery'] })
@@ -57,6 +70,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
       ok: true, calls: 3, input: 1000, output: 2000, cache_read: 0, cache_write: 0, chars: 4000,
       novel_title: '药', chapter_title: '第一章', cost_usd: 0.02 }] })
   }
+  if (m && method === 'PATCH' && failPatch) return err(400, {
+    code: 'admin.self_disable', params: {}, message: '不能停用自己' })
   if (m && method === 'PATCH') {
     const u = users.find((x) => x.id === m[1])!
     Object.assign(u, JSON.parse(init!.body!))
@@ -85,10 +100,15 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                 chars: 4000, created_at: '2026-10-30T08:00:00+00:00', elapsed_sec: 75 }],
     failed: [{ id: 'v9', username: 'amy', novel_title: '孔乙己', chapter_title: '一',
                created_at: '2026-10-29T08:00:00+00:00', chars: 900, attempts: 3,
-               error: 'schema 校验失败：缺少 episodes' }] })
+               error: 'schema 校验失败：缺少 episodes' },
+              { id: 'v10', username: 'amy', novel_title: '孔乙己', chapter_title: '二',
+                created_at: '2026-10-28T08:00:00+00:00', chars: 10, attempts: 1,
+                error: '没有可用的模型', error_msg: { code: 'usage.monthly_cap', params: {}, message: '本月用量已达上限，请联系管理员' } }] })
   if (path.startsWith('/admin/audit')) return json({ audit: [
     { at: '2026-10-30T09:00:00+00:00', admin: 'root', action: 'disable', target: 'bob',
-      before: { disabled: false }, after: { disabled: true } }] })
+      before: { disabled: false }, after: { disabled: true } },
+    { at: '2026-10-30T09:05:00+00:00', admin: 'root', action: 'view_error_ref', target: 'bob',
+      before: null, after: { ref: 'K7Q2M9XD' } }] })
   if (path === '/admin/pricing' && method === 'GET') return json({ currency: 'USD', updated_at: null,
     models: { 'claude-sonnet-5': { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 } } })
   if (path === '/admin/pricing' && method === 'PUT') {
@@ -105,9 +125,11 @@ const { Users } = await import('../src/components/admin/Users')
 const { UsageTab } = await import('../src/components/admin/UsageTab')
 const { JobsTab } = await import('../src/components/admin/JobsTab')
 const { AuditTab } = await import('../src/components/admin/AuditTab')
+const { ErrorsTab } = await import('../src/components/admin/ErrorsTab')
 const { AdminView } = await import('../src/components/admin/AdminView')
 const { notice } = await import('../src/lib/notice')
 const { I18nProvider } = await import('../src/i18n')
+const { useI18n } = await import('../src/i18n/core')
 const { setCurrentLocale } = await import('../src/i18n/core')
 import type { ReactNode } from 'react'
 
@@ -290,7 +312,7 @@ console.log('6. 审计 / 刷新 ✓')
 // 7. 页签框架：五个页签可切换，返回回调
 let back = 0
 await remount(<AdminView me={me} onBack={() => { back++ }} />)
-for (const t of ['概览', '用户', '用量', '任务', '审计']) button(t)
+for (const t of ['概览', '用户', '用量', '任务', '审计', '错误记录']) button(t)
 must(text().includes('30 天金额'), '默认在概览')
 await click(button('审计'))
 must(text().includes('管理员') && text().includes('之前') && text().includes('之后'), '切到审计')
@@ -314,12 +336,75 @@ console.log('8. 骨架屏 / 迷你折线 ✓')
 // 9. 英文：页签文字
 await remount(<I18nProvider initial="en"><AdminView me={me} onBack={() => {}} /></I18nProvider>)
 const tabNames = [...container.querySelectorAll('.tabs__btn')].map((b) => b.textContent)
-must(tabNames.join(' ') === 'Overview Users Usage Jobs Audit', `英文页签，实为 ${tabNames.join(' ')}`)
+must(tabNames.join(' ') === 'Overview Users Usage Jobs Audit Errors', `英文页签，实为 ${tabNames.join(' ')}`)
 must(text().includes('Active (7d)'), '英文概览')
 await act(async () => { root.unmount() })
 root = createRoot(container as unknown as HTMLElement)
 setCurrentLocale('zh')
 console.log('9. 英文页签 ✓')
+
+// 10. 读取失败：错误条按语言渲染，编号保留
+let setLoc: (l: 'zh' | 'en') => void = () => {}
+function Grab() { setLoc = useI18n().setLocale; return null }
+failOverview = true
+await remount(<I18nProvider initial="zh"><Grab /><Overview /></I18nProvider>)
+must(text().includes('服务器出了点问题') && text().includes('K7Q2M9XD'), `错误条中文与编号，实为 ${text()}`)
+await act(async () => { setLoc('en') })
+await settle()
+must(text().includes('Something went wrong on the server') && text().includes('K7Q2M9XD') && !text().includes('服务器'),
+     `切英文后错误条英文、编号仍在，实为 ${text()}`)
+failOverview = false
+console.log('10. 读取失败错误条按语言渲染 ✓')
+
+// 11. 操作失败 toast 按当前语言渲染
+await remount(<I18nProvider initial="en"><Users me={me} /></I18nProvider>)
+await type(container.querySelector('.adm__search')!, 'amy')
+await click(container.querySelector('tbody tr.adm__row')!)
+failPatch = true
+await click(button('Disable'))
+await answer(true)
+must(lastNotice().kind === 'err' && lastNotice().msg === 'You can’t disable yourself', `toast 英文，实为 ${lastNotice().msg}`)
+failPatch = false
+console.log('11. 操作失败 toast 按语言 ✓')
+
+// 12. 任务页：error_msg 按语言，只有 error 原样
+await remount(<I18nProvider initial="en"><JobsTab /></I18nProvider>)
+must(text().includes('You’ve reached this month’s usage limit') && !text().includes('没有可用的模型'), '失败条英文 error_msg')
+must(text().includes('schema 校验失败'), '只有 error 的原样显示')
+console.log('12. 任务页失败原因 ✓')
+
+// 13. 错误记录页签：列表无详情请求；展开才取；按编号查找；查不到；审计动作名
+setCurrentLocale('zh')
+calls.length = 0
+await remount(<I18nProvider initial="zh"><ErrorsTab /></I18nProvider>)
+must(calls.join('|') === 'GET /admin/errors', `只请求列表，实为 ${calls}`)
+must(text().includes('K7Q2M9XD') && text().includes('bob') && text().includes('GET /novels')
+     && text().includes('服务器出了点问题'), '表格列')
+must(!text().includes('Traceback'), '列表不带详情')
+const det = container.querySelector('details')! as unknown as HTMLDetailsElement
+await act(async () => { det.open = true; det.dispatchEvent(new win.Event('toggle') as unknown as Event) })
+await settle()
+must(calls.includes('GET /admin/errors/K7Q2M9XD') && text().includes('Traceback: boom'), '展开才取详情')
+calls.length = 0
+await type(container.querySelector('.adm__search')!, 'k7q2-m9xd')
+await act(async () => {
+  container.querySelector('form')!.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }) as unknown as Event)
+})
+await settle()
+must(calls.join('|') === 'GET /admin/errors/k7q2-m9xd', `查找请求，实为 ${calls}`)
+must(container.querySelectorAll('table').length === 2 && text().includes('Traceback: boom'), '命中那一条带详情')
+await type(container.querySelector('.adm__search')!, 'zzzz-zzzz')
+await act(async () => {
+  container.querySelector('form')!.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }) as unknown as Event)
+})
+await settle()
+must(text().includes('没有这个参考编号：ZZZZZZZZ'), '查不到的提示')
+await remount(<I18nProvider initial="en"><AuditTab /></I18nProvider>)
+must(text().includes('View error details'), '审计动作名英文')
+setCurrentLocale('zh')
+await remount(<AuditTab />)
+must(text().includes('查看错误详情'), '审计动作名中文')
+console.log('13. 错误记录页签 ✓')
 
 await remount(<AdminView me={me} onBack={() => {}} />)
 

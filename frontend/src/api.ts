@@ -12,7 +12,7 @@ import type {
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
   FilmSession, FilmSettings, FreePatch, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
-  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, PricingTable, UsageReport,
+  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
   AssistantEvent, AssistantMsg, AssistantTask, AssistantWhere,
 } from './types'
 
@@ -533,6 +533,14 @@ export async function adminUsageCsv(days: number): Promise<string> {
 
 export function adminJobs() {
   return req<AdminJobs>('/admin/jobs')
+}
+
+export async function adminErrors(): Promise<ErrorRefRow[]> {
+  return (await req<{ errors: ErrorRefRow[] }>('/admin/errors')).errors
+}
+
+export function adminErrorRef(ref: string) {
+  return req<ErrorRefRow>(`/admin/errors/${encodeURIComponent(ref.trim())}`)
 }
 
 export async function adminAudit(): Promise<AuditEntry[]> {

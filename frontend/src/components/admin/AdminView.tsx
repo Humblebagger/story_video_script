@@ -5,13 +5,14 @@ import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import type { User } from '../../auth'
 import { AuditTab } from './AuditTab'
+import { ErrorsTab } from './ErrorsTab'
 import { JobsTab } from './JobsTab'
 import { Overview } from './Overview'
 import { UsageTab } from './UsageTab'
 import { Users } from './Users'
 
-type Tab = 'overview' | 'users' | 'usage' | 'jobs' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'usage', 'jobs', 'audit']
+type Tab = 'overview' | 'users' | 'usage' | 'jobs' | 'audit' | 'errors'
+const TABS: Tab[] = ['overview', 'users', 'usage', 'jobs', 'audit', 'errors']
 
 /** 管理后台：只给管理员看（入口在右上角）；权限以后端为准。 */
 export function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
@@ -45,6 +46,7 @@ export function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
       {tab === 'usage' && <UsageTab />}
       {tab === 'jobs' && <JobsTab />}
       {tab === 'audit' && <AuditTab />}
+      {tab === 'errors' && <ErrorsTab />}
     </div>
   )
 }
