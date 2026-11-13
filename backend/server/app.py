@@ -105,7 +105,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, error_refs, library, novels, pricing, store, summary, usage
-from server.messages import compact, money, msg, render_zh, to_detail, with_ref
+from server.messages import UserError, compact, money, msg, render_zh, to_detail, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -615,8 +615,16 @@ def _run_digest(user_id: str, nid: str, cid: str) -> None:
         novels.record_digest(user_id, nid, cid, vid, proposals, synopsis, dropped)
         ok = True
     except Exception as e:  # 网络/解析/章节被删——都只是这一步没做成
+        fields: dict = {}
+        if isinstance(e, UserError) and e.code:
+            # 可预期的（章节被删、没有采用版）：原因本身就说清楚了，不记编号，不占错误记录
+            render_session.set_error(fields, e)
+        else:
+            # 日志走缺省的 server.errors（R13 只给 runner 与合成保留原 logger）
+            render_session.set_error(fields, error_refs.unexpected(
+                e, "chapter.digest.failed", user_id=user_id, where=f"digest {nid}/{cid}"))
         try:
-            novels.set_digest_state(user_id, nid, cid, "failed", error=repr(e)[:300])
+            novels.set_digest_state(user_id, nid, cid, "failed", **fields)
         except (OSError, ValueError, LookupError):
             pass
     finally:
@@ -720,7 +728,9 @@ def chapters_digest(nid: str, cid: str, user: dict = Depends(novel_user)):
     """手动重跑章后整理（上次失败、或关着开关时采用的）。"""
     _novel_call(novels.digest_input, user["id"], nid, cid)
     if not load_settings().chapter_digest:
-        raise HTTPException(422, "章后整理已关闭（STORYBOARD_CHAPTER_DIGEST=0）")
+        log.warning("章后整理已关闭（STORYBOARD_CHAPTER_DIGEST=0），拒绝手动重跑 user=%s novel=%s chapter=%s",  # i18n: internal
+                    user["id"], nid, cid)
+        raise HTTPException(422, detail=msg("chapter.digest.off"))
     _schedule_digest(user["id"], nid, cid)
     return {"digest": "running"}
 

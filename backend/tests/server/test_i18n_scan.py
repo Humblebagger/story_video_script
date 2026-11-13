@@ -48,7 +48,7 @@ MODULES: dict = {
                       "render_compose_post", "render_bgm_put", "render_bgm_delete",
                       "current_user", "admin_user", "register", "login",
                       "novel_user", "_novel_call", "_clean_params", "_start_version",
-                      "memory_asset_upsert", "render_plan"},
+                      "memory_asset_upsert", "render_plan", "_run_digest", "chapters_digest"},
 }
 
 

@@ -52,7 +52,7 @@ interface StubJob {
 }
 interface StubVersion {
   id: string; created_at: string; edited_at: string | null; status: string
-  result: unknown; verification: unknown; error: string | null
+  result: unknown; verification: unknown; error: string | null; error_msg?: unknown
 }
 interface StubChapter {
   id: string; title: string; order: number; text: string
@@ -669,8 +669,12 @@ must(has('不存在的资产 C09'), '失败的具体原因必须显示给用户'
 // 报错文本之外还得给结构化发现——用户要据此改，不是据此叹气
 must(has('SOURCE-FROZEN-002') && has('台词不是所引原文句的逐字摘录'),
      '失败任务应摊开逐条验证发现')
+// 带 error_msg 的失败版本：提示条按代码渲染（不是中文兜底的第一行）
+shelf('alice')[0].chapters[0].versions.find((x) => x.id === 'job2')!.error_msg =
+  { code: 'common.internal', params: {}, ref: 'K7Q2M9XD' }
 await click(findByText('button', 'v2'))
-must(has('这一版转换失败'), '点开失败版本要说明它没有产物')
+must(has('这一版转换失败：服务器出了点问题') && has('参考编号 K7Q2M9XD') && !has('批 1 重试 2 次后仍未通过校验'),
+     '失败版本带 error_msg：提示条按代码渲染并带编号')
 must(!has('采用此版') || (findByText('button', '采用此版') as HTMLButtonElement).disabled,
      '失败版本不能采用')
 console.log('7. 失败 → 原因摊开显示（含结构化验证发现）/ 失败版本不可采用 ✓')

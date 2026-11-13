@@ -462,7 +462,7 @@ export const en: Messages = {
       keptUser: '; kept your edited synopsis',
       failed: 'failed ({reason})',
       unknown: 'unknown reason',
-      off: 'off (STORYBOARD_CHAPTER_DIGEST=0); fill in manually on the novel page',
+      off: 'not enabled; fill in manually on the novel page',
       rerun: 'Rerun',
     },
   },
@@ -1603,6 +1603,10 @@ export const en: Messages = {
         busy: 'Clips from this version are still generating. Delete it after they finish or fail',
         not_adoptable: 'This version can’t be adopted yet. Only versions that converted successfully and still pass re-verification after edits can be adopted',
         later_adopted: 'Later chapters ({names}) were converted continuing this chapter’s numbering, so this chapter can’t switch versions. Delete or reconvert those chapters first',
+      },
+      digest: {
+        off: 'Chapter digest isn’t enabled. Please contact the administrator',
+        failed: 'The chapter digest didn’t finish. Rerun it later; if it keeps failing, contact the administrator',
       },
       keyframe: {
         bad_type: 'Keyframes must be PNG, JPEG or WebP images', no_shot: 'This version has no shot {shot}',

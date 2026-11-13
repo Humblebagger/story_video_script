@@ -320,6 +320,40 @@ console.log('4. flashTarget ✓')
   console.log('6. 下载页导出按钮 ✓')
 }
 
+// 7. 章后整理失败：有 error_msg 直接接在标签后（不嵌套「失败（…）」）；旧数据照旧；关闭提示不含变量名
+{
+  const { VersionBar } = await import('../src/components/workflow/VersionBar')
+  const { en } = await import('../src/i18n/en')
+  const { zh } = await import('../src/i18n/zh')
+  const { useI18n } = await import('../src/i18n/core')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  function Cap() { setLoc = useI18n().setLocale; return null }
+  const bar = (digest: unknown) => (
+    <I18nProvider initial="zh"><Cap />
+      <VersionBar chapter={{ id: 'c1', title: '一', order: 1, text: '', adopted_version: null, versions: [], digest } as unknown as Chapter}
+                  versionId={null} onOpenVersion={() => {}} onAdopt={() => {}} onDeleteVersion={() => {}} onRerunDigest={() => {}} />
+    </I18nProvider>)
+  const txt = () => q('.chap__digest')?.textContent ?? ''
+  await act(async () => { root.render(bar({ status: 'failed', at: '', error: '旧中文',
+    error_msg: { code: 'chapter.digest.failed', params: {}, ref: 'K7Q2M9XD' } })) })
+  await act(async () => { setLoc('zh') })
+  must(txt().includes('章后整理：没有完成，可以稍后重跑；仍失败请联系管理员（参考编号 K7Q2M9XD）') && !txt().includes('失败（'),
+       '章后整理失败（中文）：按代码、带编号、不嵌套')
+  await act(async () => { setLoc('en') })
+  must(txt().includes(en.srv.chapter.digest.failed) && txt().includes('reference K7Q2M9XD') && !txt().includes('failed ('),
+       '章后整理失败（英文）')
+  await act(async () => { root.render(bar({ status: 'failed', at: '', error: '旧中文' })) })
+  await act(async () => { setLoc('zh') })
+  must(txt().includes('失败（旧中文）'), '只有 error：照旧显示')
+  await act(async () => { root.render(bar({ status: 'off', at: '' })) })
+  must(txt().includes('未开启，可在小说页手动补') && !txt().includes('STORYBOARD_CHAPTER_DIGEST'), 'off（中文）不含变量名')
+  await act(async () => { setLoc('en') })
+  must(txt().includes(en.flow.digest.off) && !txt().includes('STORYBOARD_CHAPTER_DIGEST'), 'off（英文）不含变量名')
+  must(!zh.flow.digest.off.includes('STORYBOARD') && !en.flow.digest.off.includes('STORYBOARD'), '文案里没有变量名')
+  await render(null)
+  console.log('7. 章后整理失败按代码渲染 ✓')
+}
+
 // 收尾：卸载并关掉 happy-dom 的窗口（清掉它的定时器），进程自然退出
 await act(async () => { root.unmount() })
 await win.happyDOM.close()

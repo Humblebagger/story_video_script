@@ -1,5 +1,6 @@
 /** 版本条（每次生成一个版本，标出采用版；采用此版 / 删除此版）与章后整理的结果（含「重跑」）。②–⑥ 都显示。 */
 import { useI18n } from '@/i18n/core'
+import { itemError } from '@/i18n/serverMsg'
 import { Button } from '@/components/ui/button'
 import { JOB_STATUS, label } from '@/labels'
 import type { Chapter, VersionSummary } from '@/types'
@@ -34,7 +35,8 @@ export function VersionBar({ chapter, versionId, onOpenVersion, onAdopt, onDelet
     done: `${t('flow.digest.done')}${d.proposed ? t('flow.digest.proposed', { n: d.proposed }) : t('flow.digest.none')}${
       d.dropped?.length ? t('flow.digest.dropped', { n: d.dropped.length }) : ''}${
       d.synopsis_kept_user ? t('flow.digest.keptUser') : ''}`,
-    failed: t('flow.digest.failed', { reason: d.error ?? t('flow.digest.unknown') }),
+    // 有 error_msg 时直接接在「章后整理：」后面，不再套「失败（…）」；旧数据照旧
+    failed: d.error_msg ? itemError(d, locale) : t('flow.digest.failed', { reason: d.error ?? t('flow.digest.unknown') }),
     off: t('flow.digest.off'),
   }[d.status])
   return (

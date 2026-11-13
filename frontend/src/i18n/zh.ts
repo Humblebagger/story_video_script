@@ -460,7 +460,7 @@ export const zh = {
       keptUser: '；保留了你手改的摘要',
       failed: '失败（{reason}）',
       unknown: '未知原因',
-      off: '已关闭（STORYBOARD_CHAPTER_DIGEST=0），可在小说页手动补',
+      off: '未开启，可在小说页手动补',
       rerun: '重跑',
     },
   },
@@ -1593,6 +1593,10 @@ export const zh = {
         busy: '这个版本还有片段在出，等出完或失败后再删',
         not_adoptable: '这个版本还不能采用：只有转换成功、且人工编辑后仍通过复验的版本可以',
         later_adopted: '后面的章节（{names}）已经接着本章的编号转换过，本章不能再换采用版；要换，先删掉或重转后面的章节',
+      },
+      digest: {
+        off: '章后整理功能没有开启，请联系管理员',
+        failed: '没有完成，可以稍后重跑；仍失败请联系管理员',
       },
       keyframe: {
         bad_type: '关键帧只收 PNG / JPEG / WebP 图片', no_shot: '这个版本里没有镜头 {shot}',

@@ -329,7 +329,7 @@ def create_version(user_id: str, nid: str, cid: str, vid: str, params: dict,
             "created_at": now_iso(), "edited_at": None, "status": "queued",
             "params": params, "input_text": input_text,
             "quality_report": None, "verification": None, "manifest": None,
-            "error": None, "result": None,
+            "error": None, "error_msg": None, "result": None,
         }
         _write(_version_path(user_id, nid, cid, vid), record)
     return record
@@ -358,7 +358,8 @@ def update_version_state(user_id: str, nid: str, cid: str, vid: str, status: str
     with _lock:
         v = get_version(user_id, nid, cid, vid)
         v["status"] = status
-        for key in ("result", "quality_report", "manifest", "verification", "error"):
+        for key in ("result", "quality_report", "manifest", "verification", "error",
+                    "error_msg"):
             if key in fields:
                 v[key] = fields[key]
         _write(_version_path(user_id, nid, cid, vid), v)

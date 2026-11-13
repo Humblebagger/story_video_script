@@ -40,6 +40,87 @@ def succeed(nid, cid, vid, doc, status="succeeded"):
     novels.update_version_state(U, nid, cid, vid, status, result=doc)
 
 
+def digest_and_version_errors(app_mod, HTTPException) -> None:
+    """章后整理失败带编号、可预期失败不带；关闭开关的提示不含变量名；版本记录可存 error_msg。"""
+    import logging
+    from server import error_refs
+    uid = "e" * 12
+    nid = novels.create_novel(uid, "书")["id"]
+    cid = novels.create_chapter(uid, nid, "一", text="原文")["id"]
+    novels.create_version(uid, nid, cid, "s1", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "s1", "succeeded", result=batch_doc(1))
+    novels.adopt_version(uid, nid, cid, "s1")
+    A = {"id": uid}
+
+    class Grab(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+
+        def emit(self, record):
+            self.records.append(record)
+
+    real = app_mod._digest_chat
+    errs = Grab()
+    logging.getLogger("server.errors").addHandler(errs)
+    try:
+        def boom():
+            raise RuntimeError("model exploded sk-abcdefghijklmnop1234567890")
+        app_mod._digest_chat = boom
+        app_mod._run_digest(uid, nid, cid)
+        d = novels.get_chapter(uid, nid, cid)["digest"]
+        assert d["status"] == "failed"
+        assert d["error_msg"]["code"] == "chapter.digest.failed" and d["error_msg"]["params"] == {}
+        ref = d["error_msg"]["ref"]
+        assert len(ref) == 8
+        assert d["error"].startswith("没有完成，可以稍后重跑；仍失败请联系管理员") and ref in d["error"]
+        assert "RuntimeError" not in d["error"] and "sk-" not in json.dumps(d)
+        row = error_refs.find(ref)
+        assert "RuntimeError" in row["detail"] and row["where"].startswith("digest ")
+        assert row["user_id"] == uid
+        assert any(ref in r.getMessage() for r in errs.records)
+
+        # 可预期的失败（章节整理中途被删）：原因本身清楚，不记编号
+        before = len(error_refs.recent(1000))
+
+        def gone():
+            raise novels.NotFound.of("chapter.not_found")
+        app_mod._digest_chat = gone
+        app_mod._run_digest(uid, nid, cid)
+        d = novels.get_chapter(uid, nid, cid)["digest"]
+        assert d["error_msg"] == {"code": "chapter.not_found", "params": {}}
+        assert len(error_refs.recent(1000)) == before
+    finally:
+        app_mod._digest_chat = real
+        logging.getLogger("server.errors").removeHandler(errs)
+
+    # 开关关闭：422 消息对象不含变量名，变量名只进日志
+    real_ls = app_mod.load_settings
+    app_log = Grab()
+    logging.getLogger("render.app").addHandler(app_log)
+    app_mod.load_settings = lambda: type("S", (), {"chapter_digest": False})()
+    try:
+        e = must_raise(HTTPException, app_mod.chapters_digest, nid, cid, A)
+        assert e.status_code == 422 and e.detail["code"] == "chapter.digest.off"
+        assert "STORYBOARD_CHAPTER_DIGEST" not in json.dumps(e.detail, ensure_ascii=False)
+        assert any(r.levelno == logging.WARNING and "STORYBOARD_CHAPTER_DIGEST" in r.getMessage()
+                   for r in app_log.records)
+    finally:
+        app_mod.load_settings = real_ls
+        logging.getLogger("render.app").removeHandler(app_log)
+
+    # 版本记录：error_msg 字段
+    v = novels.create_version(uid, nid, cid, "f9", {}, "原文")
+    assert "error_msg" in v and v["error_msg"] is None
+    m = {"code": "common.internal", "params": {}}
+    novels.update_version_state(uid, nid, cid, "f9", "failed", error="x", error_msg=m)
+    got = novels.get_version(uid, nid, cid, "f9")
+    assert got["error"] == "x" and got["error_msg"] == m
+    novels.update_version_state(uid, nid, cid, "f9", "failed", error="y")
+    assert novels.get_version(uid, nid, cid, "f9")["error_msg"] == m, "不传 error_msg 时不动它"
+    print("持久化失败: 章后整理带编号 / 可预期失败不记编号 / 关闭开关无变量名 / 版本 error_msg ✓")
+
+
 def codes_and_api(app_mod, HTTPException) -> None:
     """报错带代码：存储层异常带 code/params，接口层 detail 是消息对象。"""
     uid = "b" * 12
@@ -468,6 +549,7 @@ def main() -> int:
           "只注入前面章节 / 限制启停 / 编辑时软核查 / 删章节连带撤回 ✓")
 
     codes_and_api(app_mod, HTTPException)
+    digest_and_version_errors(app_mod, HTTPException)
     print("\nALL PASS")
     return 0
 

@@ -18,6 +18,7 @@ import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
 import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
+import { formatMsg } from './i18n/serverMsg'
 import type { MsgKey } from './i18n/core'
 import { BRAND } from './brand'
 import { Tour } from './components/common/Tour'
@@ -500,7 +501,7 @@ export default function App() {
       if (!v.result) {
         setVerification(v.verification ?? null)
         setAlert(v.status === 'failed'
-          ? t('app.versionFailed', { msg: (v.error ?? '').split('\n')[0] })
+          ? t('app.versionFailed', { msg: v.error_msg ? formatMsg(v.error_msg) : (v.error ?? '').split('\n')[0] })
           : t('app.versionEmpty'))
       }
     } catch (e) {

@@ -375,6 +375,7 @@ export interface VersionRecord {
   quality_report: string | null
   verification?: VerificationReport | null
   error?: string | null
+  error_msg?: ServerMsg | null
   result: Storyboard | null
 }
 
@@ -387,6 +388,7 @@ export interface DigestState {
   dropped?: string[]
   synopsis_kept_user?: boolean
   error?: string
+  error_msg?: ServerMsg | null
 }
 
 export interface ChapterSummary {

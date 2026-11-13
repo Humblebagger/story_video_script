@@ -33,6 +33,14 @@
     "params": [],
     "zh": "用户名已被占用"
   },
+  "chapter.digest.failed": {
+    "params": [],
+    "zh": "没有完成，可以稍后重跑；仍失败请联系管理员"
+  },
+  "chapter.digest.off": {
+    "params": [],
+    "zh": "章后整理功能没有开启，请联系管理员"
+  },
   "chapter.empty_title": {
     "params": [],
     "zh": "章节标题不能为空"
