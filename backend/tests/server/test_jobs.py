@@ -210,6 +210,11 @@ def part_views(nid, cid):
     finally:
         app_mod._jobs.pop("v_view", None)
     print("2. 任务摘要 / 助手的 last_log ✓")
+    # 尝试记录里的报告：普通用户视图把主机路径换成占位（验收 G1）
+    m = {"attempts": [{"report": f"lint 失败：{auth.DATA_DIR}/users/x/out.json", "batch": 1}, "旧格式"]}
+    pub = app_mod._public_manifest(m)
+    assert str(auth.DATA_DIR) not in pub["attempts"][0]["report"] and "<data>" in pub["attempts"][0]["report"]
+    assert pub["attempts"][1] == "旧格式" and str(auth.DATA_DIR) in m["attempts"][0]["report"], "存储不动"
 
 
 def part_no_model(nid, cid):

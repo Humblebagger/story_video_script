@@ -435,6 +435,12 @@ def _public_manifest(m):
     out = dict(m)
     if isinstance(out.get("contracts"), dict):
         out["contracts"] = {k: v for k, v in out["contracts"].items() if k not in _MODEL_KEYS}
+    if isinstance(out.get("attempts"), list):
+        # 尝试记录里的校验报告：入库时已脱敏密钥，这里再把主机路径换成占位（旧记录同样生效）
+        out["attempts"] = [
+            {**a, "report": error_refs.scrub_text(a["report"])}
+            if isinstance(a, dict) and isinstance(a.get("report"), str) else a
+            for a in out["attempts"]]
     return out
 
 

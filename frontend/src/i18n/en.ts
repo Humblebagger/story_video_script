@@ -1743,7 +1743,7 @@ export const en: Messages = {
         outline_changed: 'The book outline was changed again afterwards, so it can’t be undone',
         synopsis_changed: 'This chapter’s synopsis was changed again afterwards, so it can’t be undone',
         unsupported: 'This change can’t be undone', already: 'This change has already been undone',
-        not_found: 'Can’t find this change', done_shots: 'Undid the changes to {n} shots',
+        not_found: 'Can’t find this change', done_shots: 'Undid the shot changes ({n})',
         done_asset: 'Undid the changes to {id}', done_plot: 'Plot changes undone',
       },
     },
