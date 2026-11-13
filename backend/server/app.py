@@ -85,7 +85,7 @@ from pipeline import __version__
 from pipeline.config import load_settings
 from pipeline.convert import ConversionError, ConvertParams, convert_text
 from pipeline import novel_memory, verification
-from pipeline.chat import ChatInvoker, UsageCallback, build_chat_model, replace_thinking
+from pipeline.chat import ChatInvoker, LLMError, UsageCallback, build_chat_model, replace_thinking
 from assistant import events as assistant_events, graph as assistant_graph, store as assistant_store
 from assistant import tools as assistant_tools
 from assistant import actions as assistant_actions
@@ -105,7 +105,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, error_refs, library, novels, pricing, store, summary, usage
-from server.messages import UserError, compact, money, msg, render_zh, to_detail, with_ref
+from server.messages import REPORT_MAX, UserError, compact, money, msg, ref, render_zh, to_detail, vendor, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -271,24 +271,54 @@ def _record_chat_usage(user_id: str, nid: str, cid: str, chat, ok: bool) -> None
         print(f"[usage] 落账失败：{e!r}", flush=True)
 
 
+DEBUG_KEEP = 400      # 版本记录里留的调试日志行数
+DEBUG_MEM = 5000      # 内存任务表里每个任务最多留的行数（任务表只增不删，设计审查 M6）
+
+
+def _job_debug(job: dict, line) -> None:
+    """调试日志：原文、不翻译，只给管理员看（spec 子计划 4 B）。进表前抹掉密钥、数据目录换成 <data>。
+    超过 DEBUG_MEM 行时丢掉最早的，第一行留一句「已截断」。"""
+    lines = job.setdefault("debug_log", [])
+    lines.append(error_refs.scrub_text(str(line)))
+    if len(lines) > DEBUG_MEM:
+        del lines[:len(lines) - DEBUG_MEM + 1]
+        lines[0] = "（更早的调试日志已截断）"  # i18n: internal
+
+
+def _job_event(job: dict, m: dict) -> None:
+    """给用户的进度事件：消息对象 + 时间。中文兜底由产生方写进调试日志（pipeline 的 say 已写）。"""
+    job["log"].append({**m, "at": store.now_iso()})
+
+
+def _job_note(job: dict, code: str, /, **params) -> None:
+    """app 自己产生的进度事件：进度与调试日志各一份。"""
+    m = msg(code, **params)
+    _job_event(job, m)
+    _job_debug(job, m["message"])
+
+
 def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
              seed: Optional[dict], persist, after_success,
              numbering: Optional[dict] = None,
              context: Optional[novel_memory.NovelContext] = None) -> None:
     """跑一次转换并把状态/产物写回。persist(status, **fields) 把状态落到章节的
-    版本记录；after_success(job, log) 做成功后的长期记忆动作（首个成功版本自动采用）。"""
+    版本记录；after_success(job, note) 做成功后的长期记忆动作（首个成功版本自动采用），
+    note(code, **params) 记一条进度事件。
+    进度事件进 job["log"]（给用户），细节进 job["debug_log"]（只给管理员），失败经 set_error 写 error/error_msg。"""
     job["status"] = "running"
+    job.setdefault("debug_log", [])
+
+    def note(code: str, /, **p) -> None:
+        _job_note(job, code, **p)
 
     def save(status, **fields):
         try:
             persist(status, **fields)
             return True
         except OSError as e:
-            log(f"警告：记录落盘失败（产物仍可从本次响应取走）：{e!r}")
+            note("job.event.persist_failed")
+            _job_debug(job, f"记录落盘失败：{e!r}")  # i18n: internal
             return False
-
-    def log(msg):
-        job["log"].append(str(msg))
 
     save("running")
     settings = load_settings()
@@ -296,9 +326,37 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
 
     warnings: list = []
     manifest: dict = {}
+    where = f'convert {job.get("novel_id")}/{job.get("chapter_id")}/{job["id"]}'
+
+    def fail(m: dict, *, with_verification: bool) -> None:
+        job["status"] = "failed"
+        render_session.set_error(job, m)
+        job["manifest"] = manifest
+        if manifest:
+            manifest["state"] = "failed"
+        fields = {"error": job["error"], "error_msg": job["error_msg"], "manifest": manifest,
+                  "debug_log": job["debug_log"][-DEBUG_KEEP:]}
+        if with_verification:
+            job["verification"] = manifest.get("verification")
+            fields["verification"] = job["verification"]
+        save("failed", **fields)
+        _record_usage(job, manifest, False, settings)
+
+    def crashed(e: BaseException, code: str = "job.crashed") -> None:
+        """带参考编号的失败：意外异常用 job.crashed；needs_ref 的模型错误保留映射后的代码（llm.bad_request，
+        无参数，满足 unexpected 的约束），用户看到的是「AI 服务拒绝了这次请求」而不是「意外错误」（设计审查 I2）。"""
+        _job_debug(job, f"转换异常：{e!r}")  # i18n: internal
+        if getattr(e, "hint", ""):
+            _job_debug(job, e.hint)
+        cause = e.__cause__ if isinstance(e, LLMError) and e.__cause__ is not None else e
+        fail(error_refs.unexpected(cause, code, user_id=job.get("user_id"), where=where),
+             with_verification=isinstance(e, ConversionError))
+
     try:
         job["result"] = convert_text(text, params, settings=settings,
-                                     log=log, warnings_out=warnings,
+                                     log=lambda line: _job_debug(job, line),
+                                     on_event=lambda m: _job_event(job, m),
+                                     warnings_out=warnings,
                                      seed_assets=seed, manifest_out=manifest,
                                      progress_out=job["progress"],
                                      on_partial=lambda d, k, n: _on_partial(job, d, k, n),
@@ -308,37 +366,40 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
         job["verification"] = manifest.get("verification")
         job["partial"] = None    # 整章已出，预览作废；失败时则保留，已通过的批次照样能看
         if warnings:
-            job["quality_report"] = "\n\n".join(warnings)
+            job["quality_msg"] = list(warnings)
+            job["quality_report"] = "\n\n".join(w["message"] for w in warnings)
             job["status"] = "completed_with_warnings"
         else:
             job["status"] = "succeeded"
         # 转换慢且花钱，产物必须落盘——内存任务表重启即清空
         job["persisted"] = save(
             job["status"], result=job["result"], quality_report=job["quality_report"],
-            manifest=manifest, verification=job["verification"], error=None)
+            quality_msg=job.get("quality_msg"), manifest=manifest, verification=job["verification"],
+            error=None, error_msg=None, debug_log=job["debug_log"][-DEBUG_KEEP:])
         _record_usage(job, manifest, True, settings)
         try:
-            after_success(job, log)
+            after_success(job, note)
         except (OSError, ValueError, LookupError) as e:
-            log(f"警告：写入长期记忆失败：{e!r}")
-    except ConversionError as e:
-        job["status"] = "failed"
-        job["error"] = f"{e}\n{e.report}"
-        job["manifest"] = manifest
-        if manifest:
-            manifest["state"] = "failed"
-        job["verification"] = manifest.get("verification")
-        save("failed", error=job["error"], manifest=manifest,
-             verification=job["verification"])
-        _record_usage(job, manifest, False, settings)
-    except Exception as e:  # LLM/网络等运行期错误
-        job["status"] = "failed"
-        job["error"] = repr(e)
-        job["manifest"] = manifest
-        if manifest:
-            manifest["state"] = "failed"
-        save("failed", error=job["error"], manifest=manifest)
-        _record_usage(job, manifest, False, settings)
+            note("job.event.memory_failed")
+            _job_debug(job, f"写入长期记忆失败：{e!r}")  # i18n: internal
+        # 自动采用、整理排队、记忆失败这些行在第一次 save 之后才产生，再落一次调试日志（设计审查 M5）
+        save(job["status"], debug_log=job["debug_log"][-DEBUG_KEEP:])
+    except (ConversionError, LLMError) as e:
+        if not error_refs.expected(e):
+            # 没有代码的 ConversionError（程序错误）→ job.crashed；needs_ref 的模型错误 → 保留 llm.bad_request
+            crashed(e, e.code if isinstance(e, LLMError) and e.code else "job.crashed")
+            return
+        m = e.as_msg()
+        report = getattr(e, "report", "") or ""
+        if report:
+            m = msg("job.failed_report", reason=compact(m),
+                    report=vendor(error_refs.scrub_text(report), limit=REPORT_MAX))
+        _job_debug(job, f"转换失败：{e}")  # i18n: internal
+        if getattr(e, "hint", ""):
+            _job_debug(job, e.hint)
+        fail(m, with_verification=isinstance(e, ConversionError))
+    except Exception as e:  # 运行期意外：带参考编号，堆栈进错误记录
+        crashed(e)
 
 
 def _on_partial(job: dict, doc: dict, done: int, total: int) -> None:
@@ -378,7 +439,7 @@ def list_jobs(user: dict = Depends(current_user)):
         "work_title": j.get("work_title"), "chapter": j.get("chapter"),
         "novel_id": j.get("novel_id"), "chapter_id": j.get("chapter_id"),
         "chars": j.get("chars"), "log_lines": len(j["log"]),
-        "last_log": j["log"][-1] if j["log"] else None,
+        "last_log": j["log"][-1] if j["log"] else None,   # 进度事件（消息对象）
         "progress": _progress_view(j),
     } for j in sorted(jobs, key=lambda x: x.get("created_at") or "", reverse=True)]}
 
@@ -388,7 +449,8 @@ def _jobs_view(user_id: str) -> list:
     with _lock:
         jobs = [j for j in _jobs.values() if j.get("user_id") == user_id]
     return [{"id": j["id"], "status": j["status"], "novel_id": j.get("novel_id"), "chapter": j.get("chapter"),
-             "progress": _progress_view(j), "last_log": j["log"][-1] if j["log"] else None} for j in jobs]
+             "progress": _progress_view(j), "last_log": (j["log"][-1].get("message") if isinstance(j["log"][-1], dict) else j["log"][-1])
+                         if j["log"] else None} for j in jobs]
 
 
 assistant_tools.jobs_source = _jobs_view
@@ -568,30 +630,26 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
     """新接口：转换某章，产物落成该章的一个版本；本章还没有采用版时自动采用。"""
     seed = novels.seed_assets(user_id, nid)
     if seed:
-        n = sum(len(v) for v in seed.values())
-        job["log"].append(f"沿用《{params.work_title}》的资产库共 {n} 张卡"
-                          "（模型须复用其 ID 与描述）")
+        _job_note(job, "job.event.seed_assets", title=params.work_title, n=sum(len(v) for v in seed.values()))
     numbering = novels.start_numbering(user_id, nid, cid)
     if numbering:
-        job["log"].append(f"编号接续本书此前章节：句子从 u{numbering['next_unit']:04d}、"
-                          f"分集从 E{numbering['next_episode']:02d} 起")
+        _job_note(job, "job.event.numbering", unit=f"u{numbering['next_unit']:04d}",
+                  episode=f"E{numbering['next_episode']:02d}")
     context = novels.novel_context(user_id, nid, cid)
     if not context.empty():
-        job["log"].append(
-            f"注入长期记忆：人物状态 {len(context.lifecycle)} 条、此前章节摘要 "
-            f"{len(context.synopses)} 章{'、全书梗概' if context.outline else ''}、"
-            f"创作限制 {len(context.constraints)} 条")
+        _job_note(job, "job.event.memory", lifecycle=len(context.lifecycle), synopses=len(context.synopses),
+                  outline=ref("job.event.with_outline") if context.outline else "",
+                  constraints=len(context.constraints))
 
-    def after_success(job, log):
+    def after_success(job, note):
         chapter = novels.get_chapter(user_id, nid, cid)
         if chapter.get("adopted_version"):
-            log("本章已有采用版，这一版仅存档；要用它请在版本列表里点「采用」")
+            note("job.event.archived")
             return
         r = novels.adopt_version(user_id, nid, cid, job["id"])
-        log(f"已自动采用为本章首个成功版本：资产库新增 {r['added']} 张、"
-            f"合并 {r['merged']} 张")
+        note("job.event.adopted", added=r["added"], merged=r["merged"])
         if _schedule_digest(user_id, nid, cid):
-            log("章后整理已排队：提取人物生命周期提议与本章摘要（待人工确认）")
+            note("job.event.digest_queued")
 
     _execute(job, text, params, strict, seed,
              lambda status, **f: novels.update_version_state(
@@ -616,9 +674,13 @@ def _run_digest(user_id: str, nid: str, cid: str) -> None:
         ok = True
     except Exception as e:  # 网络/解析/章节被删——都只是这一步没做成
         fields: dict = {}
-        if isinstance(e, UserError) and e.code:
-            # 可预期的（章节被删、没有采用版）：原因本身就说清楚了，不记编号，不占错误记录
+        if error_refs.expected(e):
+            # 可预期的（章节被删、没有采用版、已映射的模型服务错误）：原因本身就说清楚了，不记编号
             render_session.set_error(fields, e)
+        elif isinstance(e, LLMError) and e.code:
+            # needs_ref 的模型服务错误：保留 llm.bad_request，带编号（设计审查 I2）
+            render_session.set_error(fields, error_refs.unexpected(
+                e.__cause__ or e, e.code, user_id=user_id, where=f"digest {nid}/{cid}"))
         else:
             # 日志走缺省的 server.errors（R13 只给 runner 与合成保留原 logger）
             render_session.set_error(fields, error_refs.unexpected(
@@ -659,7 +721,8 @@ def _start_version(user: dict, nid: str, cid: str, overrides: dict, strict: bool
     _novel_call(novels.create_version, user["id"], nid, cid, job_id,
                 {**merged, "strict": strict}, text)
     job = {"id": job_id, "user_id": user["id"], "status": "queued", "log": [],
-           "result": None, "quality_report": None, "error": None, "persisted": True,
+           "debug_log": [], "result": None, "quality_report": None, "quality_msg": None,
+           "error": None, "error_msg": None, "persisted": True,
            "created_at": store.now_iso(), "work_title": novel["title"],
            "chapter": chapter["title"], "chars": len(text), "progress": {},
            "partial": None, "novel_id": nid, "chapter_id": cid, "version_id": job_id}

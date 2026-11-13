@@ -61,6 +61,7 @@ MODULES: dict = {
                       "current_user", "admin_user", "register", "login",
                       "novel_user", "_novel_call", "_clean_params", "_start_version",
                       "memory_asset_upsert", "render_plan", "_run_digest", "chapters_digest",
+                      "_execute", "_run_version_job", "list_jobs", "_jobs_view",
                       "_admin_call", "admin_usage", "admin_usage_csv", "admin_pricing_put",
                       "admin_errors", "admin_error_get"},
 }

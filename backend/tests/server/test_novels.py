@@ -374,10 +374,13 @@ def main() -> int:
 
     def fake_convert(text, params, settings=None, log=print, warnings_out=None,
                      seed_assets=None, manifest_out=None, progress_out=None,
-                     on_partial=None, start_numbering=None, novel_context=None):
+                     on_partial=None, start_numbering=None, novel_context=None,
+                     on_event=None):
         calls.append({"text": text, "params": params, "seed": seed_assets,
                       "numbering": start_numbering, "context": novel_context})
         log("（假转换）")
+        if on_event:
+            on_event({"code": "job.event.verified", "params": {}, "message": "整章终检通过"})
         if manifest_out is not None:
             manifest_out.update({"verification": {"status": "passed"}})
         return batch_doc(1)
@@ -443,7 +446,9 @@ def main() -> int:
         assert calls[0]["params"].work_title == "药" and calls[0]["params"].chapter == "第一章"
         assert calls[0]["params"].narration_mode == "selective", "小说默认参数要带进转换"
         assert calls[0]["seed"] is None, "空库不注入"
-        assert any("自动采用" in line for line in job["log"])
+        assert any(e["code"] == "job.event.adopted" for e in job["log"])
+        assert all(isinstance(e, dict) and e.get("at") for e in job["log"])
+        assert "debug_log" in app_mod._jobs[va] and any("假转换" in x for x in app_mod._jobs[va]["debug_log"])
         chapter = app_mod.chapters_get(anid, ch["id"], A)
         assert chapter["adopted_version"] == va
         d = wait_digest(anid, ch["id"])
@@ -518,9 +523,8 @@ def main() -> int:
             "next_unit": max(int(u["id"][1:]) for u in b1u) + 1,
             "next_para": max(u["para"] for u in b1u) + 1,
             "next_episode": max(int(e["id"][1:]) for e in batch_doc(1)["episodes"]) + 1}
-        assert any("编号接续本书此前章节" in line
-                   for line in app_mod._jobs[r2["job_id"]]["log"])
-        assert any("注入长期记忆" in line for line in app_mod._jobs[r2["job_id"]]["log"])
+        codes = [e["code"] for e in app_mod._jobs[r2["job_id"]]["log"]]
+        assert "job.event.numbering" in codes and "job.event.memory" in codes
         ctx = calls[-1]["context"]
         assert {e["character_id"] for e in ctx.lifecycle} == {"C03", "C01"}, "只注入已确认的"
         assert ctx.lifecycle[0]["since"]["chapter_title"] == "第一章"
