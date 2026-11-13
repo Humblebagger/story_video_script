@@ -80,4 +80,15 @@ must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
   must(unk === en.srv.film.ark.unknown_model && !unk.includes('doubao-x'), '旧会话 unknown_model 多余参数')
 }
 
+// 8. 参考编号：顶层 ref 附在渲染结果后；兜底 message 已带编号时不重复；嵌套原因不附
+{
+  const internal = { code: 'common.internal', params: {}, message: '服务器出了点问题，请稍后重试；仍失败请联系管理员（参考编号 K7Q2M9XD）', ref: 'K7Q2M9XD' }
+  must(formatMsg(internal, 'zh') === '服务器出了点问题，请稍后重试；仍失败请联系管理员（参考编号 K7Q2M9XD）', '中文附编号')
+  must(formatMsg(internal, 'en').endsWith(' (reference K7Q2M9XD)'), '英文附编号')
+  const unreg = { code: 'x.not.registered', message: '兜底（参考编号 AB12CD34）', ref: 'AB12CD34' }
+  must(formatMsg(unreg, 'en') === '兜底（参考编号 AB12CD34）', '缺译回落的 message 已带编号，不重复')
+  must(itemError({ error: 'x', error_msg: { code: 'common.internal', params: {}, ref: 'K7Q2M9XD' } }, 'en').includes('K7Q2M9XD'), '持久化的 error_msg 也附编号')
+  must(errValue(new ApiError('m', 500, internal)) === internal, 'errValue 保留带编号的 detail')
+}
+
 console.log('\nALL PASS')

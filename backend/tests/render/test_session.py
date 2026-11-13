@@ -18,7 +18,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 from render import providers, session as sess  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
-from server.messages import cause_of, msg, money, vendor  # noqa: E402
+from server.messages import cause_of, msg, money, vendor, with_ref  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 OWNER = {"user_id": "u", "nid": "n", "cid": "c", "vid": "v"}
@@ -452,6 +452,14 @@ def main() -> int:
     assert d["error_msg"] == {"code": "film.run.busy", "params": {"id": "E01-C01"}}
     sess.set_error(d, "旧字符串")
     assert d == {"error": "旧字符串", "error_msg": None}
+    sess.set_error(d, msg("film.run.nothing"))
+    assert "ref" not in d["error_msg"], "不带编号的消息不写 ref"
+    sess.set_error(d, with_ref(msg("film.submit.crashed"), "K7Q2M9XD"))
+    assert d["error_msg"] == {"code": "film.submit.crashed", "params": {}, "ref": "K7Q2M9XD"}, d
+    assert d["error"].endswith("（参考编号 K7Q2M9XD）"), d["error"]
+    d3 = {}
+    sess.copy_error(d3, d)
+    assert d3["error_msg"]["ref"] == "K7Q2M9XD" and d3["error"] == d["error"]
     d2 = {}
     sess.set_error(d, se)
     sess.copy_error(d2, d)

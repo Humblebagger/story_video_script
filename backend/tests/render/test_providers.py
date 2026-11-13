@@ -150,6 +150,19 @@ def main() -> int:
     assert FakeVideo().rate_note["code"] == "rate.fake"
     print("6. 错误带代码 ✓")
 
+    # 脱敏：模型密钥、签名密钥、x-api-key 头
+    os.environ["ANTHROPIC_API_KEY"] = "sk-ant-fake-0123456789"
+    os.environ["STORYBOARD_SECRET"] = "fake-signing-secret-0123"
+    try:
+        out = base.scrub_secrets("k=sk-ant-fake-0123456789 s=fake-signing-secret-0123")
+        assert "sk-ant-fake-0123456789" not in out and "fake-signing-secret-0123" not in out, out
+    finally:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ.pop("STORYBOARD_SECRET", None)
+    for raw in ("x-api-key: abc", '{"x-api-key": "abc"}', "X-Api-Key=abc"):
+        assert "abc" not in base.scrub(raw), (raw, base.scrub(raw))
+    print("脱敏：模型密钥 / 签名密钥 / x-api-key ✓")
+
     print("\nALL PASS")
     return 0
 

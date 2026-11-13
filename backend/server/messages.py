@@ -128,6 +128,18 @@ def to_detail(e: BaseException, **extra) -> Any:
     return {"message": text, **extra} if extra else text
 
 
+REF_SUFFIX_ZH = "（参考编号 {ref}）"     # 与前端 zh.common.refSuffix 一致
+
+
+def with_ref(m: dict, ref: str) -> dict:
+    """给消息对象加参考编号：顶层 ref（不进 params），中文兜底末尾附编号。已有编号时替换。"""
+    base = m.get("message") or render_zh(m["code"], m.get("params") or {})
+    old = m.get("ref")
+    if old:
+        base = base.replace(REF_SUFFIX_ZH.format(ref=old), "")
+    return {**m, "message": base + REF_SUFFIX_ZH.format(ref=ref), "ref": ref}
+
+
 def dump_codes() -> dict:
     return {c: {"params": list(p), "zh": z} for c, (p, z) in sorted(_REG.items())}
 
@@ -135,6 +147,7 @@ def dump_codes() -> dict:
 # ---------- 登记表（按域分组；改动后运行 python -m server.messages --write） ----------
 
 register("common.unknown", "{message}")
+register("common.internal", "服务器出了点问题，请稍后重试；仍失败请联系管理员")
 
 # 控制台名与费率说明（厂商属性，前端按代码渲染）
 register("console.generic", "厂商控制台")

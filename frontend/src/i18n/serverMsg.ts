@@ -4,7 +4,7 @@
 import { currentLocale, lookupKey, translate } from './core'
 import type { Locale } from './core'
 
-export interface ServerMsg { code: string; params?: Record<string, unknown>; message?: string }
+export interface ServerMsg { code: string; params?: Record<string, unknown>; message?: string; ref?: string }
 export type MsgLike = string | ServerMsg | null | undefined
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -23,6 +23,12 @@ function value(v: unknown, l: Locale): string {
   return String(v)
 }
 
+/** 顶层参考编号：附在渲染结果后；结果里已有编号（缺译回落到已附编号的 message）就不重复 */
+function withRef(text: string, ref: unknown, l: Locale): string {
+  if (typeof ref !== 'string' || !ref || text.includes(ref)) return text
+  return text + translate(l, 'common.refSuffix', { ref })
+}
+
 function render(m: ServerMsg, l: Locale): string {
   const key = `srv.${m.code}`
   const tpl = lookupKey(l, key) ?? lookupKey('zh', key)
@@ -35,7 +41,7 @@ function render(m: ServerMsg, l: Locale): string {
 export function formatMsg(m: unknown, locale: Locale = currentLocale()): string {
   if (m === null || m === undefined) return ''
   if (typeof m === 'string') return m
-  if (isServerMsg(m)) return render(m, locale)
+  if (isServerMsg(m)) return withRef(render(m, locale), m.ref, locale)
   if (isObj(m) && typeof m.message === 'string') return m.message
   return String(m)
 }
@@ -50,6 +56,9 @@ export function errValue(e: unknown): MsgLike {
   }
   return e instanceof Error ? e.message : String(e)
 }
+
+/** toast 等即时显示：弹出时按当前语言格式化 */
+export const errText = (e: unknown, locale?: Locale): string => formatMsg(errValue(e), locale)
 
 /** 会话里的段、尝试、自由节点：有 error_msg 按代码，没有（旧数据、未改造的模块）原样显示 error */
 export function itemError(x: { error?: string | null; error_msg?: ServerMsg | null }, locale?: Locale): string {

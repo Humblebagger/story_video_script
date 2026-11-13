@@ -31,7 +31,7 @@ from render import export_fcpxml, mix, providers, voice, session as render_sessi
 from render.providers.fake import FakeTts, FakeVideo  # noqa: E402
 from render.providers.tts_base import tts_cost  # noqa: E402
 from server import app as app_mod  # noqa: E402
-from server import auth, novels  # noqa: E402
+from server import auth, error_refs, novels  # noqa: E402
 
 FAKE = FakeVideo()
 TTS = FakeTts()
@@ -274,9 +274,10 @@ def main() -> int:
     assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
     wait(root)
     f = c.get(R + "/compose", headers=H).json()["final"]
-    assert f["error_msg"] == {"code": "compose.crashed", "params": {}}, f
+    assert f["error_msg"]["code"] == "compose.crashed" and f["error_msg"]["params"] == {} and len(f["error_msg"]["ref"]) == 8, f
     assert "RuntimeError" not in f["error"] and "意外" not in f["error"].replace("意外错误", ""), "不显示异常类名与原文"
-    assert f["error"] == "合成时出现意外错误，请重试；仍失败请联系管理员"
+    assert f["error"].startswith("合成时出现意外错误，请重试；仍失败请联系管理员") and "参考编号" in f["error"], f
+    assert "RuntimeError" in error_refs.find(f["error_msg"]["ref"])["detail"], "记录里有异常类名"
     print("6. 合成失败与意外异常都落到失败 ✓")
 
     # 7. 合成中不能再合成；超上限拒绝；重启时中断的合成标失败
@@ -436,7 +437,8 @@ def main() -> int:
         assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
         wait(root)
         f = render_session.load(root)["final"]
-        assert f["error_msg"] == {"code": "compose.crashed", "params": {}}, f
+        assert f["error_msg"]["code"] == "compose.crashed" and f["error_msg"]["params"] == {} and len(f["error_msg"]["ref"]) == 8, f
+        assert "ValueError" in error_refs.find(f["error_msg"]["ref"])["detail"], "记录里有异常类名"
         assert "ValueError" not in f["error"] and "炸了" not in f["error"], f
         errs = [r for r in cap.records if r.levelno >= logging.ERROR]
         assert errs, "意外异常要写 ERROR 日志"

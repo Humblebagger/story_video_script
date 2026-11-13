@@ -113,6 +113,12 @@ def main() -> int:
     assert M.render_zh("film.provider.submit_cut", {}) == "网络中断"
     assert M.render_zh("film.submit.crashed", {}) == "提交时出现意外错误，请重试；仍失败请联系管理员"
 
+    # 10. with_ref：顶层 ref，已有编号时替换、不重复附加
+    r1 = M.with_ref(M.msg("common.internal"), "K7Q2M9XD")
+    r2 = M.with_ref(r1, "AB12CD34")
+    assert r2["ref"] == "AB12CD34" and r2["message"].count("参考编号") == 1 and r2["message"].endswith("（参考编号 AB12CD34）"), r2
+    assert "K7Q2M9XD" not in r2["message"] and "ref" not in r2["params"]
+
     from render.providers.base import ProviderError
     e = ProviderError.of("tts.volc.rejected", code="401", detail=M.vendor("x"))
     assert e.params["code"] == "401" and str(e) == "豆包语音拒绝了请求（401）：x", "参数可以叫 code"

@@ -6,6 +6,7 @@ export const zh = {
   },
   common: {
     listSep: '、',
+    refSuffix: '（参考编号 {ref}）',
     cancel: '取消',
     close: '关闭',
     retry: '重试',
@@ -1347,7 +1348,7 @@ export const zh = {
     unitMissing: '（未找到 {id}）',
   },
   srv: {
-    common: { unknown: '{message}' },
+    common: { unknown: '{message}', internal: '服务器出了点问题，请稍后重试；仍失败请联系管理员' },
     console: { generic: '厂商控制台', ark: '方舟控制台', minimax: 'MiniMax 开放平台' },
     rate: {
       fake: '假厂商：不联网、不花钱，金额只用于演示',

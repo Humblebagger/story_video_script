@@ -93,15 +93,18 @@ class VideoProvider(Protocol):
 
 
 def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:
-    """服务端文字进报错前：抹掉密钥与 Bearer 凭据；limit 不为 None 时再截断。"""
+    """服务端文字进报错前：抹掉密钥、Bearer 凭据与 x-api-key 头；limit 不为 None 时再截断。"""
     t = str(text)
     if secret:
         t = t.replace(secret, "***")
     t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
+    t = re.sub(r"(?i)(x-api-key[\"']?\s*[:=]\s*[\"']?)[^\s\"',;}]+", r"\1***", t)
     return t if limit is None else t[:limit]
 
 
-SECRET_ENVS = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY")
+# 日志与错误记录里一律抹掉的环境变量值：厂商密钥、模型密钥（章后整理与转换，经 x-api-key 发出）、token 签名密钥
+SECRET_ENVS = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY",
+               "ANTHROPIC_API_KEY", "STORYBOARD_SECRET")
 
 
 def scrub_secrets(text, extra=()) -> str:

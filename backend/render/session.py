@@ -67,7 +67,7 @@ def set_error(obj: dict, err) -> None:
     if m:
         params = m.get("params") or {}
         obj["error"] = m.get("message") or render_zh(m["code"], params)
-        obj["error_msg"] = {"code": m["code"], "params": params}
+        obj["error_msg"] = {"code": m["code"], "params": params, **({"ref": m["ref"]} if m.get("ref") else {})}
     else:
         obj["error"], obj["error_msg"] = str(err), None
 

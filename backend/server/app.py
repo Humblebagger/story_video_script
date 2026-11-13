@@ -74,7 +74,7 @@ from typing import Optional
 
 import anyio
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import iterate_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -104,14 +104,59 @@ from render import voice as render_voice
 from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
-from server import audit, auth, library, novels, pricing, store, summary, usage
-from server.messages import compact, money, msg, render_zh, to_detail
+from server import audit, auth, error_refs, library, novels, pricing, store, summary, usage
+from server.messages import compact, money, msg, render_zh, to_detail, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
 log = logging.getLogger("render.app")
 
 app = FastAPI(title="小说 → 分镜 IR 转换服务", version=__version__)
+
+def _uid_of(scope) -> Optional[str]:
+    """500 记录里的用户：按 Authorization 头解析，取不到就 None（不能让它挡住报错）。"""
+    try:
+        h = dict(scope.get("headers") or []).get(b"authorization", b"").decode("latin-1")
+        token = h[7:] if h.lower().startswith("bearer ") else ""
+        u = auth.verify_token(token) if token else None
+        return u["id"] if u else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class _ErrorRefMiddleware:
+    """路由里没接住的异常 → 500 + 带参考编号的消息对象（spec 子计划 3 B）。
+    注册在 CORS 之内，500 也带 CORS 头；响应已开始（流式中途）时不接管，照旧抛出。
+    HTTPException 由内层 ExceptionMiddleware 处理，不会到这里。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def _send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send)
+        except Exception as e:  # noqa: BLE001
+            if started:
+                raise
+            where = f'{scope.get("method", "")} {scope.get("path", "")}'
+            # 解析 token 与写盘都是阻塞操作，放到线程里，不卡事件循环；日志走缺省的 server.errors
+            m = await anyio.to_thread.run_sync(
+                lambda: error_refs.unexpected(e, user_id=_uid_of(scope), where=where))
+            await JSONResponse({"detail": m}, status_code=500)(scope, receive, send)
+
+
+app.add_middleware(_ErrorRefMiddleware)      # 必须在 CORSMiddleware 之前注册（见类注释）
 
 # 前端（frontend/）独立部署，跨源直连本服务；限定来源用 STORYBOARD_CORS_ORIGINS（逗号分隔）
 app.add_middleware(
@@ -1329,7 +1374,8 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
         m = err.as_msg() if hasattr(err, "as_msg") else err
         if isinstance(m, dict) and m.get("code"):
             m = _hide_root_deep({"code": m["code"], "params": m.get("params") or {},
-                                 "message": m.get("message") or render_zh(m["code"], m.get("params") or {})}, root)
+                                 "message": m.get("message") or render_zh(m["code"], m.get("params") or {}),
+                                 **({"ref": m["ref"]} if m.get("ref") else {})}, root)
         else:
             m = _hide_root(str(err), root)
         render_session.compose_failed(root, m, _hide_root(detail or "", root))
@@ -1345,11 +1391,10 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
     except render_mix.MixError as e:
         failed(e, e.stderr)
     except Exception as e:  # noqa: BLE001  任何意外都要落到失败，不能卡在「合成中」
-        # 不把原始 exc_info 交给日志：堆栈文字（含 __cause__/__context__ 链）先脱敏再写
-        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        log.error("%s", render_video_base.scrub_secrets(f"合成异常 root={root}\n{tb}"))  # i18n: internal
+        ref = error_refs.record_exc(e, "compose.crashed", context=f"合成异常 root={root}",  # i18n: internal
+                                    user_id=error_refs.user_of_root(root), where=f"compose {root}", logger=log)
         try:
-            failed(msg("compose.crashed"))
+            failed(with_ref(msg("compose.crashed"), ref))
         except Exception as e2:  # noqa: BLE001
             tb2 = "".join(traceback.format_exception(type(e2), e2, e2.__traceback__))
             log.error("%s", render_video_base.scrub_secrets(f"合成失败状态写回失败 root={root}\n{tb2}"))  # i18n: internal

@@ -28,6 +28,7 @@ MODULES: dict = {
     "render/free.py": None,
     "render/compose.py": None,
     "render/runner.py": None,
+    "server/error_refs.py": None,
     "render/providers/tts_base.py": None,
     "render/providers/tts_volc.py": None,
     "render/voice.py": None,

@@ -1,4 +1,8 @@
 {
+  "common.internal": {
+    "params": [],
+    "zh": "服务器出了点问题，请稍后重试；仍失败请联系管理员"
+  },
   "common.unknown": {
     "params": [
       "message"

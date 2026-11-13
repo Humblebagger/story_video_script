@@ -8,6 +8,7 @@ export const en: Messages = {
   },
   common: {
     listSep: ', ',
+    refSuffix: ' (reference {ref})',
     cancel: 'Cancel',
     close: 'Close',
     retry: 'Retry',
@@ -1353,7 +1354,7 @@ export const en: Messages = {
     unitMissing: '(not found: {id})',
   },
   srv: {
-    common: { unknown: '{message}' },
+    common: { unknown: '{message}', internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.' },
     console: { generic: 'the provider console', ark: 'the Volcengine Ark console', minimax: 'the MiniMax Open Platform' },
     rate: {
       fake: 'Fake provider: offline and free; amounts are for demo only',

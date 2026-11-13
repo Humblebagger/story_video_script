@@ -13,7 +13,8 @@ from pathlib import Path
 
 from render import compose, session as sess
 from render.providers import base, get_video
-from server.messages import cause_of, compact, msg, ref, render_zh
+from server import error_refs
+from server.messages import cause_of, compact, msg, ref, render_zh, with_ref
 
 
 log = logging.getLogger("render.runner")
@@ -289,10 +290,10 @@ class Runner:
             sess.submit_failed(root, c["id"], e)
             return False
         except Exception as e:
-            # 不把原始 exc_info 交给日志：堆栈文字（含 __cause__/__context__ 链）先脱敏再写
-            tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            log.error("%s", _scrub_secrets(f'提交异常 root={root} clip={c["id"]}\n{tb}', provider))  # i18n: internal
-            sess.submit_failed(root, c["id"], msg("film.submit.crashed"))
+            err_ref = error_refs.record_exc(e, "film.submit.crashed", context=f'提交异常 root={root} clip={c["id"]}',  # i18n: internal
+                                        user_id=error_refs.user_of_root(root), where=f'submit {root} {c["id"]}',
+                                        secrets_extra=[getattr(provider, "_key", "")], logger=log)
+            sess.submit_failed(root, c["id"], with_ref(msg("film.submit.crashed"), err_ref))
             return False
         try:
             sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None),

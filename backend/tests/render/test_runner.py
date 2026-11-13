@@ -14,11 +14,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
+os.environ["STORYBOARD_DATA_DIR"] = tempfile.mkdtemp()   # 错误记录写临时目录，不碰真实 backend/data（在导入 render/server 之前）
 
 from render import compose, providers, session as sess  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
 from render.runner import Runner  # noqa: E402
+from server import error_refs  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 OWNER = {"user_id": "u", "nid": "n", "cid": "c", "vid": "v"}
@@ -565,7 +567,10 @@ def main() -> int:
     with _LogGrab("render.runner") as g:
         rn.tick()
     c = clip(r17, i17[0])
-    assert c["error_msg"] == {"code": "film.submit.crashed", "params": {}}, c["error_msg"]
+    assert c["error_msg"]["code"] == "film.submit.crashed" and c["error_msg"]["params"] == {} and len(c["error_msg"]["ref"]) == 8, c["error_msg"]
+    rec17 = error_refs.find(c["error_msg"]["ref"])
+    assert rec17 and "ValueError" in rec17["detail"] and i17[0] in rec17["detail"], rec17
+    assert rec17["where"].startswith("submit ") and i17[0] in rec17["where"], rec17["where"]
     errs = [r for r in g.records if r.levelno == logging.ERROR]
     assert len(errs) == 1 and errs[0].exc_info is None, g.lines
     assert str(r17) in errs[0].getMessage() and i17[0] in errs[0].getMessage(), g.lines
@@ -752,8 +757,8 @@ def main() -> int:
     rn.tick()
     fake.submit = real_submit18
     c = clip(r21, i21[0])
-    assert c["error"] == "提交时出现意外错误，请重试；仍失败请联系管理员", c["error"]   # 异常原文不再进界面
-    assert c["error_msg"] == {"code": "film.submit.crashed", "params": {}}
+    assert c["error"].startswith("提交时出现意外错误，请重试；仍失败请联系管理员") and "参考编号" in c["error"], c["error"]   # 异常原文不再进界面
+    assert c["error_msg"]["code"] == "film.submit.crashed" and c["error_msg"]["params"] == {} and len(c["error_msg"]["ref"]) == 8, c["error_msg"]
 
     r22, i22 = fresh("fallback2")
     sess.queue_run(r22, [i22[0]])
