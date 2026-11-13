@@ -1,7 +1,7 @@
 # 后端对用户文字统一中英双语 设计
 
 日期：2026-11-13
-状态：已过设计审查（Opus），修订完毕；子计划 1、2 已交付；子计划 2、3 范围已补充（见文末）
+状态：已过设计审查（Opus），修订完毕；子计划 1、2、3 已交付；子计划 2、3、4 范围已补充（见文末）
 
 ## 1. 目标与已决事项
 
@@ -603,3 +603,318 @@
   2. `GET /novels/{nid}/chapters/{cid}/versions/{vid}` 返回整条记录，`manifest` 含 `contracts.model` 与各次调用记录；
   3. 转换任务失败的 `job.error`、助手 503「助手暂不可用：{e}」带模型接口原文。
 - 用户已决：管理后台（用量统计、价格表、CSV、错误记录）仍显示模型名；本项并入子计划 4 一起设计、审查、验收。
+
+## 子计划 4 范围补充（2026-11-13，子计划 3 交付后）
+
+§9 子计划 4 原范围是「转换任务（进度、调试日志、ConversionError/LLMError、quality_report、验证门）+ 助手（artifact、SSE 事件、notice、编辑卡 warnings、target 显示映射）」。本节把范围落到具体调用点，并补上三件事：
+- 子计划 3 留下的版本 `error_msg` 产出点与 `_execute` 通用异常的参考编号；
+- 模型服务错误的友好映射；
+- 上一节「子计划 4 追加需求」：不对普通用户透出底层模型。
+
+### A. 范围
+
+**后端模块**（凡是会到达用户的报错与进度都带代码；异常类保留原基类、混入 `UserError`）：
+
+| 模块 | 改法 | 说明 |
+|---|---|---|
+| `pipeline/errors.py` | `ConversionError(UserError, RuntimeError)`，`report` 照旧是第二个位置参数 | 四种失败各给代码（见 H）；`str(e)` 不再带服务器上的工作目录 |
+| `pipeline/chat.py` | `LLMError(UserError, RuntimeError)`，另带 `hint`（开发细节）与 `needs_ref`；新增 `llm_error(e)` 映射函数 | 见 C |
+| `pipeline/events.py`（新） | `make_say(log, on_event)` | 进度事件的唯一出口：给用户的消息对象，同时把中文兜底写进调试日志 |
+| `pipeline/convert.py`、`pipeline/graph.py` | 新增 `on_event` 参数；面向用户的进度行改走 `say(code, …)` | 校验报告逐行、修复细节、合并与终检的工具输出、工作目录只进调试日志 |
+| `pipeline/review.py` | 评审调用失败时报告里只写友好文案 | 现在把 `{type}: {e}` 原文写进报告，报告会进质量报告与界面 |
+| `pipeline/__main__.py` | 命令行打印 `LLMError.hint` 与质量报告的中文兜底 | 开发用的命令行照旧看得到环境变量名 |
+| `assistant/tools.py` | 新增 `ToolError(UserError, ToolException)`；`_tool` 的报错处理把 `ToolError` 交给 ToolNode 包装 | 见 D |
+| `assistant/graph.py` | `ToolNode(..., wrap_tool_call=…)`：`ToolError` → `status=error` 的 ToolMessage，`artifact={"error": 消息对象}` | 正文仍是给模型的中文，与原来一字不差 |
+| `assistant/actions.py`、`assistant/edits.py` | 全部 `ToolException`、`UndoError` 带代码；`_op` 把接口错误的消息对象原样带进 `ToolError` | 撤销成功的那句话也改为消息对象 |
+| `assistant/events.py` | `error`、`notice`、中断、`tool_end`、失败卡带消息对象 | 见 D |
+| `prompts/assistant.md` | 加一句：不说出底层模型或其提供方 | 见 E |
+| `server/summary.py` | `unpriced` 由模型名列表改为布尔 | 见 E |
+| `server/novels.py` | `update_version_state` 接受 `quality_msg`、`debug_log` | 存储 |
+
+**`server/app.py` 调用点**（逐个列在计划的「调用点清单」里）：
+- 转换：`_execute`、`_run_version_job`、`list_jobs`、`_jobs_view`、`get_job`、`get_job_partial`。
+- 渲染任务包与验证门：`_render_gate`、`_gate_status`、`render_plan`（「分镜结构不完整」，现标 `# i18n: todo(4)`）、`render_keyframes`。
+- 助手：`_assistant_db`、`assistant_clear`、`_assistant_ctx`、`_assistant_begin`、`_assistant_stream`、`_assistant_model_or_503`、`assistant_send`、`assistant_resume`、`assistant_undo`、`_check_version_doc`（编辑卡 warnings）。
+- 不透出模型：`healthz`、`versions_get`、新增 `admin_service` 与 `admin_job_debug`。
+
+**前端**：
+- 转换：JobPanel（进度、失败、质量报告）、画布侧栏的任务行、侧栏与动态面板的 `last_log`、App 打开失败版本时的提示条、管理后台任务页（失败原因只取一行，另加「调试日志」）。
+- 验证门：`useFilm` 的 `gate`、`compose.ts` 的阻断原因、FilmPanel 与 TimelineCanvas 的提示。
+- 助手：`assistantSession`（`error`、`notice`、`tool_end`）、AssistantPanel、ActionCard（失败卡、warnings、diff target）、TaskCard（失败原因、合成步骤、下载报错）。
+- 账号菜单：模型一行只给管理员。
+
+**不在本子计划**：
+- 验证报告逐条双语 → 子计划 5。本子计划只保证报告原文能作为参数带着走（`report` 参数、门的 `verification` 附加字段），不改报告本身。
+- 豆包语音 4xx 映射 → 仍是后续事项。
+- 给模型的文字：提示词、修复回喂的报告、`repair.py` 的补丁错误、工具结果正文。它们在扫描里以 `# i18n: llm` 豁免（工具报错正文由 `ToolError` 的中文兜底提供，与原文一字不差）。
+- 出片厂商与视频档位名（方舟、MiniMax、档位标签）：这是用户自己选的产品选项，不属于「底层模型」，照旧显示。
+
+### B. 转换任务的进度事件与调试日志
+
+**两路输出**：
+- **进度事件**：`job["log"]` 改为事件列表，每条 `{code, params, message, at}`。
+  - `message` 是中文兜底（与 §3.1 一致）；`at` 是 ISO 时间。
+  - `last_log`（`/jobs` 与助手的 `jobs_running`）取最后一条事件；给助手模型看的仍是它的中文兜底字符串。
+  - 事件只覆盖用户关心的节点：资产库沿用、编号接续、长期记忆注入、分批、每批开始、校验通过或未过、自动修正、修复、降级交付、整章终检通过、软核查、自动采用、章后整理排队、落盘与写长期记忆的警告。完整清单见 H。
+- **调试日志**：`job["debug_log"]`，字符串列表，原文、不翻译。
+  - 内容：原来 `log` 收到的全部文字，外加 `LLMError.hint`、异常的 `repr`。包括校验报告逐行、修复细节、合并与终检的工具输出、工作目录、thinking 降级时的接口原文。
+  - 每行进表前经 `error_refs.scrub_text`：抹掉密钥，数据目录换成 `<data>`。
+  - 进度事件的中文兜底同时写进调试日志，所以调试日志是一份完整的时间线；命令行打印的也是它。
+
+**调试日志只给管理员**（裁定，理由见计划 R2）：
+- 普通用户的 `/jobs/{id}` 不返回 `debug_log`；版本记录的读取接口也不返回。
+- 调试日志里有服务器的临时目录、接口原文（可能带模型名）、环境变量名，以及校验报告引用的用户原文片段。后台管理员与能登录服务器的运维不是同一群人（子计划 3 R16），所以按错误记录的同一原则处理：逐条查看并写审计。
+- 存放位置：
+  - 内存任务表里留全量；
+  - 任务结束（成功或失败）时，把最后 400 行写进版本记录的 `debug_log`，服务重启后管理员仍能看到失败那次的经过。
+- 接口：`GET /admin/jobs/{vid}/debug?user_id=…`（管理员）。先查内存任务表，没有再读版本记录。找不到时 404 `admin.job.not_found`。每次查看写审计 `view_job_debug`，对象为任务所属用户。
+- 管理后台任务页：运行中与失败的每一行都有「调试日志」按钮，点开时才请求。
+
+**失败**（`_execute`）：
+- `ConversionError`（带代码）：
+  - 报告为空时，`error_msg` 就是它的消息对象；
+  - 报告不为空时，`error_msg = job.failed_report {reason, report}`，模板为 `{reason}\n{report}`：
+    - `reason` 是紧凑的原因消息；
+    - `report` 是厂商原文类型参数（不翻译），先经 `scrub_text`，截断到 6000 字（`vendor(text, limit=…)` 新增 `limit` 参数）；
+    - 中文兜底等于原来的 `f"{e}\n{e.report}"` 去掉工作目录。
+  - 一行显示的地方（提示条、助手任务卡、后台失败列表）只取 `reason`，旧数据取 `error` 的第一行，与现在一致。
+- `LLMError`（已映射、不需要编号）：`error_msg` 为它的代码，不带编号；`hint` 进调试日志。
+- 其它异常，以及 `needs_ref` 的 `LLMError`、没有代码的 `ConversionError`：`error_refs.unexpected(e, "job.crashed", user_id=…, where="convert <nid>/<cid>/<vid>")`，带参考编号；堆栈进错误记录与 `server.errors` 日志。不再存 `repr(e)`。
+- 写法统一用 `render_session.set_error(job, m)`，再把 `error`、`error_msg` 一起写进版本记录（子计划 3 R7 留下的产出点）。
+
+**质量报告**：
+- 降级交付的每批警告改为消息对象 `job.quality.degraded`，参数 `batch`、`retries`、`attempt`、`candidates`、`report`（厂商原文类型，同上）。
+- 任务与版本记录新增 `quality_msg`（消息对象列表）。`quality_report` 字符串照旧，是各条中文兜底用空行连接，旧前端与 `has_quality_report` 不受影响。
+
+**其它任务接口**：
+- 「job 不存在」→ `job.not_found`，文字改为「任务不存在（服务重启会清空任务表）」；
+- 「暂无已完成的批次可预览」→ `job.no_partial`。
+
+**验证门与渲染任务包**：
+- `_render_gate` 的 422 → `{**msg("verify.gate.blocked"), "verification": …}`。附加字段 `verification` 名字与内容不变，前端 `ApiError.verification` 照旧能取到。
+- `_gate_status` 的 `message` 改为消息对象：
+  - 没有分镜产物 → 复用 `film.session.no_storyboard`；
+  - 门没过 → 门的消息对象，去掉 `verification`。
+- `render_plan`、`render_keyframes` 的「分镜结构不完整」→ `film.plan.incomplete`、`film.keyframes.incomplete`，带 `detail`（厂商原文类型，与子计划 1 的 `film.build.incomplete` 同法）。
+
+### C. 模型服务错误映射
+
+**原则**（沿用子计划 2 B 节）：
+- 界面文案统一称「AI 服务」，不出现模型名、厂商名、环境变量名、HTTP 原文。
+- 原文脱敏后只进三处：
+  - `pipeline.chat` 的 WARNING 日志：带 HTTP 状态、错误类型、请求 id（`request-id` 头，取不到写 `-`），原文截到 500 字；
+  - `LLMError.hint`：进转换任务的调试日志与命令行；
+  - 需要编号的那一类（`llm.bad_request`）的错误记录。
+
+**判定顺序**（`llm_error(e)`）：
+1. 已是 `LLMError` 原样返回；
+2. `APITimeoutError` → `llm.timeout`；其余 `APIConnectionError`、`httpx2.HTTPError` → `llm.connect_failed`；
+3. `APIStatusError`：
+   1. 先看状态码 400、413、422 或响应体错误类型 `invalid_request_error` 时的原文特征：
+      - 审核特征（如 `Content Exists Risk`、content filter / policy / moderation、safety、sensitive）→ `llm.content_blocked`；
+      - 超长特征（context length、maximum context、too long、超出 token）→ `llm.too_long`；
+   2. 再按响应体 `error.type` 查表；
+   3. 最后按 HTTP 状态查表；
+   4. 都没有命中：5xx → `llm.unavailable`，其余 → `llm.bad_request`。
+4. 其它异常返回 `None`，由调用方当意外处理。
+
+流式中途的 `event: error`（SDK 以 HTTP 200 的 `APIStatusError` 抛出）只能靠错误类型判定，所以错误类型排在状态码之前。
+
+| 情形 | 判定 | 代码 | 中文兜底 | 英文要点 | 自动重试 | 用户能做的 |
+|---|---|---|---|---|---|---|
+| 未配置密钥 / 未装依赖 | `build_chat_model` | `llm.not_configured` | AI 服务还没有配置，请联系管理员 | The AI service isn't set up yet | 否 | 联系管理员 |
+| 鉴权失败 | 401、`authentication_error` | `llm.auth` | AI 服务鉴权失败，请联系管理员 | couldn't authenticate | 否 | 联系管理员 |
+| 余额不足 | 402、`billing_error` | `llm.balance` | AI 服务账户余额不足，暂时无法使用，请联系管理员 | account is out of credit | 否 | 联系管理员 |
+| 拒绝访问 | 403、`permission_error` | `llm.access_denied` | AI 服务拒绝访问，请联系管理员 | access denied | 否 | 联系管理员 |
+| 模型不存在或未开通 | 404、`not_found_error` | `llm.model_unavailable` | AI 服务配置有误，暂时无法使用，请联系管理员 | misconfigured | 否 | 联系管理员 |
+| 内容太长 | 413、`request_too_large`、超长特征 | `llm.too_long` | 这次要处理的内容超出了 AI 服务单次能处理的长度；请缩短内容（助手对话可先清空）后重试，仍失败请联系管理员 | too long for one request | 否 | 缩短、清空对话 |
+| 内容审核 | 审核特征 | `llm.content_blocked` | 内容没有通过 AI 服务的安全审核：请检查或改写相关内容后重试 | didn't pass the safety review | 否 | 改写内容 |
+| 其它请求错误 | 其余 4xx | `llm.bad_request` | AI 服务拒绝了这次请求，请重试；仍失败请联系管理员 | rejected the request | 否 | 报参考编号（带 `ref`） |
+| 限流、过载 | 429、529、`rate_limit_error`、`overloaded_error` | `llm.busy` | AI 服务繁忙，请稍后重试 | busy | 是 | 稍后重试 |
+| 服务端错误 | 其余 5xx、`api_error` | `llm.unavailable` | AI 服务暂时不可用，请稍后重试 | temporarily unavailable | 是 | 稍后重试 |
+| 超时 | `APITimeoutError` | `llm.timeout` | AI 服务响应超时，请稍后重试 | timed out | 是 | 稍后重试 |
+| 连不上、中途断开 | `APIConnectionError`、`httpx2.HTTPError` | `llm.connect_failed` | 连接 AI 服务失败，请稍后重试；仍失败请联系管理员 | couldn't connect | 是 | 稍后重试 |
+| 重试用尽 | 上面四类在转换里重试耗尽 | `llm.gave_up`（`retries`、`cause`） | 已重试 {retries} 次仍失败：{cause} | still failing after N retries | — | 稍后重试 |
+| 输出被截断 | `stop_reason=max_tokens` | `llm.truncated` | AI 输出超出了长度上限，这次没有完成；请联系管理员调整转换设置 | output hit the length limit | 否 | 联系管理员 |
+
+**重试与现有逻辑一致**：
+- 转换与章后整理（`ChatInvoker`）：仍由 `with_retry` 按 `_transient_errors()` 重试。
+  - 这份清单补上 `anthropic.OverloadedError`：anthropic 1.13 把 529 单列成这个类，它不再是 `InternalServerError` 的子类，现在 529 一次都不重试，与「5xx 都重试」的原意不符。
+  - 重试耗尽 → `llm.gave_up`，`cause` 嵌套映射后的原因。
+  - 非瞬时错误不重试，直接映射。
+  - thinking 降级照旧排在映射之前：先接住 `BadRequestError` 里的 thinking 拒绝，降级重发；其余 400 才映射。
+- 流式中途的 `event: error`（HTTP 200）不在重试清单里，映射后直接失败（计划 R5）。
+- 助手：模型由 SDK 自己重试（`max_retries=2`，覆盖 408/409/429/5xx 与连接错误），本子计划只映射，不加重试，也不包 `llm.gave_up`。
+
+**截断与未配置**：原文里的环境变量名与操作建议（`STORYBOARD_THINKING`、`STORYBOARD_MAX_TOKENS`、`STORYBOARD_BATCH_CHARS`、`ANTHROPIC_API_KEY`、`pip install`）移进 `hint`，并记 WARNING 日志。命令行照旧打印它们。
+
+**编号**：只有 `llm.bad_request` 带参考编号（`needs_ref=True`）。原因只在服务器上，用户报编号，管理员在错误记录里能看到脱敏后的接口原文。其余映射类不带编号，与子计划 3 B 节「厂商映射类不带编号」一致。
+
+**调用方**：
+- `_execute`：见 B。
+- `_run_digest`：带代码且不需要编号的 `LLMError` 走「可预期」分支，章节上显示映射后的文案，不记编号。可预期的判断统一用新增的 `error_refs.expected(e)`：带代码，且不是 `needs_ref`。
+- 助手：见 D。
+- 评审：失败时报告写成「[review] 评审服务不可用：<映射后的中文兜底>」，原文进 `pipeline.review` 的 WARNING 日志。
+
+### D. 助手事件与报错
+
+**工具报错带消息对象**：
+- `ToolError(UserError, ToolException)`：
+  - `str()` 是给模型的中文兜底，与原来的报错文字一字不差；
+  - 原来 `except ToolException` 的地方（`_ask_edit`、`undo`）照样接得住。
+- 把消息对象带进 `ToolMessage.artifact` 的方法：
+  - LangChain 的工具在报错时不带 artifact。所以 `_tool` 的报错处理遇到 `ToolError` 就把它再抛出去；
+  - 由 `assistant/graph.py` 给 ToolNode 配的 `wrap_tool_call` 接住，生成 `ToolMessage(str(e), status="error", artifact={"error": 消息对象})`；
+  - 普通 `ToolException` 照旧变成只有正文的报错；
+  - `interrupt` 抛的 `GraphBubbleUp` 不经过这个分支。
+- `_op` 遇到 detail 是消息对象的接口错误，用 `ToolError.from_msg(detail)` 保留代码与参数，不再只取 `message`。
+- 存储层带代码的异常换成 `ToolError` 或 `UndoError` 时，用新增的 `messages.recast(cls, e)` 保留代码（同子计划 3 R4）。
+
+**事件形状**（`events.py`；旧字段都保留，新增的字段旧前端会忽略）：
+
+| 事件 | 数据 |
+|---|---|
+| `token`、`tool_start`、`goto`、`done` | 不变 |
+| `tool_end` | `{id, ok, summary, msg?}`。`msg` 是失败时 artifact 里的消息对象；`summary` 照旧是正文前 200 字 |
+| `confirm` | 卡不变；编辑卡的 `warnings` 由字符串改为消息对象列表 |
+| `action` | `{tool_call_id, action, outcome, card?, task?, error?, error_msg?}`。失败时 `error` 照旧是正文，`error_msg` 是消息对象 |
+| `notice`（新） | 消息对象。只用于「步骤太多」（`assistant.too_many_steps`），之后照常 `done`。原来混在 `token` 里，会被拼进回答正文 |
+| `error` | 消息对象 `{code, params, message, ref?}`，`message` 字段仍在，旧前端照旧能取到文字 |
+
+**`error` 事件**：
+- 已映射的模型服务错误：`llm.*` 代码，不带编号；
+- 其余：`error_refs.unexpected(e, "assistant.crashed", user_id=…, where="assistant <nid>")`，带编号；
+- `before`（发新消息前取消待确认的卡）出错时，同样处理；
+- 原来的「助手出错：{e}」（带接口原文）不再出现。
+
+**中断**：
+- 历史里没有结果的工具调用：`summary` 仍写「（已中断）」，另加 `msg`；
+- 被停掉的卡：`error` 仍写「（已中断）」，另加 `error_msg`；
+- 代码都是 `assistant.interrupted`；
+- 给模型补的那条「（已中断）」ToolMessage（`graph.close_dangling`）不变。
+
+**编辑卡**：
+- `warnings` 每条是 `verify.finding {path, detail}`，`detail` 是复验规则的中文原文（厂商原文类型）。子计划 5 把 `detail` 换成逐条规则的消息对象，这里的形状不用再改。
+- diff `target` 的内部值不变（恢复时 `_ask_edit` 要比对 diff）。前端显示时按字段翻译：
+  - `plot_edit` 中 `field=outline` 的那一行 → 「全书梗概」的译文；
+  - `field=synopsis` 的那一行 → 「{章节标题} 梗概」的译文，章节标题取卡上的 `chapter`；
+  - 其余行（镜头 id、资产卡「编号 名称」）是数据，原样显示。
+
+**撤销**：
+- `UndoError(UserError, Exception)` 全部带代码；接口的 409 改为 `to_detail(e)`，数据目录照旧隐去；
+- 撤销成功时 `undo()` 返回消息对象，接口的 `message` 字段改为消息对象（前端目前不显示它）。
+
+**接口**：
+- 4xx 一律带代码（见 H），包括：`where`、`step`、`id/decision`、`tool_call_id` 不合法，消息为空或过长，每日上限 429，正在回答 409，确认卡已处理 409，撤销过、找不到修改。
+- `_assistant_db` 的 404 复用 `novel.not_found`。
+- 「助手暂不可用：{e}」（503）：
+  - 未配置这类带代码的 `LLMError` → 503 带它的代码；
+  - 其它异常 → 503 `assistant.unavailable`，带编号。
+
+### E. 不对普通用户透出底层模型
+
+**变的接口**（存储的数据不动；管理后台的用量、价格表、CSV、错误记录照旧显示模型名）：
+
+| 接口 | 现在 | 改为 |
+|---|---|---|
+| `GET /healthz`（免登录） | `model`、`api_key_configured`、`users` | `{status, first_run}`。只留首页判断「全新部署先注册」要用的布尔，也不再透出用户数 |
+| `GET /admin/service`（新，管理员） | — | `{model, review_model, api_key_configured}`。`review_model` 只在开了评审且与转换模型不同时给，否则为 null |
+| 账号菜单 | 人人可见「当前模型：…」与「未配置密钥」 | 只有管理员可见，数据取自 `/admin/service`；「服务」状态一行人人照旧 |
+| `GET …/versions/{vid}` | 整条记录，含 `manifest.contracts.model`、`debug_log` | 经 `_version_view`：去掉 `debug_log`，`manifest.contracts` 去掉 `model`、`review_model`，其余照旧 |
+| `GET /jobs/{id}` | 整个任务（含 `manifest`） | 去掉 `debug_log`；`manifest` 同上处理 |
+| `GET /novels/{nid}/summary` | `unpriced` 是没定价的模型名列表 | 布尔。前端没有用到它 |
+| 转换、章后整理、助手的报错 | 接口原文、`repr(e)` | 见 C、D |
+| 助手的回答 | 模型被问到时可能自报模型名 | `prompts/assistant.md` 加一句：不要说出所用的底层模型或其提供方，被问到时说你是「墨卷」的创作助手 |
+
+**逐一核对过、不用改的普通用户出口**（计划的调用点清单逐条列出）：
+- `/auth/me`、小说与章节列表、版本摘要、`/jobs` 摘要、`/jobs/{id}/partial`（只有分镜文档）、`PUT` 版本（只回状态与验证）；
+- 渲染任务包与人读生产包（只有视频档位）、出片会话（厂商与档位是用户自选项）；
+- 导出剪辑工程 zip（README 只讲剪辑与素材）、分镜 IR 下载（前端用 `result` 生成，IR 不含模型字段）；
+- 500 兜底（`common.internal` 不带原文）。
+
+**测试守门**：
+- 后端用一个特征模型名（`STORYBOARD_MODEL=secret-model-x9`）走一遍转换，逐个请求上表的普通用户接口，响应文字里都不得出现它；
+- `/admin/service` 能看到它；
+- `messages_codes.json` 与 `zh.ts`、`en.ts` 的 `srv` 节点不得出现 `deepseek`、`claude`、`anthropic`（不分大小写）。
+
+### F. 兼容
+
+- **旧任务与旧版本**：
+  - 内存任务表重启即清空，不存在旧任务；
+  - 旧版本记录没有 `error_msg`、`quality_msg`、`debug_log`，前端照旧显示 `error`（取第一行）与 `quality_report`；
+  - 旧记录 `error` 里存的 `repr(e)` 可能带模型名或接口原文，不迁移（计划 R10）。
+- **旧前端**：
+  - `job.log` 由字符串变成对象，未升级的前端会显示成对象。前后端同仓同发，不做双写；
+  - `error` 事件、失败卡、`tool_end` 的旧字段都还在；
+  - 新的 `notice` 事件旧前端忽略，「步骤太多」那句话不再显示，但回答照常结束。
+- **助手旧存档**：
+  - 没有 artifact 的失败 ToolMessage：失败卡与 `tool_end` 显示正文（中文）；
+  - 编辑卡里字符串形式的 `warnings` 原样显示；
+  - 待确认的旧卡照常恢复：`_ask_edit` 只比对 diff，warnings 改了形状不影响。
+- **`/healthz` 字段变了**：首页的首次注册判断改读 `first_run`；没有别的调用方（部署探针只看 200）。
+- **命令行**：`str(e)` 变成友好文案；排查细节由 `hint` 补打，环境变量名照旧可见。
+
+### G. 测试补充
+
+- 后端：
+  - `test_chat.py`：映射表每一行一条（含流式中途的错误事件），断言代码、`str(e)` 不含模型名与原文、WARNING 日志里有脱敏原文且没有密钥、`OverloadedError` 会被重试、重试耗尽为 `llm.gave_up`、截断与未配置的 `hint` 里有环境变量名。
+  - `test_graph.py`、`test_offline.py`：事件序列带代码；调试日志照旧有「原因如下」与逐行报告；`ConversionError` 带代码，`str(e)` 不含工作目录；降级警告是消息对象。
+  - 新增 `tests/server/test_jobs.py`：
+    - `_execute` 的五条路径：成功并降级、`ConversionError` 带报告、已映射的 `LLMError`、`needs_ref` 的 `LLMError`、意外异常；
+    - 版本记录的 `error_msg`、`quality_msg`、`debug_log`；
+    - `/jobs/{id}` 不含 `debug_log`；
+    - 管理员调试日志接口与审计；
+    - E 节的特征模型名扫描。
+  - `test_render.py`：验证门 422 的 `code` 与附加字段 `verification`；`gate.message` 是消息对象。
+  - `test_assistant.py`、`tests/assistant/*`：
+    - 接口 4xx 的代码；
+    - 503 两种情况；
+    - `error` 事件分别为映射与带编号；
+    - `notice`；
+    - 失败卡与 `tool_end` 的 `msg`；
+    - 中断的 `msg`；
+    - 编辑卡 `warnings` 的形状；
+    - 撤销的代码；
+    - 工具正文与原文一字不差（现有断言保留）。
+  - `test_summary.py`：`unpriced` 为布尔。
+  - 所有新测试在导入前桩掉 `pipeline.config._load_dotenv`、设临时 `STORYBOARD_DATA_DIR`，并把 `ANTHROPIC_BASE_URL` 设为不可达的本机地址作保险。模型调用一律用 FakeChat、脚本模型或打桩的 `convert_text`。
+- ast 扫描：
+  - `MODULES` 加入 A 节的 pipeline 与 assistant 模块，app 函数集合加入 A 节列出的函数；
+  - 规则补三条：调用名 `say`、字典字面量里 `message`、`error`、`summary` 键的值、`job["log"].append(…)`；下标赋值的键补 `summary`、`message`。
+  - 改动前的基线：上述模块与函数共 71 处，另有两处 `# i18n: todo(4)` 标记，加上新规则后多 3 处（`events.py`）。扫描结果要清零。
+- 前端：
+  - `formatMsg` 渲染 `job.failed_report`；一行显示的地方只取原因；
+  - JobPanel 的事件、失败与质量报告在切换语言后跟着变；
+  - 验证门提示按代码渲染；
+  - 账号菜单对普通用户没有模型一行、对管理员有；
+  - 首页首次注册读 `first_run`；
+  - 助手的 `error`、`notice`、失败卡、`tool_end`、`warnings`、diff target 中英两种渲染，旧存档的字符串照旧显示；
+  - 后台任务页的调试日志。
+
+### H. 代码命名（新登记）
+
+按 §4 的域划分，新增一个域 `llm`（模型服务，转换、章后整理与助手共用）：
+- `job.*`：任务接口、失败（`job.batch_failed`、`job.merge_failed`、`job.final_verify_failed`、`job.final_check_failed`、`job.failed_report`、`job.crashed`）、`job.quality.degraded`、进度事件 `job.event.*`。
+- `llm.*`：C 节表。
+- `verify.*`：`verify.gate.blocked`、`verify.finding`（子计划 5 的 `verify.rule.*` 与它们不冲突）。
+- `film.*`：`film.plan.incomplete`、`film.keyframes.incomplete`。
+- `assistant.*`：接口（`assistant.busy`、`assistant.daily_limit`、`assistant.unavailable`、`assistant.crashed`、`assistant.too_many_steps`、`assistant.interrupted` 等）、工具报错 `assistant.tool.*`、改内容 `assistant.edit.*`、撤销 `assistant.undo.*`。
+- `admin.job.not_found`。
+
+完整列表与中文兜底见计划。
+
+**文字变化**（其余代码的中文兜底与现在一字不差）：
+- `job.not_found`：「job」改为「任务」；
+- `job.batch_failed`：去掉「（已通过批次与失败报告保留在 {workdir}）」，工作目录进调试日志；
+- `job.event.seed_assets`：「（模型须复用其 ID 与描述）」改为「（新分镜会沿用其编号与描述）」；
+- `job.event.batch_start`：「调用 LLM…」改为「开始生成…」；
+- `job.event.normalized`：去掉「（STORYBOARD_NORMALIZE_INPUT=0 关闭）」；
+- `job.event.split`：去掉工作目录；
+- `job.event.unparseable`、`job.event.repair_failed`：原来把报告原文接在后面，现在只说现象，报告进调试日志；
+- `job.event.persist_failed`、`job.event.memory_failed`：去掉异常 `repr`；
+- 全部 `llm.*`、`assistant.unavailable`、`assistant.crashed`、`job.crashed`：取代原来带接口原文或 `repr(e)` 的写法；
+- `assistant.tool.quote_changed`：文字与原来相同，只是金额与要出的段改为参数。
+
+### 修订记录
+
+- 2026-11-13 子计划 3 交付后起草。用户已决：管理后台仍显示模型名（见上一节）。
