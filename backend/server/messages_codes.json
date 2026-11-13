@@ -71,6 +71,53 @@
     ],
     "zh": "未知的 Seedance 档位：{model}"
   },
+  "film.budget.exceeded": {
+    "params": [
+      "budget",
+      "spent",
+      "reserved",
+      "total"
+    ],
+    "zh": "超出单章上限 ¥{budget}：已花 {spent}，在跑预留 {reserved}，本次约 {total}"
+  },
+  "film.build.in_flight": {
+    "params": [],
+    "zh": "有段在排队或生成中，等它们结束再改设置"
+  },
+  "film.build.incomplete": {
+    "params": [
+      "detail"
+    ],
+    "zh": "分镜结构不完整，无法切段：{detail}"
+  },
+  "film.build.no_shots": {
+    "params": [],
+    "zh": "这个版本的分镜没有镜头，无法切段"
+  },
+  "film.choose.busy": {
+    "params": [],
+    "zh": "这一段正在生成，等它结束再换"
+  },
+  "film.choose.not_success": {
+    "params": [],
+    "zh": "只能采用成功的那几次"
+  },
+  "film.clip.not_found": {
+    "params": [
+      "id"
+    ],
+    "zh": "没有这一段：{id}"
+  },
+  "film.download.keeps_failing": {
+    "params": [
+      "cause"
+    ],
+    "zh": "下载一直失败，结果地址即将过期：{cause}"
+  },
+  "film.download.not_playable": {
+    "params": [],
+    "zh": "下载到的文件不是可播放的视频"
+  },
   "film.fake.no_task": {
     "params": [
       "id"
@@ -86,6 +133,150 @@
       "model"
     ],
     "zh": "未知的档位：{model}"
+  },
+  "film.file.not_found": {
+    "params": [],
+    "zh": "文件不存在"
+  },
+  "film.free.bad_duration": {
+    "params": [
+      "max"
+    ],
+    "zh": "时长要在 1 到 {max} 秒之间"
+  },
+  "film.free.bad_fields": {
+    "params": [
+      "keys"
+    ],
+    "zh": "不能改这些字段：{keys}"
+  },
+  "film.free.bad_first_frame": {
+    "params": [
+      "src"
+    ],
+    "zh": "看不懂的首帧来源：{src}"
+  },
+  "film.free.busy_choose": {
+    "params": [],
+    "zh": "这个节点正在生成，等它结束再换"
+  },
+  "film.free.busy_delete": {
+    "params": [],
+    "zh": "这个节点正在生成，等它结束再删"
+  },
+  "film.free.busy_edit": {
+    "params": [],
+    "zh": "这个节点正在生成，等它结束再改"
+  },
+  "film.free.composing": {
+    "params": [],
+    "zh": "正在合成，等它结束再生成"
+  },
+  "film.free.confirm": {
+    "params": [
+      "amount"
+    ],
+    "zh": "本次约 {amount}，请确认金额后再生成"
+  },
+  "film.free.dup_ref": {
+    "params": [],
+    "zh": "参考里有重复的资产"
+  },
+  "film.free.empty_prompt": {
+    "params": [],
+    "zh": "先写提示词再生成"
+  },
+  "film.free.no_first_frame": {
+    "params": [],
+    "zh": "当前厂商不支持指定首帧"
+  },
+  "film.free.no_keyframe": {
+    "params": [
+      "shot"
+    ],
+    "zh": "镜头 {shot} 还没有关键帧"
+  },
+  "film.free.no_ref_image": {
+    "params": [
+      "name",
+      "id"
+    ],
+    "zh": "{name}（{id}）没有可用的参考图"
+  },
+  "film.free.no_style": {
+    "params": [],
+    "zh": "这部小说还没有风格图"
+  },
+  "film.free.no_tail": {
+    "params": [
+      "id"
+    ],
+    "zh": "{id} 还没有可用的尾帧"
+  },
+  "film.free.not_found": {
+    "params": [
+      "id"
+    ],
+    "zh": "没有这个自由节点：{id}"
+  },
+  "film.free.over_refs": {
+    "params": [
+      "need",
+      "max"
+    ],
+    "zh": "参考超出当前厂商上限（{need} / {max}）"
+  },
+  "film.free.prompt_too_long": {
+    "params": [
+      "max"
+    ],
+    "zh": "提示词不能超过 {max} 字"
+  },
+  "film.free.self_tail": {
+    "params": [],
+    "zh": "不能用自己的尾帧作首帧"
+  },
+  "film.free.tail_in_use": {
+    "params": [
+      "id"
+    ],
+    "zh": "{id} 用它的尾帧作首帧，先改掉那边"
+  },
+  "film.free.target_duration": {
+    "params": [],
+    "zh": "挂靠某一段的节点时长跟随那一段，不能单独改"
+  },
+  "film.free.unknown_asset": {
+    "params": [
+      "id"
+    ],
+    "zh": "分镜里没有这个资产：{id}"
+  },
+  "film.free_invalid.empty_prompt": {
+    "params": [],
+    "zh": "提示词是空的"
+  },
+  "film.free_invalid.keyframe_gone": {
+    "params": [
+      "shot"
+    ],
+    "zh": "首帧用的关键帧没了：{shot}"
+  },
+  "film.free_invalid.no_ref_image": {
+    "params": [
+      "id"
+    ],
+    "zh": "{id} 没有可用的参考图了"
+  },
+  "film.free_invalid.style_gone": {
+    "params": [],
+    "zh": "风格图已删除，请从参考里去掉它"
+  },
+  "film.free_invalid.tail_gone": {
+    "params": [
+      "id"
+    ],
+    "zh": "首帧用的尾帧找不到了：{id}"
   },
   "film.minimax.bad_image": {
     "params": [
@@ -217,6 +408,12 @@
     "params": [],
     "zh": "结果地址已过期且重新查询失败；任务只能在 7 天内查询"
   },
+  "film.poll.gave_up": {
+    "params": [
+      "cause"
+    ],
+    "zh": "多次查询都失败，已放弃；请到厂商控制台核对这个任务：{cause}"
+  },
   "film.provider.download_connect": {
     "params": [
       "kind"
@@ -256,6 +453,12 @@
     ],
     "zh": "{detail}"
   },
+  "film.provider.retrying": {
+    "params": [
+      "cause"
+    ],
+    "zh": "厂商暂时不可达，正在重试：{cause}"
+  },
   "film.provider.submit_cut": {
     "params": [
       "kind"
@@ -271,6 +474,127 @@
       "name"
     ],
     "zh": "未知的视频厂商：{name}"
+  },
+  "film.run.busy": {
+    "params": [
+      "id"
+    ],
+    "zh": "{id} 已在排队或生成中"
+  },
+  "film.run.changed": {
+    "params": [
+      "amount"
+    ],
+    "zh": "预估金额已变为 {amount}，请重新确认"
+  },
+  "film.run.composing": {
+    "params": [],
+    "zh": "正在合成，等它结束再出片"
+  },
+  "film.run.confirm": {
+    "params": [
+      "amount"
+    ],
+    "zh": "本次约 {amount}，请确认金额后再出片"
+  },
+  "film.run.nothing": {
+    "params": [],
+    "zh": "没有要出的段"
+  },
+  "film.session.corrupt": {
+    "params": [
+      "path"
+    ],
+    "zh": "出片会话文件损坏：{path}，已保留原文件，请检查后再操作"
+  },
+  "film.session.corrupt_admin": {
+    "params": [],
+    "zh": "出片记录文件已损坏，原文件已备份，请联系管理员处理"
+  },
+  "film.session.dir_gone": {
+    "params": [],
+    "zh": "出片会话目录已不存在（版本可能已删除）"
+  },
+  "film.session.no_storyboard": {
+    "params": [],
+    "zh": "这个版本还没有分镜产物"
+  },
+  "film.session.none": {
+    "params": [],
+    "zh": "还没有出片会话"
+  },
+  "film.session.none_pick": {
+    "params": [],
+    "zh": "还没有出片会话：先到出片那一步选好厂商与档位"
+  },
+  "film.settings.bad_audio": {
+    "params": [
+      "mode"
+    ],
+    "zh": "未知的声音模式：{mode}"
+  },
+  "film.settings.bad_resolution": {
+    "params": [
+      "resolution",
+      "options"
+    ],
+    "zh": "这个档位不支持 {resolution}，可选：{options}"
+  },
+  "film.settings.no_model": {
+    "params": [
+      "provider",
+      "model"
+    ],
+    "zh": "{provider} 没有档位 {model}"
+  },
+  "film.settings.no_native_audio": {
+    "params": [],
+    "zh": "这家厂商不出原声，可选：全部配音、静音"
+  },
+  "film.settings.unknown": {
+    "params": [
+      "keys"
+    ],
+    "zh": "未知的出片设置：{keys}"
+  },
+  "film.submit.ambiguous": {
+    "params": [
+      "console",
+      "cause"
+    ],
+    "zh": "提交时连接中断，不确定厂商是否已受理：请到{console}核对，确认没有生成再重做（{cause}）"
+  },
+  "film.submit.build_failed": {
+    "params": [
+      "cause"
+    ],
+    "zh": "组装请求失败：{cause}"
+  },
+  "film.submit.crashed": {
+    "params": [
+      "kind",
+      "cause"
+    ],
+    "zh": "提交异常：{kind}: {cause}"
+  },
+  "film.submit.interrupted": {
+    "params": [],
+    "zh": "提交时服务中断，不确定厂商是否已受理；请到厂商控制台核对后再重做"
+  },
+  "film.submit.over_budget": {
+    "params": [],
+    "zh": "超出单章上限，没有提交"
+  },
+  "film.submit.stale": {
+    "params": [],
+    "zh": "分镜或关键帧已改动，没有提交；请确认后重新出这一段"
+  },
+  "film.submit.unavailable": {
+    "params": [
+      "retries",
+      "cause"
+    ],
+    "zh": "厂商暂时不可用（已重试 {retries} 次）：{cause}"
   },
   "rate.ark": {
     "params": [],

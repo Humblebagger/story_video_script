@@ -15,6 +15,7 @@ from pipeline.quality import DEFAULT_SPEECH_CPS, speech_seconds
 from render import keyframes as kf
 from render.plan import DIALOGUE_TYPE_ZH, TIME_ZH, assets_index, collect_refs, shot_line
 from render.providers.base import ClipRequest, RefImage
+from server.messages import UserError
 
 LEGACY = "legacy"          # 生产包写法：台词进提示词，只要音效
 AUDIO_MODES = ("tts_all", "dialogue_native", "all_native", "silent")
@@ -357,7 +358,7 @@ def build_clips(doc: dict, caps, *, provider: str, model: str, resolution: str,
     下划线开头的键只在内存里用，不落盘。
     """
     if audio_mode not in AUDIO_MODES:
-        raise ValueError(f"未知的声音模式：{audio_mode}")
+        raise ValueError(f"未知的声音模式：{audio_mode}")  # i18n: internal
     idx = assets_index(doc)
     out, prev = [], None
     for c in cut_clips(doc, caps, cps):
@@ -437,11 +438,11 @@ def data_uri(path: Path) -> str:
     return data_uri_bytes(Path(path).read_bytes(), path)
 
 
-class Stale(Exception):
+class Stale(UserError, Exception):
     """分镜、关键帧或设置变了：这一段的指纹与会话里的对不上，不能按旧的确认去花钱。"""
 
 
-class FreeInvalid(Exception):
+class FreeInvalid(UserError, Exception):
     """自由节点提交前复查没过（参考图或尾帧没了、参考位不够、提示词为空）：记失败、不提交、不花钱。"""
 
 
@@ -484,40 +485,40 @@ def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, t
     """
     body = strip_placeholders(node.get("prompt") or "").strip()
     if not body:
-        raise FreeInvalid("提示词是空的")
+        raise FreeInvalid.of("film.free_invalid.empty_prompt")
     idx = assets_index(doc)
     slots = []
     for aid in node.get("refs") or []:
         if aid == STYLE_ID:
             if not style:
-                raise FreeInvalid("风格图已删除，请从参考里去掉它")
+                raise FreeInvalid.of("film.free_invalid.style_gone")
             slots.append({"asset_id": STYLE_ID, "role": "style", "text": STYLE_TEXT, "source": style["source"]})
             continue
         slot = asset_slot(idx, aid)
         src = image_for(slot, idx) if slot else None
         if not src:
-            raise FreeInvalid(f"{aid} 没有可用的参考图了")
+            raise FreeInvalid.of("film.free_invalid.no_ref_image", id=aid)
         slots.append({**slot, "text": slot["name"], "source": src})
     ff = node.get("first_frame")
     image, used = None, None
     if ff:
         if not caps.first_frame:
-            raise FreeInvalid("当前厂商不支持指定首帧")
+            raise FreeInvalid.of("film.free.no_first_frame")
         if ff.startswith("keyframe:"):
             path = keyframes.get(ff[len("keyframe:"):])
             if not path or not Path(path).is_file():
-                raise FreeInvalid(f"首帧用的关键帧没了：{ff[len('keyframe:'):]}")
+                raise FreeInvalid.of("film.free_invalid.keyframe_gone", shot=ff[len("keyframe:"):])
         elif ff.startswith("tail:"):
             path = tail_frame
             if path is None or not Path(path).is_file():
-                raise FreeInvalid(f"首帧用的尾帧找不到了：{ff[len('tail:'):]}")
+                raise FreeInvalid.of("film.free_invalid.tail_gone", id=ff[len("tail:"):])
         else:
-            raise FreeInvalid(f"看不懂的首帧来源：{ff}")
+            raise FreeInvalid.of("film.free.bad_first_frame", src=ff)
         image, used = data_uri(Path(path)), ff
     frame_mode = ("ref" if slots and not caps.frame_with_refs else "frame") if image else None
     need = len(slots) + (1 if frame_mode == "ref" else 0)
     if need > caps.max_refs:
-        raise FreeInvalid(f"参考超出当前厂商上限（{need} / {caps.max_refs}）")
+        raise FreeInvalid.of("film.free.over_refs", need=need, max=caps.max_refs)
     lines, refs = [body], []
     if frame_mode == "ref":
         lines.append(f"【首帧】{ref(FIRST)} 本段开场画面，保持构图与人物位置")

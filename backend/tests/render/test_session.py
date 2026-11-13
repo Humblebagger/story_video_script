@@ -17,6 +17,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 from render import providers, session as sess  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
+from server.messages import cause_of, msg, money, vendor  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 OWNER = {"user_id": "u", "nid": "n", "cid": "c", "vid": "v"}
@@ -312,7 +313,8 @@ def main() -> int:
     assert sess.begin_submit(root7, w) is None
     c = clip(sess.load(root7), w)
     assert len(c["attempts"]) == 1 and c["attempts"][0]["state"] == "failed"
-    assert c["state"] == "failed" and c["uncertain"] is True and c["error"] == sess.INTERRUPTED_SUBMIT
+    assert c["state"] == "failed" and c["uncertain"] is True and c["error"] == msg("film.submit.interrupted")["message"]
+    assert c["error_msg"]["code"] == "film.submit.interrupted"
     print("17. 提交中未写回不重复提交 ✓")
 
     # 18. 风格图：段记 style / style_hash；用旧风格图出完的段换图后标可重出（仍 done、不进剩余）
@@ -416,6 +418,85 @@ def main() -> int:
     from render.providers import _minimax
     providers.register("minimax", _minimax)
     print("22. 切到 MiniMax 的默认设置 ✓")
+
+    # 23. 错误对象持久化：error（中文兜底）加 error_msg（{code, params}）
+    d = {"error": "x", "error_msg": {"code": "a", "params": {}}}
+    sess.set_error(d, None)
+    assert d == {"error": None, "error_msg": None}
+    m = msg("film.run.nothing")
+    sess.set_error(d, m)
+    assert d["error"] == "没有要出的段" and d["error_msg"] == {"code": "film.run.nothing", "params": {}}
+    se = sess.SessionError.of("film.run.busy", id="E01-C01")
+    sess.set_error(d, se)
+    assert d["error"] == "E01-C01 已在排队或生成中"
+    assert d["error_msg"] == {"code": "film.run.busy", "params": {"id": "E01-C01"}}
+    sess.set_error(d, "旧字符串")
+    assert d == {"error": "旧字符串", "error_msg": None}
+    d2 = {}
+    sess.set_error(d, se)
+    sess.copy_error(d2, d)
+    assert d2["error"] == d["error"] and d2["error_msg"] == d["error_msg"]
+
+    # 23.2 超上限的段带代码
+    root9 = Path(tmp.name) / "render" / "ev9"
+    s9 = sess.build(root9, doc, owner=OWNER, patch={}, keyframes={})
+    k = s9["clips"][0]["id"]
+    sess.queue_run(root9, [k])
+    with sess.mutate(root9) as m9:
+        m9["budget_cny"] = 0.001
+    assert sess.begin_submit(root9, k) is None
+    c = clip(sess.load(root9), k)
+    assert c["error_msg"]["code"] == "film.submit.over_budget" and "超出单章上限" in c["error"]
+
+    # 23.3 提交中断恢复：段与尝试都带代码
+    root10 = Path(tmp.name) / "render" / "ev10"
+    s10 = sess.build(root10, doc, owner=OWNER, patch={}, keyframes={})
+    k = s10["clips"][0]["id"]
+    sess.queue_run(root10, [k])
+    assert sess.begin_submit(root10, k) is not None
+    sess.recover(root10)
+    c = clip(sess.load(root10), k)
+    assert c["error_msg"]["code"] == "film.submit.interrupted"
+    assert c["attempts"][-1]["error_msg"]["code"] == "film.submit.interrupted"
+
+    # 23.4 重建保留失败段的 error_msg；23.5 重出成功后两个字段都清空
+    root11 = Path(tmp.name) / "render" / "ev11"
+    s11 = sess.build(root11, doc, owner=OWNER, patch={}, keyframes={})
+    k = s11["clips"][0]["id"]
+    sess.queue_run(root11, [k])
+    sess.begin_submit(root11, k)
+    sess.submit_failed(root11, k, msg("film.submit.build_failed", cause=vendor("boom")))
+    c = clip(sess.load(root11), k)
+    assert c["error_msg"]["code"] == "film.submit.build_failed" and "boom" in c["error"]
+    s11 = sess.build(root11, doc, owner=OWNER, patch={}, keyframes={})
+    c = clip(s11, k)
+    assert c["state"] == "failed" and c["error_msg"]["code"] == "film.submit.build_failed", c
+    sess.queue_run(root11, [k])
+    c = clip(sess.load(root11), k)
+    assert c["error"] is None and c["error_msg"] is None
+    sess.begin_submit(root11, k)
+    sess.submit_failed(root11, k, "旧写法字符串")
+    c = clip(sess.load(root11), k)
+    assert c["error"] == "旧写法字符串" and c["error_msg"] is None
+    sess.queue_run(root11, [k])
+    finish(root11, fake, k)
+    c = clip(sess.load(root11), k)
+    assert c["state"] == "done" and c["error"] is None and c["error_msg"] is None
+
+    # 23.6 queue_run 超确认线
+    root12 = Path(tmp.name) / "render" / "ev12"
+    s12 = sess.build(root12, doc, owner=OWNER, patch={}, keyframes={})
+    e = must_raise(sess.Conflict, sess.queue_run, root12, None)
+    total = e.expected_cny
+    assert e.code == "film.run.confirm" and e.params["amount"] == {"t": "money", "cny": total}, e.params
+    assert "请确认金额后再出片" in str(e)
+
+    # 23.7 未知分辨率
+    e = must_raise(sess.SessionError, build, resolution="4k")
+    assert e.code == "film.settings.bad_resolution" and isinstance(e.params["options"], list)
+    e = must_raise(sess.SessionError, build, provider="nope")
+    assert e.code == "film.provider.unknown", e.code
+    print("23. 错误对象持久化 ✓")
     tmp2.cleanup()
 
     print("\nALL PASS")

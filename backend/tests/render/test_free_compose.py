@@ -121,6 +121,9 @@ def main() -> int:
                                                 "use_caps": dataclasses.replace(caps, first_frame=False)}),
     ):
         must_raise(compose.FreeInvalid, req_for, n, **kw)
+    e = must_raise(compose.FreeInvalid, req_for, node(refs=[compose.STYLE_ID]))
+    assert e.code == "film.free_invalid.style_gone" and "风格图已删除" in str(e)
+    assert must_raise(compose.FreeInvalid, req_for, node(prompt="  ")).code == "film.free_invalid.empty_prompt"
     print("6. 复查不过 ✓")
 
     # 7. 正文与资产名里的占位符被清掉，@图片n 只剩生成的那些，按 1..n 顺序

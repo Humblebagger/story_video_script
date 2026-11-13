@@ -237,6 +237,9 @@ def part_crud():
         must_raise(sess.SessionError, free.update, root, ctx, "F01", bad)
     must_raise(sess.SessionError, free.update, root, free.Ctx(DOC, {}, False), "F01", {"refs": [ids[0]]})
     assert item(sess.load(root), "F01")["prompt"] == "雨夜街头", "校验不过不写"
+    assert must_raise(sess.SessionError, free.update, root, ctx, "F01", {"refs": [ids[0], ids[0]]}).code == "film.free.dup_ref"
+    e = must_raise(sess.SessionError, free.update, root, ctx, "F01", {"duration": 11})
+    assert e.code == "film.free.bad_duration" and e.params["max"] == "10", e.params
     s = free.update(root, free.Ctx(doc, {}, True), "F01", {"refs": [compose.STYLE_ID]})
     assert item(s, "F01")["refs"] == [compose.STYLE_ID]
     kshot = clips[0]["shots"][0]
@@ -272,7 +275,7 @@ def part_crud():
     assert item(s, "F03")["state"] == "queued"
     must_raise(sess.Conflict, free.queue, root, ctx, "F03", total)
     must_raise(sess.Conflict, free.update, root, ctx, "F03", {"prompt": "改"})
-    must_raise(sess.Conflict, free.delete, root, "F03")
+    assert must_raise(sess.Conflict, free.delete, root, "F03").code == "film.free.busy_delete"
     with sess.mutate(root) as raw:
         raw["final"] = {"state": "running"}
     must_raise(sess.Conflict, free.queue, root, ctx, "F01")

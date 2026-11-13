@@ -11,16 +11,7 @@ from pathlib import Path
 
 from render import compose, session as sess
 from render.providers import base, get_video
-from server.messages import render_zh
-
-
-def _console_zh(provider) -> str:
-    """临时（任务 4 改为代码）：控制台名代码 → 中文；非代码的旧字符串原样用。"""
-    v = getattr(provider, "console_name", "") or "console.generic"
-    try:
-        return render_zh(v, {})
-    except KeyError:
-        return v
+from server.messages import cause_of, compact, msg, ref
 
 
 BUSY = ("running", "downloading")
@@ -184,7 +175,7 @@ class Runner:
         if self.clock() - first >= give_up:
             self._first_fail.pop(key, None)
             return True
-        sess.note_error(root, c["id"], f"厂商暂时不可达，正在重试：{e}")
+        sess.note_error(root, c["id"], msg("film.provider.retrying", cause=cause_of(e)))
         return False
 
     def _clear(self, kind, root, c, task_id) -> None:
@@ -205,8 +196,8 @@ class Runner:
             # 查询本身出错不等于任务失败：厂商那边可能还在跑、还在计费。只有厂商报的终态
             # （TaskState 里的 failed）才算结束；查询一直出错到期限才放弃，并标待核对
             if self._transient("poll", root, c, a["task_id"], e, self.poll_give_up_sec):
-                st = base.TaskState(a["task_id"], "failed",
-                                    error="多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + str(e))
+                m = msg("film.poll.gave_up", cause=cause_of(e))
+                st = base.TaskState(a["task_id"], "failed", error=m["message"], error_msg=compact(m))
                 sess.poll_update(root, c["id"], st, 0.0, uncertain=True)
             return                                  # 下一轮再查
         self._clear("poll", root, c, a["task_id"])
@@ -223,15 +214,15 @@ class Runner:
             files = self._retry(lambda: provider.download(st, dest))
         except base.TransientError as e:
             if self._transient("download", root, c, a["task_id"], e, self.download_give_up_sec):
-                sess.download_failed(root, c["id"], "下载一直失败，结果地址即将过期：" + str(e), cost)
+                sess.download_failed(root, c["id"], msg("film.download.keeps_failing", cause=cause_of(e)), cost)
             return                                  # 结果地址限时有效，下一轮再下
         except base.ProviderError as e:
             self._clear("download", root, c, a["task_id"])
-            sess.download_failed(root, c["id"], str(e), cost)
+            sess.download_failed(root, c["id"], e, cost)
             return
         self._clear("download", root, c, a["task_id"])
         if not base.is_playable_mp4(files["video"]):
-            sess.download_failed(root, c["id"], "下载到的文件不是可播放的视频", cost)
+            sess.download_failed(root, c["id"], msg("film.download.not_playable"), cost)
             return
         sess.downloaded(root, c["id"], files, cost)
 
@@ -242,30 +233,31 @@ class Runner:
         try:
             req, used = self.request_builder(root, s, snap)
         except compose.Stale:
-            sess.submit_failed(root, c["id"], "分镜或关键帧已改动，没有提交；请确认后重新出这一段",
-                               stale=True)
+            sess.submit_failed(root, c["id"], msg("film.submit.stale"), stale=True)
             return False
         except compose.FreeInvalid as e:          # 自由节点的参考图、尾帧或关键帧没了：不提交、不花钱
-            sess.submit_failed(root, c["id"], str(e))
+            sess.submit_failed(root, c["id"], e)
             return False
         except Exception as e:                     # 组装失败不能卡住整个队列
-            sess.submit_failed(root, c["id"], f"组装请求失败：{e}")
+            sess.submit_failed(root, c["id"], msg("film.submit.build_failed", cause=cause_of(e)))
             return False
         try:
             tid = self._retry(lambda: provider.submit(req))
         except base.AmbiguousSubmit as e:          # 厂商可能已建了付费任务：不重试
-            where = _console_zh(provider)  # 临时：子计划 1 任务 4 改为代码
-            sess.submit_failed(root, c["id"], f"提交时连接中断，不确定厂商是否已受理：请到{where}核对，"
-                               "确认没有生成再重做（" + str(e) + "）", uncertain=True)
+            where = getattr(provider, "console_name", "") or "console.generic"
+            sess.submit_failed(root, c["id"], msg("film.submit.ambiguous", console=ref(where),
+                                                  cause=cause_of(e)), uncertain=True)
             return False
         except base.TransientError as e:
-            sess.submit_failed(root, c["id"], f"厂商暂时不可用（已重试 {self.retries} 次）：{e}")
+            sess.submit_failed(root, c["id"], msg("film.submit.unavailable", retries=self.retries,
+                                                  cause=cause_of(e)))
             return False
         except base.ProviderError as e:
-            sess.submit_failed(root, c["id"], str(e))
+            sess.submit_failed(root, c["id"], e)
             return False
         except Exception as e:
-            sess.submit_failed(root, c["id"], f"提交异常：{type(e).__name__}: {e}")
+            sess.submit_failed(root, c["id"], msg("film.submit.crashed", kind=type(e).__name__,
+                                                  cause=cause_of(e)))
             return False
         try:
             sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None),

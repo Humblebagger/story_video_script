@@ -10,6 +10,7 @@ from typing import NamedTuple, Optional
 from render import compose, session as sess
 from render.plan import assets_index
 from render.providers import base
+from server.messages import money
 
 PROMPT_MAX = 2000
 FIELDS = ("prompt", "refs", "first_frame", "duration", "target")
@@ -27,7 +28,7 @@ def _free(s: dict, fid: str) -> dict:
     for n in s.get("free") or []:
         if n["id"] == fid:
             return n
-    raise sess.NotFound(f"没有这个自由节点：{fid}")
+    raise sess.NotFound.of("film.free.not_found", id=fid)
 
 
 def _caps(s: dict):
@@ -62,45 +63,45 @@ def validate(root, s: dict, node: dict, ctx: Ctx, caps, fields=FIELDS, *, run: b
     refs = node["refs"]
     if "refs" in fields:
         if len(set(refs)) != len(refs):
-            raise sess.SessionError("参考里有重复的资产")
+            raise sess.SessionError.of("film.free.dup_ref")
         idx = assets_index(ctx.doc)
         for aid in refs:
             if aid == compose.STYLE_ID:
                 if not ctx.has_style:
-                    raise sess.SessionError("这部小说还没有风格图")
+                    raise sess.SessionError.of("film.free.no_style")
                 continue
             slot = compose.asset_slot(idx, aid)
             if slot is None:
-                raise sess.SessionError(f"分镜里没有这个资产：{aid}")
+                raise sess.SessionError.of("film.free.unknown_asset", id=aid)
             if not compose.image_for(slot, idx):
-                raise sess.SessionError(f"{slot['name']}（{aid}）没有可用的参考图")
+                raise sess.SessionError.of("film.free.no_ref_image", name=slot["name"], id=aid)
     if fields & {"refs", "first_frame"}:
         need = compose.free_slots_needed(refs, node.get("first_frame"), caps)
         if need > caps.max_refs:
-            raise sess.SessionError(f"参考超出当前厂商上限（{need} / {caps.max_refs}）")
+            raise sess.SessionError.of("film.free.over_refs", need=need, max=caps.max_refs)
     ff = node.get("first_frame")
     if "first_frame" in fields and ff:
         if not caps.first_frame:
-            raise sess.SessionError("当前厂商不支持指定首帧")
+            raise sess.SessionError.of("film.free.no_first_frame")
         if ff.startswith("keyframe:"):
             if ff[len("keyframe:"):] not in ctx.keyframes:
-                raise sess.SessionError(f"镜头 {ff[len('keyframe:'):]} 还没有关键帧")
+                raise sess.SessionError.of("film.free.no_keyframe", shot=ff[len("keyframe:"):])
         elif ff.startswith("tail:"):
             src = ff[len("tail:"):]
             if src == node["id"]:
-                raise sess.SessionError("不能用自己的尾帧作首帧")
+                raise sess.SessionError.of("film.free.self_tail")
             if tail_source(root, s, src) is None:
-                raise sess.SessionError(f"{src} 还没有可用的尾帧")
+                raise sess.SessionError.of("film.free.no_tail", id=src)
         else:
-            raise sess.SessionError(f"看不懂的首帧来源：{ff}")
+            raise sess.SessionError.of("film.free.bad_first_frame", src=ff)
     if "duration" in fields and not node.get("target"):
         if not (1 <= node["duration"] <= caps.max_clip_sec):
-            raise sess.SessionError(f"时长要在 1 到 {caps.max_clip_sec:g} 秒之间")
+            raise sess.SessionError.of("film.free.bad_duration", max=f"{caps.max_clip_sec:g}")
     if "prompt" in fields:
         if len(node["prompt"]) > PROMPT_MAX:
-            raise sess.SessionError(f"提示词不能超过 {PROMPT_MAX} 字")
+            raise sess.SessionError.of("film.free.prompt_too_long", max=PROMPT_MAX)
         if run and not node["prompt"].strip():
-            raise sess.SessionError("先写提示词再生成")
+            raise sess.SessionError.of("film.free.empty_prompt")
 
 
 def create(root, ctx: Ctx, from_clip: Optional[str] = None) -> dict:
@@ -110,7 +111,7 @@ def create(root, ctx: Ctx, from_clip: Optional[str] = None) -> dict:
         seq = int(s.get("free_seq") or 0) + 1
         node = {"id": f"{sess.FREE_PREFIX}{seq:02d}", "target": None, "target_shots": None,
                 "target_lost": False, "prompt": "", "refs": [], "first_frame": None,
-                "duration": float(min(5, caps.max_clip_sec)), "state": "planned", "error": None,
+                "duration": float(min(5, caps.max_clip_sec)), "state": "planned", "error": None, "error_msg": None,
                 "uncertain": False, "attempts": [], "chosen": None, "created_at": sess._now()}
         if from_clip is not None:
             c = sess._clip(s, from_clip)
@@ -133,11 +134,11 @@ def update(root, ctx: Ctx, fid: str, patch: dict) -> dict:
     """改正文、参考、首帧、时长、挂靠（传了哪些改哪些，只校验这些）。挂靠某段时时长跟随那一段。"""
     unknown = set(patch) - set(FIELDS)
     if unknown:
-        raise sess.SessionError(f"不能改这些字段：{sorted(unknown)}")
+        raise sess.SessionError.of("film.free.bad_fields", keys=sorted(unknown))
     with sess.mutate(root) as s:
         n = _free(s, fid)
         if n["state"] in sess.IN_FLIGHT:
-            raise sess.Conflict("这个节点正在生成，等它结束再改")
+            raise sess.Conflict.of("film.free.busy_edit")
         caps = _caps(s)
         if "target" in patch:
             if patch["target"] is None:
@@ -147,11 +148,11 @@ def update(root, ctx: Ctx, fid: str, patch: dict) -> dict:
                 n.update(target=c["id"], target_shots=list(c["shots"]), duration=c["duration"], target_lost=False)
         if "duration" in patch:
             if n.get("target"):
-                raise sess.SessionError("挂靠某一段的节点时长跟随那一段，不能单独改")
+                raise sess.SessionError.of("film.free.target_duration")
             try:
                 dur = round(float(patch["duration"]), 1)
             except (TypeError, ValueError):
-                raise sess.SessionError(f"时长要在 1 到 {caps.max_clip_sec:g} 秒之间")
+                raise sess.SessionError.of("film.free.bad_duration", max=f"{caps.max_clip_sec:g}")
             n["duration"] = dur
         if "prompt" in patch:
             n["prompt"] = str(patch["prompt"] or "")
@@ -169,10 +170,10 @@ def delete(root, fid: str) -> dict:
     with sess.mutate(root) as s:
         n = _free(s, fid)
         if n["state"] in sess.IN_FLIGHT:
-            raise sess.Conflict("这个节点正在生成，等它结束再删")
+            raise sess.Conflict.of("film.free.busy_delete")
         users = [x["id"] for x in s.get("free") or [] if x.get("first_frame") == f"tail:{fid}"]
         if users:
-            raise sess.Conflict(f"{users[0]} 用它的尾帧作首帧，先改掉那边")
+            raise sess.Conflict.of("film.free.tail_in_use", id=users[0])
         shared = {a.get(k) for c in list(s["clips"]) + list(s.get("orphaned") or [])
                   for a in c.get("attempts") or [] if a.get("free_id") == fid for k in ("file", "last_frame")}
         doomed = [a[k] for a in n["attempts"] for k in ("file", "last_frame") if a.get(k) and a[k] not in shared]
@@ -186,21 +187,23 @@ def queue(root, ctx: Ctx, fid: str, expected_cny: Optional[float] = None) -> dic
     """排队生成一次：全量校验；超过确认线要带金额，与服务端不一致 → Conflict（附金额）；过单章上限。"""
     with sess.mutate(root) as s:
         if (s.get("final") or {}).get("state") in sess.COMPOSE_BUSY:
-            raise sess.Conflict("正在合成，等它结束再生成")
+            raise sess.Conflict.of("film.free.composing")
         n = _free(s, fid)
         if n["state"] in sess.IN_FLIGHT:
-            raise sess.Conflict(f"{fid} 已在排队或生成中")
+            raise sess.Conflict.of("film.run.busy", id=fid)
         validate(root, s, n, ctx, _caps(s), run=True)
         total = n["estimate_cny"]
         if total > s["confirm_over_cny"] and expected_cny is None:
-            raise sess.Conflict(f"本次约 ¥{total:.2f}，请确认金额后再生成", total)
+            raise sess.Conflict.of("film.free.confirm", total, amount=money(total))
         if expected_cny is not None and abs(expected_cny - total) > 0.005:
-            raise sess.Conflict(f"预估金额已变为 ¥{total:.2f}，请重新确认", total)
+            raise sess.Conflict.of("film.run.changed", total, amount=money(total))
         reserved = sum(c["estimate_cny"] for c in sess.items(s) if c["state"] in sess.IN_FLIGHT)
         if s["spent_cny"] + reserved + total > s["budget_cny"] + 1e-9:
-            raise sess.BudgetExceeded(f"超出单章上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"
-                                      f"在跑预留 ¥{reserved:.2f}，本次约 ¥{total:.2f}")
-        n.update(state="queued", error=None, queued_at=sess._now(), uncertain=False)
+            raise sess.BudgetExceeded.of("film.budget.exceeded", budget=f"{s['budget_cny']:g}",
+                                         spent=money(s["spent_cny"]), reserved=money(reserved),
+                                         total=money(total))
+        n.update(state="queued", queued_at=sess._now(), uncertain=False)
+        sess.set_error(n, None)
         return s
 
 
@@ -208,9 +211,10 @@ def set_chosen(root, fid: str, index: int) -> dict:
     with sess.mutate(root) as s:
         n = _free(s, fid)
         if n["state"] in sess.IN_FLIGHT:
-            raise sess.Conflict("这个节点正在生成，等它结束再换")
+            raise sess.Conflict.of("film.free.busy_choose")
         if not (0 <= index < len(n["attempts"])) or n["attempts"][index].get("state") != "succeeded":
-            raise sess.SessionError("只能采用成功的那几次")
+            raise sess.SessionError.of("film.choose.not_success")
         n["chosen"] = index
-        n.update(state="done", error=None)      # 重试失败后采用先前成功的那次：回到完成（uncertain 不动）
+        n["state"] = "done"
+        sess.set_error(n, None)      # 重试失败后采用先前成功的那次：回到完成（uncertain 不动）
         return s

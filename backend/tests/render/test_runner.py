@@ -330,12 +330,12 @@ def main() -> int:
     # 厂商自报控制台名时用它
     r8b, i8b = fresh("ambiguous2")
     sess.queue_run(r8b, [i8b[0]])
-    fake.console_name = "某某控制台"
+    fake.console_name = "console.ark"
     rn = quick()
     rn.watch(r8b)
     rn.tick()
     rn.tick()
-    assert clip(r8b, i8b[0])["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到某某控制台核对")
+    assert clip(r8b, i8b[0])["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到方舟控制台核对")
     del fake.console_name
     fake.submit = real_submit
     print("13. 提交结果不明不重试 ✓")
@@ -364,7 +364,7 @@ def main() -> int:
     c = clip(r9, i9[0])
     assert len(fake.submitted) == before + 1, "只提交了一次"
     assert c["state"] == "failed" and c["uncertain"] is True and len(c["attempts"]) == 1
-    assert c["error"] == sess.INTERRUPTED_SUBMIT
+    assert c["error_msg"]["code"] == "film.submit.interrupted"
     print("14. 写回失败不重复提交 ✓")
 
     # 15. 查询抛 ProviderError 不等于任务失败：保持 running 到期限，之后失败并标待核对
@@ -511,6 +511,79 @@ def main() -> int:
     fake._caps = real_caps
     current["style"] = None
     print("16. 尝试记张数、计费桩带张数 ✓")
+
+    # 17. 错误带代码：提交不明、查询放弃、重试提示、厂商失败、普通异常
+    r17, i17 = fresh("coded1")
+    sess.queue_run(r17, [i17[0]])
+    real_submit17 = fake.submit
+
+    def submit_amb17(req):
+        raise base.AmbiguousSubmit.of("film.provider.submit_cut", kind="ReadTimeout")
+
+    fake.submit = submit_amb17
+    rn = quick()
+    rn.watch(r17)
+    rn.tick()
+    c = clip(r17, i17[0])
+    assert c["error_msg"] == {"code": "film.submit.ambiguous", "params": {
+        "console": {"t": "ref", "code": "console.generic"},
+        "cause": {"code": "film.provider.submit_cut", "params": {"kind": "ReadTimeout"}}}}, c["error_msg"]
+    assert c["attempts"][-1]["error_msg"]["code"] == "film.submit.ambiguous"
+    assert "提交时连接中断，不确定厂商是否已受理：请到厂商控制台核对" in c["error"]
+
+    def submit_crash17(req):
+        raise ValueError("坏了")
+
+    fake.submit = submit_crash17
+    sess.queue_run(r17, [i17[0]])
+    rn = quick()
+    rn.watch(r17)
+    rn.tick()
+    c = clip(r17, i17[0])
+    assert c["error_msg"]["code"] == "film.submit.crashed" and c["error_msg"]["params"]["cause"]["t"] == "vendor"
+    fake.submit = real_submit17
+
+    # 查询一直失败：重试提示带嵌套原因，放弃时 cause 是内层错误的紧凑消息
+    now17 = [0.0]
+    r18, i18 = fresh("coded2")
+    sess.queue_run(r18, [i18[0]])
+    rn = Runner(builder, sleep=lambda s: None, clock=lambda: now17[0],
+                poll_give_up_sec=100, download_give_up_sec=100)
+    rn.watch(r18)
+    rn.tick()
+    real_poll17 = fake.poll
+
+    def poll_err17(tid):
+        raise base.ProviderError.of("film.fake.no_task", id=tid)
+
+    fake.poll = poll_err17
+    now17[0] = 1
+    rn.tick()
+    c = clip(r18, i18[0])
+    assert c["state"] == "running" and c["error_msg"]["code"] == "film.provider.retrying"
+    assert c["error_msg"]["params"]["cause"]["code"] == "film.fake.no_task"
+    now17[0] = 101
+    rn.tick()
+    c = clip(r18, i18[0])
+    assert c["state"] == "failed" and c["error_msg"]["code"] == "film.poll.gave_up"
+    assert c["error_msg"]["params"]["cause"]["code"] == "film.fake.no_task"
+    assert c["attempts"][-1]["error_msg"]["code"] == "film.poll.gave_up"
+    fake.poll = real_poll17
+
+    # 厂商报的失败终态：代码原样落到尝试与段
+    fake.fail_with = "审核未通过"
+    r19, i19 = fresh("coded3")
+    sess.queue_run(r19, [i19[0]])
+    rn = quick()
+    rn.watch(r19)
+    for _ in range(5):
+        rn.tick()
+    c = clip(r19, i19[0])
+    assert c["state"] == "failed" and c["error"] == "审核未通过"
+    assert c["error_msg"] == {"code": "film.provider.rejected", "params": {"detail": {"t": "vendor", "text": "审核未通过"}}}
+    assert c["attempts"][-1]["error_msg"] == c["error_msg"]
+    fake.fail_with = None
+    print("17. 错误带代码与嵌套原因 ✓")
 
     print("\nALL PASS")
     return 0
