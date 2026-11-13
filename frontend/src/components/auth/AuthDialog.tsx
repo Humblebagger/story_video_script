@@ -11,6 +11,8 @@ import { LogoMark } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
+import { errValue, formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 import { cn } from '@/lib/utils'
 import { useMotionPresets } from '@/motion'
 
@@ -27,13 +29,13 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
   onClose: () => void
   onDone: (user: User) => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const m = useMotionPresets()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MsgLike>(null)
   const registering = mode === 'register'
   // 密码打错一个字符，注册完就再也登不进去——所以注册必须二次确认
   const mismatch = registering && confirm.length > 0 && confirm !== password
@@ -82,7 +84,7 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
       setSession(token, user)
       onDone(user)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errValue(err))
     } finally {
       setBusy(false)
     }
@@ -142,7 +144,7 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
                 {mismatch && <em id="auth-mismatch" role="alert" className="block text-xs not-italic text-destructive">{t('auth.mismatch')}</em>}
               </label>
             )}
-            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">{formatMsg(error, locale)}</p>}
             <Button type="submit" className="w-full" disabled={busy || !ready}>
               {busy ? t('auth.wait') : registering ? t('auth.submitRegister') : t('auth.submitLogin')}
             </Button>

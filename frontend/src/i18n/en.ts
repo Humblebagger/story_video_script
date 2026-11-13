@@ -1570,6 +1570,13 @@ export const en: Messages = {
       busy: 'Composing is in progress. Export once it finishes',
       no_ffmpeg: 'The server is missing ffmpeg, a video processing component, so exporting is unavailable for now. Please contact the administrator',
     },
+    auth: {
+      unauthenticated: "You're not signed in, or your session has expired", admin_only: 'Administrator access required',
+      bad_username: 'Usernames must be 2–32 characters: letters (including Chinese), digits, underscores, dots or hyphens',
+      password_short: 'Passwords must be at least {min} characters', username_taken: 'That username is already taken',
+      disabled: 'This account has been disabled', bad_credentials: 'Incorrect username or password',
+      user_not_found: 'User not found',
+    },
     voice: { narrator: 'Narrator', unlabeled: '(no speaker)' },
   },
 }

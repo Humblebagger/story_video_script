@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from pipeline.config import ROOT
+from server.messages import UserError
 
 _DATA_DIR_OVERRIDDEN = "STORYBOARD_DATA_DIR" in os.environ
 DATA_DIR = Path(os.environ.get("STORYBOARD_DATA_DIR", ROOT / "data"))
@@ -50,7 +51,7 @@ EDITABLE = ("role", "disabled", "monthly_cap_usd")
 ROLES = ("admin", "user")
 
 
-class AuthError(Exception):
+class AuthError(UserError, Exception):
     """凭据/注册相关的可预期错误，由 app.py 翻成 4xx。"""
 
 
@@ -95,7 +96,7 @@ def _save_users(users: list) -> None:
 def user_dir(user_id: str) -> Path:
     """每个用户一个数据目录——隔离的落点。"""
     if not re.fullmatch(r"[0-9a-f]{12}", user_id):
-        raise AuthError(f"非法的用户 ID：{user_id!r}")
+        raise AuthError(f"非法的用户 ID：{user_id!r}")  # i18n: internal
     return DATA_DIR / "users" / user_id
 
 
@@ -120,14 +121,14 @@ def user_count() -> int:
 def register(username: str, password: str) -> dict:
     username = (username or "").strip()
     if not USERNAME_RE.match(username):
-        raise AuthError("用户名需为 2–32 位的中英文、数字、下划线、点或连字符")
+        raise AuthError.of("auth.bad_username")
     if len(password or "") < MIN_PASSWORD:
-        raise AuthError(f"密码至少 {MIN_PASSWORD} 位")
+        raise AuthError.of("auth.password_short", min=MIN_PASSWORD)
 
     with _lock:
         users = _load_users()
         if any(u["username"].lower() == username.lower() for u in users):
-            raise AuthError("用户名已被占用")
+            raise AuthError.of("auth.username_taken")
         salt = secrets.token_hex(16)
         user = {
             "id": secrets.token_hex(6),
@@ -164,7 +165,7 @@ def _adopt_legacy_runs(user_id: str) -> int:
             moved += 1
         except OSError:
             continue
-    print(f"[auth] 已把 {moved} 条历史记录移交给首个注册用户 {user_id}", flush=True)
+    print(f"[auth] 已把 {moved} 条历史记录移交给首个注册用户 {user_id}", flush=True)  # i18n: internal
     return moved
 
 
@@ -176,10 +177,10 @@ def authenticate(username: str, password: str) -> dict:
             if u.get("password_hash") and hmac.compare_digest(
                     _hash(password or "", u["salt"]), u["password_hash"]):
                 if u.get("disabled"):
-                    raise AuthError("账号已停用")
+                    raise AuthError.of("auth.disabled")
                 return _public(u)
             break
-    raise AuthError("用户名或密码不正确")
+    raise AuthError.of("auth.bad_credentials")
 
 
 def get_user(user_id: str) -> Optional[dict]:
@@ -215,12 +216,12 @@ def update_user(user_id: str, **fields) -> dict:
     """管理后台改账号字段；只允许 EDITABLE 里的键，约束在 admin.py 里检查。"""
     bad = set(fields) - set(EDITABLE)
     if bad:
-        raise ValueError(f"不允许修改：{sorted(bad)}")
+        raise ValueError(f"不允许修改：{sorted(bad)}")  # i18n: internal
     with _lock:
         users = _load_users()
         u = next((x for x in users if x["id"] == user_id), None)
         if u is None:
-            raise AuthError("用户不存在")
+            raise AuthError.of("auth.user_not_found")
         u.update(fields)
         _save_users(users)
         return _safe(u)
@@ -228,12 +229,12 @@ def update_user(user_id: str, **fields) -> dict:
 
 def set_password(user_id: str, password: str) -> None:
     if len(password or "") < MIN_PASSWORD:
-        raise AuthError(f"密码至少 {MIN_PASSWORD} 位")
+        raise AuthError.of("auth.password_short", min=MIN_PASSWORD)
     with _lock:
         users = _load_users()
         u = next((x for x in users if x["id"] == user_id), None)
         if u is None:
-            raise AuthError("用户不存在")
+            raise AuthError.of("auth.user_not_found")
         u["salt"] = secrets.token_hex(16)
         u["password_hash"] = _hash(password, u["salt"])
         _save_users(users)

@@ -343,6 +343,16 @@ register("export.missing_file", "合成产物缺失（{file}），请重新合�
 register("export.busy", "正在合成，完成后再导出")
 register("export.no_ffmpeg", "服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员")
 
+# 账号
+register("auth.unauthenticated", "未登录或登录已过期")
+register("auth.admin_only", "需要管理员权限")
+register("auth.bad_username", "用户名需为 2–32 位的中英文、数字、下划线、点或连字符")
+register("auth.password_short", "密码至少 {min} 位")
+register("auth.username_taken", "用户名已被占用")
+register("auth.disabled", "账号已停用")
+register("auth.bad_credentials", "用户名或密码不正确")
+register("auth.user_not_found", "用户不存在")
+
 
 if __name__ == "__main__":
     if "--write" in sys.argv:

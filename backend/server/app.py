@@ -182,7 +182,7 @@ def current_user(authorization: str = Header(default="")) -> dict:
     token = authorization[7:] if authorization.lower().startswith("bearer ") else ""
     user = auth.verify_token(token)
     if user is None:
-        raise HTTPException(401, "未登录或登录已过期")
+        raise HTTPException(401, detail=msg("auth.unauthenticated"))
     auth.touch_seen(user["id"])
     return user
 
@@ -190,7 +190,7 @@ def current_user(authorization: str = Header(default="")) -> dict:
 def admin_user(user: dict = Depends(current_user)) -> dict:
     """管理接口的守门人：前端隐藏入口只是体验，权限以这里为准。"""
     if user.get("role") != "admin":
-        raise HTTPException(403, "需要管理员权限")
+        raise HTTPException(403, detail=msg("auth.admin_only"))
     return user
 
 
@@ -204,15 +204,15 @@ def register(body: Credentials):
     try:
         user = auth.register(body.username, body.password)
     except auth.AuthError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, detail=to_detail(e))
     # 首个用户会接管单用户时代的历史记录，这些旧产物的资产卡也要一并进库，
     # 否则新账号打开资产库页会是空的（迁移只搬了历史文件）
     try:
         filled = library.backfill_from_runs(user["id"])
         if filled:
-            print(f"[library] 已从接管的历史记录补齐资产库：{filled}", flush=True)
+            print(f"[library] 已从接管的历史记录补齐资产库：{filled}", flush=True)  # i18n: internal
     except (OSError, ValueError) as e:
-        print(f"[library] 资产库回填失败（可在资产库页手动补齐）：{e!r}", flush=True)
+        print(f"[library] 资产库回填失败（可在资产库页手动补齐）：{e!r}", flush=True)  # i18n: internal
     return {"token": auth.issue_token(user["id"]), "user": user}
 
 
@@ -221,7 +221,7 @@ def login(body: Credentials):
     try:
         user = auth.authenticate(body.username, body.password)
     except auth.AuthError as e:
-        raise HTTPException(401, str(e))
+        raise HTTPException(401, detail=to_detail(e))
     return {"token": auth.issue_token(user["id"]), "user": user}
 
 

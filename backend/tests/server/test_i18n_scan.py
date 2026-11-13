@@ -29,6 +29,7 @@ MODULES: dict = {
     "render/compose.py": None,
     "render/runner.py": None,
     "server/error_refs.py": None,
+    "server/auth.py": None,
     "render/providers/tts_base.py": None,
     "render/providers/tts_volc.py": None,
     "render/voice.py": None,
@@ -41,7 +42,8 @@ MODULES: dict = {
                       "render_file", "_tts", "_session_or_404", "render_voices", "render_voices_put",
                       "_compose_preview", "_compose_blockers", "_compose_quote", "_compose_start",
                       "_export_check", "render_compose_get", "render_export", "_compose_worker",
-                      "render_compose_post", "render_bgm_put", "render_bgm_delete"},
+                      "render_compose_post", "render_bgm_put", "render_bgm_delete",
+                      "current_user", "admin_user", "register", "login"},
 }
 
 

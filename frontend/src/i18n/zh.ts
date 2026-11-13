@@ -1563,6 +1563,12 @@ export const zh = {
       busy: '正在合成，完成后再导出',
       no_ffmpeg: '服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员',
     },
+    auth: {
+      unauthenticated: '未登录或登录已过期', admin_only: '需要管理员权限',
+      bad_username: '用户名需为 2–32 位的中英文、数字、下划线、点或连字符',
+      password_short: '密码至少 {min} 位', username_taken: '用户名已被占用', disabled: '账号已停用',
+      bad_credentials: '用户名或密码不正确', user_not_found: '用户不存在',
+    },
     voice: { narrator: '旁白', unlabeled: '（未标说话人）' },
   },
 }

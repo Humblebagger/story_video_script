@@ -106,6 +106,30 @@ for (const s of ['From ink to reel.', 'Integrity check', 'Four steps to an episo
 }
 console.log('5. 英文首页 ✓')
 
+// 5b. 登录报错：消息对象按界面语言渲染，切换语言即时更新；字符串 detail 原样显示
+let loginDetail: unknown = { code: 'auth.bad_credentials', params: {}, message: '用户名或密码不正确' }
+g.fetch = async () => ({ ok: false, status: 401, statusText: '',
+  text: async () => JSON.stringify({ detail: loginDetail }), json: async () => ({ detail: loginDetail }) })
+await act(async () => { setLoc('zh') })
+await settle()
+await act(async () => { root.render(<Host key="err" firstRun={false} />) })
+await settle()
+await click(q('[data-testid="landing-login"]'))
+{
+  const [u2, p2] = [...win.document.querySelectorAll('.login__field input')]
+  await type(u2, 'amy')
+  await type(p2, 'wrongpw1')
+  await click(q('button[type="submit"]'))
+  must(q('[role="alert"]')?.textContent === '用户名或密码不正确', '中文界面显示登录错误')
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(q('[role="alert"]')?.textContent === 'Incorrect username or password', '切到英文后同一条提示变英文: ' + q('[role="alert"]')?.textContent)
+  loginDetail = '原样的字符串'
+  await click(q('button[type="submit"]'))
+  must(q('[role="alert"]')?.textContent === '原样的字符串', '字符串 detail 原样显示')
+}
+console.log('5b. 登录错误按语言渲染 ✓')
+
 // 6. 没有 IntersectionObserver：首页不抛错，内容在
 await act(async () => { root.unmount() })
 const savedIO = g.IntersectionObserver

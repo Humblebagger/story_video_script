@@ -43,8 +43,17 @@ def part_auth():
     auth.update_user(bob["id"], disabled=True)
     assert auth.verify_token(tok) is None, "停用后现有 token 立即失效"
     e = must_raise(auth.AuthError, auth.authenticate, "bob", "secret1")
-    assert str(e) == "账号已停用"
-    must_raise(auth.AuthError, auth.authenticate, "bob", "wrong")
+    assert e.code == "auth.disabled" and str(e) == "账号已停用"
+    e = must_raise(auth.AuthError, auth.authenticate, "bob", "wrong")
+    assert e.code == "auth.bad_credentials"
+    e = must_raise(auth.AuthError, auth.register, "a b", "secret1")
+    assert e.code == "auth.bad_username"
+    e = must_raise(auth.AuthError, auth.register, "dave", "123")
+    assert e.code == "auth.password_short" and e.params == {"min": 6}
+    e = must_raise(auth.AuthError, auth.register, "bob", "secret1")
+    assert e.code == "auth.username_taken"
+    e = must_raise(auth.AuthError, auth.set_password, "ffffffffffff", "secret1")
+    assert e.code == "auth.user_not_found"
     auth.update_user(bob["id"], disabled=False)
     assert auth.verify_token(tok)["id"] == bob["id"]
 
@@ -208,8 +217,12 @@ def part_api():
     H = {"Authorization": f"Bearer {root_tok}"}
 
     # 权限：普通用户 403，未登录 401
-    assert c.get("/admin/overview", headers={"Authorization": f"Bearer {carol_tok}"}).status_code == 403
-    assert c.get("/admin/overview").status_code == 401
+    r = c.get("/admin/overview", headers={"Authorization": f"Bearer {carol_tok}"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "auth.admin_only"
+    r = c.get("/admin/overview")
+    assert r.status_code == 401 and r.json()["detail"]["code"] == "auth.unauthenticated"
+    r = c.post("/auth/register", json={"username": "carol", "password": "secret1"})
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "auth.username_taken"
     assert c.get("/auth/me", headers=H).json()["role"] == "admin"
 
     # 只读接口
@@ -233,7 +246,7 @@ def part_api():
     assert c.patch(f"/admin/users/{carol_id}", json={"disabled": True}, headers=H).status_code == 200
     assert c.get("/auth/me", headers={"Authorization": f"Bearer {carol_tok}"}).status_code == 401
     r = c.post("/auth/login", json={"username": "carol", "password": "secret1"})
-    assert r.status_code == 401 and r.json()["detail"] == "账号已停用"
+    assert r.status_code == 401 and r.json()["detail"]["code"] == "auth.disabled"
     c.patch(f"/admin/users/{carol_id}", json={"disabled": False}, headers=H)
     assert c.patch(f"/admin/users/{users['root']['id']}", json={"disabled": True},
                    headers=H).status_code == 400
