@@ -112,6 +112,12 @@ def main() -> int:
             os.environ["STORYBOARD_VIDEO_PROVIDER"] = saved_env
     print("5. 缺省厂商与回落 ✓")
 
+    # 6. 错误带代码
+    e = must_raise(KeyError, providers.get_video, "nope")
+    assert e.code == "film.provider.unknown" and e.args[0] == "未知的视频厂商：nope"
+    assert FakeVideo().rate_note["code"] == "rate.fake"
+    print("6. 错误带代码 ✓")
+
     print("\nALL PASS")
     return 0
 

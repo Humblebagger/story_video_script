@@ -18,6 +18,7 @@ from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, estimate_cny, last_frame_path, request_seconds)
+from server.messages import compact, msg, vendor
 
 BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 # 2026-10 刊例价（元/百万 token，输入不含视频）；资源包与折扣不建模。
@@ -50,21 +51,21 @@ def rewrite_refs(text: str) -> str:
     return _REF.sub(lambda m: f"@图片{next(n)}", text)
 
 
-def _error_text(r: httpx.Response) -> str:
+def _reject(r: httpx.Response) -> ProviderError:
+    """4xx：厂商原因原样（不含密钥）作原文参数。"""
     try:
         err = (r.json() or {}).get("error") or {}
     except ValueError:
-        return f"HTTP {r.status_code}：{r.text[:300]}"
+        return ProviderError.of("film.provider.http_rejected", status=r.status_code, detail=vendor(r.text[:300]))
     text = "：".join(x for x in (err.get("code"), err.get("message")) if x)
-    return text or f"HTTP {r.status_code}"
+    return ProviderError.of("film.provider.rejected", detail=vendor(text or f"HTTP {r.status_code}"))
 
 
 class Seedance:
     name = "seedance"
-    console_name = "方舟控制台"
+    console_name = "console.ark"
     default_model = DEFAULT_MODEL
-    rate_note = ("2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，"
-                 "token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对")
+    rate_note = {"code": "rate.ark", "params": {}}
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
         self._key = api_key
@@ -77,13 +78,13 @@ class Seedance:
         _load_dotenv(BACKEND_ROOT.parent / ".env")
         key = os.environ.get("ARK_API_KEY", "").strip()
         if not key:
-            raise ProviderError("没有配置方舟密钥：在 backend/.env 写 ARK_API_KEY=…")
+            raise ProviderError.of("film.ark.no_key")
         return cls(key)
 
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
-            raise ProviderError(f"未知的 Seedance 档位：{model}")
+            raise ProviderError.of("film.ark.unknown_model", model=model)
         return m
 
     def _per_m(self, model: str) -> float:
@@ -111,25 +112,25 @@ class Seedance:
         try:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
-            raise TransientError(f"连接方舟失败：{type(e).__name__}")
+            raise TransientError.of("film.ark.connect_failed", kind=type(e).__name__)
         except httpx.TransportError as e:
             if submit:
-                raise AmbiguousSubmit(f"提交时连接中断：{type(e).__name__}")
-            raise TransientError(f"连接方舟失败：{type(e).__name__}")
+                raise AmbiguousSubmit.of("film.provider.submit_cut", kind=type(e).__name__)
+            raise TransientError.of("film.ark.connect_failed", kind=type(e).__name__)
         if r.status_code == 429:
-            raise TransientError("方舟限流（HTTP 429）")
+            raise TransientError.of("film.ark.throttled")
         if r.status_code >= 500:
             if submit:
-                raise AmbiguousSubmit(f"方舟返回 HTTP {r.status_code}")
-            raise TransientError(f"方舟暂时不可用（HTTP {r.status_code}）")
+                raise AmbiguousSubmit.of("film.ark.http_ambiguous", status=r.status_code)
+            raise TransientError.of("film.ark.unavailable", status=r.status_code)
         if r.status_code >= 400:
-            raise ProviderError(_error_text(r))
+            raise _reject(r)
         try:
             return r.json()
         except ValueError:
             if submit:
-                raise AmbiguousSubmit("方舟返回的不是 JSON")
-            raise TransientError("方舟返回的不是 JSON")
+                raise AmbiguousSubmit.of("film.ark.not_json")
+            raise TransientError.of("film.ark.not_json")
 
     def submit(self, req: ClipRequest) -> str:
         m = self._model(req.model)
@@ -146,7 +147,7 @@ class Seedance:
         j = self._call("POST", "/contents/generations/tasks", submit=True, json=body)
         tid = j.get("id") if isinstance(j, dict) else None
         if not tid:
-            raise AmbiguousSubmit("方舟受理了请求却没有返回任务 id")
+            raise AmbiguousSubmit.of("film.ark.no_task_id")
         return tid
 
     def poll(self, task_id: str) -> TaskState:
@@ -154,33 +155,37 @@ class Seedance:
         raw = j.get("status")
         status = _STATUS.get(raw, "running")
         content = j.get("content") or {}
-        error = None
+        error, error_msg = None, None
         if status == "failed":
             err = j.get("error") or {}
-            error = ("：".join(x for x in (err.get("code"), err.get("message")) if x)
-                     or {"expired": "任务超时", "cancelled": "任务已取消"}.get(raw, "生成失败"))
+            text = "：".join(x for x in (err.get("code"), err.get("message")) if x)
+            m = (msg("film.provider.rejected", detail=vendor(text)) if text
+                 else msg("film.ark.task_expired") if raw == "expired"
+                 else msg("film.provider.task_cancelled") if raw == "cancelled"
+                 else msg("film.provider.generation_failed"))
+            error, error_msg = m["message"], compact(m)
         return TaskState(task_id, status, video_url=content.get("video_url"),
-                         last_frame_url=content.get("last_frame_url"), error=error,
+                         last_frame_url=content.get("last_frame_url"), error=error, error_msg=error_msg,
                          usage={"completion_tokens": (j.get("usage") or {}).get("completion_tokens")}
                          if status == "succeeded" else {})
 
     def _fetch(self, url: str, dest: Path) -> None:
         """结果地址是对象存储的签名直链：不带方舟密钥，24 小时有效。"""
         if not url:
-            raise ProviderError("方舟没有返回结果地址")
+            raise ProviderError.of("film.ark.no_result_url")
         dest.parent.mkdir(exist_ok=True)              # 不建上级目录：版本删了不能被下载重新建出来
         part = dest.with_name(dest.name + ".part")
         try:
             with self._http.stream("GET", url) as r:
                 if r.status_code == 429 or r.status_code >= 500:
-                    raise TransientError(f"下载暂时失败（HTTP {r.status_code}）")
+                    raise TransientError.of("film.provider.download_retry", status=r.status_code)
                 if r.status_code >= 400:
-                    raise ProviderError(f"下载失败（HTTP {r.status_code}）：结果地址 24 小时内有效")
+                    raise ProviderError.of("film.ark.download_failed", status=r.status_code)
                 with open(part, "wb") as f:
                     for chunk in r.iter_bytes():
                         f.write(chunk)
         except httpx.TransportError as e:
-            raise TransientError(f"下载连接失败：{type(e).__name__}")
+            raise TransientError.of("film.provider.download_connect", kind=type(e).__name__)
         part.replace(dest)
 
     def download(self, st: TaskState, dest: Path) -> dict:

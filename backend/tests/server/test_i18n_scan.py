@@ -18,7 +18,13 @@ SINK_CALLS = {"HTTPException", "note_error", "submit_failed", "download_failed",
 SINK_KW = {"error", "detail", "message", "step"}
 
 # 子计划 1 清零的模块；值为 None 表示全文件，集合表示只扫这些函数
-MODULES: dict = {}
+MODULES: dict = {
+    "render/providers/base.py": None,
+    "render/providers/fake.py": None,
+    "render/providers/seedance.py": None,
+    "render/providers/minimax.py": None,
+    "render/providers/__init__.py": None,
+}
 
 
 def _cjk_consts(tree: ast.Module) -> set:

@@ -5,6 +5,7 @@ from typing import Optional
 
 from render.providers.base import (Caps, ProviderError, TaskState, TransientError,
                                    last_frame_path, request_seconds)
+from server.messages import compact, msg, vendor
 from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
 
 FAKE_MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
@@ -15,7 +16,8 @@ _REF = re.compile(r"\{ref:([^{}]+)\}")
 class FakeVideo:
     name = "fake"
     default_model = "fake-1"
-    rate_note = "假厂商：不联网、不花钱，金额只用于演示"
+    console_name = "console.generic"
+    rate_note = {"code": "rate.fake", "params": {}}
 
     def __init__(self, *, polls_to_finish: int = 1, fail_with: Optional[str] = None,
                  transient_submits: int = 0, max_refs: int = 3, frame_with_refs: bool = False,
@@ -33,7 +35,7 @@ class FakeVideo:
 
     def caps(self, model):
         if model not in self.models:
-            raise ProviderError(f"未知的档位：{model}")
+            raise ProviderError.of("film.fake.unknown_model", model=model)
         return self._caps
 
     def rewrite_prompt(self, text):
@@ -42,7 +44,7 @@ class FakeVideo:
     def submit(self, req):
         if self.transient_submits > 0:
             self.transient_submits -= 1
-            raise TransientError("假的限流")
+            raise TransientError.of("film.fake.throttled")
         tid = f"fake-{len(self.submitted) + 1}"
         self.submitted.append(req)
         self.tasks[tid] = {"polls": 0, "req": req}
@@ -51,12 +53,13 @@ class FakeVideo:
     def poll(self, task_id):
         t = self.tasks.get(task_id)
         if t is None:
-            raise ProviderError(f"任务不存在：{task_id}")
+            raise ProviderError.of("film.fake.no_task", id=task_id)
         t["polls"] += 1
         if t["polls"] < self.polls_to_finish:
             return TaskState(task_id, "running")
         if self.fail_with:
-            return TaskState(task_id, "failed", error=self.fail_with)
+            return TaskState(task_id, "failed", error=self.fail_with,
+                             error_msg=compact(msg("film.provider.rejected", detail=vendor(self.fail_with))))
         return TaskState(task_id, "succeeded", video_url=f"fake://{task_id}.mp4",
                          last_frame_url=f"fake://{task_id}.jpg",
                          usage={"seconds": request_seconds(t["req"].duration, self._caps)})
@@ -79,7 +82,7 @@ class FakeVideo:
 class FakeTts:
     """假 TTS：不联网、不花钱，按字数出静音 WAV（每字 1/4.5 秒）；可指定前几次限流、一律失败或收下后失败（已计费）。"""
     name = "fake"
-    rate_note = "假配音：不联网、不花钱，金额只用于演示"
+    rate_note = "假配音：不联网、不花钱，金额只用于演示"  # i18n: todo(2)
     RATE = 24000
 
     def __init__(self, *, fail_times: int = 0, fail_with: Optional[str] = None,
@@ -94,14 +97,14 @@ class FakeTts:
     def synthesize(self, text, voice, emotion, speed, dest):
         self.calls.append((text, voice))
         if self.fail_with:
-            raise ProviderError(self.fail_with)
+            raise ProviderError(self.fail_with)  # i18n: todo(2)
         if self.fail_billed:
             raise BilledError(self.fail_billed, tts_cost(len(text), self.caps))
         if self.fail_times > 0:
             self.fail_times -= 1
-            raise TransientError("假的限流")
+            raise TransientError("假的限流")  # i18n: todo(2)
         if voice not in {v.id for v in self.caps.voices}:
-            raise ProviderError(f"未知的音色：{voice}")
+            raise ProviderError(f"未知的音色：{voice}")  # i18n: todo(2)
         frames = int(round(len(text) / 4.5 / speed * self.RATE))
         duration = write_wav(Path(dest), b"\x00\x00" * frames, self.RATE)
         return TtsResult(Path(dest), duration, tts_cost(len(text), self.caps), len(text))

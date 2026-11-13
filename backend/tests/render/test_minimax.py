@@ -90,7 +90,7 @@ def main() -> int:
     os.environ.pop("STORYBOARD_MINIMAX_PRICE_SCALE")
     must_raise(base.ProviderError, m.caps, "MiniMax-H3-Max")
     assert m.default_model == "minimax-h3" and set(m.models) == set(MODELS)
-    assert m.console_name == "MiniMax 开放平台" and "未经账单核对" in m.rate_note
+    assert m.console_name == "console.minimax" and m.rate_note["code"] == "rate.minimax"
     print("1. 能力表 ✓")
 
     # 2. 改写与请求体
@@ -335,6 +335,36 @@ def main() -> int:
         refs=[base.RefImage("C01", "character", "data:image/png;base64,@@@@!!!")]))
     assert "C01" in str(e) and "损坏" in str(e)
     print("9. 复审修正 ✓")
+
+    # 10. 错误带代码
+    def code_of(resp=None, exc=None, cls=base.ProviderError):
+        return must_raise(cls, answer(resp, exc).submit, q)
+    assert code_of(httpx.Response(402, json={})).code == "film.minimax.insufficient_balance"
+    assert code_of(httpx.Response(401, json={})).code == "film.minimax.invalid_key"
+    assert code_of(httpx.Response(422, json={"error": {"code": 1026, "message": "x"}})).code == "film.minimax.moderated"
+    st = task("failed", error={"code": "1026", "message": "sensitive"}).poll("t")
+    assert st.error_msg["code"] == "film.minimax.moderated" and "审核" in st.error
+    assert task("cancelled").poll("t").error_msg["code"] == "film.provider.task_cancelled"
+    e = code_of(httpx.Response(400, json={"error": {"code": 2013, "message": "echo k-secret here"}}))
+    assert e.code == "film.provider.rejected" and e.params["detail"]["t"] == "vendor"
+    assert "k-secret" not in json.dumps(e.params, ensure_ascii=False)
+    st = task("failed", error={"code": "2056", "message": "boom k-secret"}).poll("t")
+    assert st.error_msg["code"] == "film.provider.rejected" and "k-secret" not in json.dumps(st.error_msg)
+    e = code_of(exc=httpx.ReadTimeout("x"), cls=base.AmbiguousSubmit)
+    assert e.code == "film.provider.submit_cut"
+    e = must_raise(base.ProviderError, mmx(lambda r: httpx.Response(200)).submit, base.ClipRequest(
+        prompt="p", model="minimax-h3", duration=4, resolution="768P",
+        refs=[base.RefImage("C01", "character", "data:image/png;base64,@@@@!!!")]))
+    assert e.code == "film.minimax.corrupt_image"
+    assert e.params["label"] == {"code": "film.minimax.label_ref", "params": {"id": "C01"}}
+    with tempfile.TemporaryDirectory() as d:
+        dead = mmx(lambda r: httpx.Response(403) if r.url.host == "cdn"
+                   else httpx.Response(200, json={"task": {"status": "succeeded", "content": {"url": "https://cdn/x.mp4"}}}))
+        e = must_raise(base.ProviderError, dead.download,
+                       base.TaskState("t", "succeeded", video_url="https://cdn/x.mp4"), Path(d) / "c" / "a.mp4")
+        assert e.code == "film.minimax.url_expired"
+    assert MiniMax.rate_note == {"code": "rate.minimax", "params": {}} and MiniMax.console_name == "console.minimax"
+    print("10. 错误带代码 ✓")
 
     print("\nALL PASS")
     return 0

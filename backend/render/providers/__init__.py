@@ -7,6 +7,13 @@
 """
 import os
 
+from server.messages import UserError
+
+
+class UnknownProvider(UserError, KeyError):
+    """未注册的厂商名（继承 KeyError：原有 except KeyError 不变）。"""
+
+
 _FACTORIES: dict = {}
 _INSTANCES: dict = {}
 
@@ -55,7 +62,7 @@ def get_video(name=None):
     if name not in _INSTANCES:
         factory = _FACTORIES.get(name)
         if factory is None:
-            raise KeyError(f"未知的视频厂商：{name}")
+            raise UnknownProvider.of("film.provider.unknown", name=name)
         _INSTANCES[name] = factory()
     return _INSTANCES[name]
 
@@ -111,7 +118,7 @@ def get_tts(name=None):
     if name not in _TTS_INSTANCES:
         factory = _TTS_FACTORIES.get(name)
         if factory is None:
-            raise KeyError(f"未知的配音厂商：{name}")
+            raise KeyError(f"未知的配音厂商：{name}")  # i18n: todo(2)
         _TTS_INSTANCES[name] = factory()
     return _TTS_INSTANCES[name]
 

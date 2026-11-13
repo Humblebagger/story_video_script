@@ -136,6 +136,68 @@ def dump_codes() -> dict:
 
 register("common.unknown", "{message}")
 
+# 控制台名与费率说明（厂商属性，前端按代码渲染）
+register("console.generic", "厂商控制台")
+register("console.ark", "方舟控制台")
+register("console.minimax", "MiniMax 开放平台")
+register("rate.fake", "假厂商：不联网、不花钱，金额只用于演示")
+register("rate.ark", "2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，"
+                     "token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对")
+register("rate.minimax", "2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；"
+                         "每段前 5 张参考图免费，超出另计），未经账单核对")
+# 厂商通用
+register("film.provider.unknown", "未知的视频厂商：{name}")
+register("film.provider.failed", "厂商返回失败")
+register("film.provider.generation_failed", "生成失败")
+register("film.provider.task_cancelled", "任务已取消")
+register("film.provider.rejected", "{detail}")
+register("film.provider.http_rejected", "HTTP {status}：{detail}")
+register("film.provider.submit_cut", "提交时连接中断：{kind}")
+register("film.provider.download_retry", "下载暂时失败（HTTP {status}）")
+register("film.provider.download_failed", "下载失败（HTTP {status}）")
+register("film.provider.download_connect", "下载连接失败：{kind}")
+# 假厂商
+register("film.fake.unknown_model", "未知的档位：{model}")
+register("film.fake.throttled", "假的限流")
+register("film.fake.no_task", "任务不存在：{id}")
+# 方舟 Seedance
+register("film.ark.no_key", "没有配置方舟密钥：在 backend/.env 写 ARK_API_KEY=…")
+register("film.ark.unknown_model", "未知的 Seedance 档位：{model}")
+register("film.ark.connect_failed", "连接方舟失败：{kind}")
+register("film.ark.throttled", "方舟限流（HTTP 429）")
+register("film.ark.http_ambiguous", "方舟返回 HTTP {status}")
+register("film.ark.unavailable", "方舟暂时不可用（HTTP {status}）")
+register("film.ark.not_json", "方舟返回的不是 JSON")
+register("film.ark.no_task_id", "方舟受理了请求却没有返回任务 id")
+register("film.ark.task_expired", "任务超时")
+register("film.ark.no_result_url", "方舟没有返回结果地址")
+register("film.ark.download_failed", "下载失败（HTTP {status}）：结果地址 24 小时内有效")
+# MiniMax
+register("film.minimax.insufficient_balance", "MiniMax 账户余额不足（1008），充值后重新出这一段")
+register("film.minimax.invalid_key", "MiniMax 密钥无效（1004），检查 MINIMAX_API_KEY")
+register("film.minimax.moderated", "内容被 MiniMax 审核拦下（1026）：改写这一段的画面描述或换参考图后重试")
+register("film.minimax.url_expired", "结果地址已过期且重新查询失败；任务只能在 7 天内查询")
+register("film.minimax.label_first", "首帧")
+register("film.minimax.label_ref", "参考图 {id}")
+register("film.minimax.bad_image", "{label} 不是可用的图片地址")
+register("film.minimax.unsupported_format", "{label} 的格式 {mime} MiniMax 不支持（只收 JPG、PNG、WEBP、HEIC、HEIF）")
+register("film.minimax.corrupt_image", "{label} 的图片数据损坏")
+register("film.minimax.image_too_big", "{label} 有 {mb}MB，超过 MiniMax 单张 30MB 上限")
+register("film.minimax.no_key", "没有配置 MiniMax 密钥：在 backend/.env 写 MINIMAX_API_KEY=…")
+register("film.minimax.unknown_model", "未知的 MiniMax 档位：{model}")
+register("film.minimax.connect_failed", "连接 MiniMax 失败：{kind}")
+register("film.minimax.throttled", "MiniMax 限流或过载（HTTP {status}）")
+register("film.minimax.http_ambiguous", "MiniMax 返回 HTTP {status}")
+register("film.minimax.unavailable", "MiniMax 暂时不可用（HTTP {status}）")
+register("film.minimax.not_json", "MiniMax 返回的不是 JSON")
+register("film.minimax.bad_resolution", "{model} 不支持 {resolution}，可选：{options}")
+register("film.minimax.prompt_too_long", "提示词超出 MiniMax 上限 {max} 字（当前 {len} 字）")
+register("film.minimax.lite_needs_ratio", "MiniMax H3 Lite 的参考生视频必须明确画幅，不支持 adaptive")
+register("film.minimax.bad_ratio", "MiniMax 不支持画幅 {ratio}，可选：{options}")
+register("film.minimax.request_too_big", "请求体约 {mb}MB，超过 MiniMax 上限：减少参考图或换小一些的图")
+register("film.minimax.no_task_id", "MiniMax 受理了请求却没有返回任务 id")
+register("film.minimax.no_result_url", "MiniMax 没有返回结果地址")
+
 
 if __name__ == "__main__":
     if "--write" in sys.argv:

@@ -161,6 +161,15 @@ def main() -> int:
     assert "ARK_API_KEY" in str(e)
     print("6. 密钥 ✓")
 
+    # 7. 错误带代码
+    assert must_raise(base.ProviderError, Seedance.from_env).code == "film.ark.no_key"
+    e = must_raise(base.TransientError, status(429).submit, req)
+    assert e.code == "film.ark.throttled"
+    st = task({"id": "x", "status": "expired"}).poll("x")
+    assert st.error_msg["code"] == "film.ark.task_expired" and st.error == "任务超时"
+    assert Seedance.rate_note == {"code": "rate.ark", "params": {}} and Seedance.console_name == "console.ark"
+    print("7. 错误带代码 ✓")
+
     print("\nALL PASS")
     return 0
 

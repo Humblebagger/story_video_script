@@ -4,5 +4,284 @@
       "message"
     ],
     "zh": "{message}"
+  },
+  "console.ark": {
+    "params": [],
+    "zh": "方舟控制台"
+  },
+  "console.generic": {
+    "params": [],
+    "zh": "厂商控制台"
+  },
+  "console.minimax": {
+    "params": [],
+    "zh": "MiniMax 开放平台"
+  },
+  "film.ark.connect_failed": {
+    "params": [
+      "kind"
+    ],
+    "zh": "连接方舟失败：{kind}"
+  },
+  "film.ark.download_failed": {
+    "params": [
+      "status"
+    ],
+    "zh": "下载失败（HTTP {status}）：结果地址 24 小时内有效"
+  },
+  "film.ark.http_ambiguous": {
+    "params": [
+      "status"
+    ],
+    "zh": "方舟返回 HTTP {status}"
+  },
+  "film.ark.no_key": {
+    "params": [],
+    "zh": "没有配置方舟密钥：在 backend/.env 写 ARK_API_KEY=…"
+  },
+  "film.ark.no_result_url": {
+    "params": [],
+    "zh": "方舟没有返回结果地址"
+  },
+  "film.ark.no_task_id": {
+    "params": [],
+    "zh": "方舟受理了请求却没有返回任务 id"
+  },
+  "film.ark.not_json": {
+    "params": [],
+    "zh": "方舟返回的不是 JSON"
+  },
+  "film.ark.task_expired": {
+    "params": [],
+    "zh": "任务超时"
+  },
+  "film.ark.throttled": {
+    "params": [],
+    "zh": "方舟限流（HTTP 429）"
+  },
+  "film.ark.unavailable": {
+    "params": [
+      "status"
+    ],
+    "zh": "方舟暂时不可用（HTTP {status}）"
+  },
+  "film.ark.unknown_model": {
+    "params": [
+      "model"
+    ],
+    "zh": "未知的 Seedance 档位：{model}"
+  },
+  "film.fake.no_task": {
+    "params": [
+      "id"
+    ],
+    "zh": "任务不存在：{id}"
+  },
+  "film.fake.throttled": {
+    "params": [],
+    "zh": "假的限流"
+  },
+  "film.fake.unknown_model": {
+    "params": [
+      "model"
+    ],
+    "zh": "未知的档位：{model}"
+  },
+  "film.minimax.bad_image": {
+    "params": [
+      "label"
+    ],
+    "zh": "{label} 不是可用的图片地址"
+  },
+  "film.minimax.bad_ratio": {
+    "params": [
+      "ratio",
+      "options"
+    ],
+    "zh": "MiniMax 不支持画幅 {ratio}，可选：{options}"
+  },
+  "film.minimax.bad_resolution": {
+    "params": [
+      "model",
+      "resolution",
+      "options"
+    ],
+    "zh": "{model} 不支持 {resolution}，可选：{options}"
+  },
+  "film.minimax.connect_failed": {
+    "params": [
+      "kind"
+    ],
+    "zh": "连接 MiniMax 失败：{kind}"
+  },
+  "film.minimax.corrupt_image": {
+    "params": [
+      "label"
+    ],
+    "zh": "{label} 的图片数据损坏"
+  },
+  "film.minimax.http_ambiguous": {
+    "params": [
+      "status"
+    ],
+    "zh": "MiniMax 返回 HTTP {status}"
+  },
+  "film.minimax.image_too_big": {
+    "params": [
+      "label",
+      "mb"
+    ],
+    "zh": "{label} 有 {mb}MB，超过 MiniMax 单张 30MB 上限"
+  },
+  "film.minimax.insufficient_balance": {
+    "params": [],
+    "zh": "MiniMax 账户余额不足（1008），充值后重新出这一段"
+  },
+  "film.minimax.invalid_key": {
+    "params": [],
+    "zh": "MiniMax 密钥无效（1004），检查 MINIMAX_API_KEY"
+  },
+  "film.minimax.label_first": {
+    "params": [],
+    "zh": "首帧"
+  },
+  "film.minimax.label_ref": {
+    "params": [
+      "id"
+    ],
+    "zh": "参考图 {id}"
+  },
+  "film.minimax.lite_needs_ratio": {
+    "params": [],
+    "zh": "MiniMax H3 Lite 的参考生视频必须明确画幅，不支持 adaptive"
+  },
+  "film.minimax.moderated": {
+    "params": [],
+    "zh": "内容被 MiniMax 审核拦下（1026）：改写这一段的画面描述或换参考图后重试"
+  },
+  "film.minimax.no_key": {
+    "params": [],
+    "zh": "没有配置 MiniMax 密钥：在 backend/.env 写 MINIMAX_API_KEY=…"
+  },
+  "film.minimax.no_result_url": {
+    "params": [],
+    "zh": "MiniMax 没有返回结果地址"
+  },
+  "film.minimax.no_task_id": {
+    "params": [],
+    "zh": "MiniMax 受理了请求却没有返回任务 id"
+  },
+  "film.minimax.not_json": {
+    "params": [],
+    "zh": "MiniMax 返回的不是 JSON"
+  },
+  "film.minimax.prompt_too_long": {
+    "params": [
+      "max",
+      "len"
+    ],
+    "zh": "提示词超出 MiniMax 上限 {max} 字（当前 {len} 字）"
+  },
+  "film.minimax.request_too_big": {
+    "params": [
+      "mb"
+    ],
+    "zh": "请求体约 {mb}MB，超过 MiniMax 上限：减少参考图或换小一些的图"
+  },
+  "film.minimax.throttled": {
+    "params": [
+      "status"
+    ],
+    "zh": "MiniMax 限流或过载（HTTP {status}）"
+  },
+  "film.minimax.unavailable": {
+    "params": [
+      "status"
+    ],
+    "zh": "MiniMax 暂时不可用（HTTP {status}）"
+  },
+  "film.minimax.unknown_model": {
+    "params": [
+      "model"
+    ],
+    "zh": "未知的 MiniMax 档位：{model}"
+  },
+  "film.minimax.unsupported_format": {
+    "params": [
+      "label",
+      "mime"
+    ],
+    "zh": "{label} 的格式 {mime} MiniMax 不支持（只收 JPG、PNG、WEBP、HEIC、HEIF）"
+  },
+  "film.minimax.url_expired": {
+    "params": [],
+    "zh": "结果地址已过期且重新查询失败；任务只能在 7 天内查询"
+  },
+  "film.provider.download_connect": {
+    "params": [
+      "kind"
+    ],
+    "zh": "下载连接失败：{kind}"
+  },
+  "film.provider.download_failed": {
+    "params": [
+      "status"
+    ],
+    "zh": "下载失败（HTTP {status}）"
+  },
+  "film.provider.download_retry": {
+    "params": [
+      "status"
+    ],
+    "zh": "下载暂时失败（HTTP {status}）"
+  },
+  "film.provider.failed": {
+    "params": [],
+    "zh": "厂商返回失败"
+  },
+  "film.provider.generation_failed": {
+    "params": [],
+    "zh": "生成失败"
+  },
+  "film.provider.http_rejected": {
+    "params": [
+      "status",
+      "detail"
+    ],
+    "zh": "HTTP {status}：{detail}"
+  },
+  "film.provider.rejected": {
+    "params": [
+      "detail"
+    ],
+    "zh": "{detail}"
+  },
+  "film.provider.submit_cut": {
+    "params": [
+      "kind"
+    ],
+    "zh": "提交时连接中断：{kind}"
+  },
+  "film.provider.task_cancelled": {
+    "params": [],
+    "zh": "任务已取消"
+  },
+  "film.provider.unknown": {
+    "params": [
+      "name"
+    ],
+    "zh": "未知的视频厂商：{name}"
+  },
+  "rate.ark": {
+    "params": [],
+    "zh": "2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对"
+  },
+  "rate.fake": {
+    "params": [],
+    "zh": "假厂商：不联网、不花钱，金额只用于演示"
+  },
+  "rate.minimax": {
+    "params": [],
+    "zh": "2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；每段前 5 张参考图免费，超出另计），未经账单核对"
   }
 }

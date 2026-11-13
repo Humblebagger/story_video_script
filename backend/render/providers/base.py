@@ -8,18 +8,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol
 
+from server.messages import UserError
+
 REF_ROLES = ("character", "creature", "location", "prop", "first_frame", "style")
 
 
-class ProviderError(Exception):
+class ProviderError(UserError, Exception):
     """厂商明确失败（审核、参数、密钥）：原因原样展示，不自动重试。"""
 
 
-class TransientError(Exception):
+class TransientError(UserError, Exception):
     """断连、5xx、限流：调用方自动重试，不算新尝试。"""
 
 
-class AmbiguousSubmit(Exception):
+class AmbiguousSubmit(UserError, Exception):
     """提交请求可能已被厂商受理（请求发出后断连、超时、5xx、2xx 却没拿到任务 id）：
     不能重试（重试可能再建一个付费任务），记失败并提示用户到厂商控制台核对。"""
 
@@ -68,7 +70,8 @@ class TaskState:
     status: str                     # pending / running / succeeded / failed
     video_url: Optional[str] = None
     last_frame_url: Optional[str] = None
-    error: Optional[str] = None     # 厂商原文
+    error: Optional[str] = None     # 中文兜底（含厂商原文）
+    error_msg: Optional[dict] = None  # {code, params}：前端按代码渲染
     usage: dict = field(default_factory=dict)
 
 
@@ -76,7 +79,8 @@ class VideoProvider(Protocol):
     name: str
     default_model: str
     models: dict                    # 档位 id → {"label": ...}
-    rate_note: str      # 费率依据：如实写出处、是否经账单核对；出片确认框照抄
+    rate_note: dict     # 费率依据（消息对象 {code, params}）：如实写出处、是否经账单核对；出片确认框照抄
+    console_name: str   # 厂商控制台名的代码，如 console.ark
 
     def caps(self, model: str) -> Caps: ...
     def rewrite_prompt(self, text: str) -> str: ...

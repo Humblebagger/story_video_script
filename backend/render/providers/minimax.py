@@ -25,6 +25,7 @@ from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, last_frame_path, request_seconds)
+from server.messages import compact, msg, vendor
 
 BASE_URL = "https://api.minimax.cn"
 # 2026-11 官方刊例价（元/秒，输出）；resolutions 的第一个为默认分辨率
@@ -58,12 +59,8 @@ _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 _EXPIRED = (403, 404, 410)
 _ALIAS = {"insufficient_balance_error": "1008", "authorized_error": "1004", "rate_limit_error": "1002"}
 _HTTP_CODE = {402: "1008", 401: "1004", 422: "1026"}
-MSG = {
-    "1008": "MiniMax 账户余额不足（1008），充值后重新出这一段",
-    "1004": "MiniMax 密钥无效（1004），检查 MINIMAX_API_KEY",
-    "1026": "内容被 MiniMax 审核拦下（1026）：改写这一段的画面描述或换参考图后重试",
-}
-EXPIRED_MSG = "结果地址已过期且重新查询失败；任务只能在 7 天内查询"
+_KNOWN = {"1008": "film.minimax.insufficient_balance", "1004": "film.minimax.invalid_key",
+          "1026": "film.minimax.moderated"}
 
 
 def rewrite_refs(text: str) -> str:
@@ -126,12 +123,14 @@ def scrub(text, secret: str = "") -> str:
     return t[:TEXT_MAX]
 
 
-def _reject(code, msg, status=None, body: str = "", secret: str = "") -> ProviderError:
-    key = code if code in MSG else _HTTP_CODE.get(status)
-    if key in MSG:
-        return ProviderError(MSG[key])
-    text = "：".join(str(x) for x in (code, msg) if x)
-    return ProviderError(scrub(text, secret) if text else f"HTTP {status}：{scrub(body, secret)}")
+def _reject(code, msg_text, status=None, body: str = "", secret: str = "") -> ProviderError:
+    key = code if code in _KNOWN else _HTTP_CODE.get(status)
+    if key in _KNOWN:
+        return ProviderError.of(_KNOWN[key])
+    text = "：".join(str(x) for x in (code, msg_text) if x)
+    if text:
+        return ProviderError.of("film.provider.rejected", detail=vendor(scrub(text, secret)))
+    return ProviderError.of("film.provider.http_rejected", status=status, detail=vendor(scrub(body, secret)))
 
 
 def _even(x: float) -> int:
@@ -194,24 +193,24 @@ def _normalize(raw: bytes, mime: str) -> tuple:
         return dst.read_bytes(), "image/jpeg"
 
 
-def _check_image(uri: str, label: str) -> tuple:
+def _check_image(uri: str, label: dict) -> tuple:
     """返回 (要发出的地址, 计入请求体的字节数)。http(s)、mm_file:// 原样透传；data URI 校验格式与体积并规范化。"""
     if not isinstance(uri, str):
-        raise ProviderError(f"{label} 不是可用的图片地址")
+        raise ProviderError.of("film.minimax.bad_image", label=label)
     if uri.startswith(("http://", "https://", "mm_file://")):
         return uri, len(uri)
     m = _DATA.match(uri)
     if not m:
-        raise ProviderError(f"{label} 不是可用的图片地址")
+        raise ProviderError.of("film.minimax.bad_image", label=label)
     mime = m.group(1).strip().lower()
     if mime not in MIMES:
-        raise ProviderError(f"{label} 的格式 {mime} MiniMax 不支持（只收 JPG、PNG、WEBP、HEIC、HEIF）")
+        raise ProviderError.of("film.minimax.unsupported_format", label=label, mime=mime)
     try:
         raw = base64.b64decode(m.group(2), validate=True)
     except (binascii.Error, ValueError):
-        raise ProviderError(f"{label} 的图片数据损坏")
+        raise ProviderError.of("film.minimax.corrupt_image", label=label)
     if len(raw) > IMAGE_MAX_BYTES:
-        raise ProviderError(f"{label} 有 {len(raw) / 1048576:.1f}MB，超过 MiniMax 单张 30MB 上限")
+        raise ProviderError.of("film.minimax.image_too_big", label=label, mb=f"{len(raw) / 1048576:.1f}")
     raw, mime = _normalize(raw, mime)
     out = f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
     return out, len(out)
@@ -241,9 +240,8 @@ class _Expired(Exception):
 class MiniMax:
     name = "minimax"
     default_model = DEFAULT_MODEL
-    console_name = "MiniMax 开放平台"
-    rate_note = ("2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；"
-                 "每段前 5 张参考图免费，超出另计），未经账单核对")
+    console_name = "console.minimax"
+    rate_note = {"code": "rate.minimax", "params": {}}
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
         self._key = api_key
@@ -256,14 +254,14 @@ class MiniMax:
         _load_dotenv(BACKEND_ROOT.parent / ".env")
         key = os.environ.get("MINIMAX_API_KEY", "").strip()
         if not key:
-            raise ProviderError("没有配置 MiniMax 密钥：在 backend/.env 写 MINIMAX_API_KEY=…")
+            raise ProviderError.of("film.minimax.no_key")
         base_url = os.environ.get("STORYBOARD_MINIMAX_BASE_URL", "").strip() or BASE_URL
         return cls(key, base_url=base_url)
 
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
-            raise ProviderError(f"未知的 MiniMax 档位：{model}")
+            raise ProviderError.of("film.minimax.unknown_model", model=model)
         return m
 
     def caps(self, model: str) -> Caps:
@@ -285,65 +283,67 @@ class MiniMax:
         try:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
-            raise TransientError(f"连接 MiniMax 失败：{type(e).__name__}")
+            raise TransientError.of("film.minimax.connect_failed", kind=type(e).__name__)
         except httpx.TransportError as e:
             if submit:
-                raise AmbiguousSubmit(f"提交时连接中断：{type(e).__name__}")
-            raise TransientError(f"连接 MiniMax 失败：{type(e).__name__}")
+                raise AmbiguousSubmit.of("film.provider.submit_cut", kind=type(e).__name__)
+            raise TransientError.of("film.minimax.connect_failed", kind=type(e).__name__)
         try:
             j = r.json()
         except ValueError:
             j = None
-        code, msg = _error_of(j)
+        code, msg_text = _error_of(j)
         if r.status_code in (429, 529) or code == "1002":
-            raise TransientError(f"MiniMax 限流或过载（HTTP {r.status_code}）")
+            raise TransientError.of("film.minimax.throttled", status=r.status_code)
         if r.status_code >= 500:
             if submit:
-                raise AmbiguousSubmit(f"MiniMax 返回 HTTP {r.status_code}")
-            raise TransientError(f"MiniMax 暂时不可用（HTTP {r.status_code}）")
+                raise AmbiguousSubmit.of("film.minimax.http_ambiguous", status=r.status_code)
+            raise TransientError.of("film.minimax.unavailable", status=r.status_code)
         if r.status_code >= 400:
-            raise _reject(code, msg, r.status_code, r.text, self._key)
+            raise _reject(code, msg_text, r.status_code, r.text, self._key)
         if code:                                      # 2xx 但厂商明确报了错：没建任务
-            raise _reject(code, msg, secret=self._key)
+            raise _reject(code, msg_text, secret=self._key)
         if not isinstance(j, dict):
             if submit:
-                raise AmbiguousSubmit("MiniMax 返回的不是 JSON")
-            raise TransientError("MiniMax 返回的不是 JSON")
+                raise AmbiguousSubmit.of("film.minimax.not_json")
+            raise TransientError.of("film.minimax.not_json")
         return j
 
     def submit(self, req: ClipRequest) -> str:
         m = self._model(req.model)
         caps = self.caps(req.model)
         if req.resolution not in caps.resolutions:
-            raise ProviderError(f"{m['label']} 不支持 {req.resolution}，可选：{'、'.join(caps.resolutions)}")
+            raise ProviderError.of("film.minimax.bad_resolution", model=m["label"], resolution=req.resolution,
+                                   options=list(caps.resolutions))
         if len(req.prompt) > PROMPT_MAX:
-            raise ProviderError(f"提示词超出 MiniMax 上限 {PROMPT_MAX} 字（当前 {len(req.prompt)} 字）")
+            raise ProviderError.of("film.minimax.prompt_too_long", max=PROMPT_MAX, len=len(req.prompt))
         content = [{"type": "text", "text": req.prompt}]
         size = len(req.prompt.encode("utf-8"))
         body = {"model": m["id"], "content": content, "resolution": req.resolution,
                 "duration": request_seconds(req.duration, caps), "aigc_watermark": False}
         if req.refs:
             for ref in req.refs:
-                label = "首帧" if ref.role == "first_frame" else f"参考图 {ref.asset_id}"
+                label = compact(msg("film.minimax.label_first") if ref.role == "first_frame"
+                                else msg("film.minimax.label_ref", id=ref.asset_id))
                 url, n = _check_image(ref.source, label)
                 content.append({"type": "image_url", "image_url": {"url": url}, "role": "reference_image"})
                 size += n
         elif req.first_frame:
-            url, n = _check_image(req.first_frame, "首帧")
+            url, n = _check_image(req.first_frame, compact(msg("film.minimax.label_first")))
             content.append({"type": "image_url", "image_url": {"url": url}, "role": "first_frame"})
             size += n
         if req.refs or not req.first_frame:           # 参考生与文生显式给比例；图生由图决定
             if req.aspect == "adaptive" and req.refs and req.model == "minimax-h3-lite":
-                raise ProviderError("MiniMax H3 Lite 的参考生视频必须明确画幅，不支持 adaptive")
+                raise ProviderError.of("film.minimax.lite_needs_ratio")
             if req.aspect not in RATIOS:
-                raise ProviderError(f"MiniMax 不支持画幅 {req.aspect}，可选：{'、'.join(RATIOS)}")
+                raise ProviderError.of("film.minimax.bad_ratio", ratio=req.aspect, options=list(RATIOS))
             body["ratio"] = req.aspect
         if size > BODY_MAX_BYTES:
-            raise ProviderError(f"请求体约 {size / 1048576:.1f}MB，超过 MiniMax 上限：减少参考图或换小一些的图")
+            raise ProviderError.of("film.minimax.request_too_big", mb=f"{size / 1048576:.1f}")
         j = self._call("POST", "/v2/video_generation", submit=True, json=body)
         tid = j.get("task_id")
         if not tid:
-            raise AmbiguousSubmit("MiniMax 受理了请求却没有返回任务 id")
+            raise AmbiguousSubmit.of("film.minimax.no_task_id")
         return str(tid)
 
     def poll(self, task_id: str) -> TaskState:
@@ -352,23 +352,26 @@ class MiniMax:
         raw = t.get("status")
         status = _STATUS.get(raw, "running")
         content = t.get("content") if isinstance(t.get("content"), dict) else {}
-        error = None
+        error, error_msg = None, None
         if status == "failed":
             if raw == "cancelled":
-                error = "任务已取消"
+                m = msg("film.provider.task_cancelled")
             else:
                 err = t.get("error") if isinstance(t.get("error"), dict) else {}
                 code = _code(err.get("code") or err.get("type"), err.get("message"))
-                error = (MSG.get(code) or scrub("：".join(str(x) for x in (code, err.get("message")) if x), self._key)
-                         or "生成失败")
+                text = scrub("：".join(str(x) for x in (code, err.get("message")) if x), self._key)
+                m = (msg(_KNOWN[code]) if code in _KNOWN
+                     else msg("film.provider.rejected", detail=vendor(text)) if text
+                     else msg("film.provider.generation_failed"))
+            error, error_msg = m["message"], compact(m)
         usage = t.get("usage") if status == "succeeded" and isinstance(t.get("usage"), dict) else {}
         return TaskState(task_id, status, video_url=content.get("url"), last_frame_url=None,
-                         error=error, usage=dict(usage))
+                         error=error, error_msg=error_msg, usage=dict(usage))
 
     def _fetch(self, url: Optional[str], dest: Path) -> None:
         """结果地址是限时签名直链：不带密钥。先写 .part 再改名；不建上级目录（版本删了不能被下载重建）。"""
         if not url:
-            raise ProviderError("MiniMax 没有返回结果地址")
+            raise ProviderError.of("film.minimax.no_result_url")
         dest.parent.mkdir(exist_ok=True)
         part = dest.with_name(dest.name + ".part")
         try:
@@ -376,14 +379,14 @@ class MiniMax:
                 if r.status_code in _EXPIRED:
                     raise _Expired()
                 if r.status_code == 429 or r.status_code >= 500:
-                    raise TransientError(f"下载暂时失败（HTTP {r.status_code}）")
+                    raise TransientError.of("film.provider.download_retry", status=r.status_code)
                 if r.status_code >= 400:
-                    raise ProviderError(f"下载失败（HTTP {r.status_code}）")
+                    raise ProviderError.of("film.provider.download_failed", status=r.status_code)
                 with open(part, "wb") as f:
                     for chunk in r.iter_bytes():
                         f.write(chunk)
         except httpx.TransportError as e:
-            raise TransientError(f"下载连接失败：{type(e).__name__}")
+            raise TransientError.of("film.provider.download_connect", kind=type(e).__name__)
         part.replace(dest)
 
     def download(self, st: TaskState, dest: Path) -> dict:
@@ -394,13 +397,13 @@ class MiniMax:
             try:
                 fresh = self.poll(st.task_id)
             except ProviderError:
-                raise ProviderError(EXPIRED_MSG)
+                raise ProviderError.of("film.minimax.url_expired")
             if fresh.status != "succeeded" or not fresh.video_url:
-                raise ProviderError(EXPIRED_MSG)
+                raise ProviderError.of("film.minimax.url_expired")
             try:
                 self._fetch(fresh.video_url, dest)
             except _Expired:
-                raise ProviderError(EXPIRED_MSG)
+                raise ProviderError.of("film.minimax.url_expired")
         return {"video": dest, "last_frame": _grab_last_frame(dest)}
 
     def cost(self, st: TaskState, req: ClipRequest) -> float:

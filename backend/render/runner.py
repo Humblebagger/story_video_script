@@ -11,6 +11,17 @@ from pathlib import Path
 
 from render import compose, session as sess
 from render.providers import base, get_video
+from server.messages import render_zh
+
+
+def _console_zh(provider) -> str:
+    """临时（任务 4 改为代码）：控制台名代码 → 中文；非代码的旧字符串原样用。"""
+    v = getattr(provider, "console_name", "") or "console.generic"
+    try:
+        return render_zh(v, {})
+    except KeyError:
+        return v
+
 
 BUSY = ("running", "downloading")
 SESSIONS_GLOB = "users/*/novels/*/chapters/*/render/*/session.json"   # 数据目录下全部出片会话
@@ -243,7 +254,7 @@ class Runner:
         try:
             tid = self._retry(lambda: provider.submit(req))
         except base.AmbiguousSubmit as e:          # 厂商可能已建了付费任务：不重试
-            where = getattr(provider, "console_name", "") or "厂商控制台"
+            where = _console_zh(provider)  # 临时：子计划 1 任务 4 改为代码
             sess.submit_failed(root, c["id"], f"提交时连接中断，不确定厂商是否已受理：请到{where}核对，"
                                "确认没有生成再重做（" + str(e) + "）", uncertain=True)
             return False
