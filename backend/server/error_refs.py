@@ -63,6 +63,11 @@ def _rel(text: str) -> str:
     return text
 
 
+def scrub_text(text: str, secrets_extra=()) -> str:
+    """日志文字统一脱敏：密钥抹掉、数据目录换成 <data>（record 与调用方的二次失败日志共用）。"""
+    return _rel(scrub_secrets(str(text), secrets_extra))
+
+
 def _clip(text: str) -> str:
     """截断到 DETAIL_MAX：保留头尾。链式异常先打印原因，最后一行才是最终异常，不能被截掉。"""
     if len(text) <= DETAIL_MAX:

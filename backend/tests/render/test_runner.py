@@ -805,6 +805,42 @@ def main() -> int:
     fake.poll = real_poll19
     print("18. 控制台回落与中文兜底原样 ✓")
 
+    # 19. 提交意外异常 + 状态写回也失败：stderr 与日志里没有密钥，也没有原异常链；段仍停在「提交中」
+    import contextlib
+    import io
+    r24 = Path(os.environ["STORYBOARD_DATA_DIR"]) / "users" / "a1b2c3d4e5f6" / "novels" / "n" / "chapters" / "c" / "render" / "wbfail"
+    i24 = [x["id"] for x in sess.build(r24, doc, owner=dict(OWNER, vid="wbfail"), patch={"budget_cny": 100000}, keyframes={})["clips"]]
+    sess.queue_run(r24, [i24[0]])
+    fake._key = "sk-SYNTH-WB-98765"
+    real_submit24, real_sf24 = fake.submit, sess.submit_failed
+
+    def submit_leak24(req):
+        raise RuntimeError("vendor said sk-SYNTH-WB-98765 Bearer WBTOKEN")
+
+    def sf_boom24(*a, **kw):
+        raise OSError(f"disk full {r24}/session.json")
+
+    fake.submit, sess.submit_failed = submit_leak24, sf_boom24
+    rn = quick()
+    rn.watch(r24)
+    fmt24 = logging.Formatter("%(message)s")
+    err24 = io.StringIO()
+    try:
+        with _LogGrab("render.runner") as g, _LogGrab("server.errors") as g2, contextlib.redirect_stderr(err24):
+            rn.tick()
+    finally:
+        fake.submit, sess.submit_failed = real_submit24, real_sf24
+        fake._key = ""
+    logs24 = "\n".join(fmt24.format(r) + (("\n" + fmt24.formatException(r.exc_info)) if r.exc_info else "")
+                       for r in g.records + g2.records)
+    allout = err24.getvalue() + "\n" + logs24
+    assert "sk-SYNTH-WB-98765" not in allout and "WBTOKEN" not in allout, allout
+    assert "vendor said" not in err24.getvalue() and "Traceback" not in err24.getvalue(), err24.getvalue()
+    assert os.environ["STORYBOARD_DATA_DIR"] not in allout and "<data>" in logs24, allout
+    assert "写回失败" in logs24 and all(r.exc_info is None for r in g.records + g2.records), logs24
+    assert clip(r24, i24[0])["state"] == "queued" and sess.load(r24)["clips"] is not None
+    print("19. 提交异常后写回失败：不泄露密钥与异常链 ✓")
+
     print("\nALL PASS")
     return 0
 

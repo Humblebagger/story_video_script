@@ -293,7 +293,16 @@ class Runner:
             err_ref = error_refs.record_exc(e, "film.submit.crashed", context=f'提交异常 root={root} clip={c["id"]}',  # i18n: internal
                                         user_id=error_refs.user_of_root(root), where=f'submit {root} {c["id"]}',
                                         secrets_extra=[getattr(provider, "_key", "")], logger=log)
-            sess.submit_failed(root, c["id"], with_ref(msg("film.submit.crashed"), err_ref))
+            try:
+                sess.submit_failed(root, c["id"], with_ref(msg("film.submit.crashed"), err_ref))
+            except Exception as e2:
+                # 状态写回也失败：段留在「提交中」，下一轮 begin_submit 会标待核对（不重复付费提交）。
+                # 不让带厂商密钥的异常链（__context__ 是原提交异常）走到 _isolate 的 print_exc。
+                if isinstance(e2, (sess.NotFound, sess.Corrupt)):
+                    raise e2 from None                 # 会话级错误仍交给 _isolate 丢会话；断开链
+                log.error("%s", error_refs.scrub_text(
+                    f'提交失败状态写回失败 ref={err_ref} root={root} clip={c["id"]} {type(e2).__name__}: {e2}',  # i18n: internal
+                    [getattr(provider, "_key", "")]))
             return False
         try:
             sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None),

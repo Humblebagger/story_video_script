@@ -464,6 +464,24 @@ def main() -> int:
         errs = [r.getMessage() for r in cap.records if r.levelno >= logging.ERROR]
         assert errs and "合成异常" in errs[0] and "ValueError" in errs[0], errs
         assert not any(str(root) in x for x in errs), errs
+        # 状态写回也失败：二次日志同样把数据目录换成 <data>（root 与堆栈里的绝对路径都不留）
+        os.environ.pop("ARK_API_KEY", None)
+        cap.records.clear()
+        real_cf = render_session.compose_failed
+
+        def cf_boom(*a, **kw):
+            raise OSError(f"disk full {root}/session.json")
+        render_session.compose_failed = cf_boom
+        try:
+            assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
+            wait_until = __import__("time").time() + 5
+            while __import__("time").time() < wait_until and not any("写回失败" in r.getMessage() for r in cap.records):
+                __import__("time").sleep(0.05)
+        finally:
+            render_session.compose_failed = real_cf
+        second = [r.getMessage() for r in cap.records if "写回失败" in r.getMessage()]
+        real_dir = os.environ["STORYBOARD_DATA_DIR"]
+        assert second and "<data>" in second[0] and real_dir not in second[0] and str(root) not in second[0], second
     finally:
         lg.removeHandler(cap)
         lg.level = old_level

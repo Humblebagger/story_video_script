@@ -1407,7 +1407,7 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
             failed(with_ref(msg("compose.crashed"), ref))
         except Exception as e2:  # noqa: BLE001
             tb2 = "".join(traceback.format_exception(type(e2), e2, e2.__traceback__))
-            log.error("%s", render_video_base.scrub_secrets(f"合成失败状态写回失败 root={root}\n{tb2}"))  # i18n: internal
+            log.error("%s", error_refs.scrub_text(f"合成失败状态写回失败 root={root}\n{tb2}"))  # i18n: internal
 
 
 @app.post(_R + "/compose")
