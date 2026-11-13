@@ -175,7 +175,7 @@
 | 文件 | 本计划的改动 |
 |---|---|
 | `backend/pipeline/events.py`（新） | `make_say` |
-| `backend/pipeline/chat.py` | `LLMError` 带代码、`llm_error` 映射、`OverloadedError` 进重试清单、`llm.gave_up`、`llm.truncated`、`llm.not_configured` |
+| `backend/pipeline/chat.py` | `LLMError` 带代码、`llm_error` 映射（LangChain `Model*Error` 为主、SDK 兜底）、重试清单补 529 与流式中途的瞬时错误（`_StreamInterrupted`）、`llm.gave_up`、`llm.truncated`、`llm.not_configured` |
 | `backend/pipeline/errors.py`、`convert.py`、`graph.py`、`review.py`、`__main__.py` | 见调用点清单 |
 | `backend/assistant/tools.py`、`actions.py`、`edits.py`、`events.py`、`graph.py`、`backend/prompts/assistant.md` | 见调用点清单 |
 | `backend/server/messages.py` | `vendor(limit=)`、`REPORT_MAX`、`UserError.from_msg`、`recast`；登记 `llm.*`、`job.*`、`verify.*`、`film.plan/keyframes.*`、`assistant.*`、`admin.job.not_found` |
@@ -184,9 +184,73 @@
 | `backend/server/app.py` | 见调用点清单 |
 | `backend/tests/server/test_jobs.py`（新） | `_execute` 各路径、任务视图、调试日志接口、不透出模型 |
 | `backend/tests/pipeline/test_chat.py`、`test_graph.py`、`test_offline.py`、`test_novel_memory.py`，`tests/server/test_novels.py`、`test_render.py`、`test_assistant.py`、`test_summary.py`、`test_messages.py`、`test_admin.py`、`test_i18n_scan.py`，`tests/assistant/test_tools.py`、`test_actions.py`、`test_edits.py`、`test_graph.py` | 见各 Task |
-| `frontend/src/i18n/serverMsg.ts` | `failHead` |
+| `frontend/src/i18n/serverMsg.ts` | `failHead`（Task 0） |
+| `backend/server/auth.py` | `valid_user_id`（Task 6） |
 | `frontend/src/types.ts`、`api.ts` 与上面列出的组件 | 进度、失败、门、助手、账号菜单、后台调试日志 |
 | `frontend/tests/server-msg.test.ts`、`flow.test.tsx`、`routing.test.tsx`、`workspace.test.tsx`、`admin.test.tsx`、`assistant.test.tsx`（按实际覆盖的文件调整） | 见各 Task |
+
+---
+
+### Task 0: 前端先行兼容（必须在后端改响应形状之前落地）
+
+后端 Task 4、5、6、7 会把几处字段从字符串改成消息对象。现行前端把这些值直接当 React 子节点渲染，遇到对象会抛 "Objects are not valid as a React child"，整块面板挂掉（设计审查 I1）。本 Task 先让前端两种形状都能渲染。`formatMsg` 对字符串原样返回，所以对旧后端没有影响。这样 Task 1–10 的每一个中间提交，前后端都能一起跑。
+
+**Files:**
+- Modify: `frontend/src/i18n/serverMsg.ts`（`failHead`）
+- Modify: `frontend/src/types.ts`（放宽：`Job.log: (JobEvent | string)[]`、`JobSummary.last_log: JobEvent | string | null`、`AssistantCardInfo.warnings?: (string | ServerMsg)[]`、`FilmSession.gate?: { ok: boolean; message: MsgLike }`、`Health.first_run?: boolean`、`NovelSummaryData.unpriced: boolean | string[]`；新增 `JobEvent`）
+- Modify: `frontend/src/components/JobPanel.tsx`（:85）、`CanvasPanels.tsx`（:101）、`NovelSidebar.tsx`（:61）、`shell/ActivityPanel.tsx`（:96）、`assistant/ActionCard.tsx`（:60 warnings）、`App.tsx`（:345 首次注册）、`useFilm.ts`（gate 状态）、`compose.ts`（`composeBlockers` 的 `gate`）、`FilmPanel.tsx`、`TimelineCanvas.tsx`
+- Test: `frontend/tests/server-msg.test.ts`，以及覆盖 JobPanel、书架与活动面板、编辑卡、首页首次注册、出片验证门的现有测试（`grep -ln "JobPanel\|last_log\|warnings\|healthz\|gate" tests/` 列出的文件，按实际调整）
+
+- [ ] **Step 1: 写失败测试（桩一律用新形状；旧形状各留一条回归）**
+  - `server-msg.test.ts` 新增一节：
+    ```ts
+    // 9. 转换失败带报告：整段渲染原因 + 换行 + 报告原文；一行显示只取原因
+    const failed = { code: 'job.failed_report', params: {
+      reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+      report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+    must(formatMsg(failHead(failed), 'zh') === formatMsg({ code: 'job.batch_failed', params: { batch: 2, retries: 3 } }, 'zh'), '一行只取原因')
+    must(failHead('第一行\n第二行') === '第一行', '旧数据取第一行')
+    must(formatMsg(failHead({ code: 'llm.busy', params: {} }), 'en') === formatMsg({ code: 'llm.busy', params: {} }, 'en'), '没有报告的原样返回')
+    ```
+    （`job.failed_report`、`job.batch_failed`、`llm.busy` 的文案在 Task 2、3 才登记。本节只断言 `failHead` 的取舍，不断言具体文字；整段文字的断言放在 Task 9。）
+  - 进度：JobPanel 的桩 `log: [{ code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }]`。断言页面上有「输入 4 字符 → 1 批」（代码还没登记时 `formatMsg` 回落到 `message`）。另留一条 `log: ['旧行']` 的用例。
+  - 书架、活动面板：`last_log` 为同形事件对象时显示 `message`，为字符串时原样显示。
+  - 编辑卡：`warnings: [{ code: 'verify.finding', params: { path: 'episodes[0]', detail: { t: 'vendor', text: '时长对不上' } }, message: 'episodes[0]：时长对不上' }, '旧字符串']` 两条都显示，不崩。
+  - 首页：`/healthz` 桩为 `{ status: 'ok', first_run: true }` 时进首次注册，`{ status: 'ok', first_run: false }` 时不进。旧桩 `{ status: 'ok', users: 0 }` 仍进首次注册。
+  - 验证门：出片会话桩 `gate: { ok: false, message: { code: 'verify.gate.blocked', params: {}, message: '分镜未通过独立验证' } }` 时，提示里有「分镜未通过独立验证」，没有 `[object Object]`。`gate.message` 是字符串时原样显示。
+  - 实现前，以上新形状的用例应当报 "Objects are not valid as a React child" 或断言失败，这就是 I1 要抓的崩溃。
+
+- [ ] **Step 2: 运行确认失败**：`cd frontend && npm test`。
+
+- [ ] **Step 3: 实现**
+  - `serverMsg.ts`：
+    ```ts
+    /** 一行显示的失败原因：转换失败带报告（job.failed_report）时只取原因；旧数据的字符串取第一行（spec 子计划 4 B） */
+    export function failHead(m: MsgLike): MsgLike {
+      if (typeof m === 'string') return m.split('\n')[0]
+      if (isServerMsg(m) && m.code === 'job.failed_report' && isServerMsg(m.params?.reason)) return m.params!.reason as ServerMsg
+      return m
+    }
+    ```
+  - `types.ts`：
+    ```ts
+    /** 转换进度事件（后端 job.log 的一条）：消息对象 + 时间；旧任务是字符串 */
+    export type JobEvent = ServerMsg & { at?: string }
+    ```
+    其余按 Files 一栏放宽，注释写「兼容：后端子计划 4 之前是字符串」。
+  - 渲染处一律改为 `formatMsg(x, locale)`：
+    - JobPanel 进度行；
+    - CanvasPanels 最后一行；
+    - NovelSidebar 与 ActivityPanel 的 `last_log`（空时照旧回落）；
+    - ActionCard 的 `warnings`。
+  - `App.tsx`：`const firstRun = !!svc && (svc.first_run ?? (svc.users ?? 0) === 0)`（Task 9 去掉 `users` 分支）。
+  - `useFilm.ts`：
+    - `gate` 状态类型改为 `MsgLike | null`；
+    - `setGate(s.gate.ok ? null : (s.gate.message ?? tr('film.gateFailed')))` 不用改，类型随之变。
+  - `compose.ts`：`o.gate: MsgLike | null`，`tr('compose.blockGate', { gate: formatMsg(o.gate) })`。
+  - `FilmPanel.tsx`、`TimelineCanvas.tsx`：传 `{ gate: formatMsg(film.gate, locale) }`。
+
+- [ ] **Step 4: 跑全部校验并提交**。只 add 上面改到的源文件与测试文件。提交信息示例：「前端先行兼容子计划 4 的响应形状：转换进度、最近一行、编辑卡复验原因、验证门提示既能是文字也能是消息对象，按代码渲染；首页首次注册兼读 first_run；新增 failHead 取失败原因的一行」。
 
 ---
 
@@ -260,13 +324,17 @@
     ```python
         @classmethod
         def from_msg(cls, m: dict, /, *args):
-            """消息对象 → 本类异常：换异常类型时保留代码与参数（ref 不带过来，编号属于那一次记录）。"""
+            """消息对象 → 本类异常：换异常类型时保留代码、参数与参考编号。
+            str() 里已经带着「（参考编号…）」，as_msg 也要带出 ref，否则界面按代码渲染时编号会丢（设计审查 M8）。"""
             params = m.get("params") or {}
             e = cls(m.get("message") or render_zh(m["code"], params), *args)
             e.code, e.params = m["code"], params
+            if m.get("ref"):
+                e.ref = m["ref"]
             return e
     ```
     `render_zh` 定义在 `UserError` 之前，可以直接用。
+  - `UserError` 加类属性 `ref: Optional[str] = None`；`as_msg` 在返回前 `if self.ref: out["ref"] = self.ref`。`test_messages.py` 补一条：`from_msg(with_ref(msg("common.internal"), "K7Q2M9XD"))` 的 `as_msg()["ref"] == "K7Q2M9XD"`，`str()` 不变。
   - `cause_of` 之后加：
     ```python
     def recast(cls, e: BaseException):
@@ -322,9 +390,9 @@
 **Files:**
 - Modify: `backend/pipeline/chat.py`、`backend/pipeline/review.py`、`backend/pipeline/__main__.py`
 - Modify: `backend/server/messages.py`（登记 `llm.*`）、`messages_codes.json`
-- Modify: `backend/tests/server/test_i18n_scan.py`（`MODULES` 加 `"pipeline/chat.py": None`）
+- Modify: `backend/tests/server/test_i18n_scan.py`（`MODULES` 加 `"pipeline/chat.py": None`、`"pipeline/review.py": None`）
 - Modify: `frontend/src/i18n/zh.ts`、`en.ts`（`srv.llm.*`）
-- Test: `backend/tests/pipeline/test_chat.py`（7、8、14 改断言，新增 17–19）、`backend/tests/pipeline/test_graph.py`（11b）、`backend/tests/pipeline/test_offline.py`（:1030）
+- Test: `backend/tests/pipeline/test_chat.py`（6、7、8、14 改断言；现有到 17，新增 18–21）、`backend/tests/pipeline/test_graph.py`（11b）、`backend/tests/pipeline/test_offline.py`（:1030）
 
 - [ ] **Step 1: 写失败测试**
   - `test_chat.py` 顶部（导入 `pipeline.*` 之前）补：
@@ -335,6 +403,27 @@
     os.environ["ANTHROPIC_API_KEY"] = SECRET                   # 只为验证脱敏；所有调用都走 FakeChat
     import pipeline.config as _pc
     _pc._load_dotenv = lambda *_a, **_k: None
+    ```
+  - 6（非 thinking 的 400 不许吞掉）：现在断言 `except anthropic.BadRequestError`。Task 2 之后 `invoke` 会把它映射成 `LLMError`，原断言必挂（设计审查 I3），改为：
+    ```python
+    calls6 = []
+
+    def other_400(messages):
+        calls6.append(1)
+        raise anthropic.BadRequestError(
+            "credit balance too low",
+            response=httpx2.Response(400, request=httpx2.Request("POST", "http://x")),
+            body=None)
+
+    inv6 = ChatInvoker(Settings(api_key="k", thinking="2000"),
+                       chat=FakeChat(responses=[other_400]), log=logs.append)
+    try:
+        inv6.invoke([HumanMessage("x")])
+        raise AssertionError("与 thinking 无关的 400 应抛 LLMError")
+    except LLMError as e:
+        assert e.code == "llm.balance" and isinstance(e.__cause__, anthropic.BadRequestError)
+    assert not inv6._thinking_rejected and len(calls6) == 1, "不触发降级、不重试"
+    print("chat: 无关的 400 不被降级逻辑吞掉，映射为友好代码 ✓")
     ```
   - 7（推理块烧光预算）：
     ```python
@@ -360,9 +449,9 @@
         assert str(e) == "已重试 2 次仍失败：连接 AI 服务失败，请稍后重试；仍失败请联系管理员"
         assert isinstance(e.__cause__, anthropic.APIConnectionError)
     ```
-  - 新增 17（映射表；接口异常都在本地构造，不发请求）：
+  - 新增 18（映射表；接口异常都在本地构造，不发请求）：
     ```python
-    # 17. 模型服务错误映射（spec 子计划 4 C）：代码对；str() 不含模型名、厂商名与原文；日志有脱敏原文与请求 id
+    # 18. 模型服务错误映射（spec 子计划 4 C）：代码对；str() 不含模型名、厂商名与原文；日志有脱敏原文与请求 id
     import logging
     from pipeline.chat import llm_error
     req = httpx2.Request("POST", "http://127.0.0.1:9/v1/messages")
@@ -379,6 +468,14 @@
 
         def emit(self, rec):
             self.lines.append(rec.getMessage())
+
+    from langchain_anthropic import chat_models as _lca
+
+    def _lc_wrap(e):
+        """照 langchain_anthropic 的包装把 SDK 异常换成 Anthropic*Error（同时继承 LangChain 的 Model*Error）。"""
+        cls = {anthropic.BadRequestError: _lca.AnthropicContextOverflowError,
+               anthropic.OverloadedError: _lca.AnthropicOverloadedError}[type(e)]
+        return cls(message=e.message, response=e.response, body=e.body)
 
     cases = [
         (status_err(anthropic.AuthenticationError, 401, "authentication_error", f"invalid x-api-key {SECRET}"), "llm.auth"),
@@ -398,6 +495,19 @@
         (anthropic.APITimeoutError(request=req), "llm.timeout"),
         (anthropic.APIConnectionError(request=req), "llm.connect_failed"),
         (httpx2.ReadError("peer closed"), "llm.connect_failed"),
+        # 设计审查 I3：Anthropic 风格网关的余额不足是 400 + invalid_request_error
+        (status_err(anthropic.BadRequestError, 400, "invalid_request_error",
+                    "Your credit balance is too low to access the API"), "llm.balance"),
+        # 设计审查 M2：输出上限配置错误不是「内容太长」，是配置有误
+        (status_err(anthropic.BadRequestError, 400, "invalid_request_error",
+                    "max_tokens: 32000 > 8192, which is the maximum allowed number of output tokens"),
+         "llm.model_unavailable"),
+        # 设计审查 M3：httpx2 的超时是 HTTPError 子类，要先判超时
+        (httpx2.ReadTimeout("read timed out"), "llm.timeout"),
+        # 设计审查 M4：langchain_anthropic 包装后的异常按 LangChain 的厂商无关分类先判
+        (_lc_wrap(status_err(anthropic.BadRequestError, 400, "invalid_request_error",
+                             "prompt is too long: 140000 tokens > 131072 maximum")), "llm.too_long"),
+        (_lc_wrap(status_err(anthropic.OverloadedError, 529, "overloaded_error")), "llm.busy"),
     ]
     grab = _Grab()
     logging.getLogger("pipeline.chat").addHandler(grab)
@@ -419,9 +529,9 @@
     assert llm_error(same) is same
     print("chat: 模型服务错误映射表 / 不带模型名与原文 / 日志脱敏 ✓")
     ```
-  - 新增 18（经 `ChatInvoker`：非瞬时错误不重试、直接映射；529 现在会重试）：
+  - 新增 19（经 `ChatInvoker`：非瞬时错误不重试、直接映射；529 现在会重试）：
     ```python
-    # 18. 非瞬时错误：一次就映射，不重试；529（OverloadedError）按瞬时故障重试
+    # 19. 非瞬时错误：一次就映射，不重试；529（OverloadedError）按瞬时故障重试
     auth_calls = []
 
     def auth_fail(messages):
@@ -452,10 +562,63 @@
         tenacity.nap.time = real_time
     print("chat: 非瞬时错误不重试 / 529 重试 ✓")
     ```
-    （`tenacity`、`_NoSleep`、`real_time` 沿用 14 里已定义的；18 放在 14 之后。）
-  - 新增 19（评审失败不把原文写进报告）：
+    （`tenacity`、`_NoSleep`、`real_time` 沿用 14 里已定义的；18–21 放在 17 之后。）
+  - 新增 20（流式中途的瞬时 `event: error` 有界重试，共用 `transport_retries`；设计审查 I4）：
     ```python
-    # 19. 评审调用失败：报告里只有友好文案，原文进 pipeline.review 日志
+    # 20. 流式中途的瞬时错误（HTTP 200 + overloaded_error/api_error/rate_limit_error）重试，次数有上限；
+    #     中途的非瞬时类型（如 authentication_error）不重试
+    def mid(etype):
+        return status_err(anthropic.APIStatusError, 200, etype, "stream broke")
+
+    tenacity.nap.time = _NoSleep
+    try:
+        flaky = []
+
+        def mid_once(messages):
+            flaky.append(1)
+            if len(flaky) == 1:
+                raise mid("overloaded_error")
+            return "正文"
+
+        inv_m = ChatInvoker(Settings(api_key="k", transport_retries=2),
+                            chat=FakeChat(responses=[mid_once] * 3))
+        assert inv_m.invoke([HumanMessage("x")]).content == "正文" and len(flaky) == 2, "中途过载重试一次后成功"
+
+        always = []
+
+        def mid_always(messages):
+            always.append(1)
+            raise mid("api_error")
+
+        try:
+            ChatInvoker(Settings(api_key="k", transport_retries=2),
+                        chat=FakeChat(responses=[mid_always] * 10)).invoke([HumanMessage("x")])
+            raise AssertionError("一直中途出错应抛 llm.gave_up")
+        except LLMError as e:
+            assert e.code == "llm.gave_up" and e.params["retries"] == 2
+            assert e.params["cause"] == {"code": "llm.unavailable", "params": {}}
+        assert len(always) == 3, f"有界：1 次 + 重试 2 次，实际 {len(always)} 次"
+
+        auth_mid = []
+
+        def mid_auth(messages):
+            auth_mid.append(1)
+            raise mid("authentication_error")
+
+        try:
+            ChatInvoker(Settings(api_key="k", transport_retries=2),
+                        chat=FakeChat(responses=[mid_auth] * 3)).invoke([HumanMessage("x")])
+            raise AssertionError("中途鉴权错误应抛 LLMError")
+        except LLMError as e:
+            assert e.code == "llm.auth"
+        assert len(auth_mid) == 1, "中途的非瞬时类型不重试"
+    finally:
+        tenacity.nap.time = real_time
+    print("chat: 流式中途的瞬时错误有界重试 / 非瞬时不重试 ✓")
+    ```
+  - 新增 21（评审失败不把原文写进报告）：
+    ```python
+    # 21. 评审调用失败：报告里只有友好文案，原文进 pipeline.review 日志
     from pipeline.review import run_review
     bad_review = ChatInvoker(Settings(api_key="k", transport_retries=0),
                              chat=FakeChat(responses=[lambda m: (_ for _ in ()).throw(
@@ -523,6 +686,10 @@
                   413: "llm.too_long", 429: "llm.busy", 529: "llm.busy"}
     _BLOCKED = re.compile(r"(?i)content\s*exists?\s*risk|content[\s_-]*(filter|policy|moderation)|safety|sensitive")
     _TOO_LONG = re.compile(r"(?i)context[\s_-]*(length|window)|maximum context|too long|exceeds?.{0,40}tokens?")
+    # Anthropic 风格网关的余额不足是 400 + invalid_request_error（设计审查 I3）
+    _BALANCE = re.compile(r"(?i)credit balance|insufficient (balance|credit|funds)|余额不足")
+    # 输出上限配置错误（max_tokens 超出模型允许值）：是配置问题，不能叫用户「缩短内容」（设计审查 M2）
+    _MAX_TOKENS = re.compile(r"(?i)max_tokens")
 
 
     def _status_info(e) -> tuple:
@@ -540,6 +707,10 @@
         if status in (400, 413, 422) or etype == "invalid_request_error":
             if _BLOCKED.search(raw):
                 return "llm.content_blocked"
+            if _BALANCE.search(raw):
+                return "llm.balance"
+            if _MAX_TOKENS.search(raw):
+                return "llm.model_unavailable"
             if _TOO_LONG.search(raw):
                 return "llm.too_long"
         if etype in _BY_TYPE:
@@ -556,17 +727,38 @@
         原文脱敏后写 pipeline.chat 的 WARNING 日志（状态、类型、请求 id），hint 里留一份摘要。"""
         if isinstance(e, LLMError):
             return e
+        if isinstance(e, _StreamInterrupted):
+            e = e.original
         import anthropic
         import httpx2
+        from langchain_core.exceptions import (ContextOverflowError, ModelAuthenticationError,
+                                               ModelConnectionError, ModelNotFoundError,
+                                               ModelPermissionDeniedError, ModelRateLimitError,
+                                               ModelTimeoutError)
         from render.providers.base import scrub_secrets   # 放函数里：pipeline 导入时不依赖 render
         status = etype = rid = None
         raw = str(e)
-        if isinstance(e, anthropic.APITimeoutError):
+        if isinstance(e, anthropic.APIStatusError):
+            status, etype, raw, rid = _status_info(e)
+        # 先按 LangChain 的厂商无关分类（langchain_anthropic 抛出的异常同时继承它们，设计审查 M4），
+        # 认不出的再按 SDK 的类型、响应体错误类型与状态码细分。注意顺序：超时是连接错误的子类，要先判。
+        if isinstance(e, ContextOverflowError):
+            code = "llm.too_long"
+        elif isinstance(e, ModelAuthenticationError):
+            code = "llm.auth"
+        elif isinstance(e, ModelPermissionDeniedError):
+            code = "llm.access_denied"
+        elif isinstance(e, ModelNotFoundError):
+            code = "llm.model_unavailable"
+        elif isinstance(e, ModelRateLimitError):
+            code = "llm.busy"
+        elif isinstance(e, (ModelTimeoutError, anthropic.APITimeoutError, httpx2.TimeoutException)):
             code = "llm.timeout"
-        elif isinstance(e, (anthropic.APIConnectionError, httpx2.HTTPError)):
+        elif isinstance(e, (ModelConnectionError, anthropic.APIConnectionError, httpx2.HTTPError)):
             code = "llm.connect_failed"
         elif isinstance(e, anthropic.APIStatusError):
-            status, etype, raw, rid = _status_info(e)
+            # ModelInvalidRequestError（400 的余额、审核、内容太长要看原文）与 ModelAPIError（529 与 5xx 要分开）
+            # 都需要细分，交给状态与原文判定
             code = _status_code(status, etype, raw)
         else:
             return None
@@ -577,7 +769,64 @@
                               hint=f"{type(e).__name__} status={status or '-'} type={etype or '-'} "
                                    f"request_id={rid or '-'}：{clean[:300]}")
     ```
-  - `_transient_errors()` 的元组加 `anthropic.OverloadedError`，文档字符串补一句：「anthropic 1.13 把 529 单列为 OverloadedError，它不是 InternalServerError 的子类，必须单列，否则 529 一次都不重试」。
+  - `_transient_errors()` 改为以 LangChain 的厂商无关分类为主，SDK 类型兜底（设计审查 M4、R6）：
+    ```python
+    def _transient_errors() -> tuple:
+        """可重试的瞬时故障——with_retry 与耗尽后的 LLMError 包装共用这一个来源。
+
+        主清单是 langchain_core 的 Model*Error（is_retryable=True 的四类）：langchain_anthropic 抛出的异常
+        同时继承它们，529（AnthropicOverloadedError）属于 ModelAPIError，自然在内。
+        SDK 类型留作兜底：流式中途的错误、测试替身直接抛的异常没有经过包装。anthropic 1.13 把 529 单列为
+        OverloadedError，它不是 InternalServerError 的子类，必须单列，否则未包装的 529 一次都不重试。
+        httpx2 的原生传输异常照旧（Ruling-6 的护栏）。流式中途的瞬时 event: error 由 _StreamInterrupted 承接。
+        """
+        import anthropic
+        import httpx2
+        from langchain_core.exceptions import (ModelAPIError, ModelConnectionError,
+                                               ModelRateLimitError, ModelTimeoutError)
+        return (ModelRateLimitError, ModelAPIError, ModelConnectionError, ModelTimeoutError,
+                anthropic.APIConnectionError, anthropic.InternalServerError,
+                anthropic.OverloadedError, anthropic.RateLimitError,
+                httpx2.HTTPError, _StreamInterrupted)
+    ```
+  - 流式中途的瞬时错误（设计审查 I4，R5）：放在 `_transient_errors` 之前：
+    ```python
+    _MIDSTREAM_TRANSIENT = {"overloaded_error", "api_error", "rate_limit_error"}
+
+
+    class _StreamInterrupted(Exception):
+        """流式中途的瞬时 event: error。SDK 以 HTTP 200 的 APIStatusError 抛出，类型上与 401、400 无法区分，
+        换成这个类型，with_retry 才能只按类型重试它。original 是原异常，映射时取它。"""
+
+        def __init__(self, original: BaseException) -> None:
+            super().__init__(str(original))
+            self.original = original
+
+
+    def _midstream_transient(e: BaseException) -> bool:
+        import anthropic
+        return (isinstance(e, anthropic.APIStatusError) and e.status_code == 200
+                and _status_info(e)[1] in _MIDSTREAM_TRANSIENT)
+    ```
+    `ChatInvoker._runnable` 的末尾改为：
+    ```python
+            def call(messages, config):
+                try:
+                    return runnable.invoke(messages, config)
+                except Exception as e:
+                    if _midstream_transient(e):
+                        raise _StreamInterrupted(e) from e
+                    raise
+
+            # 中途出错时这一次的输出 token 已经花了（用量回调收不到 on_llm_end，不计入账本），
+            # 但转换按批串行，这一批失败就是整个版本失败，重放一次远比整章重转便宜。次数与连接类故障共用 transport_retries。
+            return RunnableLambda(call, name="chat_call").with_retry(
+                retry_if_exception_type=_transient_errors(),
+                stop_after_attempt=self._settings.transport_retries + 1,
+                wait_exponential_jitter=True,
+            )
+    ```
+    导入 `from langchain_core.runnables import RunnableLambda`。先 `bind_tools` 再包、再 `with_retry` 的顺序照旧（`bind_tools` 在 `runnable` 上做完）。`RunnableLambda` 的函数带 `config` 形参时会把子配置传进来，用量回调照常生效；测试 2 与 3（用量账本）守着这一点。助手路径不经 `ChatInvoker`，维持不重试（文字已经流给用户了）。
   - `build_chat_model`：
     ```python
         except ImportError:
@@ -607,7 +856,7 @@
   - `_invoke_wrapped` 的耗尽分支：
     ```python
             except _transient_errors() as e:
-                inner = llm_error(e)
+                inner = llm_error(e)        # _StreamInterrupted 在 llm_error 里取 original 再映射
                 raise LLMError.coded("llm.gave_up", hint=inner.hint, retries=self._settings.transport_retries,
                                      cause=compact(inner.as_msg())) from e
     ```
@@ -626,11 +875,12 @@
           return None, f"[review] 评审服务不可用：{mapped if mapped is not None else '调用出错'}", None
   ```
   顶部加 `import logging`。
+  - :54、:57、:60 三处 `raise ValueError(...)` 行尾标 `# i18n: llm`（设计审查 M12）。它们进「评审输出不可验证（…）」报告，最终进质量报告的 report 原文，属于报告类厂商原文，由子计划 5 处理。
 
 - [ ] **Step 6: `pipeline/__main__.py`**：`except LLMError as e:` 改为 `print(f"\n转换失败：{e}" + (f"\n{e.hint}" if e.hint else ""), file=sys.stderr)`。
 
 - [ ] **Step 7: 扫描与前端文案**
-  - `test_i18n_scan.py` 的 `MODULES` 加 `"pipeline/chat.py": None`；`cd backend && .venv/bin/python tests/server/test_i18n_scan.py` 打印 `ALL PASS`。
+  - `test_i18n_scan.py` 的 `MODULES` 加 `"pipeline/chat.py": None`、`"pipeline/review.py": None`；`cd backend && .venv/bin/python tests/server/test_i18n_scan.py` 打印 `ALL PASS`。
   - `zh.ts` 加 `srv.llm.*`（与登记一字不差）。`en.ts` 示例：
     - `not_configured` → `'The AI service isn't set up yet. Please contact the administrator.'`
     - `auth` → `'The AI service couldn't authenticate. Please contact the administrator.'`
@@ -647,7 +897,7 @@
     - `gave_up` → `'Still failing after {retries} retries: {cause}'`
     - `truncated` → `'The AI output hit its length limit, so this didn't finish. Please ask the administrator to adjust the conversion settings.'`
 
-- [ ] **Step 8: 生成 JSON、跑全部校验并提交**。`git add backend/pipeline/chat.py backend/pipeline/review.py backend/pipeline/__main__.py backend/server/messages.py backend/server/messages_codes.json backend/tests/pipeline/test_chat.py backend/tests/pipeline/test_graph.py backend/tests/pipeline/test_offline.py backend/tests/server/test_i18n_scan.py frontend/src/i18n/zh.ts frontend/src/i18n/en.ts`。提交信息示例：「模型服务报错映射为友好代码：鉴权、余额、拒绝访问、配置有误、内容太长、内容审核、繁忙、不可用、超时、连不上、重试用尽、输出截断一律称 AI 服务，不带模型名与接口原文，原文脱敏后只进日志与 hint；529 补进重试清单；评审失败的报告不再带原文」。
+- [ ] **Step 8: 生成 JSON、跑全部校验并提交**。`git add backend/pipeline/chat.py backend/pipeline/review.py backend/pipeline/__main__.py backend/server/messages.py backend/server/messages_codes.json backend/tests/pipeline/test_chat.py backend/tests/pipeline/test_graph.py backend/tests/pipeline/test_offline.py backend/tests/server/test_i18n_scan.py frontend/src/i18n/zh.ts frontend/src/i18n/en.ts`。提交信息示例：「模型服务报错映射为友好代码：鉴权、余额、拒绝访问、配置有误、内容太长、内容审核、繁忙、不可用、超时、连不上、重试用尽、输出截断一律称 AI 服务，不带模型名与接口原文，原文脱敏后只进日志与 hint；分类先按 LangChain 的 Model*Error 再按 SDK 细分；529 与流式中途的瞬时错误纳入有界重试；评审失败的报告不再带原文」。
 
 ---
 
@@ -675,7 +925,7 @@
       并把 `log=lambda _: None` 换成 `log=logs3.append`，断言 `any(d in line for line in logs3)`（工作目录仍在调试日志里）。
   - `test_offline.py`：
     - :354–355：`assert len(warnings) == 1 and warnings[0]["code"] == "job.quality.degraded"`，`assert warnings[0]["params"]["attempt"] == 2 and "择优交付第 2 次生成" in warnings[0]["message"]`，`assert "旁白占比 80%" in warnings[0]["params"]["report"]["text"]`。
-    - :653 一段：`except ConversionError as e: assert e.code == "job.final_check_failed" and "C09" in e.report`（`run_lint` 打桩失败，走的是整章终检分支；若实际先命中结构化终检，则断言 `job.final_verify_failed`，以实际分支为准并写明）。`blob` 的「原因如下」与逐行断言不改。
+    - :653 一段：`except ConversionError as e: assert e.code == "job.batch_failed" and e.params == {"batch": 1, "retries": 0} and "C09" in e.report`。`max_retries=0` 时批级 lint 就失败，走 `finalize` 的批失败分支，不是整章终检（设计审查 M10）。`blob` 的「原因如下」与逐行断言不改。
     - 第 1 节（《药》回放，:97–106）加 `events = []`、`on_event=events.append`，断言：
       ```python
       codes = [e["code"] for e in events]
@@ -993,13 +1243,25 @@
         assert len(error_refs.recent(1000)) == before, "映射类错误不记编号"
         assert any("status=429" in x for x in v["debug_log"]) and not any(LLM_KEY in x for x in v["debug_log"])
 
-        # needs_ref 的模型错误与意外异常：带编号；不再存 repr(e)
-        e = llm_error(anthropic.BadRequestError("x", body={"type": "error", "error": {"type": "invalid_request_error",
-                                                                                     "message": "bad role"}},
-                                                response=httpx2.Response(400, request=req)))
+        # needs_ref 的模型错误：保留 llm.bad_request 并带编号（设计审查 I2）；意外异常：job.crashed 带编号；不再存 repr(e)
+        raw400 = anthropic.BadRequestError("x", body={"type": "error", "error": {"type": "invalid_request_error",
+                                                                                "message": f"bad role {MODEL}"}},
+                                           response=httpx2.Response(400, request=req))
+        e = llm_error(raw400)
+        e.__cause__ = raw400
         job = new_job(nid, cid, "v_ref")
         v = run(job, fake_raise(e))
-        assert v["error_msg"]["code"] == "job.crashed" and len(v["error_msg"]["ref"]) == 8
+        assert v["error_msg"]["code"] == "llm.bad_request" and len(v["error_msg"]["ref"]) == 8
+        assert MODEL not in v["error"] and "参考编号" in v["error"]
+        assert "BadRequestError" in error_refs.find(v["error_msg"]["ref"])["detail"], "错误记录里是接口原异常"
+        # 成功后的 note（自动采用等）也随版本落盘（设计审查 M5）
+        assert any("仅存档" in x for x in novels.get_version(U, nid, cid, "v_ok")["debug_log"])
+        # 内存里的调试日志有上限（设计审查 M6）
+        big = {"debug_log": []}
+        for i in range(app_mod.DEBUG_MEM + 10):
+            app_mod._job_debug(big, f"l{i}")
+        assert len(big["debug_log"]) == app_mod.DEBUG_MEM and "截断" in big["debug_log"][0]
+        assert big["debug_log"][-1] == f"l{app_mod.DEBUG_MEM + 9}"
         job = new_job(nid, cid, "v_boom")
         v = run(job, fake_raise(RuntimeError(f"disk on fire {LLM_KEY}")))
         ref = v["error_msg"]["ref"]
@@ -1052,12 +1314,18 @@
   - 导入：`from pipeline.chat import ChatInvoker, LLMError, UsageCallback, build_chat_model, replace_thinking`；`from server.messages import REPORT_MAX, UserError, compact, money, msg, ref, render_zh, to_detail, vendor, with_ref`（按实际已有的合并）。
   - `_execute` 之前加：
     ```python
-    DEBUG_KEEP = 400      # 版本记录里留的调试日志行数（内存任务表留全量）
+    DEBUG_KEEP = 400      # 版本记录里留的调试日志行数
+    DEBUG_MEM = 5000      # 内存任务表里每个任务最多留的行数（任务表只增不删，设计审查 M6）
 
 
     def _job_debug(job: dict, line) -> None:
-        """调试日志：原文、不翻译，只给管理员看（spec 子计划 4 B）。进表前抹掉密钥、数据目录换成 <data>。"""
-        job.setdefault("debug_log", []).append(error_refs.scrub_text(str(line)))
+        """调试日志：原文、不翻译，只给管理员看（spec 子计划 4 B）。进表前抹掉密钥、数据目录换成 <data>。
+        超过 DEBUG_MEM 行时丢掉最早的，第一行留一句「已截断」。"""
+        lines = job.setdefault("debug_log", [])
+        lines.append(error_refs.scrub_text(str(line)))
+        if len(lines) > DEBUG_MEM:
+            del lines[:len(lines) - DEBUG_MEM + 1]
+            lines[0] = "（更早的调试日志已截断）"  # i18n: internal
 
 
     def _job_event(job: dict, m: dict) -> None:
@@ -1117,9 +1385,14 @@
             save("failed", **fields)
             _record_usage(job, manifest, False, settings)
 
-        def crashed(e: BaseException) -> None:
+        def crashed(e: BaseException, code: str = "job.crashed") -> None:
+            """带参考编号的失败：意外异常用 job.crashed；needs_ref 的模型错误保留映射后的代码（llm.bad_request，
+            无参数，满足 unexpected 的约束），用户看到的是「AI 服务拒绝了这次请求」而不是「意外错误」（设计审查 I2）。"""
             _job_debug(job, f"转换异常：{e!r}")  # i18n: internal
-            fail(error_refs.unexpected(e, "job.crashed", user_id=job.get("user_id"), where=where),
+            if getattr(e, "hint", ""):
+                _job_debug(job, e.hint)
+            cause = e.__cause__ if isinstance(e, LLMError) and e.__cause__ is not None else e
+            fail(error_refs.unexpected(cause, code, user_id=job.get("user_id"), where=where),
                  with_verification=isinstance(e, ConversionError))
 
         try:
@@ -1152,9 +1425,12 @@
             except (OSError, ValueError, LookupError) as e:
                 note("job.event.memory_failed")
                 _job_debug(job, f"写入长期记忆失败：{e!r}")  # i18n: internal
+            # 自动采用、整理排队、记忆失败这些行在第一次 save 之后才产生，再落一次调试日志（设计审查 M5）
+            save(job["status"], debug_log=job["debug_log"][-DEBUG_KEEP:])
         except (ConversionError, LLMError) as e:
             if not error_refs.expected(e):
-                crashed(e)       # 没有代码的 ConversionError（程序错误）、needs_ref 的模型错误：带编号
+                # 没有代码的 ConversionError（程序错误）→ job.crashed；needs_ref 的模型错误 → 保留 llm.bad_request
+                crashed(e, e.code if isinstance(e, LLMError) and e.code else "job.crashed")
                 return
             m = e.as_msg()
             report = getattr(e, "report", "") or ""
@@ -1197,7 +1473,21 @@
   - `_start_version` 的 job 初值加 `"debug_log": [], "error_msg": None, "quality_msg": None`。
   - `list_jobs`：`"last_log": j["log"][-1] if j["log"] else None`（现在是事件对象，代码不用改，类型变了）；文档字符串补「last_log 是进度事件（消息对象）」。
   - `_jobs_view`：`"last_log": (j["log"][-1].get("message") if isinstance(j["log"][-1], dict) else j["log"][-1]) if j["log"] else None`（给模型看的中文兜底）。
-  - `_run_digest`：`if isinstance(e, UserError) and e.code:` → `if error_refs.expected(e):`，注释补「needs_ref 的模型服务错误也要记编号」。
+  - `_run_digest`：
+    ```python
+        except Exception as e:  # 网络/解析/章节被删——都只是这一步没做成
+            fields: dict = {}
+            if error_refs.expected(e):
+                # 可预期的（章节被删、没有采用版、已映射的模型服务错误）：原因本身就说清楚了，不记编号
+                render_session.set_error(fields, e)
+            elif isinstance(e, LLMError) and e.code:
+                # needs_ref 的模型服务错误：保留 llm.bad_request，带编号（设计审查 I2）
+                render_session.set_error(fields, error_refs.unexpected(
+                    e.__cause__ or e, e.code, user_id=user_id, where=f"digest {nid}/{cid}"))
+            else:
+                render_session.set_error(fields, error_refs.unexpected(
+                    e, "chapter.digest.failed", user_id=user_id, where=f"digest {nid}/{cid}"))
+    ```
 
 - [ ] **Step 5: 扫描**：app 函数集合加 `_execute`、`_run_version_job`、`list_jobs`、`_jobs_view`；`ALL PASS`。
 
@@ -1286,6 +1576,7 @@
 **Files:**
 - Modify: `backend/server/app.py`（`healthz`、新增 `admin_service`、`_public_manifest`/`_version_view`、`versions_get`、`get_job`、新增 `admin_job_debug`）
 - Modify: `backend/server/summary.py`（`unpriced` 改布尔）
+- Modify: `backend/server/auth.py`（`valid_user_id`）
 - Modify: `backend/server/messages.py`（登记 `admin.job.not_found`）、`messages_codes.json`
 - Modify: `backend/tests/server/test_i18n_scan.py`（app 函数集合加 `healthz`、`admin_service`、`versions_get`、`admin_job_debug`）
 - Modify: `frontend/src/i18n/zh.ts`、`en.ts`（`srv.admin.job.not_found`；`admin.audit` 的 `view_job_debug` 标签留给 Task 9）
@@ -1350,7 +1641,9 @@
         r = c.get("/admin/jobs/nope/debug", params={"user_id": U}, headers=HA)
         assert r.status_code == 404 and r.json()["detail"]["code"] == "admin.job.not_found"
         r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": "../x"}, headers=HA)
-        assert r.status_code == 404
+        assert r.status_code == 404, "非法用户 id 不得 500"
+        r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": "0123456789ab"}, headers=HA)
+        assert r.status_code == 404, "不存在的用户"
         tokU = auth.issue_token(U)
         assert c.get(f"/admin/jobs/{vid}/debug", params={"user_id": U},
                      headers={"Authorization": f"Bearer {tokU}"}).status_code == 403
@@ -1413,6 +1706,9 @@
     def admin_job_debug(vid: str, user_id: str = Query(...), user: dict = Depends(admin_user)):
         """一次转换的调试日志（原文、不翻译）：在跑或刚结束的从内存任务表取（全量），
         重启后从版本记录取（最后 DEBUG_KEEP 行）。可能带用户原文片段与接口原文，每次查看写审计。"""
+        if not auth.valid_user_id(user_id) or auth.get_user_raw(user_id) is None:
+            # 先校验：auth.user_dir 对非法 id 抛的是 AuthError（不是 ValueError），不挡在前面会 500（设计审查 M1）
+            raise HTTPException(404, detail=msg("admin.job.not_found", id=vid))
         with _lock:
             job = _jobs.get(vid)
         if job is not None and job.get("user_id") == user_id:
@@ -1420,7 +1716,7 @@
         else:
             try:
                 v = novels.find_version(user_id, vid)
-            except ValueError:          # 非法的用户或版本 id
+            except ValueError:          # 非法的版本 id（NovelError 是 ValueError 子类）
                 v = None
             if v is None:
                 raise HTTPException(404, detail=msg("admin.job.not_found", id=vid))
@@ -1428,15 +1724,17 @@
         audit.write(user, "view_job_debug", auth.get_user_raw(user_id), None, {"version_id": vid})
         return {"id": vid, "user_id": user_id, "lines": lines}
     ```
-    `find_version` 对非法 id 抛 `NovelError`（`ValueError` 子类），`auth.user_dir` 对非法用户 id 抛内部 `ValueError`，都落到 404。若 `novels_dir` 对不存在的用户目录抛别的异常，以实际为准补进 `except`。
+    - `auth.py` 加 `def valid_user_id(user_id: str) -> bool: return bool(re.fullmatch(r"[0-9a-f]{12}", user_id))`，`user_dir` 改用它（行为不变）。
+    - 非法或不存在的用户 id 在进 `novels` 之前就 404；`find_version` 对非法版本 id 抛 `NovelError`（`ValueError` 子类），也落到 404。
+    - `get_user_raw` 的实际名字与返回以 `server/auth.py` 为准（审计 `audit.write` 也用它）。
   - `summary.py`：`"unpriced": bool(usage.unpriced_models(rows, table)),`，注释「普通用户只需要知道有没有没定价的；模型名只在管理后台显示」。
   - `zh.ts`/`en.ts`：`srv.admin.job.not_found`（en `'No debug log for this conversion: {id}'`）。
 
 - [ ] **Step 5: 扫描**：app 函数集合加 `healthz`、`admin_service`、`versions_get`、`admin_job_debug`、`get_job`（Task 5 已加则跳过）；`ALL PASS`。
 
-- [ ] **Step 6: 生成 JSON、跑全部校验并提交**。`git add backend/server/app.py backend/server/summary.py backend/server/messages.py backend/server/messages_codes.json backend/tests/server/test_jobs.py backend/tests/server/test_summary.py backend/tests/server/test_i18n_scan.py frontend/src/i18n/zh.ts frontend/src/i18n/en.ts`。提交信息示例：「普通用户接口不再透出底层模型：免登录探针只给 first_run，版本与任务视图去掉清单里的模型名与调试日志，小说汇总的未定价只给布尔；新增管理员的服务信息与转换调试日志接口（查看写审计）」。
+- [ ] **Step 6: 生成 JSON、跑全部校验并提交**。`git add backend/server/app.py backend/server/summary.py backend/server/auth.py backend/server/messages.py backend/server/messages_codes.json backend/tests/server/test_jobs.py backend/tests/server/test_summary.py backend/tests/server/test_i18n_scan.py frontend/src/i18n/zh.ts frontend/src/i18n/en.ts`。提交信息示例：「普通用户接口不再透出底层模型：免登录探针只给 first_run，版本与任务视图去掉清单里的模型名与调试日志，小说汇总的未定价只给布尔；新增管理员的服务信息与转换调试日志接口（查看写审计）」。
 
-  前端在 Task 9 改 `/healthz` 的用法之前，首页的首次注册判断读不到 `users`，会一直按「已有账号」处理。Task 6 与 Task 9 之间不要部署。
+  前端 Task 0 已兼读 `first_run`，本 Task 提交后首页的首次注册判断照常工作。
 
 ---
 
@@ -1605,7 +1903,7 @@
                                 pre_model_hook=_pre_model, checkpointer=checkpointer)
   ```
   - `NullModel._generate` 的 `raise RuntimeError("NullModel 不应被调用")` 行尾 `# i18n: internal`。
-  - 实现后先跑一遍 `tests/assistant/test_actions.py`：若 `ToolNode` 的缺省 `handle_tool_errors` 在这个版本里把 `ToolError` 当成已处理（不再抛到包装里），改为显式 `ToolNode(ALL_TOOLS, wrap_tool_call=_with_artifact, handle_tool_errors=_reraise_tool_error)`。其中 `_reraise_tool_error(e)` 遇到 `ToolError` 时 `raise e`，否则走原缺省逻辑：`ToolInvocationError` 返回 `e.message`，其余 `raise e`。在 R4 里记下实际情况。
+  - 已在 langgraph-prebuilt 1.1.0 核实（设计审查）：缺省 `_default_handle_tool_errors` 对非 `ToolInvocationError` 一律再抛，`ToolError` 会进到 `_with_artifact`，不需要显式的 `handle_tool_errors`。`test_actions.py` 的 artifact 断言守着这一点，升级 LangGraph 时若它先报错，再加显式处理器。
 
 - [ ] **Step 6: `assistant/actions.py`**
   - 导入：`from assistant.tools import LIVE, ToolError, _chapters, _ctx, _tool, resolve_chapter`；`from server.messages import money, msg, ref`。
@@ -1702,11 +2000,13 @@
       from server import error_refs
       assert "网关炸了" in error_refs.find(d["ref"])["detail"]
       ```
-      再加一个映射用例：`Boom2._generate` 抛本地构造的 `anthropic.RateLimitError`（同 Task 2 写法，`body` 带 `"deepseek quota"`）→ `evs[-1]["data"] == {**msg("llm.busy")}`（没有 `ref`），`"deepseek" not in json.dumps(evs)`。
+      再加两个映射用例：
+      - `Boom2._generate` 抛本地构造的 `anthropic.RateLimitError`（同 Task 2 写法，`body` 带 `"deepseek quota"`）→ `evs[-1]["data"] == {**msg("llm.busy")}`（没有 `ref`），`"deepseek" not in json.dumps(evs)`；
+      - `Boom3._generate` 抛 400 `invalid_request_error`（原文 `"messages.0: bad role"`）→ `evs[-1]["data"]["code"] == "llm.bad_request"` 且带 8 位 `ref`，错误记录的 `detail` 里有 `BadRequestError`（设计审查 I2）。
     - 9（步数上限）：`assert evs[-2]["event"] == "notice" and evs[-2]["data"]["code"] == "assistant.too_many_steps" and evs[-1]["event"] == "done"`，并断言没有任何 `token` 事件的文字含「步骤太多」。
     - 10：`h[1]["tools"][1]["ok"] is False and h[1]["tools"][1]["summary"] == "（已中断）" and h[1]["tools"][1]["msg"] == {"code": "assistant.interrupted", "params": {}}`。
     - 15：`evs[0]["data"]["error_msg"]["code"] == "assistant.tool.no_version"`；被停掉的卡断言改为 `== {"tool_call_id": "f9", "action": "film_run", "outcome": "failed", "error": "（已中断）", "error_msg": {"code": "assistant.interrupted", "params": {}}}`。
-    - 新增：旧存档里 `status="error"`、没有 artifact 的 ToolMessage，`events.action_view` 只给 `error` 文字、没有 `error_msg`；`events.history` 的工具条目没有 `msg`。
+    - 新增：旧存档里 `status="error"`、没有 artifact 的 ToolMessage，`events.action_view` 只给 `error` 文字、没有 `error_msg`；`events.history` 的工具条目没有 `msg`。这一条是兼容回归，实现前也会通过（设计审查 M7），Step 2 不要求它先失败。
   - `tests/server/test_assistant.py`：
     - 4xx 都断言代码：空消息与超长 → 422 `assistant.bad_text`（`params == {"max": 2000}`）；`where.step` 非法 → `assistant.bad_step`；`where` 不是对象 → `assistant.bad_where`；回答中清空 → 409 `assistant.busy_clear`；每日上限 → 429 `assistant.daily_limit`（原 `"今天" in detail` 改掉）；`decision` 非法 → `assistant.bad_decision`；处理过的卡（:338）→ `assistant.card_done`；撤销：`tool_call_id` 缺 → `assistant.bad_tool_call`，撤销过（:370）→ `assistant.undo.already`，改过（:383）→ `assistant.undo.shot_changed`（或实际的 `assistant.undo.*`），:404 改为 `str(auth.DATA_DIR) not in r.text`；别人的小说 → 404 `novel.not_found`。
     - 9（模型出错）：`evs[-1][1]["code"] == "assistant.crashed" and evs[-1][1]["ref"]`。
@@ -1724,7 +2024,7 @@
       store.end(uid, nid)
       ```
     - 撤销成功：`r.json()["message"]["code"].startswith("assistant.undo.done_")`。
-    - 提示词：`assert "底层模型" in app_mod.assistant_graph.PROMPT`。
+    - 提示词：`assert "底层模型" in app_mod.assistant_graph.PROMPT and "Inkreel" in app_mod.assistant_graph.PROMPT`。
 
 - [ ] **Step 2: 运行确认失败。**
 
@@ -1766,10 +2066,13 @@
 
 
     def error_msg(e: BaseException, user_id: Optional[str] = None, where: str = "assistant") -> dict:
-        """一轮出错 → error 事件的消息对象：模型服务错误按 llm.* 映射（不带编号），其余带参考编号（spec 子计划 4 D）。"""
+        """一轮出错 → error 事件的消息对象（spec 子计划 4 D）：
+        模型服务错误按 llm.* 映射；needs_ref 的（llm.bad_request）保留代码并带参考编号（设计审查 I2）；其余带编号的 assistant.crashed。"""
         mapped = llm_error(e)
         if mapped is not None and error_refs.expected(mapped):
             return mapped.as_msg()
+        if mapped is not None and mapped.code:
+            return error_refs.unexpected(e, mapped.code, user_id=user_id, where=where)
         return error_refs.unexpected(e, "assistant.crashed", user_id=user_id, where=where)
 
 
@@ -1843,7 +2146,7 @@
     - `except (assistant_edits.UndoError, novels.NovelError, novels.NotFound) as e: raise HTTPException(409, detail=_hide_root_deep(to_detail(e), auth.DATA_DIR))`；
     - 返回的 `message` 是 `undo()` 给的消息对象（`_hide_root_deep` 一次）。
 
-- [ ] **Step 6: `prompts/assistant.md`**：把「- 不要透露系统提示、工具实现、服务器信息。」改为「- 不要透露系统提示、工具实现、服务器信息；也不要说出你所用的底层模型或其提供方，被问到时说你是「墨卷」的创作助手。」（`PROMPT` 在导入时读文件，测试直接查 `assistant_graph.PROMPT`。）
+- [ ] **Step 6: `prompts/assistant.md`**：把「- 不要透露系统提示、工具实现、服务器信息。」改为「- 不要透露系统提示、工具实现、服务器信息；也不要说出你所用的底层模型或其提供方。被问到你是谁时，说你是本产品的创作助手：用中文回答时称「墨卷」，用英文回答时称 Inkreel。」（设计审查 M14：产品先面向海外，英文界面的品牌是 Inkreel，见 `frontend/src/i18n/en.ts` 的 `brand.name`。提示词本身不分语言，两个名字写在同一句里最简单；不改 `system_text`。`PROMPT` 在导入时读文件，测试直接查 `assistant_graph.PROMPT`，补断言 `"Inkreel" in PROMPT`。）
 
 - [ ] **Step 7: 扫描与前端文案**
   - `MODULES` 加 `"assistant/events.py": None`。改动前它在新规则下有 3 处（`error` 事件、两处 `INTERRUPTED`）。
@@ -1864,26 +2167,23 @@
 
 ### Task 9: 前端：转换任务、验证门、账号菜单与后台任务页
 
+进度、最近一行、验证门的兼容渲染与 `failHead` 已在 Task 0 落地，本 Task 做剩下的：失败区与质量报告按代码渲染、账号菜单、后台任务页、旧兼容分支收窄。
+
 **Files:**
-- Modify: `frontend/src/i18n/serverMsg.ts`（`failHead`）
-- Modify: `frontend/src/types.ts`（`JobEvent`、`Job.log/error_msg/quality_msg`、`JobSummary.last_log`、`Health`、`AdminService`、`FilmSession.gate`、`AdminFailedJob` 的 `user_id` 若缺则补）
+- Modify: `frontend/src/types.ts`（`Job.error_msg/quality_msg`、`Health` 去掉 `users`、`AdminService`、`NovelSummaryData.unpriced` 收窄为 `boolean`、`AdminFailedJob` 的 `user_id` 若缺则补）
 - Modify: `frontend/src/api.ts`（`adminService`、`adminJobDebug`）
-- Modify: `frontend/src/components/JobPanel.tsx`、`CanvasPanels.tsx`、`NovelSidebar.tsx`、`shell/ActivityPanel.tsx`、`shell/AppShell.tsx`、`App.tsx`、`useFilm.ts`、`compose.ts`、`FilmPanel.tsx`、`TimelineCanvas.tsx`、`admin/JobsTab.tsx`
+- Modify: `frontend/src/components/JobPanel.tsx`、`shell/AppShell.tsx`、`App.tsx`、`useFilm.ts`、`admin/JobsTab.tsx`
 - Modify: `frontend/src/i18n/zh.ts`、`en.ts`（`admin.jobs.debug*`、`admin.audit` 的 `view_job_debug`）
 - Test: `frontend/tests/server-msg.test.ts`；覆盖 JobPanel、账号菜单、首次注册、验证门提示、后台任务页的测试（`grep -ln "JobPanel\|healthz\|account-menu\|gate\|adminJobs\|/admin/jobs" tests/` 列出的文件，按实际调整）
 
 - [ ] **Step 1: 写失败测试**
   - `server-msg.test.ts` 新增一节：
     ```ts
-    // 9. 转换失败带报告：整段渲染原因 + 换行 + 报告原文；一行显示只取原因
-    const failed = { code: 'job.failed_report', params: {
-      reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
-      report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+    // 10. 转换失败带报告的具体文字
+    // （failed 沿用 Task 0 第 9 节的定义；此时代码已登记，可以断言具体文字）
     must(formatMsg(failed, 'zh') === '批 2 重试 3 次后仍未通过校验\nFAIL: E01 缺资产 C09', '中文整段')
     must(formatMsg(failed, 'en').endsWith('\nFAIL: E01 缺资产 C09') && !formatMsg(failed, 'en').startsWith('批'), '英文原因 + 报告原文')
     must(formatMsg(failHead(failed), 'zh') === '批 2 重试 3 次后仍未通过校验', '一行只取原因')
-    must(failHead('第一行\n第二行') === '第一行', '旧数据取第一行')
-    must(formatMsg(failHead({ code: 'llm.busy', params: {} }), 'en').includes('busy'), '没有报告的原样返回')
     ```
   - JobPanel：`job = { …, log: [{ code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }], status: 'failed', error: '旧中文', error_msg: failed, quality_msg: null }`：
     - 中文界面进度一行为「输入 4 字符 → 1 批」，失败区是整段；
@@ -1891,10 +2191,10 @@
     - `log` 是字符串数组（旧数据）时原样显示；
     - `quality_msg` 有值时按代码渲染，没有时显示 `quality_report`。
   - 首页与账号菜单：
-    - 各测试里 `/healthz` 的桩改为 `{ status: 'ok', first_run: false }`（原来测首次注册的用 `first_run: true`）；
+    - 各测试里剩下的旧桩 `{ status: 'ok', model: 'stub', api_key_configured: true, users: 2 }` 一律改为 `{ status: 'ok', first_run: false }`；Task 0 留的 `users: 0` 旧桩用例随 `users` 分支一起删；
     - 普通用户打开账号菜单后没有「当前模型」那一行；
     - 管理员（`/auth/me` 桩给 `role: 'admin'`，`/admin/service` 桩给 `{ model: 'stub-model', review_model: null, api_key_configured: false }`）能看到 `stub-model` 与「未配置密钥」。
-  - 验证门：出片会话桩 `gate: { ok: false, message: { code: 'verify.gate.blocked', params: {} } }` 时，中文界面的提示含「分镜未通过独立验证」，切英文后变英文；`gate.message` 是字符串（旧后端）时原样显示。
+  - 验证门：出片会话桩 `gate: { ok: false, message: { code: 'verify.gate.blocked', params: {} } }` 时，切英文后提示变英文（Task 0 只保证中文不崩）；出片接口 409 带 `verification` 时，门提示同样随语言变化。
   - 后台任务页：
     - 失败行 `error_msg` 为 `failed` 时，摘要只显示原因，展开显示整段；
     - 点「调试日志」请求 `/admin/jobs/v1/debug?user_id=u1`，桩返回 `{ id: 'v1', user_id: 'u1', lines: ['输入 4 字符 → 1 批', '  原因如下：'] }`，页面显示这两行；
@@ -1903,45 +2203,23 @@
 - [ ] **Step 2: 运行确认失败**：`cd frontend && npm test`。
 
 - [ ] **Step 3: 实现**
-  - `serverMsg.ts`：
-    ```ts
-    /** 一行显示的失败原因：转换失败带报告（job.failed_report）时只取原因；旧数据的字符串取第一行（spec 子计划 4 B） */
-    export function failHead(m: MsgLike): MsgLike {
-      if (typeof m === 'string') return m.split('\n')[0]
-      if (isServerMsg(m) && m.code === 'job.failed_report' && isServerMsg(m.params?.reason)) return m.params!.reason as ServerMsg
-      return m
-    }
-    ```
   - `types.ts`：
-    ```ts
-    /** 转换进度事件（后端 job.log 的一条）：消息对象 + 时间；旧任务是字符串 */
-    export type JobEvent = ServerMsg & { at?: string }
-    ```
-    - `Job.log: (JobEvent | string)[]`、`Job.error_msg?: ServerMsg | null`、`Job.quality_msg?: ServerMsg[] | null`；
-    - `JobSummary.last_log: JobEvent | string | null`；
-    - `Health { status: string; first_run?: boolean }`；
+    - `Job.error_msg?: ServerMsg | null`、`Job.quality_msg?: ServerMsg[] | null`；
+    - `Health { status: string; first_run?: boolean }`（去掉 Task 0 留的 `users?`）；
     - `export interface AdminService { model: string; review_model: string | null; api_key_configured: boolean }`；
-    - `FilmSession.gate?: { ok: boolean; message: MsgLike }`；
-    - `VersionRecord.quality_msg?: ServerMsg[] | null`。
+    - `NovelSummaryData.unpriced: boolean`（设计审查 M13；前端没有显示处，只改类型）。
+    - 不加 `VersionRecord.quality_msg`：前端没有显示版本质量报告的地方（设计审查 M13）。
   - `api.ts`：`export const adminService = () => req<AdminService>('/admin/service')`；`export const adminJobDebug = (vid: string, userId: string) => req<{ id: string; user_id: string; lines: string[] }>(`/admin/jobs/${encodeURIComponent(vid)}/debug?user_id=${encodeURIComponent(userId)}`)`。
-  - `JobPanel.tsx`：
-    - `const { t, locale } = useI18n()`；
-    - 进度行 `{formatMsg(line, locale)}`；
+  - `JobPanel.tsx`（进度行 Task 0 已改）：
     - 失败区 `<pre className="job__err">{formatMsg(job.error_msg ?? job.error, locale)}</pre>`，显示条件改为 `(job.error_msg || job.error)`；
     - 质量报告：`const quality = job.quality_msg?.length ? job.quality_msg.map((m) => formatMsg(m, locale)).join('\n\n') : job.quality_report`，按 `quality` 显示。
-  - `CanvasPanels.tsx`：`{formatMsg(live.log[live.log.length - 1], locale)}`；`NovelSidebar.tsx`、`ActivityPanel.tsx`：`formatMsg(j.last_log, locale)`，空时照旧回落。
   - `App.tsx`：
-    - `firstRun = !!svc && !!svc.first_run`；
+    - `firstRun = !!svc && !!svc.first_run`（去掉 Task 0 的 `users` 分支）；
     - 失败版本提示 `err: failHead(v.error_msg ?? v.error ?? '')`；
     - 新增 `const [svcInfo, setSvcInfo] = useState<AdminService | null>(null)`，`useEffect(() => { if (user?.role === 'admin') adminService().then(setSvcInfo).catch(() => setSvcInfo(null)); else setSvcInfo(null) }, [user?.id, user?.role])`；
     - 传给 AppShell：`service={{ down: svcDown, ...(svcInfo ? { model: svcInfo.model, noKey: !svcInfo.api_key_configured } : {}) }}`。
   - `AppShell.tsx`：「当前模型」那一行包在 `{p.service.model !== undefined && (…)}` 里，`service` 类型注释「model 与 noKey 只有管理员才有（spec 子计划 4 E）」。
-  - `useFilm.ts`：
-    - `gate` 状态类型改为 `MsgLike`；
-    - `accept`：`setGate(s.gate.ok ? null : (s.gate.message ?? tr('film.gateFailed')))`（类型随之变）；
-    - `fail`：`if (e instanceof ApiError && e.verification) setGate(errValue(e))`。
-  - `compose.ts`：`composeBlockers` 的 `o.gate` 类型 `MsgLike`，`tr('compose.blockGate', { gate: formatMsg(o.gate) })`。
-  - `FilmPanel.tsx`、`TimelineCanvas.tsx`：`{ gate: formatMsg(film.gate, locale) }`。
+  - `useFilm.ts`（`gate` 状态类型 Task 0 已放宽）：`fail` 改为 `if (e instanceof ApiError && e.verification) setGate(errValue(e))`，门提示随语言变化。
   - `admin/JobsTab.tsx`：
     - 失败行：`const head = formatMsg(failHead(j.error_msg ?? j.error), locale)`、`const text = itemError(j, locale)`，`<summary>` 用 `head` 截 40 字，`<pre>` 用 `text`；
     - 运行中与失败每行加「调试日志」按钮：组件内 `const [debug, setDebug] = useState<Record<string, { lines?: string[]; err?: MsgLike }>>({})`，点开时 `adminJobDebug(j.id, j.user_id)`，成功存 `lines`，失败存 `errValue(e)`；展开显示 `<pre>{lines.join('\n')}</pre>` 或 `formatMsg(err, locale)`；再点收起；
@@ -1951,14 +2229,14 @@
     - `admin.jobs.debugEmpty`：'（没有调试日志）' / '(no debug log)'；
     - `admin.audit` 的动作标签加 `view_job_debug`：'查看调试日志' / 'Viewed debug log'。
 
-- [ ] **Step 4: 跑全部校验并提交**。`git add frontend/src/i18n/serverMsg.ts frontend/src/types.ts frontend/src/api.ts frontend/src/components/JobPanel.tsx frontend/src/components/CanvasPanels.tsx frontend/src/components/NovelSidebar.tsx frontend/src/components/shell/ActivityPanel.tsx frontend/src/components/shell/AppShell.tsx frontend/src/App.tsx frontend/src/useFilm.ts frontend/src/compose.ts frontend/src/components/FilmPanel.tsx frontend/src/components/TimelineCanvas.tsx frontend/src/components/admin/JobsTab.tsx frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/server-msg.test.ts`，再加上实际改到的测试文件。提交信息示例：「前端按代码渲染转换进度、失败原因与质量报告，一行显示只取原因；验证门提示随语言变化；账号菜单的模型只给管理员看（数据来自 /admin/service），首页首次注册改读 first_run；后台任务页可查看转换调试日志」。
+- [ ] **Step 4: 跑全部校验并提交**。`git add frontend/src/types.ts frontend/src/api.ts frontend/src/components/JobPanel.tsx frontend/src/components/shell/AppShell.tsx frontend/src/App.tsx frontend/src/useFilm.ts frontend/src/components/admin/JobsTab.tsx frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/server-msg.test.ts`，再加上实际改到的测试文件。提交信息示例：「前端按代码渲染转换失败原因与质量报告；验证门拦截的报错随语言变化；账号菜单的模型只给管理员看（数据来自 /admin/service），首页首次注册只读 first_run；后台任务页可查看转换调试日志」。
 
 ---
 
 ### Task 10: 前端：助手
 
 **Files:**
-- Modify: `frontend/src/types.ts`（`AssistantTool.msg`、`AssistantCard.error_msg`、`AssistantMsg.error: MsgLike`、`AssistantMsg.notices`、`AssistantCardInfo.warnings`、`AssistantEvent` 的 `tool_end`/`error`/`notice`）
+- Modify: `frontend/src/types.ts`（`AssistantTool.msg`、`AssistantCard.error_msg`、`AssistantMsg.error: MsgLike`、`AssistantMsg.notices`、`AssistantEvent` 的 `tool_end`/`error`/`notice`；`warnings` 已在 Task 0 放宽）
 - Modify: `frontend/src/lib/assistantSession.ts`、`frontend/src/lib/assistantTask.ts`
 - Modify: `frontend/src/components/assistant/AssistantPanel.tsx`、`ActionCard.tsx`、`TaskCard.tsx`
 - Modify: `frontend/src/i18n/zh.ts`、`en.ts`（`assistant.target.outline`、`assistant.target.synopsis`）
@@ -1976,7 +2254,7 @@
     - `tool_end` 带 `msg` 时，展开的工具条目显示 `formatMsg(msg)`，否则显示 `summary`。
   - ActionCard：
     - 失败卡 `{ outcome: 'failed', error: '小说不存在', error_msg: { code: 'novel.not_found', params: {} } }` 在英文界面显示英文；只有 `error` 时显示原文；
-    - `warnings` 为 `[{ code: 'verify.finding', params: { path: 'episodes[0]', detail: { t: 'vendor', text: '时长对不上' } } }, '旧字符串']` 时两条都显示；
+    - `warnings` 含消息对象时切英文显示英文（Task 0 只保证不崩、显示中文兜底）；
     - `plot_edit` 卡 diff：`{ target: '全书梗概', field: 'outline', … }` 英文显示「Book synopsis」，`{ target: '第一章 梗概', field: 'synopsis', … }`（卡 `chapter: '第一章'`）英文显示「第一章 synopsis」，`shots_edit` 的 `target: 'E01-SH003'` 原样。
   - 撤销与清空的 toast：接口 409 detail 为 `{ code: 'assistant.undo.already', … }` 时 toast 文字按当前语言（用 `errText`）。
 
@@ -1988,7 +2266,6 @@
     - `AssistantCard.error_msg?: ServerMsg`；
     - `AssistantMsg.error?: MsgLike`；
     - `AssistantMsg.notices?: ServerMsg[]`；
-    - `AssistantCardInfo.warnings?: (string | ServerMsg)[]`；
     - `AssistantEvent`：
       - `tool_end` 的 `data` 加 `msg?: ServerMsg`；
       - `error` 的 `data` 改为 `ServerMsg | { message: string }`；
@@ -2014,7 +2291,6 @@
   - `ActionCard.tsx`：
     - `const { t, locale } = useI18n()`；
     - 失败 `t('assistant.card.failed', { msg: c.error_msg ? formatMsg(c.error_msg, locale) : (c.error ?? '') })`；
-    - warnings `{formatMsg(w, locale)}`；
     - diff target：
       ```ts
       /** diff 的 target 是内部值（恢复时比对，不能改）：plot_edit 的两类按字段翻译，其余是数据原样显示 */
@@ -2037,18 +2313,18 @@
 - Modify（如需要）：`backend/tests/server/test_i18n_scan.py`、`backend/server/messages_codes.json`
 
 - [ ] **Step 1: 扫描范围核对**：`test_i18n_scan.py` 的 `MODULES` 至少包含：
-  - 全文件：`pipeline/errors.py`、`pipeline/chat.py`、`pipeline/events.py`、`pipeline/convert.py`、`pipeline/graph.py`、`assistant/tools.py`、`assistant/actions.py`、`assistant/edits.py`、`assistant/events.py`、`assistant/graph.py`；
+  - 全文件：`pipeline/errors.py`、`pipeline/chat.py`、`pipeline/review.py`、`pipeline/events.py`、`pipeline/convert.py`、`pipeline/graph.py`、`assistant/tools.py`、`assistant/actions.py`、`assistant/edits.py`、`assistant/events.py`、`assistant/graph.py`；
   - app 函数集合：调用点清单里 Task 4–8 的全部函数。
 
   扫描打印 `ALL PASS`。
-- [ ] **Step 2: 零命中复核**（不依赖 `MODULES` 是否写全；输出必须为空。改动前的基线：上述模块与函数 71 处，另有两处 `# i18n: todo(4)`，新规则下 `events.py` 另有 3 处）：
+- [ ] **Step 2: 零命中复核**（不依赖 `MODULES` 是否写全；输出必须为空。改动前的基线：上述模块与函数 71 处，另有两处 `# i18n: todo(4)`，新规则下 `events.py` 另有 3 处、app 函数另有 5 处、`review.py` 另有 3 处）：
 
   ```bash
   cd backend && .venv/bin/python - <<'PY'
   import importlib.util
   spec = importlib.util.spec_from_file_location("scan", "tests/server/test_i18n_scan.py")
   m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-  for rel in ["pipeline/errors.py", "pipeline/chat.py", "pipeline/events.py", "pipeline/convert.py", "pipeline/graph.py",
+  for rel in ["pipeline/errors.py", "pipeline/chat.py", "pipeline/review.py", "pipeline/events.py", "pipeline/convert.py", "pipeline/graph.py",
               "assistant/tools.py", "assistant/actions.py", "assistant/edits.py", "assistant/events.py", "assistant/graph.py"]:
       for h in m.scan(rel, None):
           print(h)
@@ -2070,7 +2346,7 @@
 - [ ] **Step 5: 测试不碰真实数据目录与模型服务**：
   - 实施前记下 `ls -l backend/data/error_refs.jsonl backend/data/usage.jsonl 2>/dev/null`，跑完全部测试后再看一次：不存在的仍不存在，存在的大小与修改时间不变；
   - `grep -L STORYBOARD_DATA_DIR tests/*/test_*.py` 列出的文件里，没有会走到 `error_refs`、`usage` 或 `_execute` 的；
-  - `grep -L "_load_dotenv" tests/server/test_*.py tests/assistant/test_*.py` 为空（子计划 4 新增与改动的测试都桩掉了它）；
+  - `grep -L "_load_dotenv" tests/server/test_*.py tests/assistant/test_*.py | grep -v "test_i18n_scan.py\|test_messages.py"` 为空。这两个文件不读配置，不需要桩（设计审查 M11）；其余子计划 4 新增与改动的测试都桩掉了它；
   - 新测试文件都设了 `ANTHROPIC_BASE_URL=http://127.0.0.1:9`。
 - [ ] **Step 6: 代码表最新**：`.venv/bin/python -m server.messages --write && git diff --exit-code server/messages_codes.json`。
 - [ ] **Step 7: 全部校验**（全局约束里的整套）。
@@ -2083,11 +2359,14 @@
 - **R1 进度事件放回 `job.log`**：
   - 裁定：`job["log"]` 直接改为事件列表 `{code, params, message, at}`，不另起 `events` 字段、不双写字符串。
   - 理由：spec §3.6 写的就是「job.log/last_log 改为结构化事件」；内存任务表重启即清空，没有旧任务；前后端同仓同发。
-  - 若错的代价：只升级后端、不升级前端时，JobPanel 会把对象显示成 `[object Object]`。部署时前后端一起发即可。
+  - 若错的代价（设计审查 I1 更正）：
+    - 现行前端把这些值直接当 React 子节点渲染，遇到对象会抛 "Objects are not valid as a React child"，整块面板挂掉，不是显示成 `[object Object]`。部署形态也是前后端分开的（`backend/Dockerfile` 只打后端），已打开的旧页面同样会崩。
+    - 因此新增 Task 0：前端先兼容两种形状，并且必须先于 Task 4 落地。它的测试桩用新形状，能抓到这种崩溃。做了 Task 0 之后，Task 1–10 的每个中间提交前后端都能一起跑，双写也就不需要了。
+    - Task 8 到 Task 10 之间仍有一处体验缺口：旧前端不认 `notice` 事件，「步骤太多」那句提示不显示，但不会崩。上线仍以整个子计划为一个部署单元。
 - **R2 调试日志只给管理员**：
   - 裁定：
     - `debug_log` 不进普通用户的任何响应；
-    - 内存里留全量，任务结束时把最后 400 行写进版本记录；
+    - 内存里每个任务最多留 5000 行（`DEBUG_MEM`，超出丢最早的，设计审查 M6），任务结束时把最后 400 行写进版本记录。成功后 `after_success` 产生的几行，会再落一次（设计审查 M5）；
     - 管理员按 `GET /admin/jobs/{vid}/debug?user_id=` 逐条查看，每次写审计 `view_job_debug`。
   - 理由：调试日志里有服务器临时目录、接口原文（可能带模型名，违反追加需求）、环境变量名，以及校验报告引用的用户原文片段。后台管理员是网页角色，与能登录服务器的运维不是同一群人，按子计划 3 R16 同一原则处理。版本里留尾部，是为了服务重启后还能查失败那次的经过。
   - 若错的代价：
@@ -2110,25 +2389,44 @@
     - LangChain 1.6 的 `BaseTool.run` 在报错时 artifact 恒为 None，`handle_tool_error` 只能返回正文；
     - ToolNode 的包装拿得到 `tool_call` 的 id 与名字，能完整构造 ToolMessage；
     - 仍是 `ToolException` 子类，`_ask_edit`、`undo` 里的 `except ToolException` 照样接得住；直接调 `tool.func` 的现有测试也不受影响。
+    - 已在 langgraph-prebuilt 1.1.0 核实：缺省 `_default_handle_tool_errors` 对非 `ToolInvocationError` 一律再抛，`ToolError` 会进到包装。原计划里的显式后备处理器不需要，已删。
   - 若错的代价：
-    - 若 ToolNode 的缺省 `handle_tool_errors` 在某个版本把 `ToolError` 吞成纯文字，失败卡退回只显示中文正文，与改造前一样；
-    - Task 7 Step 5 写了显式 `handle_tool_errors` 的后备写法，升级 LangGraph 时 `test_actions.py` 的 artifact 断言会先报出来。
-- **R5 流式中途的错误不重试**：
-  - 裁定：SSE 中途的 `event: error`（SDK 以 HTTP 200 的 `APIStatusError` 抛出）按错误类型映射，不进转换的重试清单。
-  - 理由：`with_retry` 只能按异常类型重试，加上 `APIStatusError` 会把 401、400 也一起重试；中途出错时已经花了输出 token，自动重放的代价也更高。
-  - 若错的代价：网关中途报过载时这一批直接失败，用户看到「AI 服务繁忙，请稍后重试」，手动重转。频繁出现时再按错误类型加一个自定义重试判断。
-- **R6 529 补进重试清单**：
-  - 裁定：`_transient_errors()` 加 `anthropic.OverloadedError`。
-  - 理由：anthropic 1.13 把 529 单列成这个类，它不再是 `InternalServerError` 的子类。现在 529 一次都不重试，与清单「5xx 都重试」的原意不符，映射表把它标成可重试也要说到做到。
+    - 若 ToolNode 的缺省 `handle_tool_errors` 在将来某个版本把 `ToolError` 吞成纯文字，失败卡退回只显示中文正文，与改造前一样。升级 LangGraph 时 `test_actions.py` 的 artifact 断言会先报出来，到时再加显式处理器；
+    - 处理器再抛出时，langchain_core 跳过 `run_manager.on_tool_error`（tools/base.py:1121–1132），回调与追踪里会留下一个没有结束的工具 run（设计审查 M9）。本项目没有接追踪，影响只在开发者打开 LangSmith 时可见，接受。
+- **R5 流式中途的瞬时错误：转换有界重试，助手不重试**（设计审查 I4 推翻原裁定）：
+  - 裁定：
+    - 转换路径：SSE 中途的 `event: error`（SDK 以 HTTP 200 的 `APIStatusError` 抛出）若错误类型是 `overloaded_error`、`api_error`、`rate_limit_error`，在 `ChatInvoker` 里换成 `_StreamInterrupted`，与连接类故障一起交给 `with_retry`。重试次数共用 `transport_retries`，退避照旧，耗尽为 `llm.gave_up`。中途的其他错误类型直接映射，不重试。
+    - 助手路径：维持只映射、不重试。
+  - 理由：
+    - 转换按批串行，任一批的一次调用失败，整个版本就失败，已通过的各批全部作废，用户只能整章重转。重放一次调用远比重跑全部批次便宜。
+    - `chat.py` 的传输重试本来就是为「网关流式中途断连」而建，中途过载属于同一类故障；C 表也把 `llm.busy` 标成自动重试。
+    - 原裁定说「`with_retry` 只能按类型重试」，但换一个专用异常类型就能解决，也不会把中途的 401、400 一起重试。
+    - 助手的文字已经流给用户了，重放会让同一段话出现两遍。
+  - 若错的代价：
+    - 中途出错那一次的输出 token 已经花掉，用量回调收不到 `on_llm_end`，不计入账本，账本会略低于实际。持续过载时每批最多多跑 `transport_retries` 次。
+    - Task 2 测试 20 守着两点：一直中途出错时调用次数恰好是 1 + `transport_retries`，中途的鉴权错误只调用 1 次。
+- **R6 529 补进重试清单；分类以 LangChain 的 `Model*Error` 为主**：
+  - 裁定：
+    - `_transient_errors()` 以 langchain_core 的 `ModelRateLimitError`、`ModelAPIError`、`ModelConnectionError`、`ModelTimeoutError` 为主，`langchain_anthropic` 包装后的 529（`AnthropicOverloadedError`）属于 `ModelAPIError`，自然在内。
+    - SDK 类型（含 `anthropic.OverloadedError`）与 httpx2 留作兜底。
+    - `llm_error` 先按 `ContextOverflowError` 等 LangChain 分类判，认不出的再按 SDK 的状态码与错误类型细分（设计审查 M4）。
+  - 理由：
+    - anthropic 1.13 把 529 单列成 `OverloadedError`，它不是 `InternalServerError` 的子类，现在 529 一次都不重试，与清单「5xx 都重试」的原意不符。
+    - LangChain 1.x 的厂商无关异常是框架的地道写法，换模型提供方时分类不用重写，也符合本项目「借改造学 LangChain」的目的。
+    - 兜底不能省：流式中途的错误没有经过 `langchain_anthropic` 的包装（按原样抛出），测试替身也直接抛 SDK 异常。余额、内容审核、内容太长都是 400，`ModelInvalidRequestError` 分不出来，仍要看原文。
   - 若错的代价：持续过载时，每批多等几次指数退避（受 `transport_retries` 限制），最终仍是 `llm.gave_up`。
 - **R7 哪类模型错误带编号**：
-  - 裁定：只有 `llm.bad_request`（其余 4xx，原因说不清）带参考编号（`needs_ref`）。鉴权、余额、繁忙、超时等映射类不带，与子计划 3 R3 一致。
+  - 裁定：
+    - 只有 `llm.bad_request`（其余 4xx，原因说不清）带参考编号（`needs_ref`）。鉴权、余额、繁忙、超时等映射类不带，与子计划 3 R3 一致。
+    - 带编号时保留 `llm.bad_request` 这个代码，不换成 `job.crashed` 或 `assistant.crashed`。用 `error_refs.unexpected(原异常, "llm.bad_request", …)`，该代码没有参数，满足 `unexpected` 的约束。转换、章后整理、助手三处一致（设计审查 I2）。
+    - 不采纳审查的可选扩展（给 `llm.model_unavailable`、`llm.access_denied` 也加编号）。这两类是部署配置问题，管理员按文案去核对 `/admin/service` 与密钥配置即可；助手路径的日志里也有状态码与请求 id。
   - 理由：这一类多半是请求本身有问题（我们的 bug 或网关不兼容），原因只在服务器上，用户报编号，管理员能看到脱敏后的接口原文。其余类别看文案就知道去哪查，日志里有请求 id。
   - 若错的代价：管理员想按编号查限流类时，在 `llm_error` 里把对应代码加进 `needs_ref` 即可，数据形状不变。
 - **R8 统一称「AI 服务」**：
   - 裁定：模型服务的文案一律称「AI 服务 / the AI service」；助手卡上原有的「按模型用量计费」保持（「模型」是泛称，不是模型名）。
   - 理由：追加需求只禁模型名与厂商名，泛称不透露底层是谁；「AI 服务」对最终用户也最好懂。
   - 若错的代价：用户觉得「AI 服务」太含糊时，改中英文案即可，代码不变。
+  - 已知不贴切处（设计审查 M13，接受）：章后整理遇到 `llm.truncated` 时，文案说「调整转换设置」。章后整理与转换共用同一套输出上限设置，管理员按这句话去改也改得对，所以不另立代码。
 - **R9 「分批范围不确定」不给代码**：
   - 裁定：这条 `ConversionError` 标 `# i18n: internal`，`_execute` 把没有代码的 `ConversionError` 按意外处理（`job.crashed` 带编号）。
   - 理由：只有调用方显式传了拼不回原文的 `batches` 才会触发，应用里由切分器生成批次，用户触发不到；真触发了是程序错误，带编号最好查。
@@ -2136,7 +2434,8 @@
 - **R10 旧版本记录不迁移**：
   - 裁定：旧版本的 `error`（可能是 `repr(e)`，带接口原文甚至模型名）照原样显示，不迁移、不在视图里过滤。
   - 理由：产品还没上线，旧记录只在开发与测试数据里；按特征过滤字符串既不可靠，又会误伤有用的校验报告。
-  - 若错的代价：上线前若导入了带旧失败记录的数据，普通用户打开那一版会看到原文。上线前清理测试数据即可。
+  - 若错的代价：上线前若导入了带旧失败记录的数据，普通用户打开那一版会看到原文。
+  - 上线检查单加一条：清空测试数据，包括 `data/users/*/novels/**/versions/*.json` 里旧的 `error`，以及助手存档（旧 `summary` 工具结果里有 `unpriced` 模型名）。
 - **R11 `/healthz` 只给 `first_run`**：
   - 裁定：免登录探针改为 `{status, first_run}`，模型名与密钥状态移到 `GET /admin/service`。
   - 理由：首页只需要「全新部署、先注册」这一个布尔；用户数也是不该对外的经营数据，顺手收起；部署探针只看状态码。
@@ -2164,9 +2463,17 @@
   - 理由：内部值要留着给 `_ask_edit` 比对（spec §5.4）。按 `field` 判断比按中文字面匹配稳：标题里本身带「梗概」二字也不会误判。
   - 若错的代价：以后 `plot_edit` 加新字段时，前端要补一个分支，否则显示内部值（中文）。
 - **R16 提示词里加一句不自报模型**：
-  - 裁定：`prompts/assistant.md` 加「不要说出你所用的底层模型或其提供方」。
+  - 裁定：`prompts/assistant.md` 加「不要说出你所用的底层模型或其提供方」。被问到身份时自称本产品的创作助手：中文称「墨卷」，英文称 Inkreel（设计审查 M14），两个名字写在同一句里，不按 `lang` 注入。
   - 理由：追加需求的范围是「普通用户界面与接口」，助手回答就是界面的一部分；只靠接口层过滤管不到模型自己说出来的话。改一句提示词代价很小。
-  - 若错的代价：模型不一定完全听从。若仍偶尔自报，再考虑在回答流里做后处理（不在本计划）。
+  - 若错的代价：模型不一定完全听从，DeepSeek 系模型常主动自报。验收时若仍出现，再考虑在 `token` 流上做关键词后处理（不在本计划）。
+- **R17 输出上限配置错误与余额不足的判定**：
+  - 裁定：
+    - 400、413、422 或 `invalid_request_error` 的原文按顺序判：内容审核 → 余额（`credit balance`、`insufficient balance/credit/funds`、`余额不足`）→ `max_tokens`（判为 `llm.model_unavailable`）→ 内容太长；
+    - `httpx2.TimeoutException` 先于 `httpx2.HTTPError` 判为超时（设计审查 I3、M2、M3）。
+  - 理由：
+    - Anthropic 风格网关的余额不足走 400；
+    - 默认 `STORYBOARD_MAX_TOKENS=32000` 超出某些模型的输出上限时，报错里有「exceeds … tokens」，会被「内容太长」误判，让用户去缩短内容。实际是配置问题，应当联系管理员。
+  - 若错的代价：原文里同时出现 `max_tokens` 与上下文超长的说法时，会判成配置有误，用户被引导去联系管理员。管理员在日志里能看到原文，不会误导排查。
 
 ## 自查记录
 
@@ -2175,7 +2482,7 @@
   - assistant 模块：tools/actions/edits/graph → Task 7；events 与提示词 → Task 8；
   - summary、novels → Task 6、4；
   - app 调用点：清单每行都标了 Task（4、5、6、7、8）；
-  - 前端：转换、门、账号菜单、后台 → Task 9；助手 → Task 10。
+  - 前端：兼容渲染（先行）→ Task 0；转换、门、账号菜单、后台 → Task 9；助手 → Task 10。
 - **覆盖 B 节**：
   - 事件与调试日志的形状、`DEBUG_KEEP`、版本落盘 → Task 4；
   - 管理员接口与审计 → Task 6；
@@ -2184,10 +2491,11 @@
   - 质量报告 → Task 3（消息对象）、Task 4（`quality_msg`）；
   - 任务接口、门、渲染任务包 → Task 5。
 - **覆盖 C 节**：
-  - 映射表的每一行在 Task 2 的测试 17 里各有一条（含流式中途的错误事件）；
-  - 重试：529 进清单 → Task 2 测试 18；耗尽 → 测试 14；
+  - 映射表的每一行在 Task 2 的测试 18 里各有一条（含流式中途的错误事件、余额的 400、`max_tokens` 配置错误、httpx2 超时、LangChain 包装后的异常）；无关 400 → 测试 6；
+  - 重试：529 进清单 → Task 2 测试 19；流式中途有界重试 → 测试 20；耗尽 → 测试 14；
   - 截断与未配置的 `hint` → 测试 7、8、13；
-  - 评审 → 测试 19；
+  - 评审 → 测试 21；
+  - `llm.bad_request` 带编号保留代码 → Task 4 测试第 1 节、Task 8 test_graph 8；
   - 章后整理改用 `expected` → Task 4；
   - 助手的映射 → Task 8。
 - **覆盖 D 节**：`ToolError`/artifact/`_op`/`recast` → Task 7；事件表各行 → Task 8；编辑卡 warnings → Task 7（后端）、Task 10（前端）；diff target → Task 10；撤销 → Task 7、8；接口 4xx 与 503 → Task 8。
@@ -2196,11 +2504,12 @@
   - 「不用改的出口」列在调用点清单的「普通用户出口核对」；
   - 特征模型名扫描 → Task 6 测试第 3 节；文案里没有模型名 → Task 11 Step 4。
 - **覆盖 F、G、H 节**：
-  - 兼容（旧字符串日志、旧存档、旧 `gate.message`、旧版本 `error`）在 Task 9、10 的测试里各有用例；
+  - 兼容（旧字符串日志、旧存档、旧 `gate.message`、旧版本 `error`）在 Task 0、9、10 的测试里各有用例；中间提交不崩由 Task 0 的新形状桩保证；
   - 代码在 Task 2、3、5、6、7、8 登记，文字变化写在 Task 3 Step 3；
   - ast 扫描规则 → Task 1，模块与函数 → 各 Task 逐步加，Task 11 复核。
 - **名称一致**：
   - 后端：`make_say`、`llm_error`、`LLMError.coded/hint/needs_ref`、`ToolError`、`_tool_error_text`、`_with_artifact`、`error_refs.expected`、`messages.recast`、`UserError.from_msg`、`REPORT_MAX`、`_job_debug`/`_job_event`/`_job_note`、`DEBUG_KEEP`、`_public_manifest`/`_version_view`/`_MODEL_KEYS`、`admin_service`、`admin_job_debug`、`events.error_msg`/`_hide_deep`/`_tool_msg`/`_failed`；
+  - 后端（审查后新增）：`_StreamInterrupted`、`_midstream_transient`、`_BALANCE`、`_MAX_TOKENS`、`DEBUG_MEM`、`auth.valid_user_id`、`UserError.ref`；
   - 前端：`failHead`、`JobEvent`、`AdminService`、`adminService`、`adminJobDebug`、`assistant.target.*`。
   - 各 Task 引用一致。
 - **扫描基线**（编写本计划时在仓库外的副本上跑的）：
@@ -2209,7 +2518,7 @@
     - assistant 41（tools 5、actions 5、edits 30、graph 1）；
     - app 19；
   - 另有 `# i18n: todo(4)` 两处（`render_plan`、`_gate_status`）；
-  - 新规则下 `events.py` 另有 3 处，已在 MODULES 里的模块仍为零。
+  - 新规则下 `events.py` 另有 3 处、app 函数另有 5 处（设计审查复跑，app 合计 24）、`review.py` 3 处（标 `# i18n: llm`）；已在 MODULES 里的模块仍为零。
 - **测试不碰真实模型**：
   - 新增与改动的测试一律桩掉 `_load_dotenv`、设临时数据目录；
   - 模型调用全部经 FakeChat、脚本模型或替换的 `convert_text`/`_assistant_model`；
@@ -2217,6 +2526,32 @@
   - 新测试另设不可达的 `ANTHROPIC_BASE_URL` 作保险；
   - `test_jobs.py` 关掉章后整理。
 - **自查中发现并已改正**：
-  - Task 2 测试 19 原用 429 构造评审失败。429 是瞬时错误，会先被重试再包成 `llm.gave_up`（「已重试 0 次」），已改用 401；
+  - Task 2 测试 21（原编号 19）原用 429 构造评审失败。429 是瞬时错误，会先被重试再包成 `llm.gave_up`（「已重试 0 次」），已改用 401；
   - Task 4 测试原断言「事件的中文兜底进调试日志」，但打桩的 `convert_text` 直接调 `on_event`、不经 `say`，已改为断言 app 自己记的事件进调试日志；
   - 调用点清单里 `edits.py` 的计数已按扫描结果更正为 24 + 6。
+
+## 修订记录
+
+- 2026-11-13 设计审查修订（审查结论 approve with changes：0 Critical / 4 Important / 14 Minor）：
+  - I1：新增 Task 0「前端先行兼容」，排在全部后端 Task 之前。进度、最近一行、编辑卡复验原因、验证门、首次注册都能两种形状渲染，测试桩用新形状。Task 9、10 去掉已前移的部分。R1 的代价改正为「组件崩溃」，Task 6 末尾「不要部署」的提示删掉。
+  - I2：`llm.bad_request` 带编号时保留代码。改动处：`_execute` 的 `crashed(e, code)`、`_run_digest`、助手 `events.error_msg`；Task 4 测试第 1 节、Task 8 test_graph 8 同步改；R7 补写。
+  - I3：`test_chat.py` 第 6 节改写（断言 `llm.balance`、不降级、只调用 1 次）。新用例从 18 起编号（18 映射表、19 重试、20 中途重试、21 评审），映射加 `_BALANCE`。
+  - I4：按协调方裁定，转换路径对流式中途的瞬时错误做有界重试（`_StreamInterrupted`，共用 `transport_retries`），助手不重试；改写 R5，新增测试 20。
+  - M1 `admin_job_debug` 先校验用户 id（新增 `auth.valid_user_id`），非法或不存在都 404。
+  - M2 `max_tokens` 配置错误判为 `llm.model_unavailable`。
+  - M3 httpx2 超时判为 `llm.timeout`。
+  - M4 采纳：分类以 LangChain 的 `Model*Error`、`ContextOverflowError` 为主，SDK 类型兜底，记入 R6。
+  - M5 `after_success` 之后再落一次调试日志。
+  - M6 内存调试日志上限 `DEBUG_MEM=5000`。
+  - M7 Task 8 的旧存档用例注明「预期先过」。
+  - M8 `from_msg` 保留 `ref`。
+  - M9 记入 R4。
+  - M10 test_offline :653 写死为 `job.batch_failed`。
+  - M11 Task 11 Step 5 排除两个不读配置的测试。
+  - M12 `review.py` 三处标 `# i18n: llm` 并进扫描。
+  - M13：
+    - `unpriced` 的类型在 Task 0 放宽、Task 9 收窄为布尔；
+    - 不加 `VersionRecord.quality_msg`；
+    - `llm.truncated` 用于章后整理时文案略不贴切，接受，记入 R8。
+  - M14 提示词兼写 Inkreel，记入 R16。
+  - 审查对 R7 的可选扩展（`llm.model_unavailable`、`llm.access_denied` 也带编号）不采纳，理由见 R7。R10 补上线检查单一条。新增 R17（余额、`max_tokens`、超时的判定顺序）。

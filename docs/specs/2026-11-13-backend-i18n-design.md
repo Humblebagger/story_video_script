@@ -665,8 +665,8 @@
 - 普通用户的 `/jobs/{id}` 不返回 `debug_log`；版本记录的读取接口也不返回。
 - 调试日志里有服务器的临时目录、接口原文（可能带模型名）、环境变量名，以及校验报告引用的用户原文片段。后台管理员与能登录服务器的运维不是同一群人（子计划 3 R16），所以按错误记录的同一原则处理：逐条查看并写审计。
 - 存放位置：
-  - 内存任务表里留全量；
-  - 任务结束（成功或失败）时，把最后 400 行写进版本记录的 `debug_log`，服务重启后管理员仍能看到失败那次的经过。
+  - 内存任务表里每个任务最多留 5000 行，超出丢最早的（任务表只增不删）；
+  - 任务结束（成功或失败）时，把最后 400 行写进版本记录的 `debug_log`，服务重启后管理员仍能看到失败那次的经过。成功后自动采用、整理排队等几行产生得晚，再补落一次。
 - 接口：`GET /admin/jobs/{vid}/debug?user_id=…`（管理员）。先查内存任务表，没有再读版本记录。找不到时 404 `admin.job.not_found`。每次查看写审计 `view_job_debug`，对象为任务所属用户。
 - 管理后台任务页：运行中与失败的每一行都有「调试日志」按钮，点开时才请求。
 
@@ -679,7 +679,8 @@
     - 中文兜底等于原来的 `f"{e}\n{e.report}"` 去掉工作目录。
   - 一行显示的地方（提示条、助手任务卡、后台失败列表）只取 `reason`，旧数据取 `error` 的第一行，与现在一致。
 - `LLMError`（已映射、不需要编号）：`error_msg` 为它的代码，不带编号；`hint` 进调试日志。
-- 其它异常，以及 `needs_ref` 的 `LLMError`、没有代码的 `ConversionError`：`error_refs.unexpected(e, "job.crashed", user_id=…, where="convert <nid>/<cid>/<vid>")`，带参考编号；堆栈进错误记录与 `server.errors` 日志。不再存 `repr(e)`。
+- `needs_ref` 的 `LLMError`（`llm.bad_request`）：保留这个代码并带参考编号，`error_refs.unexpected(原异常, "llm.bad_request", user_id=…, where=…)`。用户看到的是「AI 服务拒绝了这次请求」，不是「意外错误」（设计审查 I2）。
+- 其它异常、没有代码的 `ConversionError`：`error_refs.unexpected(e, "job.crashed", user_id=…, where="convert <nid>/<cid>/<vid>")`，带参考编号；堆栈进错误记录与 `server.errors` 日志。不再存 `repr(e)`。
 - 写法统一用 `render_session.set_error(job, m)`，再把 `error`、`error_msg` 一起写进版本记录（子计划 3 R7 留下的产出点）。
 
 **质量报告**：
@@ -708,15 +709,26 @@
 
 **判定顺序**（`llm_error(e)`）：
 1. 已是 `LLMError` 原样返回；
-2. `APITimeoutError` → `llm.timeout`；其余 `APIConnectionError`、`httpx2.HTTPError` → `llm.connect_failed`；
-3. `APIStatusError`：
-   1. 先看状态码 400、413、422 或响应体错误类型 `invalid_request_error` 时的原文特征：
+2. 先按 langchain_core 的厂商无关分类（`langchain_anthropic` 抛出的异常同时继承它们）：
+   - `ContextOverflowError` → `llm.too_long`；
+   - `ModelAuthenticationError` → `llm.auth`；
+   - `ModelPermissionDeniedError` → `llm.access_denied`；
+   - `ModelNotFoundError` → `llm.model_unavailable`；
+   - `ModelRateLimitError` → `llm.busy`；
+   - `ModelTimeoutError` → `llm.timeout`；
+   - `ModelConnectionError` → `llm.connect_failed`；
+   - `ModelInvalidRequestError`（400）与 `ModelAPIError`（5xx、529）还要细分，落到第 4 步。
+3. SDK 兜底：`APITimeoutError`、`httpx2.TimeoutException` → `llm.timeout`；其余 `APIConnectionError`、`httpx2.HTTPError` → `llm.connect_failed`。
+4. `APIStatusError`：
+   1. 先看状态码 400、413、422 或响应体错误类型 `invalid_request_error` 时的原文特征，按顺序：
       - 审核特征（如 `Content Exists Risk`、content filter / policy / moderation、safety、sensitive）→ `llm.content_blocked`；
+      - 余额特征（credit balance、insufficient balance/credit/funds、余额不足）→ `llm.balance`。Anthropic 风格网关的余额不足走 400；
+      - 原文含 `max_tokens`（输出上限配置超出模型允许值）→ `llm.model_unavailable`。这是配置问题，不能叫用户缩短内容；
       - 超长特征（context length、maximum context、too long、超出 token）→ `llm.too_long`；
    2. 再按响应体 `error.type` 查表；
    3. 最后按 HTTP 状态查表；
    4. 都没有命中：5xx → `llm.unavailable`，其余 → `llm.bad_request`。
-4. 其它异常返回 `None`，由调用方当意外处理。
+5. 其它异常返回 `None`，由调用方当意外处理。
 
 流式中途的 `event: error`（SDK 以 HTTP 200 的 `APIStatusError` 抛出）只能靠错误类型判定，所以错误类型排在状态码之前。
 
@@ -732,7 +744,7 @@
 | 其它请求错误 | 其余 4xx | `llm.bad_request` | AI 服务拒绝了这次请求，请重试；仍失败请联系管理员 | rejected the request | 否 | 报参考编号（带 `ref`） |
 | 限流、过载 | 429、529、`rate_limit_error`、`overloaded_error` | `llm.busy` | AI 服务繁忙，请稍后重试 | busy | 是 | 稍后重试 |
 | 服务端错误 | 其余 5xx、`api_error` | `llm.unavailable` | AI 服务暂时不可用，请稍后重试 | temporarily unavailable | 是 | 稍后重试 |
-| 超时 | `APITimeoutError` | `llm.timeout` | AI 服务响应超时，请稍后重试 | timed out | 是 | 稍后重试 |
+| 超时 | `APITimeoutError`、`ModelTimeoutError`、`httpx2.TimeoutException` | `llm.timeout` | AI 服务响应超时，请稍后重试 | timed out | 是 | 稍后重试 |
 | 连不上、中途断开 | `APIConnectionError`、`httpx2.HTTPError` | `llm.connect_failed` | 连接 AI 服务失败，请稍后重试；仍失败请联系管理员 | couldn't connect | 是 | 稍后重试 |
 | 重试用尽 | 上面四类在转换里重试耗尽 | `llm.gave_up`（`retries`、`cause`） | 已重试 {retries} 次仍失败：{cause} | still failing after N retries | — | 稍后重试 |
 | 输出被截断 | `stop_reason=max_tokens` | `llm.truncated` | AI 输出超出了长度上限，这次没有完成；请联系管理员调整转换设置 | output hit the length limit | 否 | 联系管理员 |
@@ -743,16 +755,17 @@
   - 重试耗尽 → `llm.gave_up`，`cause` 嵌套映射后的原因。
   - 非瞬时错误不重试，直接映射。
   - thinking 降级照旧排在映射之前：先接住 `BadRequestError` 里的 thinking 拒绝，降级重发；其余 400 才映射。
-- 流式中途的 `event: error`（HTTP 200）不在重试清单里，映射后直接失败（计划 R5）。
+- 流式中途的 `event: error`（HTTP 200）：错误类型是 `overloaded_error`、`api_error`、`rate_limit_error` 的，在转换路径上重试，与连接类故障共用 `transport_retries` 的次数，耗尽为 `llm.gave_up`；其他类型直接映射（计划 R5，设计审查 I4）。
+- 清单以 LangChain 的 `ModelRateLimitError`、`ModelAPIError`、`ModelConnectionError`、`ModelTimeoutError` 为主，SDK 类型与 httpx2 兜底（计划 R6）。
 - 助手：模型由 SDK 自己重试（`max_retries=2`，覆盖 408/409/429/5xx 与连接错误），本子计划只映射，不加重试，也不包 `llm.gave_up`。
 
 **截断与未配置**：原文里的环境变量名与操作建议（`STORYBOARD_THINKING`、`STORYBOARD_MAX_TOKENS`、`STORYBOARD_BATCH_CHARS`、`ANTHROPIC_API_KEY`、`pip install`）移进 `hint`，并记 WARNING 日志。命令行照旧打印它们。
 
-**编号**：只有 `llm.bad_request` 带参考编号（`needs_ref=True`）。原因只在服务器上，用户报编号，管理员在错误记录里能看到脱敏后的接口原文。其余映射类不带编号，与子计划 3 B 节「厂商映射类不带编号」一致。
+**编号**：只有 `llm.bad_request` 带参考编号（`needs_ref=True`），带编号时代码仍是 `llm.bad_request`（转换、章后整理、助手一致）。原因只在服务器上，用户报编号，管理员在错误记录里能看到脱敏后的接口原文。其余映射类不带编号，与子计划 3 B 节「厂商映射类不带编号」一致。
 
 **调用方**：
 - `_execute`：见 B。
-- `_run_digest`：带代码且不需要编号的 `LLMError` 走「可预期」分支，章节上显示映射后的文案，不记编号。可预期的判断统一用新增的 `error_refs.expected(e)`：带代码，且不是 `needs_ref`。
+- `_run_digest`：带代码且不需要编号的 `LLMError` 走「可预期」分支，章节上显示映射后的文案，不记编号；`llm.bad_request` 保留代码并记编号。可预期的判断统一用新增的 `error_refs.expected(e)`：带代码，且不是 `needs_ref`。
 - 助手：见 D。
 - 评审：失败时报告写成「[review] 评审服务不可用：<映射后的中文兜底>」，原文进 `pipeline.review` 的 WARNING 日志。
 
@@ -782,7 +795,7 @@
 | `error` | 消息对象 `{code, params, message, ref?}`，`message` 字段仍在，旧前端照旧能取到文字 |
 
 **`error` 事件**：
-- 已映射的模型服务错误：`llm.*` 代码，不带编号；
+- 已映射的模型服务错误：`llm.*` 代码，不带编号；`llm.bad_request` 保留代码并带编号；
 - 其余：`error_refs.unexpected(e, "assistant.crashed", user_id=…, where="assistant <nid>")`，带编号；
 - `before`（发新消息前取消待确认的卡）出错时，同样处理；
 - 原来的「助手出错：{e}」（带接口原文）不再出现。
@@ -824,7 +837,7 @@
 | `GET /jobs/{id}` | 整个任务（含 `manifest`） | 去掉 `debug_log`；`manifest` 同上处理 |
 | `GET /novels/{nid}/summary` | `unpriced` 是没定价的模型名列表 | 布尔。前端没有用到它 |
 | 转换、章后整理、助手的报错 | 接口原文、`repr(e)` | 见 C、D |
-| 助手的回答 | 模型被问到时可能自报模型名 | `prompts/assistant.md` 加一句：不要说出所用的底层模型或其提供方，被问到时说你是「墨卷」的创作助手 |
+| 助手的回答 | 模型被问到时可能自报模型名 | `prompts/assistant.md` 加一句：不要说出所用的底层模型或其提供方，被问到时说你是本产品的创作助手（中文称「墨卷」，英文称 Inkreel） |
 
 **逐一核对过、不用改的普通用户出口**（计划的调用点清单逐条列出）：
 - `/auth/me`、小说与章节列表、版本摘要、`/jobs` 摘要、`/jobs/{id}/partial`（只有分镜文档）、`PUT` 版本（只回状态与验证）；
@@ -844,7 +857,7 @@
   - 旧版本记录没有 `error_msg`、`quality_msg`、`debug_log`，前端照旧显示 `error`（取第一行）与 `quality_report`；
   - 旧记录 `error` 里存的 `repr(e)` 可能带模型名或接口原文，不迁移（计划 R10）。
 - **旧前端**：
-  - `job.log` 由字符串变成对象，未升级的前端会显示成对象。前后端同仓同发，不做双写；
+  - `job.log`、`last_log`、编辑卡 `warnings`、`gate.message` 由字符串变成对象。现行前端把它们直接当 React 子节点渲染，遇到对象会整块崩溃。所以计划先做前端兼容（Task 0），两种形状都能渲染，之后才改后端形状，不做双写（设计审查 I1）；
   - `error` 事件、失败卡、`tool_end` 的旧字段都还在；
   - 新的 `notice` 事件旧前端忽略，「步骤太多」那句话不再显示，但回答照常结束。
 - **助手旧存档**：
@@ -857,10 +870,14 @@
 ### G. 测试补充
 
 - 后端：
-  - `test_chat.py`：映射表每一行一条（含流式中途的错误事件），断言代码、`str(e)` 不含模型名与原文、WARNING 日志里有脱敏原文且没有密钥、`OverloadedError` 会被重试、重试耗尽为 `llm.gave_up`、截断与未配置的 `hint` 里有环境变量名。
+  - `test_chat.py`：
+    - 映射表每一行一条（含流式中途的错误事件、400 余额、`max_tokens` 配置错误、httpx2 超时、LangChain 包装后的异常），断言代码、`str(e)` 不含模型名与原文、WARNING 日志里有脱敏原文且没有密钥；
+    - `OverloadedError` 会被重试；流式中途的瞬时错误有界重试（调用次数恰为 1 + `transport_retries`），中途的非瞬时错误不重试；重试耗尽为 `llm.gave_up`；
+    - 现有第 6 节（无关的 400）改为断言映射后的 `LLMError`、不降级；
+    - 截断与未配置的 `hint` 里有环境变量名。
   - `test_graph.py`、`test_offline.py`：事件序列带代码；调试日志照旧有「原因如下」与逐行报告；`ConversionError` 带代码，`str(e)` 不含工作目录；降级警告是消息对象。
   - 新增 `tests/server/test_jobs.py`：
-    - `_execute` 的五条路径：成功并降级、`ConversionError` 带报告、已映射的 `LLMError`、`needs_ref` 的 `LLMError`、意外异常；
+    - `_execute` 的五条路径：成功并降级、`ConversionError` 带报告、已映射的 `LLMError`、`needs_ref` 的 `LLMError`（`llm.bad_request` 带编号）、意外异常；
     - 版本记录的 `error_msg`、`quality_msg`、`debug_log`；
     - `/jobs/{id}` 不含 `debug_log`；
     - 管理员调试日志接口与审计；
@@ -913,8 +930,24 @@
 - `job.event.unparseable`、`job.event.repair_failed`：原来把报告原文接在后面，现在只说现象，报告进调试日志；
 - `job.event.persist_failed`、`job.event.memory_failed`：去掉异常 `repr`；
 - 全部 `llm.*`、`assistant.unavailable`、`assistant.crashed`、`job.crashed`：取代原来带接口原文或 `repr(e)` 的写法；
+- 前端：`failHead`（一行显示只取失败原因）与兼容渲染先于后端改动落地（计划 Task 0）；
 - `assistant.tool.quote_changed`：文字与原来相同，只是金额与要出的段改为参数。
 
 ### 修订记录
 
 - 2026-11-13 子计划 3 交付后起草。用户已决：管理后台仍显示模型名（见上一节）。
+
+### 设计审查修订记录
+
+- 2026-11-13 独立设计审查（结论 approve with changes：0 Critical / 4 Important / 14 Minor），本节与计划同步修订：
+  - I1 中间提交会让前端崩溃：F 节「旧前端」改写，计划新增 Task 0（前端先行兼容）。
+  - I2 `llm.bad_request` 原先在主路径上被换成 `job.crashed` 或 `assistant.crashed`：B 节、C 节「编号」、D 节 `error` 事件改为保留代码并带编号。
+  - I3 余额不足的 400 会被判成 `llm.bad_request`：C 节映射顺序加余额特征；G 节写明现有第 6 节要改。
+  - I4 流式中途的瞬时错误原先不重试：按协调方裁定，转换路径有界重试，助手不重试；C 节「重试」改写。
+  - Minor 中涉及本节的：
+    - `max_tokens` 配置错误判为配置有误（M2）；
+    - httpx2 超时（M3）；
+    - 按 LangChain 的 `Model*Error` 分类（M4）；
+    - 调试日志的内存上限与成功后补落（M5、M6）；
+    - 提示词兼写 Inkreel（M14）。
+  - 其余 Minor 只改计划，取舍见计划的「修订记录」与 R4、R7、R8、R10、R17。
