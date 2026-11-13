@@ -3,7 +3,7 @@
  *  除注册/登录外的所有接口都要带 token；后端按 token 判定身份，
  *  各人只看得到自己的小说。会话结构：小说（长期记忆）→ 章节 → 版本（每次转换）。
  */
-import { tr } from './i18n/core'
+import { currentLocale, tr } from './i18n/core'
 import { getToken, notifyUnauthorized } from './auth'
 import { parseSse } from './lib/sse'
 import type { User } from './auth'
@@ -450,7 +450,7 @@ export function downloadUrl(url: string, name: string): void {
 
 /** 导出剪辑工程（FCPXML 工程包 zip）：带登录态取回后存盘；失败抛带服务端 detail 的错误 */
 export async function exportFcpxml(nid: string, cid: string, vid: string): Promise<void> {
-  const res = await send(`${filmPath(nid, cid, vid)}/export.zip`)
+  const res = await send(`${filmPath(nid, cid, vid)}/export.zip?lang=${currentLocale()}`)
   const name = dispositionName(res.headers.get('content-disposition') ?? '') ?? 'project.zip'
   downloadUrl(URL.createObjectURL(await res.blob()), name)
 }

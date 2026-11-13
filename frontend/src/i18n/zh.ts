@@ -1558,6 +1558,7 @@ export const zh = {
     export: {
       none: '还没有合成好的成片', stale: '成片已过期，请先重新合成',
       no_timeline: '这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）',
+      voice_prerender: '预渲染配音 {line} 失败', missing_file: '合成产物缺失（{file}），请重新合成',
       busy: '正在合成，完成后再导出',
       no_ffmpeg: '服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员',
     },

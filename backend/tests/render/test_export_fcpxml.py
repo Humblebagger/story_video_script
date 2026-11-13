@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from render.export_fcpxml import build_fcpxml, extra_media, readme  # noqa: E402
+from render.export_fcpxml import ExportError, build_fcpxml, export, extra_media, readme  # noqa: E402
 from fcpxml_check import check_structure, frames  # noqa: E402
 
 
@@ -171,6 +171,68 @@ def main() -> None:
         ]
         (root / "session.json").write_text(json.dumps({"free": bad + [good]}, ensure_ascii=False), encoding="utf-8")
         assert [(rel, disk.name) for rel, disk, _ in extra_media(root)] == [("media/extra/G01.mp4", "G01.mp4")]
+
+    # README 按语言：不带 lang 与并排一致；zh/en 各只有一段，附加行单语也在
+    both = readme(TL, "测试")
+    zh_only, en_only = readme(TL, "测试", lang="zh"), readme(TL, "测试", lang="en")
+    assert "----" not in zh_only and "----" not in en_only
+    assert "剪辑工程说明" in zh_only and "relink" not in zh_only
+    assert "relink" in en_only and not re.search(r"[一-鿿]", en_only.replace("测试", ""))
+    assert both == zh_only.rstrip("\n") + "\n\n----\n\n" + en_only
+    assert readme(TL, "测试", lang="fr") == both
+    tlp = {**TL, "episodes": [{**TL["episodes"][0], "segments": [{**seg("K03", 0, 1, "a.mp4"), "placeholder": True}]}]}
+    assert "E01/K03" in readme(tlp, "t", lang="zh") and "E01/K03" in readme(tlp, "t", lang="en")
+    ex1 = [("media/extra/F01.mp4", "x")]
+    assert "补拍素材" in readme(TL, "t", ex1, lang="zh") and "Extra footage" not in readme(TL, "t", ex1, lang="zh")
+    assert "Extra footage" in readme(TL, "t", ex1, lang="en") and "补拍素材" not in readme(TL, "t", ex1, lang="en")
+    # 导出：文件名带语言，互不覆盖；报错带代码
+    import zipfile
+    from render import mix as _mix
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "final").mkdir()
+        e = None
+        try:
+            export(root, title="T", tools=("ffmpeg", "ffprobe"))
+        except ExportError as ex_:
+            e = ex_
+        assert e is not None and e.as_msg()["code"] == "export.no_timeline", e
+        (root / "clips").mkdir()
+        (root / "clips" / "a.mp4").write_bytes(b"x")
+        tl = {**TL, "episodes": [{**TL["episodes"][0], "segments": [seg("K01", 0, 1, "clips/a.mp4")], "speech": [], "bgm": None}]}
+        (root / "final" / "timeline.json").write_text(json.dumps(tl), encoding="utf-8")
+        old = _mix.media_seconds
+        _mix.media_seconds = lambda disk, probe: 1.0
+        try:
+            outs = {l: export(root, title="T", tools=("ffmpeg", "ffprobe"), lang=l) for l in ("en", "zh", None, "fr")}
+            assert [o.name for o in outs.values()] == ["T.en.zip", "T.zh.zip", "T.zip", "T.zip"]
+            assert all(o.exists() for o in outs.values())
+            rd = lambda o: zipfile.ZipFile(o).read("T/README.txt").decode()
+            assert "relink" in rd(outs["en"]) and "----" not in rd(outs["en"]) and "relink" not in rd(outs["zh"])
+            assert "----" in rd(outs[None])
+            # 产物缺失
+            (root / "clips" / "a.mp4").unlink()
+            try:
+                export(root, title="T", tools=("ffmpeg", "ffprobe"))
+                raise AssertionError("应抛 ExportError")
+            except ExportError as ex_:
+                m = ex_.as_msg()
+                assert m["code"] == "export.missing_file" and m["params"] == {"file": "media/clips/K01.mp4"}, m
+            (root / "clips" / "a.mp4").write_bytes(b"x")
+            # 预渲染配音失败：stderr 不变
+            (root / "v.wav").write_bytes(b"x")
+            sp = {"line": "L1", "file": "v.wav", "speed": 1.2, "start": 0, "duration": 1}
+            tl["episodes"][0]["speech"] = [sp]
+            (root / "final" / "timeline.json").write_text(json.dumps(tl), encoding="utf-8")
+            try:
+                export(root, title="T", tools=("/nonexistent-ffmpeg", "ffprobe"))
+                raise AssertionError("应抛 ExportError")
+            except ExportError as ex_:
+                m = ex_.as_msg()
+                assert m["code"] == "export.voice_prerender" and m["params"] == {"line": "L1"}, m
+                assert ex_.stderr and "预渲染配音 L1 失败" == str(ex_)
+        finally:
+            _mix.media_seconds = old
     print("ALL PASS")
 
 

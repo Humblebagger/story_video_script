@@ -185,11 +185,14 @@ def main() -> int:
 
     zname = ["药-第一章.zip"]
 
-    def fake_export(root_, *, title, tools):
+    langs = []
+
+    def fake_export(root_, *, title, tools, lang=None):
         assert tools == ("ffmpeg", "ffprobe") and "药" in title and "第一章" in title
+        langs.append(lang)
         d = Path(root_) / "final" / "export"
         d.mkdir(parents=True, exist_ok=True)
-        z = d / zname[0]
+        z = d / (zname[0].replace(".zip", f".{lang}.zip") if lang else zname[0])
         with zipfile.ZipFile(z, "w") as zf:
             zf.writestr("药/project.fcpxml", "<fcpxml/>")
         return z
@@ -209,13 +212,24 @@ def main() -> int:
             'attachment; filename="My_Novel-Chapter_1-ab12cd34.zip"; '
             "filename*=UTF-8''My_Novel-Chapter_1-ab12cd34.zip"), r.headers["content-disposition"]
         assert any(n.endswith("project.fcpxml") for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist())
-        # 导出报错转 409 且不带服务器目录
-        def boom(root_, *, title, tools):
-            raise export_fcpxml.ExportError(f"缺文件 {root_}/final/x.mp4")
+        # 语言：?lang=en 文件名带 .en.zip；?lang=fr 视同不带
+        langs.clear()
+        r = c.get(R + "/export.zip?lang=en", headers=H)
+        assert r.status_code == 200 and langs == ["en"], (r.text, langs)
+        assert "My_Novel-Chapter_1-ab12cd34.en.zip" in r.headers["content-disposition"], r.headers["content-disposition"]
+        r = c.get(R + "/export.zip?lang=fr", headers=H)
+        assert r.status_code == 200 and langs == ["en", None], langs
+        assert r.headers["content-disposition"].startswith('attachment; filename="My_Novel-Chapter_1-ab12cd34.zip"')
+        # 导出报错转 409 消息对象且不带服务器目录
+        def boom(root_, *, title, tools, lang=None):
+            raise export_fcpxml.ExportError.of("export.missing_file", file=f"{root_}/final/x.mp4")
         export_fcpxml.export = boom
         r = c.get(R + "/export.zip", headers=H)
         dumped = json.dumps(r.json()["detail"], ensure_ascii=False)
         assert r.status_code == 409 and str(root) not in dumped and str(Path(root).resolve()) not in dumped, r.text
+        d = r.json()["detail"]
+        assert d["code"] == "export.missing_file" and d["params"]["file"].startswith("…/final/x.mp4"), d
+        assert "合成产物缺失" in d["message"]
         export_fcpxml.export = fake_export
         # 没装 ffmpeg
         mix.tools = lambda: None

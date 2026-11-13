@@ -325,6 +325,8 @@ register("compose.bgm.too_big", "BGM 文件为空或超过 30MB")
 register("export.none", "还没有合成好的成片")
 register("export.stale", "成片已过期，请先重新合成")
 register("export.no_timeline", "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）")
+register("export.voice_prerender", "预渲染配音 {line} 失败")
+register("export.missing_file", "合成产物缺失（{file}），请重新合成")
 register("export.busy", "正在合成，完成后再导出")
 register("export.no_ffmpeg", "服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员")
 

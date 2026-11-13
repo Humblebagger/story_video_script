@@ -130,7 +130,7 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
     const u = String(url)
     if (u.includes('/render/session')) return new Response(JSON.stringify(filmState), { status: 200 })
     if (u.includes('/jobs/')) return new Response(JSON.stringify(jobState), { status: jobState ? 200 : 404 })
-    if (u.endsWith('/export.zip')) return new Response('zip', { status: 200, headers: { 'content-disposition': 'attachment; filename="p.zip"' } })
+    if (u.includes('/export.zip')) return new Response('zip', { status: 200, headers: { 'content-disposition': 'attachment; filename="p.zip"' } })
     return new Response(JSON.stringify({ messages: history }), { status: 200 })
   }
   if (method === 'DELETE') return new Response(JSON.stringify({ ok: true }), { status: 200 })

@@ -11,9 +11,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 from render import mix
+from server.messages import UserError
 
 
-class ExportError(Exception):
+class ExportError(UserError, Exception):
+    """导出失败：message 给用户看（带代码，见 UserError）；stderr 是 ffmpeg 的错误输出（截尾）。"""
+
     def __init__(self, msg: str, stderr: str = ""):
         super().__init__(msg)
         self.stderr = stderr
@@ -83,7 +86,7 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
             use(seg["file"], bounds[i + 1] - bounds[i])
         for sp in ep["speech"]:
             if not clips:
-                raise ValueError(f"{ep['episode']} 有配音但没有视频段")
+                raise ValueError(f"{ep['episode']} 有配音但没有视频段")  # i18n: internal
             f = round(sp["start"] * fps)
             i = next((k for k in range(len(clips)) if bounds[k] <= f < bounds[k + 1]), len(clips) - 1)
             d = max(1, round(sp["duration"] * fps))
@@ -108,7 +111,7 @@ def build_fcpxml(timeline: dict, media: dict, *, event: str = "Storyboard") -> s
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n' + ET.tostring(root, encoding="unicode") + "\n"
 
 
-def readme(timeline: dict, title: str, extras=()) -> str:
+def readme(timeline: dict, title: str, extras=(), lang=None) -> str:
     ph = [f"{ep['episode']}/{s['clip']}" for ep in timeline["episodes"] for s in ep["segments"] if s.get("placeholder")]
     zh = [
         f"《{title}》剪辑工程说明",
@@ -137,6 +140,10 @@ def readme(timeline: dict, title: str, extras=()) -> str:
         for rel, line in extras:
             zh.append(f"  - {rel}  {line}")
             en.append(f"  - {rel}  {line}")
+    if lang == "zh":
+        return "\n".join(zh) + "\n"
+    if lang == "en":
+        return "\n".join(en) + "\n"
     return "\n".join(zh) + "\n\n----\n\n" + "\n".join(en) + "\n"
 
 
@@ -183,21 +190,22 @@ def _fast_voice(src: Path, speed: float, cache: Path, line: str, ffmpeg: str) ->
                             "-ar", "48000", str(tmp)], capture_output=True, text=True)
     except OSError as e:
         tmp.unlink(missing_ok=True)
-        raise ExportError(f"预渲染配音 {line} 失败", str(e))
+        raise ExportError.of("export.voice_prerender", str(e), line=line)
     if r.returncode != 0:
         tmp.unlink(missing_ok=True)
-        raise ExportError(f"预渲染配音 {line} 失败", (r.stderr or "")[-4000:])
+        raise ExportError.of("export.voice_prerender", (r.stderr or "")[-4000:], line=line)
     tmp.replace(out)
     return out
 
 
-def export(root, *, title: str, tools: tuple) -> Path:
+def export(root, *, title: str, tools: tuple, lang=None) -> Path:
     """读 final/timeline.json，准备素材（提速配音预渲染并缓存），打包成 final/export/<安全名>.zip。"""
     root = Path(root)
+    lang = lang if lang in ("zh", "en") else None
     ffmpeg, ffprobe = tools
     tl_path = root / "final" / "timeline.json"
     if not tl_path.is_file():
-        raise ExportError("这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）")
+        raise ExportError.of("export.no_timeline")
     tl = json.loads(tl_path.read_text(encoding="utf-8"))
     export_dir = root / "final" / "export"
     media, files = {}, {}     # media：时间轴原路径 -> 描述；files：包内相对路径 -> 磁盘文件
@@ -206,7 +214,7 @@ def export(root, *, title: str, tools: tuple) -> Path:
         if key in media:
             return
         if not disk.is_file():
-            raise ExportError(f"合成产物缺失（{rel}），请重新合成")
+            raise ExportError.of("export.missing_file", file=rel)
         media[key] = {"rel": rel, "seconds": mix.media_seconds(disk, ffprobe), "audio": True, "video": video}
         files[rel] = disk
 
@@ -219,7 +227,7 @@ def export(root, *, title: str, tools: tuple) -> Path:
                 continue
             src = root / sp["file"]
             if not src.is_file():
-                raise ExportError(f"合成产物缺失（{sp['file']}），请重新合成")
+                raise ExportError.of("export.missing_file", file=sp["file"])
             disk = src if sp["speed"] == 1 else _fast_voice(src, sp["speed"], export_dir / "voice",
                                                             sp["line"], ffmpeg)
             put(key, f"media/voice/{sp['line']}.wav", disk, video=False)
@@ -230,13 +238,14 @@ def export(root, *, title: str, tools: tuple) -> Path:
     for rel, disk, _line in extras:
         files[rel] = disk
     xml = build_fcpxml(tl, media, event=title)
-    text = readme(tl, title, [(rel, line) for rel, _disk, line in extras])
+    text = readme(tl, title, [(rel, line) for rel, _disk, line in extras], lang)
     safe = re.sub(r'[\\/:*?"<>|\s]+', "_", title)[:80].strip(". _")
     if not safe.strip("."):
         safe = "storyboard-export"
     export_dir.mkdir(parents=True, exist_ok=True)
-    out = export_dir / f"{safe}.zip"
-    fd, name = tempfile.mkstemp(suffix=".part", prefix=f"{safe}.zip.", dir=export_dir)
+    zip_name = f"{safe}.{lang}.zip" if lang else f"{safe}.zip"
+    out = export_dir / zip_name
+    fd, name = tempfile.mkstemp(suffix=".part", prefix=f"{zip_name}.", dir=export_dir)
     os.close(fd)
     tmp = Path(name)
     try:

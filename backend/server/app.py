@@ -1289,16 +1289,17 @@ def render_compose_get(nid: str, cid: str, vid: str, draft: bool = True, user: d
 
 
 @app.get(_R + "/export.zip")
-def render_export(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
+def render_export(nid: str, cid: str, vid: str, lang: Optional[str] = None, user: dict = Depends(novel_user)):
     """导出剪辑工程（FCPXML + 素材 + 字幕 + 说明）。只读本地文件、跑本地 ffmpeg，不花钱。"""
     root, tools = _export_check(user, nid, cid, vid)
     novel = _novel_call(novels.get_novel, user["id"], nid)
     chapter = next((c for c in novel["chapters"] if c["id"] == cid), {})
     title = f"{novel['title']}-{chapter.get('title', cid)}-{vid[:8]}"
+    lang = lang if lang in ("zh", "en") else None      # 其它值视同不带：README 中英并排、文件名不带语言
     try:
-        path = render_export_fcpxml.export(root, title=title, tools=tools)
+        path = render_export_fcpxml.export(root, title=title, tools=tools, lang=lang)
     except render_export_fcpxml.ExportError as e:
-        raise HTTPException(409, _hide_root(str(e), root))
+        raise HTTPException(409, _hide_root_deep(to_detail(e), root))
     # 不让 Starlette 按名字猜：任何名字都同时给 ASCII 兜底的 filename= 和 UTF-8 的 filename*=
     ascii_name = path.name.encode("ascii", "replace").decode("ascii").replace('"', "").replace("\\", "").replace("?", "_")
     cd = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(path.name)}"

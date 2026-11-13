@@ -1565,6 +1565,7 @@ export const en: Messages = {
     export: {
       none: 'There is no composed film yet', stale: 'The film is out of date. Compose it again first',
       no_timeline: 'This film was composed by an older version. Compose it once more to export (existing voice-overs and normalized clips are reused, at no cost)',
+      voice_prerender: 'Failed to pre-render voice-over {line}', missing_file: 'A composed file is missing ({file}). Please compose again',
       busy: 'Composing is in progress. Export once it finishes',
       no_ffmpeg: 'The server is missing ffmpeg, a video processing component, so exporting is unavailable for now. Please contact the administrator',
     },

@@ -157,6 +157,12 @@
     "params": [],
     "zh": "正在合成，完成后再导出"
   },
+  "export.missing_file": {
+    "params": [
+      "file"
+    ],
+    "zh": "合成产物缺失（{file}），请重新合成"
+  },
   "export.no_ffmpeg": {
     "params": [],
     "zh": "服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员"
@@ -172,6 +178,12 @@
   "export.stale": {
     "params": [],
     "zh": "成片已过期，请先重新合成"
+  },
+  "export.voice_prerender": {
+    "params": [
+      "line"
+    ],
+    "zh": "预渲染配音 {line} 失败"
   },
   "film.ark.access_denied": {
     "params": [],
