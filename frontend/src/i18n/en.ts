@@ -1354,7 +1354,7 @@ export const en: Messages = {
     unitMissing: '(not found: {id})',
   },
   srv: {
-    common: { unknown: '{message}', internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.' },
+    common: { image_too_big: 'The image is empty or larger than {mb} MB', unknown: '{message}', internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.' },
     console: { generic: 'the provider console', ark: 'the Volcengine Ark console', minimax: 'the MiniMax Open Platform' },
     rate: {
       fake: 'Fake provider: offline and free; amounts are for demo only',
@@ -1577,6 +1577,40 @@ export const en: Messages = {
       disabled: 'This account has been disabled', bad_credentials: 'Incorrect username or password',
       user_not_found: 'User not found',
     },
+    novel: {
+      bad_id: 'Invalid ID: {id}', not_found: 'Novel not found', empty_title: 'The novel title can’t be empty',
+      title_taken: '"{title}" already exists', unknown_params: 'Unknown production settings: {keys}',
+      asset: {
+        unknown_kind: 'Unknown asset category: {kind}', no_id: 'An asset card needs an id', no_name: 'An asset card needs a name',
+        not_found: 'Asset card not found', id_mismatch: 'The card id doesn’t match the path: {got} != {want}',
+      },
+      lifecycle: {
+        unknown_character: 'There is no character {id} in the asset library',
+        unknown_type: 'Unknown status type: {type} (options: {options})',
+        unknown_status: 'Unknown status: {status}', not_found: 'Lifecycle record not found',
+      },
+      constraint: { no_text: 'A constraint needs a rule (text)', not_found: 'Constraint not found' },
+      style: { bad_type: 'Style reference images must be PNG, JPEG or WebP', not_found: 'This novel has no style reference image yet' },
+    },
+    chapter: {
+      not_found: 'Chapter not found', empty_title: 'The chapter title can’t be empty',
+      text_locked: 'This chapter has an adopted version, so its source text is locked. Create a new chapter to change the text',
+      no_text: 'This chapter has no source text yet', no_adopted: 'This chapter has no adopted version yet',
+      synopsis_too_long: 'A chapter synopsis can be at most {max} characters (currently {len})',
+      version: {
+        not_found: 'Version not found',
+        adopted_delete: 'This is the chapter’s adopted version. Adopt another version before deleting it',
+        busy: 'Clips from this version are still generating. Delete it after they finish or fail',
+        not_adoptable: 'This version can’t be adopted yet. Only versions that converted successfully and still pass re-verification after edits can be adopted',
+        later_adopted: 'Later chapters ({names}) were converted continuing this chapter’s numbering, so this chapter can’t switch versions. Delete or reconvert those chapters first',
+      },
+      keyframe: {
+        bad_type: 'Keyframes must be PNG, JPEG or WebP images', no_shot: 'This version has no shot {shot}',
+        not_found: 'This shot has no keyframe yet',
+      },
+    },
+    usage: { monthly_cap: 'You’ve reached this month’s usage limit. Please contact the administrator' },
+    library: { empty_title: 'The work name can’t be empty' },
     voice: { narrator: 'Narrator', unlabeled: '(no speaker)' },
   },
 }

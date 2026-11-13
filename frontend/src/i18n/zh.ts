@@ -1348,7 +1348,7 @@ export const zh = {
     unitMissing: '（未找到 {id}）',
   },
   srv: {
-    common: { unknown: '{message}', internal: '服务器出了点问题，请稍后重试；仍失败请联系管理员' },
+    common: { image_too_big: '图片为空或超过 {mb}MB', unknown: '{message}', internal: '服务器出了点问题，请稍后重试；仍失败请联系管理员' },
     console: { generic: '厂商控制台', ark: '方舟控制台', minimax: 'MiniMax 开放平台' },
     rate: {
       fake: '假厂商：不联网、不花钱，金额只用于演示',
@@ -1569,6 +1569,38 @@ export const zh = {
       password_short: '密码至少 {min} 位', username_taken: '用户名已被占用', disabled: '账号已停用',
       bad_credentials: '用户名或密码不正确', user_not_found: '用户不存在',
     },
+    novel: {
+      bad_id: '非法的 ID：{id}', not_found: '小说不存在', empty_title: '小说标题不能为空',
+      title_taken: '《{title}》已存在', unknown_params: '未知的制作参数：{keys}',
+      asset: {
+        unknown_kind: '未知的资产类别：{kind}', no_id: '资产卡必须带 id', no_name: '资产卡必须有名称',
+        not_found: '资产卡不存在', id_mismatch: '卡片 id 与路径不一致：{got} != {want}',
+      },
+      lifecycle: {
+        unknown_character: '资产库里没有角色 {id}', unknown_type: '未知的状态类型：{type}（可选 {options}）',
+        unknown_status: '未知的状态：{status}', not_found: '生命周期记录不存在',
+      },
+      constraint: { no_text: '限制必须写明规则（text）', not_found: '限制不存在' },
+      style: { bad_type: '风格参考图只收 PNG / JPEG / WebP 图片', not_found: '这部小说还没有风格参考图' },
+    },
+    chapter: {
+      not_found: '章节不存在', empty_title: '章节标题不能为空',
+      text_locked: '本章已有采用版，原文已锁定；要改原文请新建章节',
+      no_text: '本章还没有原文', no_adopted: '本章还没有采用版',
+      synopsis_too_long: '每章摘要不超过 {max} 字（现在 {len} 字）',
+      version: {
+        not_found: '版本不存在', adopted_delete: '这是本章的采用版，先采用别的版本再删',
+        busy: '这个版本还有片段在出，等出完或失败后再删',
+        not_adoptable: '这个版本还不能采用：只有转换成功、且人工编辑后仍通过复验的版本可以',
+        later_adopted: '后面的章节（{names}）已经接着本章的编号转换过，本章不能再换采用版；要换，先删掉或重转后面的章节',
+      },
+      keyframe: {
+        bad_type: '关键帧只收 PNG / JPEG / WebP 图片', no_shot: '这个版本里没有镜头 {shot}',
+        not_found: '这个镜头还没有关键帧',
+      },
+    },
+    usage: { monthly_cap: '本月用量已达上限，请联系管理员' },
+    library: { empty_title: '作品名不能为空' },
     voice: { narrator: '旁白', unlabeled: '（未标说话人）' },
   },
 }

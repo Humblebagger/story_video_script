@@ -115,6 +115,28 @@ def main() -> int:
     assert e.status_code == 404
     print("接口: 提示词 / 列表 / 取图 / 删除 / 不存在 404 ✓")
 
+    # 5. 上传报错是消息对象
+    import asyncio
+
+    class Req:
+        def __init__(self, ctype, body):
+            self.headers, self._b = {"content-type": ctype}, body
+
+        async def body(self):
+            return self._b
+
+    put = lambda shot, ctype, body: must_raise(  # noqa: E731
+        HTTPException, lambda: asyncio.run(app_mod.keyframes_put(nid, cid, "v2", shot, Req(ctype, body), A)))
+    e = put(sid, "text/html", b"<x>")
+    assert e.status_code == 422 and e.detail["code"] == "chapter.keyframe.bad_type"
+    e = put(sid, "image/png", b"0" * (novels.KEYFRAME_MAX_BYTES + 1))
+    assert e.status_code == 422 and e.detail["code"] == "common.image_too_big" and e.detail["params"] == {"mb": 8}
+    e = put("E99-SH001", "image/png", PNG)
+    assert e.status_code == 404 and e.detail["code"] == "chapter.keyframe.no_shot" and e.detail["params"]["shot"] == "E99-SH001"
+    e = must_raise(HTTPException, app_mod.keyframes_get, nid, cid, "v2", sid, A)
+    assert e.status_code == 404 and e.detail["code"] == "chapter.keyframe.not_found"
+    print("上传报错: 类型 / 过大 / 没有镜头 / 没有关键帧 ✓")
+
     print("\nALL PASS")
     return 0
 

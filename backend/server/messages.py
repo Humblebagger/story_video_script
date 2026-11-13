@@ -353,6 +353,47 @@ register("auth.disabled", "账号已停用")
 register("auth.bad_credentials", "用户名或密码不正确")
 register("auth.user_not_found", "用户不存在")
 
+register("common.image_too_big", "图片为空或超过 {mb}MB")
+# 小说与长期记忆
+register("novel.bad_id", "非法的 ID：{id}")
+register("novel.not_found", "小说不存在")
+register("novel.empty_title", "小说标题不能为空")
+register("novel.title_taken", "《{title}》已存在")
+register("novel.unknown_params", "未知的制作参数：{keys}")
+register("novel.asset.unknown_kind", "未知的资产类别：{kind}")
+register("novel.asset.no_id", "资产卡必须带 id")
+register("novel.asset.no_name", "资产卡必须有名称")
+register("novel.asset.not_found", "资产卡不存在")
+register("novel.asset.id_mismatch", "卡片 id 与路径不一致：{got} != {want}")
+register("novel.lifecycle.unknown_character", "资产库里没有角色 {id}")
+register("novel.lifecycle.unknown_type", "未知的状态类型：{type}（可选 {options}）")
+register("novel.lifecycle.unknown_status", "未知的状态：{status}")
+register("novel.lifecycle.not_found", "生命周期记录不存在")
+register("novel.constraint.no_text", "限制必须写明规则（text）")
+register("novel.constraint.not_found", "限制不存在")
+register("novel.style.bad_type", "风格参考图只收 PNG / JPEG / WebP 图片")
+register("novel.style.not_found", "这部小说还没有风格参考图")
+# 章节、版本、关键帧
+register("chapter.not_found", "章节不存在")
+register("chapter.empty_title", "章节标题不能为空")
+register("chapter.text_locked", "本章已有采用版，原文已锁定；要改原文请新建章节")
+register("chapter.no_text", "本章还没有原文")
+register("chapter.no_adopted", "本章还没有采用版")
+register("chapter.synopsis_too_long", "每章摘要不超过 {max} 字（现在 {len} 字）")
+register("chapter.version.not_found", "版本不存在")
+register("chapter.version.adopted_delete", "这是本章的采用版，先采用别的版本再删")
+register("chapter.version.busy", "这个版本还有片段在出，等出完或失败后再删")
+register("chapter.version.not_adoptable", "这个版本还不能采用：只有转换成功、且人工编辑后仍通过复验的版本可以")
+register("chapter.version.later_adopted", "后面的章节（{names}）已经接着本章的编号转换过，"
+                                          "本章不能再换采用版；要换，先删掉或重转后面的章节")
+register("chapter.keyframe.bad_type", "关键帧只收 PNG / JPEG / WebP 图片")
+register("chapter.keyframe.no_shot", "这个版本里没有镜头 {shot}")
+register("chapter.keyframe.not_found", "这个镜头还没有关键帧")
+# 用量
+register("usage.monthly_cap", "本月用量已达上限，请联系管理员")
+# 旧资产库
+register("library.empty_title", "作品名不能为空")
+
 
 if __name__ == "__main__":
     if "--write" in sys.argv:

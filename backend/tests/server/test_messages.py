@@ -110,6 +110,8 @@ def main() -> int:
               "film.minimax.not_json", "film.ark.no_task_id", "film.minimax.no_task_id", "film.ark.throttled"):
         assert codes[c]["params"] == [], (c, codes[c])
     assert codes["film.minimax.bad_resolution"]["params"] == ["resolution", "options"]
+    assert codes["novel.unknown_params"]["params"] == ["keys"]
+    assert codes["chapter.version.not_adoptable"]["params"] == []
     assert M.render_zh("film.provider.submit_cut", {}) == "网络中断"
     assert M.render_zh("film.submit.crashed", {}) == "提交时出现意外错误，请重试；仍失败请联系管理员"
 

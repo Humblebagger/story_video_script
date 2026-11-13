@@ -24,7 +24,7 @@ def runs_dir(user_id: str) -> Path:
 
 def _path(user_id: str, run_id: str) -> Path:
     if not _ID_RE.match(run_id):
-        raise ValueError(f"非法的记录 ID：{run_id!r}")
+        raise ValueError(f"非法的记录 ID：{run_id!r}")  # i18n: internal
     return runs_dir(user_id) / f"{run_id}.json"
 
 

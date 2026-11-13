@@ -33,6 +33,75 @@
     "params": [],
     "zh": "用户名已被占用"
   },
+  "chapter.empty_title": {
+    "params": [],
+    "zh": "章节标题不能为空"
+  },
+  "chapter.keyframe.bad_type": {
+    "params": [],
+    "zh": "关键帧只收 PNG / JPEG / WebP 图片"
+  },
+  "chapter.keyframe.no_shot": {
+    "params": [
+      "shot"
+    ],
+    "zh": "这个版本里没有镜头 {shot}"
+  },
+  "chapter.keyframe.not_found": {
+    "params": [],
+    "zh": "这个镜头还没有关键帧"
+  },
+  "chapter.no_adopted": {
+    "params": [],
+    "zh": "本章还没有采用版"
+  },
+  "chapter.no_text": {
+    "params": [],
+    "zh": "本章还没有原文"
+  },
+  "chapter.not_found": {
+    "params": [],
+    "zh": "章节不存在"
+  },
+  "chapter.synopsis_too_long": {
+    "params": [
+      "max",
+      "len"
+    ],
+    "zh": "每章摘要不超过 {max} 字（现在 {len} 字）"
+  },
+  "chapter.text_locked": {
+    "params": [],
+    "zh": "本章已有采用版，原文已锁定；要改原文请新建章节"
+  },
+  "chapter.version.adopted_delete": {
+    "params": [],
+    "zh": "这是本章的采用版，先采用别的版本再删"
+  },
+  "chapter.version.busy": {
+    "params": [],
+    "zh": "这个版本还有片段在出，等出完或失败后再删"
+  },
+  "chapter.version.later_adopted": {
+    "params": [
+      "names"
+    ],
+    "zh": "后面的章节（{names}）已经接着本章的编号转换过，本章不能再换采用版；要换，先删掉或重转后面的章节"
+  },
+  "chapter.version.not_adoptable": {
+    "params": [],
+    "zh": "这个版本还不能采用：只有转换成功、且人工编辑后仍通过复验的版本可以"
+  },
+  "chapter.version.not_found": {
+    "params": [],
+    "zh": "版本不存在"
+  },
+  "common.image_too_big": {
+    "params": [
+      "mb"
+    ],
+    "zh": "图片为空或超过 {mb}MB"
+  },
   "common.internal": {
     "params": [],
     "zh": "服务器出了点问题，请稍后重试；仍失败请联系管理员"
@@ -821,6 +890,100 @@
     ],
     "zh": "厂商暂时不可用（已重试 {retries} 次）：{cause}"
   },
+  "library.empty_title": {
+    "params": [],
+    "zh": "作品名不能为空"
+  },
+  "novel.asset.id_mismatch": {
+    "params": [
+      "got",
+      "want"
+    ],
+    "zh": "卡片 id 与路径不一致：{got} != {want}"
+  },
+  "novel.asset.no_id": {
+    "params": [],
+    "zh": "资产卡必须带 id"
+  },
+  "novel.asset.no_name": {
+    "params": [],
+    "zh": "资产卡必须有名称"
+  },
+  "novel.asset.not_found": {
+    "params": [],
+    "zh": "资产卡不存在"
+  },
+  "novel.asset.unknown_kind": {
+    "params": [
+      "kind"
+    ],
+    "zh": "未知的资产类别：{kind}"
+  },
+  "novel.bad_id": {
+    "params": [
+      "id"
+    ],
+    "zh": "非法的 ID：{id}"
+  },
+  "novel.constraint.no_text": {
+    "params": [],
+    "zh": "限制必须写明规则（text）"
+  },
+  "novel.constraint.not_found": {
+    "params": [],
+    "zh": "限制不存在"
+  },
+  "novel.empty_title": {
+    "params": [],
+    "zh": "小说标题不能为空"
+  },
+  "novel.lifecycle.not_found": {
+    "params": [],
+    "zh": "生命周期记录不存在"
+  },
+  "novel.lifecycle.unknown_character": {
+    "params": [
+      "id"
+    ],
+    "zh": "资产库里没有角色 {id}"
+  },
+  "novel.lifecycle.unknown_status": {
+    "params": [
+      "status"
+    ],
+    "zh": "未知的状态：{status}"
+  },
+  "novel.lifecycle.unknown_type": {
+    "params": [
+      "type",
+      "options"
+    ],
+    "zh": "未知的状态类型：{type}（可选 {options}）"
+  },
+  "novel.not_found": {
+    "params": [],
+    "zh": "小说不存在"
+  },
+  "novel.style.bad_type": {
+    "params": [],
+    "zh": "风格参考图只收 PNG / JPEG / WebP 图片"
+  },
+  "novel.style.not_found": {
+    "params": [],
+    "zh": "这部小说还没有风格参考图"
+  },
+  "novel.title_taken": {
+    "params": [
+      "title"
+    ],
+    "zh": "《{title}》已存在"
+  },
+  "novel.unknown_params": {
+    "params": [
+      "keys"
+    ],
+    "zh": "未知的制作参数：{keys}"
+  },
   "rate.ark": {
     "params": [],
     "zh": "2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对"
@@ -932,6 +1095,10 @@
       "status"
     ],
     "zh": "豆包语音暂时不可用（HTTP {status}）"
+  },
+  "usage.monthly_cap": {
+    "params": [],
+    "zh": "本月用量已达上限，请联系管理员"
   },
   "voice.narrator": {
     "params": [],

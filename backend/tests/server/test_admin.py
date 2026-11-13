@@ -286,7 +286,7 @@ def part_api():
     carol_tok = auth.issue_token(carol_id)
     r = c.post(f"/novels/{nid}/chapters/{cid}/versions", json={},
                headers={"Authorization": f"Bearer {carol_tok}"})
-    assert r.status_code == 429 and "本月用量已达上限" in r.json()["detail"], r.text
+    assert r.status_code == 429 and r.json()["detail"]["code"] == "usage.monthly_cap", r.text
     assert carol["username"] == "carol"
 
     # 落账：章后整理调用后写一条 digest 记录

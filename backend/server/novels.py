@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from server.auth import user_dir
+from server.messages import UserError
 from server.library import KINDS, _merge_card
 from pipeline.novel_memory import LIFECYCLE_TYPES, SYNOPSIS_MAX, NovelContext
 from server.store import now_iso
@@ -36,11 +37,11 @@ _MIGRATED = ".migrated"
 _lock = threading.RLock()
 
 
-class NovelError(ValueError):
+class NovelError(UserError, ValueError):
     """业务规则不满足（名称重复、原文已锁定、不能采用……）。"""
 
 
-class NotFound(LookupError):
+class NotFound(UserError, LookupError):
     pass
 
 
@@ -56,7 +57,7 @@ def novels_dir(user_id: str) -> Path:
 
 def _check_id(value: str) -> str:
     if not _ID_RE.match(value or ""):
-        raise NovelError(f"非法的 ID：{value!r}")
+        raise NovelError.of("novel.bad_id", id=str(value))
     return value
 
 
@@ -111,7 +112,7 @@ def _empty_memory() -> dict:
 def _load_novel(user_id: str, nid: str) -> dict:
     novel = _read(_novel_dir(user_id, nid) / "novel.json")
     if novel is None:
-        raise NotFound("小说不存在")
+        raise NotFound.of("novel.not_found")
     memory = novel.setdefault("memory", _empty_memory())
     for key, value in _empty_memory().items():
         memory.setdefault(key, value)     # 第 1、2 阶段建的小说没有后加的几项
@@ -140,10 +141,10 @@ def create_novel(user_id: str, title: str, params: Optional[dict] = None) -> dic
     重名的两部小说没法区分。"""
     title = (title or "").strip()
     if not title:
-        raise NovelError("小说标题不能为空")
+        raise NovelError.of("novel.empty_title")
     with _lock:
         if any(n["title"] == title for n in _all_novels(user_id)):
-            raise NovelError(f"《{title}》已存在")
+            raise NovelError.of("novel.title_taken", title=title)
         now = now_iso()
         novel = {"id": _new_id("n"), "title": title, "created_at": now,
                  "updated_at": now, "params": dict(params or {}),
@@ -204,10 +205,10 @@ def update_novel(user_id: str, nid: str, *, title: Optional[str] = None,
         if title is not None:
             title = title.strip()
             if not title:
-                raise NovelError("小说标题不能为空")
+                raise NovelError.of("novel.empty_title")
             if any(n["title"] == title and n["id"] != nid
                    for n in _all_novels(user_id)):
-                raise NovelError(f"《{title}》已存在")
+                raise NovelError.of("novel.title_taken", title=title)
             novel["title"] = title
         if params is not None:
             novel["params"] = dict(params)
@@ -219,7 +220,7 @@ def delete_novel(user_id: str, nid: str) -> None:
     with _lock:
         d = _novel_dir(user_id, nid)
         if not (d / "novel.json").exists():
-            raise NotFound("小说不存在")
+            raise NotFound.of("novel.not_found")
         shutil.rmtree(d)
 
 
@@ -228,7 +229,7 @@ def delete_novel(user_id: str, nid: str) -> None:
 def _load_chapter(user_id: str, nid: str, cid: str) -> dict:
     chapter = _read(_chapter_dir(user_id, nid, cid) / "chapter.json")
     if chapter is None:
-        raise NotFound("章节不存在")
+        raise NotFound.of("chapter.not_found")
     return chapter
 
 
@@ -241,7 +242,7 @@ def create_chapter(user_id: str, nid: str, title: str, text: str = "",
                    order: Optional[int] = None) -> dict:
     title = (title or "").strip()
     if not title:
-        raise NovelError("章节标题不能为空")
+        raise NovelError.of("chapter.empty_title")
     with _lock:
         _load_novel(user_id, nid)
         existing = _chapters(user_id, nid)
@@ -268,11 +269,11 @@ def update_chapter(user_id: str, nid: str, cid: str, *, title: Optional[str] = N
             # 采用版的句单元就是从这份原文切出来的，原文一改，长期记忆里的编号与
             # 证据全都对不上了
             if chapter.get("adopted_version"):
-                raise NovelError("本章已有采用版，原文已锁定；要改原文请新建章节")
+                raise NovelError.of("chapter.text_locked")
             chapter["text"] = text
         if title is not None:
             if not title.strip():
-                raise NovelError("章节标题不能为空")
+                raise NovelError.of("chapter.empty_title")
             chapter["title"] = title.strip()
         if order is not None:
             chapter["order"] = int(order)
@@ -337,7 +338,7 @@ def create_version(user_id: str, nid: str, cid: str, vid: str, params: dict,
 def get_version(user_id: str, nid: str, cid: str, vid: str) -> dict:
     v = _read(_version_path(user_id, nid, cid, vid))
     if v is None:
-        raise NotFound("版本不存在")
+        raise NotFound.of("chapter.version.not_found")
     return v
 
 
@@ -405,10 +406,10 @@ def delete_version(user_id: str, nid: str, cid: str, vid: str) -> None:
     with _lock:
         chapter = _load_chapter(user_id, nid, cid)
         if chapter.get("adopted_version") == vid:
-            raise NovelError("这是本章的采用版，先采用别的版本再删")
+            raise NovelError.of("chapter.version.adopted_delete")
         path = _version_path(user_id, nid, cid, vid)
         if not path.exists():
-            raise NotFound("版本不存在")
+            raise NotFound.of("chapter.version.not_found")
         rdir = _chapter_dir(user_id, nid, cid) / "render" / vid
         if (rdir / "session.json").exists():
             # 出片会话：持会话锁检查并删除，出片线程写回时就会发现目录已没（不会重建）
@@ -416,7 +417,7 @@ def delete_version(user_id: str, nid: str, cid: str, vid: str) -> None:
             with render_session._lock(rdir):
                 s = render_session.load(rdir)
                 if s and render_session.any_in_flight(s):
-                    raise Busy("这个版本还有片段在出，等出完或失败后再删")
+                    raise Busy.of("chapter.version.busy")
                 path.unlink()
                 shutil.rmtree(rdir, ignore_errors=True)
         else:
@@ -536,8 +537,7 @@ def adopt_version(user_id: str, nid: str, cid: str, vid: str) -> dict:
         chapter = _load_chapter(user_id, nid, cid)
         v = get_version(user_id, nid, cid, vid)
         if v.get("status") not in ADOPTABLE or not v.get("result"):
-            raise NovelError(f"这个版本的状态是 {v.get('status')}，不能采用"
-                             "（只有转换成功、且人工编辑后仍通过复验的版本可以）")
+            raise NovelError.of("chapter.version.not_adoptable")
         if chapter.get("adopted_version") == vid:
             return {"chapter_id": cid, "adopted_version": vid, "added": 0, "merged": 0,
                     "retracted": 0, "changed": False}
@@ -545,9 +545,7 @@ def adopt_version(user_id: str, nid: str, cid: str, vid: str) -> dict:
                  if c["order"] > chapter["order"] and c.get("adopted_version")
                  and not c.get("legacy_numbering")]
         if later and not chapter.get("legacy_numbering"):
-            names = "、".join(c["title"] for c in later)
-            raise NovelError(f"后面的章节（{names}）已经接着本章的编号转换过，"
-                             "本章不能再换采用版；要换，先删掉或重转后面的章节")
+            raise NovelError.of("chapter.version.later_adopted", names=[c["title"] for c in later])
         retracted = 0
         if chapter.get("adopted_version"):
             retracted = _retract(novel, cid)
@@ -576,12 +574,12 @@ def seed_assets(user_id: str, nid: str) -> Optional[dict]:
 
 def upsert_asset(user_id: str, nid: str, kind: str, card: dict) -> dict:
     if kind not in KINDS:
-        raise NovelError(f"未知的资产类别：{kind}")
+        raise NovelError.of("novel.asset.unknown_kind", kind=kind)
     card_id = (card or {}).get("id")
     if not card_id:
-        raise NovelError("资产卡必须带 id")
+        raise NovelError.of("novel.asset.no_id")
     if not (card.get("name") or "").strip():
-        raise NovelError("资产卡必须有名称")
+        raise NovelError.of("novel.asset.no_name")
     with _lock:
         novel = _load_novel(user_id, nid)
         lst = novel["memory"]["assets"].setdefault(kind, [])
@@ -602,13 +600,13 @@ def upsert_asset(user_id: str, nid: str, kind: str, card: dict) -> dict:
 
 def delete_asset(user_id: str, nid: str, kind: str, card_id: str) -> None:
     if kind not in KINDS:
-        raise NovelError(f"未知的资产类别：{kind}")
+        raise NovelError.of("novel.asset.unknown_kind", kind=kind)
     with _lock:
         novel = _load_novel(user_id, nid)
         lst = novel["memory"]["assets"].get(kind) or []
         rest = [c for c in lst if c.get("id") != card_id]
         if len(rest) == len(lst):
-            raise NotFound("资产卡不存在")
+            raise NotFound.of("novel.asset.not_found")
         novel["memory"]["assets"][kind] = rest
         novel["memory"].setdefault("asset_origin", {}).get(kind, {}).pop(card_id, None)
         _save_novel(user_id, novel)
@@ -639,9 +637,9 @@ def _character_ids(novel: dict) -> set:
 
 def _check_lifecycle_fields(novel: dict, character_id, kind) -> None:
     if character_id not in _character_ids(novel):
-        raise NovelError(f"资产库里没有角色 {character_id}")
+        raise NovelError.of("novel.lifecycle.unknown_character", id=character_id)
     if kind not in LIFECYCLE_TYPES:
-        raise NovelError(f"未知的状态类型：{kind}（可选 {'、'.join(LIFECYCLE_TYPES)}）")
+        raise NovelError.of("novel.lifecycle.unknown_type", type=kind, options=list(LIFECYCLE_TYPES))
 
 
 def add_lifecycle(user_id: str, nid: str, *, character_id: str, type: str,
@@ -667,12 +665,12 @@ def update_lifecycle(user_id: str, nid: str, lid: str, *, status: Optional[str] 
                      type: Optional[str] = None, detail: Optional[str] = None) -> dict:
     """确认 / 驳回 / 修改。"""
     if status is not None and status not in ("proposed", "confirmed", "rejected"):
-        raise NovelError(f"未知的状态：{status}")
+        raise NovelError.of("novel.lifecycle.unknown_status", status=status)
     with _lock:
         novel = _load_novel(user_id, nid)
         entry = next((e for e in novel["memory"]["lifecycle"] if e["id"] == lid), None)
         if entry is None:
-            raise NotFound("生命周期记录不存在")
+            raise NotFound.of("novel.lifecycle.not_found")
         if type is not None:
             _check_lifecycle_fields(novel, entry["character_id"], type)
             entry["type"] = type
@@ -689,7 +687,7 @@ def delete_lifecycle(user_id: str, nid: str, lid: str) -> None:
         novel = _load_novel(user_id, nid)
         rest = [e for e in novel["memory"]["lifecycle"] if e["id"] != lid]
         if len(rest) == len(novel["memory"]["lifecycle"]):
-            raise NotFound("生命周期记录不存在")
+            raise NotFound.of("novel.lifecycle.not_found")
         novel["memory"]["lifecycle"] = rest
         _save_novel(user_id, novel)
 
@@ -706,7 +704,7 @@ def set_synopsis(user_id: str, nid: str, cid: str, synopsis: str) -> dict:
     """人改某章摘要：标 origin=user，之后不再被章后整理自动覆盖。"""
     text = (synopsis or "").strip()
     if len(text) > SYNOPSIS_MAX:
-        raise NovelError(f"每章摘要不超过 {SYNOPSIS_MAX} 字（现在 {len(text)} 字）")
+        raise NovelError.of("chapter.synopsis_too_long", max=SYNOPSIS_MAX, len=len(text))
     with _lock:
         novel = _load_novel(user_id, nid)
         _load_chapter(user_id, nid, cid)
@@ -727,7 +725,7 @@ def _clean_constraint(body: dict, base: Optional[dict] = None) -> dict:
             c[key] = body[key]
     c["text"] = str(c.get("text") or "").strip()
     if not c["text"]:
-        raise NovelError("限制必须写明规则（text）")
+        raise NovelError.of("novel.constraint.no_text")
     c["negative_prompt"] = str(c.get("negative_prompt") or "").strip()
     keywords = c.get("keywords") or []
     if isinstance(keywords, str):
@@ -755,7 +753,7 @@ def update_constraint(user_id: str, nid: str, kid: str, body: dict) -> dict:
                 lst[i] = {"id": kid, **_clean_constraint(body, c)}
                 _save_novel(user_id, novel)
                 return lst[i]
-    raise NotFound("限制不存在")
+    raise NotFound.of("novel.constraint.not_found")
 
 
 def delete_constraint(user_id: str, nid: str, kid: str) -> None:
@@ -763,7 +761,7 @@ def delete_constraint(user_id: str, nid: str, kid: str) -> None:
         novel = _load_novel(user_id, nid)
         rest = [c for c in novel["memory"]["constraints"] if c["id"] != kid]
         if len(rest) == len(novel["memory"]["constraints"]):
-            raise NotFound("限制不存在")
+            raise NotFound.of("novel.constraint.not_found")
         novel["memory"]["constraints"] = rest
         _save_novel(user_id, novel)
 
@@ -802,7 +800,7 @@ def digest_input(user_id: str, nid: str, cid: str) -> tuple:
     chapter = _load_chapter(user_id, nid, cid)
     vid = chapter.get("adopted_version")
     if not vid:
-        raise NovelError("本章还没有采用版")
+        raise NovelError.of("chapter.no_adopted")
     doc = get_version(user_id, nid, cid, vid).get("result") or {}
     units = [{"id": u["id"], "text": u.get("text", "")}
              for u in (doc.get("source") or {}).get("units") or []]
@@ -879,14 +877,14 @@ def save_keyframe(user_id: str, nid: str, cid: str, vid: str, shot_id: str,
     _check_id(shot_id)          # 镜头 ID 会拼进文件名
     ext = KEYFRAME_TYPES.get((content_type or "").split(";")[0].strip())
     if not ext:
-        raise NovelError("关键帧只收 PNG / JPEG / WebP 图片")
+        raise NovelError.of("chapter.keyframe.bad_type")
     if not data or len(data) > KEYFRAME_MAX_BYTES:
-        raise NovelError(f"图片为空或超过 {KEYFRAME_MAX_BYTES // 1024 // 1024}MB")
+        raise NovelError.of("common.image_too_big", mb=KEYFRAME_MAX_BYTES // 1024 // 1024)
     v = get_version(user_id, nid, cid, vid)
     shots = {s.get("id") for ep in (v.get("result") or {}).get("episodes") or []
              for s in ep.get("shots") or []}
     if shot_id not in shots:
-        raise NotFound(f"这个版本里没有镜头 {shot_id}")
+        raise NotFound.of("chapter.keyframe.no_shot", shot=shot_id)
     root = _keyframe_dir(user_id, nid, cid, vid)
     root.mkdir(parents=True, exist_ok=True)
     for old in root.glob(f"{_check_id(shot_id)}.*"):
@@ -902,7 +900,7 @@ def keyframe_file(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> t
         kind = next((t for t, e in KEYFRAME_TYPES.items() if e == path.suffix[1:]), None)
         if kind:
             return path, kind
-    raise NotFound("这个镜头还没有关键帧")
+    raise NotFound.of("chapter.keyframe.not_found")
 
 
 def delete_keyframe(user_id: str, nid: str, cid: str, vid: str, shot_id: str) -> None:
@@ -924,9 +922,9 @@ def save_style_image(user_id: str, nid: str, content_type: str, data: bytes) -> 
     mime = (content_type or "").split(";")[0].strip()
     ext = KEYFRAME_TYPES.get(mime)
     if not ext:
-        raise NovelError("风格参考图只收 PNG / JPEG / WebP 图片")
+        raise NovelError.of("novel.style.bad_type")
     if not data or len(data) > KEYFRAME_MAX_BYTES:
-        raise NovelError(f"图片为空或超过 {KEYFRAME_MAX_BYTES // 1024 // 1024}MB")
+        raise NovelError.of("common.image_too_big", mb=KEYFRAME_MAX_BYTES // 1024 // 1024)
     with _lock:
         novel = _load_novel(user_id, nid)          # 不存在或不属于该用户抛 NotFound
         root = _style_dir(user_id, nid)
@@ -958,7 +956,7 @@ def style_image_file(user_id: str, nid: str) -> tuple:
             kind = next((t for t, e in KEYFRAME_TYPES.items() if e == path.suffix[1:]), None)
             if kind:
                 return path, kind
-    raise NotFound("这部小说还没有风格参考图")
+    raise NotFound.of("novel.style.not_found")
 
 
 def delete_style_image(user_id: str, nid: str) -> None:
@@ -978,7 +976,7 @@ def assistant_db(user_id: str, nid: str) -> Path:
     """助手对话存档（每部小说一个 SQLite 文件，删小说时随目录一起删）。小说不存在或不属于该用户抛 NotFound。"""
     d = _novel_dir(user_id, nid)
     if not (d / "novel.json").exists():
-        raise NotFound("小说不存在")
+        raise NotFound.of("novel.not_found")
     return d / "assistant.sqlite"
 
 

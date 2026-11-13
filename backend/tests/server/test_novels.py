@@ -40,6 +40,101 @@ def succeed(nid, cid, vid, doc, status="succeeded"):
     novels.update_version_state(U, nid, cid, vid, status, result=doc)
 
 
+def codes_and_api(app_mod, HTTPException) -> None:
+    """报错带代码：存储层异常带 code/params，接口层 detail 是消息对象。"""
+    uid = "b" * 12
+    E = lambda exc, code, fn, *a, **kw: (  # noqa: E731
+        lambda e: (e.code == code or (_ for _ in ()).throw(AssertionError((code, e.code)))) and e)(
+        must_raise(exc, fn, *a, **kw))
+    E(novels.NovelError, "novel.empty_title", novels.create_novel, uid, " ")
+    E(novels.NotFound, "novel.not_found", novels.get_novel, uid, "nope")
+    e = E(novels.NovelError, "novel.bad_id", novels.get_novel, uid, "../x")
+    assert e.params == {"id": "../x"} and str(e) == "非法的 ID：../x"
+    nid = novels.create_novel(uid, "书")["id"]
+    E(novels.NovelError, "chapter.empty_title", novels.create_chapter, uid, nid, " ")
+    E(novels.NotFound, "chapter.not_found", novels.get_chapter, uid, nid, "c_nope")
+    cid = novels.create_chapter(uid, nid, "一", text="原文")["id"]
+    E(novels.NotFound, "chapter.version.not_found", novels.get_version, uid, nid, cid, "nope")
+    E(novels.NotFound, "chapter.version.not_found", novels.delete_version, uid, nid, cid, "nope")
+    E(novels.NovelError, "chapter.no_adopted", novels.digest_input, uid, nid, cid)
+    novels.create_version(uid, nid, cid, "f1", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "f1", "failed")
+    e = E(novels.NovelError, "chapter.version.not_adoptable", novels.adopt_version, uid, nid, cid, "f1")
+    assert e.params == {} and "failed" not in str(e)
+    novels.create_version(uid, nid, cid, "s1", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "s1", "succeeded", result=batch_doc(1))
+    novels.adopt_version(uid, nid, cid, "s1")
+    E(novels.NovelError, "chapter.version.adopted_delete", novels.delete_version, uid, nid, cid, "s1")
+    c2 = novels.create_chapter(uid, nid, "二", text="原文二")["id"]
+    novels.create_version(uid, nid, c2, "s2", {}, "原文二")
+    novels.update_version_state(uid, nid, c2, "s2", "succeeded", result=batch_doc(2))
+    novels.adopt_version(uid, nid, c2, "s2")
+    novels.create_version(uid, nid, cid, "s3", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "s3", "succeeded", result=batch_doc(1))
+    e = E(novels.NovelError, "chapter.version.later_adopted", novels.adopt_version, uid, nid, cid, "s3")
+    assert e.params["names"] == ["二"] and "二" in str(e)
+    E(novels.NovelError, "novel.asset.unknown_kind", novels.upsert_asset, uid, nid, "x", {"id": "a", "name": "n"})
+    E(novels.NovelError, "novel.asset.no_id", novels.upsert_asset, uid, nid, "characters", {"name": "n"})
+    E(novels.NovelError, "novel.asset.no_name", novels.upsert_asset, uid, nid, "characters", {"id": "a"})
+    E(novels.NotFound, "novel.asset.not_found", novels.delete_asset, uid, nid, "characters", "zz")
+    E(novels.NovelError, "novel.lifecycle.unknown_character", novels.add_lifecycle, uid, nid,
+      character_id="ghost", type="deceased")
+    novels.upsert_asset(uid, nid, "characters", {"id": "C90", "name": "甲"})
+    e = E(novels.NovelError, "novel.lifecycle.unknown_type", novels.add_lifecycle, uid, nid,
+          character_id="C90", type="bogus")
+    assert isinstance(e.params["options"], list) and "（可选 deceased、permanent_condition、departed）" in str(e)
+    E(novels.NovelError, "novel.lifecycle.unknown_status", novels.update_lifecycle, uid, nid, "zz",
+      status="weird")
+    E(novels.NotFound, "novel.lifecycle.not_found", novels.delete_lifecycle, uid, nid, "zz")
+    E(novels.NotFound, "novel.lifecycle.not_found", novels.update_lifecycle, uid, nid, "zz", detail="x")
+    e = E(novels.NovelError, "chapter.synopsis_too_long", novels.set_synopsis, uid, nid, cid, "字" * 500)
+    assert set(e.params) == {"max", "len"}
+    E(novels.NovelError, "novel.constraint.no_text", novels.add_constraint, uid, nid, {"text": " "})
+    E(novels.NotFound, "novel.constraint.not_found", novels.delete_constraint, uid, nid, "zz")
+    # 版本还有片段在出：Busy 带代码，仍是 NovelError
+    from render import session as rs
+    novels.create_version(uid, nid, c2, "s4", {}, "原文二")
+    rdir = novels._chapter_dir(uid, nid, c2) / "render" / "s4"
+    rdir.mkdir(parents=True, exist_ok=True)
+    (rdir / "session.json").write_text("{}", encoding="utf-8")
+    real_load, real_fly = rs.load, rs.any_in_flight
+    rs.load, rs.any_in_flight = (lambda d: {"x": 1}), (lambda s: True)
+    try:
+        e = must_raise(novels.Busy, novels.delete_version, uid, nid, c2, "s4")
+        assert e.code == "chapter.version.busy" and isinstance(e, novels.NovelError)
+    finally:
+        rs.load, rs.any_in_flight = real_load, real_fly
+    # 旧资产库：仍是 ValueError
+    e = must_raise(ValueError, library.create_work, uid, " ")
+    assert isinstance(e, library.LibraryError) and e.code == "library.empty_title"
+    assert must_raise(ValueError, library.upsert_card, uid, "w", "x", {"id": "a", "name": "n"}).code == "novel.asset.unknown_kind"
+    assert must_raise(ValueError, library.upsert_card, uid, "w", "characters", {"name": "n"}).code == "novel.asset.no_id"
+    assert must_raise(ValueError, library.upsert_card, uid, "w", "characters", {"id": "a"}).code == "novel.asset.no_name"
+    assert must_raise(ValueError, library.delete_card, uid, "w", "x", "a").code == "novel.asset.unknown_kind"
+
+    # 接口层：404 / 409 / 422 的 detail 都是消息对象
+    A = {"id": uid}
+    e = must_raise(HTTPException, app_mod.novels_get, "nope", A)
+    assert e.status_code == 404 and e.detail["code"] == "novel.not_found"
+    e = must_raise(HTTPException, app_mod._novel_call, lambda: (_ for _ in ()).throw(novels.Busy.of("chapter.version.busy")))
+    assert e.status_code == 409 and e.detail["code"] == "chapter.version.busy"
+    e = must_raise(HTTPException, app_mod.novels_create, app_mod.NovelBody(title=" "), A)
+    assert e.status_code == 422 and e.detail["code"] == "novel.empty_title"
+    e = must_raise(HTTPException, app_mod._clean_params, {"bogus": 1, "zzz": 2})
+    assert e.status_code == 422 and e.detail["code"] == "novel.unknown_params" and e.detail["params"]["keys"] == ["bogus", "zzz"]
+    e = must_raise(HTTPException, app_mod.memory_asset_upsert, nid, "characters", "C1", {"id": "C2", "name": "n"}, A)
+    assert e.status_code == 422 and e.detail["code"] == "novel.asset.id_mismatch"
+    empty = novels.create_chapter(uid, nid, "空章")["id"]
+    e = must_raise(HTTPException, app_mod._start_version, A, nid, empty, {}, False)
+    assert e.status_code == 422 and e.detail["code"] == "chapter.no_text"
+    req = lambda rid: app_mod.RenderPlanRequest(result=batch_doc(1), run_id=rid)  # noqa: E731
+    e = must_raise(HTTPException, app_mod.render_plan, req("../x"), A)
+    assert e.status_code == 400 and e.detail["code"] == "novel.bad_id"
+    e = must_raise(HTTPException, app_mod.render_plan, req("nope"), A)
+    assert e.status_code == 404 and e.detail["code"] == "chapter.version.not_found"
+    print("报错带代码: 存储层 code/params / Busy 仍是 NovelError / 旧资产库仍是 ValueError / 接口 detail 为消息对象 ✓")
+
+
 def main() -> int:
     # 1. 小说：建、重名拦截、列表、改
     n = novels.create_novel(U, "药", {"narration_mode": "selective"})
@@ -82,7 +177,7 @@ def main() -> int:
     assert mem["numbering"]["next_episode"] == max(
         int(e["id"][1:]) for e in v1_doc["episodes"]) + 1
     e = must_raise(novels.NovelError, novels.update_chapter, U, nid, c1["id"], text="再改")
-    assert "锁定" in str(e)
+    assert e.code == "chapter.text_locked" and "锁定" in str(e)
     assert novels.seed_assets(U, nid)["characters"], "长期记忆的资产就是下一次转换的种子"
     print("采用: 资产进长期记忆 / 编号接续 = 最大编号 +1 / 原文锁定 ✓")
 
@@ -226,7 +321,7 @@ def main() -> int:
                        app_mod.NovelBody(title="药", params={"bogus": 1}), A)
         assert e.status_code == 422
         e = must_raise(HTTPException, app_mod.novels_create, app_mod.NovelBody(title="药"), A)
-        assert e.status_code == 422 and "已存在" in e.detail
+        assert e.status_code == 422 and e.detail["code"] == "novel.title_taken" and e.detail["params"] == {"title": "药"}
         anid = created["id"]
         ch = app_mod.chapters_create(anid, app_mod.ChapterBody(title="第一章", text="他推门。"), A)
         e = must_raise(HTTPException, app_mod.versions_create, anid, "c_nope",
@@ -372,6 +467,7 @@ def main() -> int:
     print("长期记忆: 章后整理核证据 / 换采用版撤回重整 / 人写摘要不覆盖 / 确认后才注入 / "
           "只注入前面章节 / 限制启停 / 编辑时软核查 / 删章节连带撤回 ✓")
 
+    codes_and_api(app_mod, HTTPException)
     print("\nALL PASS")
     return 0
 

@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 CJK = re.compile(r"[\u4e00-\u9fff]")
 MARK = re.compile(r"#\s*i18n:\s*(internal|llm|todo\(\d\))")
-SINK_NAME = re.compile(r"(Error|Exception|Submit|Conflict|NotFound|Corrupt|Exceeded|Invalid|Stale)$")
+SINK_NAME = re.compile(r"(Error|Exception|Submit|Conflict|NotFound|Corrupt|Exceeded|Invalid|Stale|Busy)$")
 SINK_CALLS = {"HTTPException", "note_error", "submit_failed", "download_failed", "TaskState"}
 SINK_KW = {"error", "detail", "message", "step"}
 
@@ -30,6 +30,9 @@ MODULES: dict = {
     "render/runner.py": None,
     "server/error_refs.py": None,
     "server/auth.py": None,
+    "server/novels.py": None,
+    "server/library.py": None,
+    "server/store.py": None,
     "render/providers/tts_base.py": None,
     "render/providers/tts_volc.py": None,
     "render/voice.py": None,
@@ -43,7 +46,9 @@ MODULES: dict = {
                       "_compose_preview", "_compose_blockers", "_compose_quote", "_compose_start",
                       "_export_check", "render_compose_get", "render_export", "_compose_worker",
                       "render_compose_post", "render_bgm_put", "render_bgm_delete",
-                      "current_user", "admin_user", "register", "login"},
+                      "current_user", "admin_user", "register", "login",
+                      "novel_user", "_novel_call", "_clean_params", "_start_version",
+                      "memory_asset_upsert", "render_plan"},
 }
 
 
@@ -168,6 +173,7 @@ def main() -> int:
         ('raise ValueError(\n    "中文",\n)  # i18n: internal\n', 0),
         ('raise ValueError(\n    "中文",\n)\n', 1),
         # 带注解的常量、别名、拼接
+        ('class Busy(Exception): pass\nraise Busy("中文")\n', 1),
         ('E: str = "中文"\nraise ValueError(E)\n', 1),
         ('E = "中文"\nA = E\nB = A\nraise ValueError(B)\n', 1),
         ('E = "中文"\nraise ValueError("x" + E)\n', 1),

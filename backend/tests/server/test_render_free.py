@@ -139,7 +139,7 @@ def main() -> int:
     est = pick(c.get(R + "/session", headers=H).json(), "F03")["estimate_cny"]
     assert c.post(R + "/free/F03/run", headers=H, json={"expected_cny": est}).status_code == 200
     r = c.delete(V, headers=H)
-    assert r.status_code == 409 and "还有片段在出" in r.json()["detail"], r.text
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "chapter.version.busy", r.text
     drain()
     r = c.delete(R + "/free/F03", headers=H)
     assert r.status_code == 200 and all(n["id"] != "F03" for n in r.json()["free"])

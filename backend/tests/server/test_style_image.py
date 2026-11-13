@@ -66,10 +66,14 @@ def main() -> int:
     big = b"0" * (novels.KEYFRAME_MAX_BYTES + 1)
     assert c.put(U, headers={**H, "Content-Type": "image/png"}, content=big).status_code == 422
     assert c.get(U, headers=H).content == JPG, "失败的上传不动原图"
+    d = lambda r: r.json()["detail"]  # noqa: E731
+    assert d(c.put(U, headers={**H, "Content-Type": "image/gif"}, content=PNG))["code"] == "novel.style.bad_type"
+    r = c.put(U, headers={**H, "Content-Type": "image/png"}, content=big)
+    assert d(r)["code"] == "common.image_too_big" and d(r)["params"] == {"mb": 8}
     print("非法类型 / 空体 / 超限: 422 ✓")
 
     # 6. 他人
-    assert c.get(U, headers=HB).status_code == 404
+    assert c.get(U, headers=HB).status_code == 404 and d(c.get(U, headers=HB))["code"] == "novel.not_found"
     assert c.put(U, headers={**HB, "Content-Type": "image/png"}, content=PNG).status_code == 404
     assert c.delete(U, headers=HB).status_code == 404
     assert c.get(U, headers=H).content == JPG
@@ -78,6 +82,7 @@ def main() -> int:
     # 7. 删除（幂等）
     assert c.delete(U, headers=H).status_code == 200
     assert c.get(U, headers=H).status_code == 404
+    assert d(c.get(U, headers=H))["code"] == "novel.style.not_found"
     assert c.get(f"/novels/{nid}", headers=H).json()["style_image"] is None
     assert c.delete(U, headers=H).status_code == 200
     print("删除: 幂等 ✓")

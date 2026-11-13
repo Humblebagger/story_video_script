@@ -186,7 +186,7 @@ def main() -> int:
     app_mod._render_runner.tick()
     assert pick(c.get(R3 + "/session", headers=H).json(), one)["state"] == "running"
     r = c.delete(V3, headers=H)
-    assert r.status_code == 409 and "还有片段在出" in r.json()["detail"], r.text
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "chapter.version.busy", r.text
     assert (root3 / "session.json").exists() and novels.get_version(uid, nid, cid, "v3")
     drain()
     assert pick(c.get(R3 + "/session", headers=H).json(), one)["state"] == "done"

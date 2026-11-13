@@ -13,10 +13,15 @@ from pathlib import Path
 from typing import Optional
 
 from server.auth import user_dir
+from server.messages import UserError
 
 KINDS = ("characters", "locations", "props", "creatures")
 
 _lock = threading.RLock()
+
+
+class LibraryError(UserError, ValueError):
+    """旧资产库的输入错误（仍是 ValueError，现有 except 照样接住）。"""
 
 
 def _path(user_id: str) -> Path:
@@ -85,7 +90,7 @@ def create_work(user_id: str, title: str) -> bool:
     """
     title = (title or "").strip()
     if not title:
-        raise ValueError("作品名不能为空")
+        raise LibraryError.of("library.empty_title")
     with _lock:
         data = _load(user_id)
         if title in data["works"]:
@@ -98,12 +103,12 @@ def create_work(user_id: str, title: str) -> bool:
 def upsert_card(user_id: str, title: str, kind: str, card: dict) -> dict:
     """新建或覆盖一张卡。card 必须带 id——镜头层靠 ID 引用资产。"""
     if kind not in KINDS:
-        raise ValueError(f"未知的资产类别：{kind}")
+        raise LibraryError.of("novel.asset.unknown_kind", kind=kind)
     cid = (card or {}).get("id")
     if not cid:
-        raise ValueError("资产卡必须带 id")
+        raise LibraryError.of("novel.asset.no_id")
     if not (card.get("name") or "").strip():
-        raise ValueError("资产卡必须有名称")
+        raise LibraryError.of("novel.asset.no_name")
 
     with _lock:
         data = _load(user_id)
@@ -123,7 +128,7 @@ def upsert_card(user_id: str, title: str, kind: str, card: dict) -> dict:
 
 def delete_card(user_id: str, title: str, kind: str, card_id: str) -> bool:
     if kind not in KINDS:
-        raise ValueError(f"未知的资产类别：{kind}")
+        raise LibraryError.of("novel.asset.unknown_kind", kind=kind)
     with _lock:
         data = _load(user_id)
         work = data["works"].get(title)

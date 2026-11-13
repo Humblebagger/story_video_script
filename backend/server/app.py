@@ -457,9 +457,9 @@ def novel_user(user: dict = Depends(current_user)) -> dict:
         try:
             r = novels.migrate_legacy(user["id"])
             if r.get("migrated") and (r.get("novels") or r.get("chapters")):
-                print(f"[novels] 旧数据已迁移：{r}", flush=True)
+                print(f"[novels] 旧数据已迁移：{r}", flush=True)  # i18n: internal
         except OSError as e:
-            print(f"[novels] 旧数据迁移失败（旧接口仍可用）：{e!r}", flush=True)
+            print(f"[novels] 旧数据迁移失败（旧接口仍可用）：{e!r}", flush=True)  # i18n: internal
         _migrated_users.add(user["id"])
     return user
 
@@ -469,11 +469,11 @@ def _novel_call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except novels.NotFound as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=to_detail(e))
     except novels.Busy as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, detail=to_detail(e))
     except novels.NovelError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, detail=to_detail(e))
 
 
 class NovelBody(BaseModel):
@@ -500,7 +500,7 @@ _PARAM_FIELDS = set(ConvertParams.__dataclass_fields__) - {"work_title", "chapte
 def _clean_params(params: Optional[dict]) -> dict:
     unknown = set(params or {}) - _PARAM_FIELDS
     if unknown:
-        raise HTTPException(422, f"未知的制作参数：{sorted(unknown)}")
+        raise HTTPException(422, detail=msg("novel.unknown_params", keys=sorted(unknown)))
     return dict(params or {})
 
 
@@ -639,11 +639,11 @@ def _start_version(user: dict, nid: str, cid: str, overrides: dict, strict: bool
     chapter = _novel_call(novels.get_chapter, user["id"], nid, cid)
     text = chapter.get("text") or ""
     if not text.strip():
-        raise HTTPException(422, "本章还没有原文")
+        raise HTTPException(422, detail=msg("chapter.no_text"))
     raw = auth.get_user_raw(user["id"])
     cap = raw.get("monthly_cap_usd") if raw else None
     if cap is not None and usage.month_spent(user["id"], pricing.load()) >= cap:
-        raise HTTPException(429, "本月用量已达上限，请联系管理员")
+        raise HTTPException(429, detail=msg("usage.monthly_cap"))
     merged = {**_clean_params(novel.get("params")), **_clean_params(overrides)}
     params = ConvertParams(**{**merged, "work_title": novel["title"],
                               "chapter": chapter["title"]})
@@ -735,7 +735,7 @@ def memory_asset_upsert(nid: str, kind: str, card_id: str,
                         card: dict = Body(..., embed=False),
                         user: dict = Depends(novel_user)):
     if card.get("id") != card_id:
-        raise HTTPException(422, f"卡片 id 与路径不一致：{card.get('id')!r} != {card_id!r}")
+        raise HTTPException(422, detail=msg("novel.asset.id_mismatch", got=str(card.get("id")), want=card_id))
     return _novel_call(novels.upsert_asset, user["id"], nid, kind, card)
 
 
@@ -787,15 +787,15 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
         try:
             record = novels.find_version(user["id"], req.run_id)
         except ValueError as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, detail=to_detail(e))
         if record is None:
-            raise HTTPException(404, "版本不存在")
+            raise HTTPException(404, detail=msg("chapter.version.not_found"))
     report = _render_gate(doc, record)
     try:
         plan = render_plan_mod.build_plan(doc, req.max_clip_seconds, req.run_id,
                                           req.model, req.cny_per_second)
     except (KeyError, TypeError) as e:
-        raise HTTPException(422, f"分镜结构不完整，无法组装渲染任务：{e}")
+        raise HTTPException(422, f"分镜结构不完整，无法组装渲染任务：{e}")  # i18n: todo(4)
 
     packs = []
     if req.include_markdown:
