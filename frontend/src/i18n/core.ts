@@ -15,14 +15,16 @@ export const LOCALES: { id: Locale; label: string }[] = [{ id: 'zh', label: '中
 const PACKS: Record<Locale, Messages> = { zh, en }
 export const KEY = 'inkreel.locale'
 
+/** 按点分路径取文案（不存在返回 undefined）；serverMsg 用它判断缺译 */
+export function lookupKey(locale: Locale, key: string): string | undefined {
+  let node: unknown = PACKS[locale]
+  for (const part of key.split('.')) node = (node as Record<string, unknown> | undefined)?.[part]
+  return typeof node === 'string' ? node : undefined
+}
+
 export function translate(locale: Locale, key: MsgKey, vars?: Record<string, string | number>): string {
-  const lookup = (l: Locale) => {
-    let node: unknown = PACKS[l]
-    for (const part of key.split('.')) node = (node as Record<string, unknown> | undefined)?.[part]
-    return typeof node === 'string' ? node : undefined
-  }
   // 缺译：先回落中文（中文为准），再回落键名
-  const text = lookup(locale) ?? lookup('zh') ?? key
+  const text = lookupKey(locale, key) ?? lookupKey('zh', key) ?? key
   return vars ? text.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : text
 }
 

@@ -1352,4 +1352,7 @@ export const en: Messages = {
   resolve: {
     unitMissing: '(not found: {id})',
   },
+  srv: {
+    common: { unknown: '{message}' },
+  },
 }

@@ -1346,4 +1346,7 @@ export const zh = {
   resolve: {
     unitMissing: '（未找到 {id}）',
   },
+  srv: {
+    common: { unknown: '{message}' },
+  },
 }
