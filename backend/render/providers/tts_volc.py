@@ -62,6 +62,13 @@ def _clean(text, secrets: list) -> str:
     return scrub(t)
 
 
+def _safe_code(code, secrets: list):
+    """错误码进参数：数字原样，其余（字符串、列表、字典…）转成文字并抹掉密钥。"""
+    if isinstance(code, (int, float)) and not isinstance(code, bool):
+        return code
+    return _clean(code, secrets)
+
+
 def _reject(r: httpx.Response, secrets: list) -> ProviderError:
     """4xx：厂商给了 message 就带上（先抹掉密钥与 Bearer 凭据），否则只报 HTTP 状态。"""
     try:
@@ -75,7 +82,7 @@ def _reject(r: httpx.Response, secrets: list) -> ProviderError:
         msg, code = _clean(r.text, secrets)[:200], r.status_code    # 先抹掉再截断，免得密钥被截半漏出
     msg = _clean(msg, secrets)
     if msg:
-        return ProviderError.of("tts.volc.rejected", code=_clean(code, secrets), detail=vendor(msg))
+        return ProviderError.of("tts.volc.rejected", code=str(_safe_code(code, secrets)), detail=vendor(msg))
     return ProviderError.of("tts.volc.rejected_http", status=r.status_code)
 
 
@@ -147,7 +154,7 @@ class VolcTts:
                         break
                     if code != 0:
                         detail = msg.get("message") or ""
-                        safe_code = self._scrub(code) if isinstance(code, str) else code
+                        safe_code = _safe_code(code, list(self._auth.values()))
                         if detail:
                             raise self._billed("tts.volc.failed_detail", text, code=safe_code,
                                                detail=vendor(self._scrub(detail)))
