@@ -100,11 +100,12 @@
 - Create: `backend/server/error_refs.py`
 - Modify: `backend/server/messages.py`（`with_ref`；登记 `common.internal`）、`backend/server/messages_codes.json`
 - Modify: `backend/render/session.py`（`set_error`）
+- Modify: `backend/render/providers/base.py`（`SECRET_ENVS` 补 `ANTHROPIC_API_KEY`、`STORYBOARD_SECRET`；`scrub` 补 `x-api-key` 头）
 - Modify: `backend/render/runner.py`（`_submit` 的 `except Exception` 分支，约 :291-296）
 - Modify: `backend/server/app.py`（导入、`_ErrorRefMiddleware` 与注册位置、`_compose_worker`）
 - Modify: `backend/tests/server/test_i18n_scan.py`（`MODULES` 加 `"server/error_refs.py": None`）
 - Modify: `frontend/src/i18n/serverMsg.ts`、`zh.ts`、`en.ts`（`common.refSuffix`、`srv.common.internal`）
-- Test: `backend/tests/server/test_error_refs.py`（新）、`backend/tests/render/test_session.py`、`backend/tests/render/test_runner.py`、`backend/tests/server/test_compose.py`、`backend/tests/server/test_messages.py`、`frontend/tests/server-msg.test.ts`
+- Test: `backend/tests/server/test_error_refs.py`（新）、`backend/tests/render/test_session.py`、`backend/tests/render/test_runner.py`（**顶部补临时数据目录**，见 Step 1）、`backend/tests/render/test_providers.py`（脱敏）、`backend/tests/server/test_compose.py`、`backend/tests/server/test_messages.py`、`frontend/tests/server-msg.test.ts`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -127,6 +128,10 @@
   os.environ["STORYBOARD_DATA_DIR"] = _TMP.name          # 必须在导入 server.* 之前
   KEY = "sk-ark-test-0123456789"
   os.environ["ARK_API_KEY"] = KEY                         # 只为验证脱敏；测试不联网
+  LLM_KEY = "sk-ant-test-llm-0123456789"
+  SIGN = "test-signing-secret-0123456789"
+  os.environ["ANTHROPIC_API_KEY"] = LLM_KEY               # 章后整理、转换用的模型密钥（x-api-key）
+  os.environ["STORYBOARD_SECRET"] = SIGN                  # token 签名密钥
 
   from server import auth, error_refs, messages as M  # noqa: E402
 
@@ -145,8 +150,11 @@
       assert len(r) == 8 and set(r) <= set(error_refs.ALPHABET), r
       assert not set("ILOU") & set(error_refs.ALPHABET)
       assert error_refs.normalize(" k7q2-m9xd ") == "K7Q2M9XD"
+      assert error_refs.normalize("k7q2-m9xo") == "K7Q2M9X0" and error_refs.normalize("il") == "11", "Crockford：O→0，I/L→1"
+      assert error_refs.normalize("编号K7") == "K7", "只留 0-9A-Z"
       assert error_refs.user_of_root(auth.DATA_DIR / "users" / "a1b2c3d4e5f6" / "novels" / "n1") == "a1b2c3d4e5f6"
       assert error_refs.user_of_root("/tmp/elsewhere") is None
+      assert error_refs.user_of_root("/srv/users/a1b2c3d4e5f6/x") is None, "不在 DATA_DIR/users 下的路径不认"
       # with_ref：顶层 ref，中文兜底附编号；compact 不带 ref
       m = M.with_ref(M.msg("common.internal"), "K7Q2M9XD")
       assert m["ref"] == "K7Q2M9XD" and m["message"].endswith("（参考编号 K7Q2M9XD）"), m
@@ -171,10 +179,20 @@
       assert row["code"] == "common.internal" and "RuntimeError" in row["detail"] and "Traceback" in row["detail"]
       dump = json.dumps(row) + "\n".join(grab.lines)
       assert KEY not in dump and "abc.def" not in dump, "记录与日志不得含密钥或 Bearer 凭据"
+      # 模型密钥、签名密钥、x-api-key 头
+      ref = error_refs.record("common.internal", f"headers={{'x-api-key': '{LLM_KEY}'}} x-api-key: zz9 sign={SIGN}")
+      d2 = json.dumps(error_refs.find(ref))
+      assert LLM_KEY not in d2 and SIGN not in d2 and "zz9" not in d2, d2
+      # 数据目录换成 <data>：位置与堆栈里都不留服务器的绝对路径
+      ref = error_refs.record("common.internal", f"open {auth.DATA_DIR}/users/x failed",
+                              where=f"submit {auth.DATA_DIR}/users/a1b2c3d4e5f6/novels/n1")
+      r2 = error_refs.find(ref)
+      assert r2["where"] == "submit <data>/users/a1b2c3d4e5f6/novels/n1" and str(auth.DATA_DIR) not in r2["detail"], r2
       assert any(m["ref"] in x for x in grab.lines)
-      # 截断
-      ref = error_refs.record("common.internal", "x" * (error_refs.DETAIL_MAX + 500))
-      assert len(error_refs.find(ref)["detail"]) == error_refs.DETAIL_MAX
+      # 截断：保留头尾（链式异常的最后一行在末尾，最有用）
+      ref = error_refs.record("common.internal", "HEAD" + "x" * (error_refs.DETAIL_MAX + 500) + "TAIL")
+      d = error_refs.find(ref)["detail"]
+      assert len(d) <= error_refs.DETAIL_MAX and d.startswith("HEAD") and d.endswith("TAIL"), len(d)
       # 额外密钥（厂商对象持有的）
       ref = error_refs.record("common.internal", "key=zz-extra-secret", secrets_extra=["zz-extra-secret"])
       assert "zz-extra-secret" not in error_refs.find(ref)["detail"]
@@ -220,11 +238,14 @@
           raise RuntimeError(f"disk on fire {KEY}")
 
       novels.list_novels = boom
+      grab_api = _Grab()
+      logging.getLogger("server.errors").addHandler(grab_api)
       try:
           c = TestClient(app_mod.app)
           r = c.get("/novels", headers={"Authorization": f"Bearer {tok}", "Origin": "http://localhost:5173"})
       finally:
           novels.list_novels = orig
+          logging.getLogger("server.errors").removeHandler(grab_api)
       assert r.status_code == 500, r.text
       d = r.json()["detail"]
       assert d["code"] == "common.internal" and d["params"] == {} and len(d["ref"]) == 8, d
@@ -232,6 +253,7 @@
       assert r.headers.get("access-control-allow-origin"), "500 也要带 CORS 头，跨源前端才读得到 detail"
       row = error_refs.find(d["ref"])
       assert row["user_id"] == u["id"] and row["where"] == "GET /novels" and KEY not in row["detail"]
+      assert any(d["ref"] in x for x in grab_api.lines), "接口 500 的记录写进 server.errors 日志"
       # HTTPException 不经过中间件：照旧
       assert c.get("/novels").status_code == 401
       print("4. 接口 500：消息对象带编号 / CORS 头 / 记录带用户与位置 / 不含密钥 ✓")
@@ -252,8 +274,16 @@
 
   其它测试：
   - `tests/render/test_session.py`：`set_error(obj, with_ref(msg("film.submit.crashed"), "K7Q2M9XD"))` 后 `obj["error_msg"] == {"code": "film.submit.crashed", "params": {}, "ref": "K7Q2M9XD"}`，`obj["error"]` 以「（参考编号 K7Q2M9XD）」结尾；`copy_error` 后目标同样带 `ref`；不带 `ref` 的消息写出的 `error_msg` 里**没有** `ref` 键（与现在一致）。
-  - `tests/render/test_runner.py`：子计划 2 已有的「提交意外异常」用例改为另外断言：段的 `error_msg["code"] == "film.submit.crashed"` 且有 8 位 `ref`；`error_refs.find(ref)` 的 `detail` 含 root、段 id 与异常类名；`render.runner` logger 收到的 ERROR 记录仍含 root、段 id 与堆栈（`record(..., logger=log)` 保证）。
-  - `tests/server/test_compose.py`：子计划 2 已有的「合成意外异常」用例另外断言 `final["error_msg"]["ref"]` 存在，`error_refs.find(...)["detail"]` 含异常类名，`final["error"]` 不含异常类名但含编号。
+  - `tests/render/test_runner.py`：
+    - **测试隔离**：文件现在不设数据目录，runner 导入 `server.error_refs` 后，崩溃用例会写进开发机真实的 `backend/data/error_refs.jsonl`（并出现在真实后台的「错误记录」里）。在文件顶部、任何 `render`/`server` 导入之前加 `os.environ["STORYBOARD_DATA_DIR"] = tempfile.mkdtemp()`（`tempfile` 已导入，`os` 若无则补）。
+    - 现有精确断言改写（加了 `ref` 后它们会失败）：
+      - :568 与 :756 的 `c["error_msg"] == {"code": "film.submit.crashed", "params": {}}` → `c["error_msg"]["code"] == "film.submit.crashed" and c["error_msg"]["params"] == {} and len(c["error_msg"]["ref"]) == 8`；
+      - :757 的 `c["error"] == "提交时出现意外错误，请重试；仍失败请联系管理员"` → `c["error"].startswith("提交时出现意外错误，请重试；仍失败请联系管理员") and "参考编号" in c["error"]`。
+    - 另加：`error_refs.find(ref)` 的 `detail` 含段 id 与异常类名，`where` 以 `submit <data>/` 开头；`render.runner` logger 收到的 ERROR 记录仍含 root、段 id 与堆栈（`record(..., logger=log)` 保证，见 R13）。
+  - `tests/server/test_compose.py`（已设临时数据目录）：
+    - :277 与 :439 的 `f["error_msg"] == {"code": "compose.crashed", "params": {}}` → `f["error_msg"]["code"] == "compose.crashed" and f["error_msg"]["params"] == {} and len(f["error_msg"]["ref"]) == 8`；
+    - 另加：`error_refs.find(...)["detail"]` 含异常类名；`final["error"]` 不含异常类名、含「参考编号」。
+  - `tests/render/test_providers.py`（`scrub_secrets` 已有用例旁）：环境里设 `ANTHROPIC_API_KEY`、`STORYBOARD_SECRET` 的假值后，`scrub_secrets` 抹掉二者；`scrub("x-api-key: abc")`、`scrub('{"x-api-key": "abc"}')`、`scrub("X-Api-Key=abc")` 都不再含 `abc`。
   - `tests/server/test_messages.py`：`with_ref` 对已带 `ref` 的消息再调用一次时**替换**编号、不重复附加（`message` 里只出现一次「参考编号」）。
   - `frontend/tests/server-msg.test.ts` 新增一节：
     ```ts
@@ -299,6 +329,7 @@
   import json
   import logging
   import os
+  import re
   import secrets
   import tempfile
   import threading
@@ -330,18 +361,36 @@
       return "".join(secrets.choice(ALPHABET) for _ in range(REF_LEN))
 
 
+  _CROCKFORD = str.maketrans({"O": "0", "I": "1", "L": "1"})
+
+
   def normalize(ref) -> str:
-      """用户转述的编号：忽略大小写、空格与连字符。"""
-      return "".join(ch for ch in str(ref or "").upper() if ch.isalnum())
+      """用户转述的编号：忽略大小写、空格与连字符；按 Crockford 把 O 当 0、I/L 当 1；只留 0-9A-Z。"""
+      return re.sub(r"[^0-9A-Z]", "", str(ref or "").upper().translate(_CROCKFORD))
 
 
   def user_of_root(root) -> Optional[str]:
-      """DATA_DIR/users/<uid>/… → uid（后台线程只有会话目录时用）；不是这种路径时 None。"""
-      parts = Path(str(root)).parts
-      for i, p in enumerate(parts[:-1]):
-          if p == "users" and len(parts[i + 1]) == 12:
-              return parts[i + 1]
-      return None
+      """DATA_DIR/users/<uid>/… → uid（后台线程只有会话目录时用）；不在 DATA_DIR/users 下时 None。"""
+      try:
+          uid = Path(str(root)).resolve().relative_to((auth.DATA_DIR / "users").resolve()).parts[0]
+      except (ValueError, IndexError, OSError):
+          return None
+      return uid if re.fullmatch(r"[0-9a-f]{12}", uid) else None
+
+
+  def _rel(text: str) -> str:
+      """服务器上的数据目录换成 <data>：位置与堆栈里不留主机的绝对路径。"""
+      for d in {str(auth.DATA_DIR.resolve()), str(auth.DATA_DIR)}:
+          text = text.replace(d, "<data>")
+      return text
+
+
+  def _clip(text: str) -> str:
+      """截断到 DETAIL_MAX：保留头尾。链式异常先打印原因，最后一行才是最终异常，不能被截掉。"""
+      if len(text) <= DETAIL_MAX:
+          return text
+      head = 2000
+      return text[:head] + "\n…\n" + text[-(DETAIL_MAX - head - 3):]
 
 
   def _trim_locked(path: Path) -> None:
@@ -361,8 +410,8 @@
       """记一条，返回编号。detail 先脱敏再截断；同一内容写一条 ERROR 日志（logger 缺省为 server.errors）。
       写盘失败只记日志，编号照常返回：记账不能拖垮报错本身。"""
       ref = new_ref()
-      clean = scrub_secrets(str(detail), secrets_extra)[:DETAIL_MAX]
-      where = scrub_secrets(str(where or ""), secrets_extra)
+      clean = _clip(_rel(scrub_secrets(str(detail), secrets_extra)))
+      where = _rel(scrub_secrets(str(where or ""), secrets_extra))
       (logger or log).error("ref=%s code=%s user=%s where=%s\n%s", ref, code, user_id or "-", where, clean)
       row = {"ref": ref, "at": now_iso(), "user_id": user_id, "code": code,
              "params": params or {}, "where": where, "detail": clean}
@@ -372,7 +421,11 @@
               path.parent.mkdir(parents=True, exist_ok=True)
               key = str(path)
               if key not in _rows:
-                  _rows[key] = sum(1 for _ in open(path, encoding="utf-8")) if path.exists() else 0
+                  if path.exists():
+                      with open(path, encoding="utf-8") as f:
+                          _rows[key] = sum(1 for _ in f)
+                  else:
+                      _rows[key] = 0
               with open(path, "a", encoding="utf-8") as f:
                   usage.ensure_line_start(path, f)
                   f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -418,6 +471,23 @@
       want = normalize(ref)
       return next((r for r in reversed(_read()) if r.get("ref") == want), None) if want else None
   ```
+  - `render/providers/base.py`（I2：本计划让 500 与章后整理这两条更宽的路径经过脱敏，原来的厂商密钥清单不够）：
+    ```python
+    def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:
+        """服务端文字进报错前：抹掉密钥、Bearer 凭据与 x-api-key 头；limit 不为 None 时再截断。"""
+        t = str(text)
+        if secret:
+            t = t.replace(secret, "***")
+        t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
+        t = re.sub(r"(?i)(x-api-key[\"']?\s*[:=]\s*[\"']?)[^\s\"',;}]+", r"\1***", t)
+        return t if limit is None else t[:limit]
+
+
+    # 日志与错误记录里一律抹掉的环境变量值：厂商密钥、模型密钥（章后整理与转换，经 x-api-key 发出）、token 签名密钥
+    SECRET_ENVS = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY",
+                   "ANTHROPIC_API_KEY", "STORYBOARD_SECRET")
+    ```
+    `scrub_secrets` 在调用时读 `os.environ`；模型密钥由 `load_settings()` 的 `_load_dotenv` 放进环境，章后整理与转换都在它之后运行，所以能抹到。`auth._secret()` 在没有 `STORYBOARD_SECRET` 时用的 `secret.key` 文件内容不进任何异常文字，不另处理。
   - 导入顺序自检：`cd backend && .venv/bin/python -c "import server.error_refs"` 与 `.venv/bin/python -c "import render.runner"` 在全新解释器里都不报循环导入。若 `render.providers` 包的 `__init__` 导致循环，把 `from render.providers.base import scrub_secrets` 挪进 `record` 函数体内（并在行尾注释说明原因）。
 
 - [ ] **Step 5: `render/session.py` 的 `set_error`** 保留 `ref`：
@@ -484,8 +554,10 @@
             except Exception as e:  # noqa: BLE001
                 if started:
                     raise
-                m = error_refs.unexpected(e, user_id=_uid_of(scope), logger=log,
-                                          where=f'{scope.get("method", "")} {scope.get("path", "")}')
+                where = f'{scope.get("method", "")} {scope.get("path", "")}'
+                # 解析 token 与写盘都是阻塞操作，放到线程里，不卡事件循环；日志走缺省的 server.errors
+                m = await anyio.to_thread.run_sync(
+                    lambda: error_refs.unexpected(e, user_id=_uid_of(scope), where=where))
                 await JSONResponse({"detail": m}, status_code=500)(scope, receive, send)
 
 
@@ -522,7 +594,7 @@
   - `en.ts`：`common.refSuffix: ' (reference {ref})'`；`srv.common.internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.'`。
 
 - [ ] **Step 9: 生成 JSON、跑全部校验**（见全局约束）。
-- [ ] **Step 10: 提交**：`git add backend/server/error_refs.py backend/server/messages.py backend/server/messages_codes.json backend/render/session.py backend/render/runner.py backend/server/app.py backend/tests/server/test_error_refs.py backend/tests/server/test_i18n_scan.py backend/tests/server/test_messages.py backend/tests/render/test_session.py backend/tests/render/test_runner.py backend/tests/server/test_compose.py frontend/src/i18n/serverMsg.ts frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/server-msg.test.ts`，提交信息示例：「新增错误参考编号：接口里没接住的异常改为带编号的 500 消息对象（中间件注册在 CORS 之内），出片提交与合成的意外异常也带编号；完整记录脱敏后写进 error_refs.jsonl（保留最近 1000 条）与日志，前端在消息后附参考编号」。
+- [ ] **Step 10: 提交**：`git add backend/server/error_refs.py backend/server/messages.py backend/server/messages_codes.json backend/render/session.py backend/render/providers/base.py backend/render/runner.py backend/server/app.py backend/tests/server/test_error_refs.py backend/tests/render/test_providers.py backend/tests/server/test_i18n_scan.py backend/tests/server/test_messages.py backend/tests/render/test_session.py backend/tests/render/test_runner.py backend/tests/server/test_compose.py frontend/src/i18n/serverMsg.ts frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/server-msg.test.ts`，提交信息示例：「新增错误参考编号：接口里没接住的异常改为带编号的 500 消息对象（中间件注册在 CORS 之内），出片提交与合成的意外异常也带编号；完整记录脱敏（补上模型密钥、签名密钥与 x-api-key 头）、数据目录换成 <data> 后写进 error_refs.jsonl（保留最近 1000 条）与日志，前端在消息后附参考编号；runner 测试改用临时数据目录」。
 
 ---
 
@@ -584,7 +656,7 @@
   - app 函数集合加 `novel_user`、`_novel_call`、`_clean_params`、`_start_version`、`memory_asset_upsert`、`render_plan`；
   - `SINK_NAME` 补 `Busy`：`r"(Error|Exception|Submit|Conflict|NotFound|Corrupt|Exceeded|Invalid|Stale|Busy)$"`，自检用例加一条 `('class Busy(Exception): pass\nraise Busy("中文")\n', 1)`。
 - Modify: `frontend/src/i18n/zh.ts`、`en.ts`（`srv.novel`、`srv.chapter`、`srv.library`、`srv.usage.monthly_cap`、`srv.common.image_too_big`）
-- Test: `backend/tests/server/test_novels.py`（:85、:229 及新增）、`test_keyframes.py`、`test_style_image.py`、`test_admin.py`（:276 月上限）、`backend/tests/server/test_messages.py`
+- Test: `backend/tests/server/test_novels.py`（:85、:229 及新增）、`test_keyframes.py`、`test_style_image.py`、`test_admin.py`（:276 月上限）、`test_render.py`（:189）、`test_render_free.py`（:142）、`backend/tests/server/test_messages.py`
 
 - [ ] **Step 1: 写失败测试**
   - `test_novels.py`：
@@ -601,6 +673,7 @@
   - `test_keyframes.py`：类型不对 → 422 `chapter.keyframe.bad_type`；过大 → 422 `common.image_too_big`（`params == {"mb": 8}`）；没有的镜头 → 404 `chapter.keyframe.no_shot`（`params["shot"]`）；取不存在的关键帧 → 404 `chapter.keyframe.not_found`。
   - `test_style_image.py`：类型不对 → `novel.style.bad_type`；过大 → `common.image_too_big`；没有风格图 → 404 `novel.style.not_found`；别人的小说 → 404 `novel.not_found`。
   - `test_admin.py` :276：`r.status_code == 429 and r.json()["detail"]["code"] == "usage.monthly_cap"`。
+  - `test_render.py` :189 与 `test_render_free.py` :142：`"还有片段在出" in r.json()["detail"]` → `r.json()["detail"]["code"] == "chapter.version.busy"`（`Busy` 带代码后 detail 是 dict，`in` 查的是键）。
   - `test_novels.py` 或新开一节测 `library`：`create_work(U, " ")` → `LibraryError`（仍是 `ValueError`），`code == "library.empty_title"`；`upsert_card` 三条与 `delete_card` 未知类别 → `novel.asset.*`。
   - `test_messages.py`：`dump_codes()["novel.unknown_params"]["params"] == ["keys"]`、`dump_codes()["chapter.version.not_adoptable"]["params"] == []`。
 
@@ -687,7 +760,7 @@
     - `usage.monthly_cap` → `'You've reached this month's usage limit. Please contact the administrator.'`
 
 - [ ] **Step 5: 跑扫描**：`cd backend && .venv/bin/python tests/server/test_i18n_scan.py` 打印 `ALL PASS`（novels、library、store 全文件，app 上列函数）。
-- [ ] **Step 6: 生成 JSON、跑全部校验并提交**。`git add backend/server/novels.py backend/server/library.py backend/server/store.py backend/server/app.py backend/server/messages.py backend/server/messages_codes.json backend/tests/server/test_novels.py backend/tests/server/test_keyframes.py backend/tests/server/test_style_image.py backend/tests/server/test_admin.py backend/tests/server/test_messages.py backend/tests/server/test_i18n_scan.py frontend/src/i18n/zh.ts frontend/src/i18n/en.ts`。提交信息示例：「小说、章节、版本与长期记忆报错带代码：存储层异常混入 UserError，接口统一 to_detail；未知制作参数、本章无原文、月上限、卡片 id 不一致、渲染任务包的版本 id 改为消息对象；扫描补上 Busy」。
+- [ ] **Step 6: 生成 JSON、跑全部校验并提交**。`git add backend/server/novels.py backend/server/library.py backend/server/store.py backend/server/app.py backend/server/messages.py backend/server/messages_codes.json backend/tests/server/test_novels.py backend/tests/server/test_keyframes.py backend/tests/server/test_style_image.py backend/tests/server/test_admin.py backend/tests/server/test_render.py backend/tests/server/test_render_free.py backend/tests/server/test_messages.py backend/tests/server/test_i18n_scan.py frontend/src/i18n/zh.ts frontend/src/i18n/en.ts`。提交信息示例：「小说、章节、版本与长期记忆报错带代码：存储层异常混入 UserError，接口统一 to_detail；未知制作参数、本章无原文、月上限、卡片 id 不一致、渲染任务包的版本 id 改为消息对象；扫描补上 Busy」。
 
 ---
 
@@ -706,11 +779,12 @@
     - 章后整理失败：把 `app_mod._digest_chat` 换成会抛 `RuntimeError("model exploded sk-…")` 的桩（照现有 FakeChat 的替换写法），等 `chapter["digest"]["status"] == "failed"`；断言：
       - `d["error_msg"]["code"] == "chapter.digest.failed"`，`d["error_msg"]["params"] == {}`，`len(d["error_msg"]["ref"]) == 8`；
       - `d["error"]` 以 `chapter.digest.failed` 的中文兜底开头、含编号，**不含** `RuntimeError` 与密钥；
-      - `error_refs.find(ref)` 的 `detail` 含 `RuntimeError`、`where` 以 `digest ` 开头、`user_id == U`。
+      - `error_refs.find(ref)` 的 `detail` 含 `RuntimeError`、`where` 以 `digest ` 开头、`user_id == U`；`server.errors` logger 收到这一条。
+    - 可预期的失败不记编号：桩改为抛 `novels.NotFound.of("chapter.not_found")`（章节在整理中途被删）时，`d["error_msg"] == {"code": "chapter.not_found", "params": {}}`（没有 `ref`），错误记录条数不变。
     - 开关关闭：`load_settings` 桩的 `chapter_digest=False` 时 `chapters_digest` → 422 `detail["code"] == "chapter.digest.off"`；`app` logger（`render.app`）收到含 `STORYBOARD_CHAPTER_DIGEST` 的 WARNING。
     - 版本：`create_version` 后记录里有 `"error_msg": None`；`update_version_state(..., "failed", error="x", error_msg={"code": "common.internal", "params": {}})` 后读回两个字段都在；不传 `error_msg` 时不动它。
   - 前端：
-    - VersionBar：`chapter.digest = {status: 'failed', at, error: '旧中文', error_msg: {code: 'chapter.digest.failed', params: {}, ref: 'K7Q2M9XD'}}` 时，英文界面显示英文原因与「reference K7Q2M9XD」；只有 `error` 时原样显示；`flow.digest.off` 的中英文都不含 `STORYBOARD_CHAPTER_DIGEST`。
+    - VersionBar：`chapter.digest = {status: 'failed', at, error: '旧中文', error_msg: {code: 'chapter.digest.failed', params: {}, ref: 'K7Q2M9XD'}}` 时，中文显示「章后整理：没有完成，可以稍后重跑；仍失败请联系管理员（参考编号 K7Q2M9XD）」（不再套「失败（…）」，括号不嵌套、主语不重复），英文界面显示英文原因与「reference K7Q2M9XD」；只有 `error` 时照旧显示「失败（旧中文）」；`flow.digest.off` 的中英文都不含 `STORYBOARD_CHAPTER_DIGEST`。
     - App：打开一个 `status: 'failed'` 且带 `error_msg` 的版本，提示条按代码渲染（旧数据只有 `error` 时取第一行，与现在一致）。
 
 - [ ] **Step 2: 运行确认失败。**
@@ -719,17 +793,22 @@
 
   ```python
   register("chapter.digest.off", "章后整理功能没有开启，请联系管理员")
-  register("chapter.digest.failed", "章后整理没有完成，可以稍后重跑；仍失败请联系管理员")
+  register("chapter.digest.failed", "没有完成，可以稍后重跑；仍失败请联系管理员")
   ```
-  - **文字变化**：`chapter.digest.off` 去掉环境变量名（spec C）；章后整理失败原因不再是 `repr(e)`。
+  - **文字变化**：`chapter.digest.off` 去掉环境变量名（spec C）；章后整理失败原因不再是 `repr(e)`。`chapter.digest.failed` 不带主语，因为它总是显示在「章后整理：」标签后面（VersionBar）或管理后台「位置」为 `digest …` 的那一行里。
 
 - [ ] **Step 4: 实现**
   - `_run_digest` 的 `except Exception as e`：
     ```python
     except Exception as e:  # 网络/解析/章节被删——都只是这一步没做成
         fields: dict = {}
-        render_session.set_error(fields, error_refs.unexpected(
-            e, "chapter.digest.failed", user_id=user_id, where=f"digest {nid}/{cid}", logger=log))
+        if isinstance(e, UserError) and e.code:
+            # 可预期的（章节被删、没有采用版）：原因本身就说清楚了，不记编号，不占错误记录
+            render_session.set_error(fields, e)
+        else:
+            # 日志走缺省的 server.errors（R13 只给 runner 与合成保留原 logger）
+            render_session.set_error(fields, error_refs.unexpected(
+                e, "chapter.digest.failed", user_id=user_id, where=f"digest {nid}/{cid}"))
         try:
             novels.set_digest_state(user_id, nid, cid, "failed", **fields)
         except (OSError, ValueError, LookupError):
@@ -738,7 +817,7 @@
   - `chapters_digest`：`log.warning("章后整理已关闭（STORYBOARD_CHAPTER_DIGEST=0），拒绝手动重跑 user=%s novel=%s chapter=%s", user["id"], nid, cid)  # i18n: internal`，再 `raise HTTPException(422, detail=msg("chapter.digest.off"))`。
   - `novels.create_version`：`record` 加 `"error_msg": None`；`update_version_state` 的字段循环加 `"error_msg"`。产出点（`app._execute` 写 `error=`）**不在本 Task**，留给子计划 4（spec 子计划 3 A「持久化错误」）。
   - 前端：
-    - `VersionBar.tsx`：`failed: t('flow.digest.failed', { reason: itemError(d, locale) || t('flow.digest.unknown') })`（`itemError` 已是 `error_msg` 优先、回落 `error`）。
+    - `VersionBar.tsx`：`failed: d.error_msg ? itemError(d, locale) : t('flow.digest.failed', { reason: d.error ?? t('flow.digest.unknown') })`。有 `error_msg` 时直接接在「章后整理：」标签后，不再套「失败（…）」；旧数据照旧。`app.py` 顶部从 `server.messages` 导入 `UserError`。
     - `App.tsx` :502-504：`t('app.versionFailed', { msg: v.error_msg ? formatMsg(v.error_msg) : (v.error ?? '').split('\n')[0] })`。Task 5 会把这里改为结构化提示条，这一步先保证按代码渲染。
     - `flow.digest.off`：zh `'未开启，可在小说页手动补'`，en `'not enabled; fill in manually on the novel page'`。
     - `srv.chapter.digest.*` 中英文。en 示例：`off` → `'Chapter digest isn't enabled. Please contact the administrator.'`；`failed` → `'The chapter digest didn't finish. Rerun it later; if it keeps failing, contact the administrator.'`。
@@ -784,7 +863,7 @@
       - `f.t('app.err.novel', { msg: msg(nr.reason) })` → `{ key: 'app.err.novel', err: errValue(nr.reason) }`，`app.err.chapter` 同理；
       - Task 4 写的失败版本提示 → `setAlert(v.status === 'failed' ? { key: 'app.versionFailed', err: v.error_msg ?? (v.error ?? '').split('\n')[0] } : { key: 'app.versionEmpty' })`；
       - `setAlert(t('app.savedInvalid'))` → `setAlert({ key: 'app.savedInvalid' })`。
-      渲染：`{alert && <p className="alert">{alertText(alert)}</p>}`；`{error && <p className="alert">{t('app.err.submit', { msg: formatMsg(error, locale) })}</p>}`。`app.versionEmpty`、`app.savedInvalid` 没有 `{msg}` 占位，多传的 `msg` 被忽略。`locale` 取自 `useI18n()`。
+      渲染：`{alert && <p className="alert">{alertText(alert)}</p>}`；画布的 `notice` 属性（App.tsx:966，`CanvasPanels` 的 `notice?: string | null`）改为 `notice: error ? t('app.err.submit', { msg: formatMsg(error, locale) }) : alert && alertText(alert)`；`{error && <p className="alert">{t('app.err.submit', { msg: formatMsg(error, locale) })}</p>}`。`app.versionEmpty`、`app.savedInvalid` 没有 `{msg}` 占位，多传的 `msg` 被忽略。`locale` 取自 `useI18n()`。
     - `grep -n "setAlert(" src/App.tsx` 改完后不得再有字符串参数（`null` 除外）。
   - `useJob.ts`：`const [error, setError] = useState<MsgLike>(null)`，两处 `setError(e instanceof Error ? …)` 改 `setError(errValue(e))`。`grep -rn "useJob(" src` 找到所有使用处，渲染处用 `formatMsg`。
   - `useKeyframes.ts`：错误状态改为 `{ key: 'keyframes.promptFailed' | 'keyframes.readFailed' | 'keyframes.uploadFailed' | 'keyframes.deleteFailed'; err: MsgLike } | null`，四处 `setError(tr(...))` 改为 `setError({ key: '…', err: errValue(e) })`。`TimelineCanvas.tsx:1068` 渲染 `t(kf.error.key, { error: formatMsg(kf.error.err, locale) })`；`grep -rn "\.error" src | grep -i "kf\.\|keyframe"` 确认没有别的使用处。
@@ -816,13 +895,18 @@
     - `reset_password` 短密码 → `AdminError` 且 `code == "auth.password_short"`、`params == {"min": 6}`（下层代码原样保留）；`usage_report("bogus", …)` → `AdminError` `usage.bad_group`。
     - `jobs_view` 的失败条带 `error_msg`（版本记录里有就原样给，没有为 None）。
     - `part_api`：`/admin/users/ffffffffffff` → 404 `auth.user_not_found`；`group=bogus` → 400 `usage.bad_group`；`days=5` → 422 `admin.bad_days`（`usage.csv` 同）；坏价格表 → 400 `admin.pricing.bad_price`；空价格表 → `admin.pricing.empty`。
-    - 错误记录接口：先 `error_refs.record("common.internal", "boom", user_id=<bob 的 id>, where="GET /x")`；`GET /admin/errors` → `{"errors": [...]}`，第一条 `ref` 相同、`username == "bob"`、有 `detail`；`GET /admin/errors/<ref 小写、带连字符>` → 同一条；不存在 → 404 `admin.error_ref.not_found`（`params["ref"]` 为规范化后的编号）；普通用户 → 403 `auth.admin_only`；`limit` 超出 1–1000 → 422（FastAPI 校验）。
+    - 错误记录接口：先 `error_refs.record("common.internal", "boom", user_id=<bob 的 id>, where="GET /x")`；
+      - `GET /admin/errors` → `{"errors": [...]}`，第一条 `ref` 相同、`username == "bob"`，**没有** `detail` 键；
+      - `GET /admin/errors/<ref 小写、带连字符>` → 同一条，带 `detail`；随后 `/admin/audit` 第一条 `action == "view_error_ref"`、`target == "bob"`、`after == {"ref": <ref>}`；
+      - 列表接口不写审计（调用前后 `/admin/audit` 条数不变）；
+      - 不存在 → 404 `admin.error_ref.not_found`（`params["ref"]` 为规范化后的编号），不写审计；
+      - 普通用户 → 403 `auth.admin_only`；`limit` 超出 1–1000 → 422（FastAPI 校验）。
   - `test_usage.py`：`pricing.save({"models": {}})` → `PricingError`（仍是 `ValueError`），`code == "admin.pricing.empty"`；`{"models": {"m": "x"}}` → `admin.pricing.bad_row`（`params == {"name": "m"}`）；负单价 → `admin.pricing.bad_price`（`params` 有 `name`、`key`）；`usage.aggregate(rows, "bogus", table)` → `UsageError` `usage.bad_group`。
   - `admin.test.tsx`（照文件里现有的桩后端写法）：
     - 读取失败：`/admin/overview` 返回 `500 {"detail": {"code": "common.internal", "params": {}, "message": "…（参考编号 K7Q2M9XD）", "ref": "K7Q2M9XD"}}`，错误条显示中文与编号；切到英文后错误条变成英文、编号仍在。
     - 操作失败 toast：停用自己返回 `400 admin.self_disable` 时，toast 按当前语言渲染。
     - 任务页：失败条带 `error_msg` 时英文界面显示英文；只有 `error` 时原样显示。
-    - 错误记录页签：点「错误记录」后请求 `GET /admin/errors`，表格显示编号、用户、说明（按代码渲染）、位置；在查找框输入 `k7q2-m9xd` 回车 → 请求 `GET /admin/errors/k7q2-m9xd`，显示那一条的 `detail`；查不到时显示 `admin.error_ref.not_found` 的文案。
+    - 错误记录页签：点「错误记录」后只请求 `GET /admin/errors`（不请求任何单条），表格显示编号、用户、说明（按代码渲染）、位置；展开某一行的「详情」时才请求 `GET /admin/errors/<ref>` 并显示 `detail`；在查找框输入 `k7q2-m9xd` 回车 → 请求 `GET /admin/errors/k7q2-m9xd`，显示那一条与 `detail`；查不到时显示 `admin.error_ref.not_found` 的文案；审计页把 `view_error_ref` 显示为「查看错误详情」/ `View error details`。
 
 - [ ] **Step 2: 运行确认失败。**
 
@@ -877,14 +961,19 @@
 
       @app.get("/admin/errors")
       def admin_errors(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(admin_user)):
-          return {"errors": _with_username(error_refs.recent(limit))}
+          """最近的错误记录摘要：不含 detail（堆栈可能带用户输入的片段），看详情走单条接口并留审计。"""
+          rows = [{k: v for k, v in r.items() if k != "detail"} for r in error_refs.recent(limit)]
+          return {"errors": _with_username(rows)}
 
 
       @app.get("/admin/errors/{ref}")
       def admin_error_get(ref: str, user: dict = Depends(admin_user)):
+          """单条错误记录（含脱敏后的 detail）。每次查看都写审计（商业化合约：排查要留访问日志）。"""
           row = error_refs.find(ref)
           if row is None:
               raise HTTPException(404, detail=msg("admin.error_ref.not_found", ref=error_refs.normalize(ref)))
+          owner = auth.get_user_raw(row["user_id"]) if row.get("user_id") else None
+          audit.write(user, "view_error_ref", owner, None, {"ref": row["ref"]})
           return _with_username([row])[0]
       ```
   - 前端：
@@ -896,7 +985,9 @@
       ```ts
       export interface ErrorRefRow {
         ref: string; at: string; user_id: string | null; username: string | null
-        code: string; params: Record<string, unknown>; where: string; detail: string
+        code: string; params: Record<string, unknown>; where: string
+        /** 只有单条接口返回（查看会写审计） */
+        detail?: string
       }
       ```
       `AdminJobs.failed[]` 加 `error_msg?: ServerMsg | null`。
@@ -926,7 +1017,24 @@
       import { ErrorBar, TableSkeleton } from './LoadState'
       import { useLoad } from './useLoad'
 
-      /** 错误记录：意外失败的参考编号（最新在前），可按编号查找；detail 已在服务端脱敏。 */
+      /** 展开时才取 detail：单条接口每次查看都写审计，列表不带 detail */
+      function Detail({ r }: { r: ErrorRefRow }) {
+        const { t, locale } = useI18n()
+        const [text, setText] = useState<string | null>(r.detail ?? null)
+        const [err, setErr] = useState<MsgLike>(null)
+        const open = (e: { currentTarget: HTMLDetailsElement }) => {
+          if (!e.currentTarget.open || text !== null) return
+          adminErrorRef(r.ref).then((x) => setText(x.detail ?? '')).catch((x) => setErr(errValue(x)))
+        }
+        return (
+          <details className="adm__err-detail" onToggle={open}>
+            <summary>{t('admin.errors.detail')}</summary>
+            {err ? <p className="text-sm text-destructive">{formatMsg(err, locale)}</p> : <pre>{text ?? '…'}</pre>}
+          </details>
+        )
+      }
+
+      /** 错误记录：意外失败的参考编号（最新在前），可按编号查找；detail 已在服务端脱敏，展开时才取。 */
       export function ErrorsTab() {
         const { t, locale } = useI18n()
         const { data, error, reload } = useLoad(adminErrors, [])
@@ -944,12 +1052,7 @@
           <tr key={r.ref}>
             <td>{when(r.at)}</td><td>{r.username ?? r.user_id ?? '—'}</td>
             <td className="adm__mono">{r.ref}</td><td>{explain(r)}</td><td className="adm__mono">{r.where || '—'}</td>
-            <td>
-              <details className="adm__err-detail">
-                <summary>{t('admin.errors.detail')}</summary>
-                <pre>{r.detail}</pre>
-              </details>
-            </td>
+            <td><Detail r={r} /></td>
           </tr>
         )
         const head = (
@@ -977,10 +1080,10 @@
         )
       }
       ```
-      `adm__search`、`adm__mono` 若样式表里没有，照 `Users.tsx` 搜索框与 `AuditTab` 的 `adm__json` 现有样式补两条（`grep -n "adm__" src/styles/*.css`）。
-    - `zh.ts`：`admin.tabs.errors: '错误记录'`；`admin.errors: { refresh: '刷新', lookup: '查找', placeholder: '输入用户报来的参考编号', empty: '还没有错误记录', emptyHint: '意外失败会带参考编号记在这里（保留最近 1000 条）。', detail: '详情', cols: { time: '时间', user: '用户', ref: '参考编号', what: '说明', where: '位置', detail: '详情' } }`；`srv.admin.*`、`srv.usage.bad_group`。en 对应：`tabs.errors: 'Errors'`、`placeholder: 'Reference reported by the user'`、`emptyHint: 'Unexpected failures are logged here with a reference (latest 1,000 kept).'` 等；`srv.admin.error_ref.not_found` → `'No error with reference {ref}.'`；`srv.admin.last_admin` → `'At least one administrator must remain.'`；`srv.admin.bad_days` → `'days must be 7, 30 or 90.'`。
+      查找命中的那一条由单条接口返回，已带 `detail`，`Detail` 直接显示、不再请求。`adm__search`、`adm__mono` 若样式表里没有，照 `Users.tsx` 搜索框与 `AuditTab` 的 `adm__json` 现有样式补两条（`grep -n "adm__" src/styles/*.css`）。
+    - `zh.ts`：`admin.action.view_error_ref: '查看错误详情'`（en `'View error details'`）；`admin.tabs.errors: '错误记录'`；`admin.errors: { refresh: '刷新', lookup: '查找', placeholder: '输入用户报来的参考编号', empty: '还没有错误记录', emptyHint: '意外失败会带参考编号记在这里（保留最近 1000 条）。', detail: '详情', cols: { time: '时间', user: '用户', ref: '参考编号', what: '说明', where: '位置', detail: '详情' } }`；`srv.admin.*`、`srv.usage.bad_group`。en 对应：`tabs.errors: 'Errors'`、`placeholder: 'Reference reported by the user'`、`emptyHint: 'Unexpected failures are logged here with a reference (latest 1,000 kept).'` 等；`srv.admin.error_ref.not_found` → `'No error with reference {ref}.'`；`srv.admin.last_admin` → `'At least one administrator must remain.'`；`srv.admin.bad_days` → `'days must be 7, 30 or 90.'`。
 
-- [ ] **Step 5: 跑全部校验并提交**。`git add backend/server/admin.py backend/server/usage.py backend/server/pricing.py backend/server/app.py backend/server/messages.py backend/server/messages_codes.json backend/tests/server/test_admin.py backend/tests/server/test_usage.py backend/tests/server/test_i18n_scan.py frontend/src/api.ts frontend/src/types.ts frontend/src/components/admin/AdminView.tsx frontend/src/components/admin/ErrorsTab.tsx frontend/src/components/admin/format.ts frontend/src/components/admin/useLoad.ts frontend/src/components/admin/LoadState.tsx frontend/src/components/admin/JobsTab.tsx frontend/src/components/admin/Users.tsx frontend/src/components/admin/UsageTab.tsx frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/admin.test.tsx`（加上补了样式的 css 文件，如有）。提交信息示例：「管理后台报错带代码：用户操作、用量分组、统计天数与价格表校验改为消息对象，下层账号与用量错误转成管理错误时保留原代码；新增错误记录接口与页签，可按参考编号查到脱敏后的完整记录；后台读取错误、操作提示与失败任务原因按界面语言渲染」。
+- [ ] **Step 5: 跑全部校验并提交**。`git add backend/server/admin.py backend/server/usage.py backend/server/pricing.py backend/server/app.py backend/server/messages.py backend/server/messages_codes.json backend/tests/server/test_admin.py backend/tests/server/test_usage.py backend/tests/server/test_i18n_scan.py frontend/src/api.ts frontend/src/types.ts frontend/src/components/admin/AdminView.tsx frontend/src/components/admin/ErrorsTab.tsx frontend/src/components/admin/format.ts frontend/src/components/admin/useLoad.ts frontend/src/components/admin/LoadState.tsx frontend/src/components/admin/JobsTab.tsx frontend/src/components/admin/Users.tsx frontend/src/components/admin/UsageTab.tsx frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/tests/admin.test.tsx`（加上补了样式的 css 文件，如有）。提交信息示例：「管理后台报错带代码：用户操作、用量分组、统计天数与价格表校验改为消息对象，下层账号与用量错误转成管理错误时保留原代码；新增错误记录接口与页签：列表只给摘要，按参考编号查看脱敏后的详情并写审计；后台读取错误、操作提示与失败任务原因按界面语言渲染」。
 
 ---
 
@@ -1016,7 +1119,7 @@
 - [ ] **Step 4: 面向最终用户**：
   - `grep -n "STORYBOARD_\|backend/.env\|_API_KEY" server/messages.py ../frontend/src/i18n/zh.ts ../frontend/src/i18n/en.ts` 输出为空；
   - `grep -n "repr(e)" server/app.py` 不再出现在 `_run_digest` 里。
-- [ ] **Step 5: 错误记录不进 git**：`git status --short` 里不得出现 `error_refs.jsonl`（测试只写临时目录；`data/` 已在 `.gitignore`，`git check-ignore backend/data/error_refs.jsonl` 确认）。
+- [ ] **Step 5: 测试不碰真实数据目录**：`data/` 在 `.gitignore` 里，普通 `git status` 看不出污染。实施前记下 `ls -l backend/data/error_refs.jsonl 2>/dev/null`（多半不存在），跑完全部测试后再看一次：不存在的仍不存在，存在的大小与修改时间不变；另用 `git status --short --ignored backend/data | grep error_refs` 对照。凡是会走到 `error_refs` 的测试文件（`tests/render/test_runner.py` 等，`grep -L STORYBOARD_DATA_DIR tests/*/test_*.py` 列出没设的）都必须在导入前设临时数据目录。
 - [ ] **Step 6: 代码表最新**：`.venv/bin/python -m server.messages --write && git diff --exit-code server/messages_codes.json`。
 - [ ] **Step 7: 全部校验**（全局约束里的整套）。
 - [ ] **Step 8: 有改动才提交**（只 add 改到的文件）。提交信息示例：「子计划 3 收尾：扫描覆盖账号、小说、管理与错误记录模块并清零」。
@@ -1037,9 +1140,12 @@
 - **R10 toast 不存值**：裁定：toast（`notice.err`）在弹出时用 `errText(e)` 按当前语言格式化，不随之后的切换语言重渲染（spec §6）——理由：toast 几秒后消失，没有「已显示的错误」需要跟着变——若错的代价：无。
 - **R11 错误记录的上限与并发**：裁定：保留最近 1000 条，行数超过 2000 时整体重写为最后 1000 条；只在单进程内加锁——理由：服务是单进程部署（`STORYBOARD_SERVER_WORKERS` 是线程池），与 `usage.jsonl`、`admin_audit.jsonl` 的做法一致——若错的代价：以后改成多进程部署时，裁剪可能丢掉另一进程刚写的一行（只是丢一条记录，不影响用户看到的编号）。那时再改用文件锁。
 - **R12 记录写盘失败**：裁定：`record` 写盘失败只记 `log.exception`，编号照常返回给用户——理由：报错本身不能被记账拖垮；同一内容已经写进日志，按编号在日志里 grep 仍能找到——若错的代价：管理后台查不到那一条，要去翻日志。
-- **R13 runner 与合成的日志位置**：裁定：`record(..., logger=log)` 让堆栈写进调用方原来的 logger（`render.runner`、`render.app`），不改到 `server.errors`——理由：子计划 2 已有断言「`render.runner` 收到含 root、段 id 与堆栈的 ERROR」，日志排查习惯也不变——若错的代价：按 logger 名过滤 `server.errors` 的人会漏掉这两类，`ref=` 前缀仍能 grep 到。
-- **R14 文字变化范围**：裁定：只有 spec C 节列出的几条中文兜底变化（`repr` 引号、列表连接、内部状态值、环境变量名、`repr(e)`、500 纯文本）；`admin.bad_days`、`admin.bad_disabled` 里的 `days`、`disabled` 是接口参数名，管理后台界面用下拉与开关挡住了，保持原文——理由：避免无谓改动现有文字——若错的代价：直接调接口的人看到参数名，本来就是给他看的。
+- **R13 runner 与合成的日志位置**：裁定：只有 runner 的提交意外异常与合成意外异常用 `record(..., logger=log)` 写进调用方原来的 logger（`render.runner`、`render.app`）；500 中间件与章后整理用缺省的 `server.errors`——理由：子计划 2 已有断言「`render.runner` 收到含 root、段 id 与堆栈的 ERROR」，日志排查习惯也不变——若错的代价：按 logger 名过滤 `server.errors` 的人会漏掉这两类，`ref=` 前缀仍能 grep 到。
+- **R14 文字变化范围**：裁定：只有 spec C 节列出的几条中文兜底变化（`repr` 引号、列表连接、内部状态值、环境变量名、`repr(e)`、500 纯文本）；`admin.bad_days`、`admin.bad_disabled` 里的 `days`、`disabled` 是接口参数名，`novel.lifecycle.unknown_type` 的可选值（`deceased`、`permanent_condition`、`departed`）、`novel.lifecycle.unknown_status` 的状态值、`admin.bad_role` 的 `admin`/`user` 是接口取值，界面用下拉与开关挡住了、用户触发不到，保持原文、不改成代码引用（spec C「不出现内部枚举值」对这几条豁免）——理由：避免无谓改动现有文字——若错的代价：直接调接口的人看到参数名，本来就是给他看的。
 - **R15 pydantic 422 不处理**：裁定：请求体校验失败的 422（`detail` 是列表）不在本次改，前端照旧显示原始响应文字——理由：登录、注册、重置密码的输入框已挡住空值，其余接口由前端构造请求体，用户触发不到——若错的代价：直接调接口时看到 FastAPI 的英文校验信息。
+
+- **R16 错误记录的可见范围**（按设计审查 I3 修订）：裁定：列表接口只给摘要（不含 `detail`），`detail` 只能经 `GET /admin/errors/{ref}` 逐条查看，每次查看写一条 `view_error_ref` 审计；`where` 与 `detail` 里的数据目录换成 `<data>`——理由：后台管理员是网页角色（`python -m server.admin promote` 就能授予），与能登录服务器看日志的运维不是同一群人；堆栈里的异常文字可能带用户输入的片段，商业化合约要求排查留访问日志——若错的代价：管理员看一条详情要多点一次，审计里多一行。
+- **R17 中间件里的阻塞操作**：裁定：500 兜底里解析 token 与写盘放进 `anyio.to_thread.run_sync`——理由：中间件跑在事件循环上，写盘与 HMAC 虽快，放线程里不会拖住其它请求，`app.py` 已导入 `anyio`——若错的代价：多一次线程切换，只发生在 500 时。
 
 ## 自查记录
 
@@ -1048,3 +1154,27 @@
 - **覆盖 C、D 节**：代码在 Task 1–4、6 登记；文字变化逐条写在各 Task 的「文字变化」里；ast 扫描 → Task 2、3、4、6 逐步加，Task 7 复核。
 - **名称一致**：后端 `error_refs.record`/`record_exc`/`unexpected`/`recent`/`find`/`normalize`/`user_of_root`、`messages.with_ref`/`REF_SUFFIX_ZH`；前端 `errText`、`withRef`、`common.refSuffix`、`ErrorRefRow`、`adminErrors`/`adminErrorRef`、`admin.errors.*`。各 Task 引用一致。
 - **扫描基线**：七个模块加上清单里的 app 函数，改动前共 79 处命中，另有 `Busy` 1 处当时扫不到（`novels.py:419`）。Task 7 Step 2 复核为零。
+
+## 修订记录
+
+Opus 设计审查（163c039）的结论是「有修改后通过」，本次按审查意见修订如下。
+
+- **I1 测试隔离**：Task 1 在 `tests/render/test_runner.py` 导入前设临时数据目录，并逐条改写 runner :568/:756/:757 与 compose :277/:439 的精确断言。Task 7 Step 5 改为核对真实数据目录没被写入。
+- **I2 脱敏补齐**：Task 1 改 `render/providers/base.py`：`SECRET_ENVS` 补 `ANTHROPIC_API_KEY`、`STORYBOARD_SECRET`，`scrub` 补 `x-api-key` 头。测试在 `test_error_refs.py` 与 `test_providers.py`。
+- **I3 可见范围**：
+  - Task 6 的列表接口不含 `detail`；
+  - 单条查看写 `view_error_ref` 审计，前端在展开时才取详情；
+  - Task 1 把 `where` 与 `detail` 里的数据目录换成 `<data>`；
+  - 新增 R16。
+- **Minor**：
+  - `App.tsx:966` 的画布 `notice` 列入 Task 5；
+  - `test_render.py:189`、`test_render_free.py:142` 列入 Task 3；
+  - `user_of_root` 改为相对路径解析；
+  - 截断保留头尾；
+  - `normalize` 采用 Crockford 映射；
+  - 500 中间件与章后整理用 `server.errors`（R13 收窄）；
+  - `chapter.digest.failed` 去掉主语，VersionBar 不再嵌套括号；
+  - 章后整理里可预期的失败不记编号；
+  - 计数改用 `with open`；
+  - 中间件里的阻塞操作放进线程（R17）；
+  - 内部枚举值并入 R14 豁免。

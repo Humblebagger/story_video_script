@@ -479,30 +479,47 @@
 - `ref` 只出现在顶层，不进 `params`，嵌套原因（`compact`）不带它。
 - `message`（中文兜底）末尾附「（参考编号 X）」。这样旧前端、`ApiError.message`、还没改造的显示处也能看到编号。
 - 持久化：`error_msg` 为 `{code, params, ref}`；`error` 为带编号的中文兜底。`session.set_error` 与 `copy_error` 保留 `ref`。
-- 编号：8 位，取自 32 个字符（数字加大写字母，去掉 I、L、O、U），由 `secrets` 生成。查找时忽略大小写、空格与连字符。
+- 编号：8 位，取自 32 个字符（数字加大写字母，去掉 I、L、O、U），由 `secrets` 生成。查找时忽略大小写、空格与连字符，并按 Crockford 规则把 O 当 0、I/L 当 1，只留 0-9A-Z。
 
 **存储**：`DATA_DIR/error_refs.jsonl`，追加写，一行一条：
 ```json
 {"ref": "K7Q2M9XD", "at": "2026-11-13T08:00:00+00:00", "user_id": "a1b2c3d4e5f6", "code": "common.internal", "params": {}, "where": "GET /novels/n1", "detail": "Traceback …"}
 ```
 - `user_id` 可为 null（取不到用户时）。用户名在读出时按 `user_id` 现查，不写进文件。
-- `where`：接口是「方法 + 路径」（不含查询串），后台线程是「digest 小说 id/章节 id」「submit 会话目录」「compose 会话目录」。
-- `detail`：堆栈或原文。先 `scrub_secrets`（Bearer 凭据、环境里的厂商密钥、调用方给的额外密钥，如厂商对象持有的 key），再截断到 8000 字。不记请求体、请求头、查询串、局部变量。
+- `where`：接口是「方法 + 路径」（不含查询串），后台线程是「digest 小说 id/章节 id」「submit 会话目录」「compose 会话目录」。数据目录一律换成 `<data>`（如 `submit <data>/users/<uid>/novels/…`），不留主机上的绝对路径。
+- `detail`：堆栈或原文。
+  - 先 `scrub_secrets`。它抹掉：Bearer 凭据；`x-api-key` 头；环境里的厂商密钥、模型密钥 `ANTHROPIC_API_KEY`、token 签名密钥 `STORYBOARD_SECRET`；调用方给的额外密钥（如厂商对象持有的 key）。
+  - 本子计划让 500 与章后整理（模型调用，密钥经 `x-api-key` 发出）这两条更宽的路径经过脱敏，所以 `SECRET_ENVS` 与 `scrub` 的规则一并补齐，原有日志也受益。
+  - 数据目录换成 `<data>`。
+  - 截断到 8000 字时保留头尾：链式异常的最后一行（最终异常）在末尾。
+  - 不记请求体、请求头、查询串、局部变量。
 - **上限**：保留最近 1000 条。行数超过 2000 时整体重写为最后 1000 条（临时文件 + `replace`，单进程内加锁）。服务是单进程部署（线程池并发），不考虑多进程同时写。
-- **日志**：每条同时写一条 `logging.getLogger("server.errors").error`，内容是同样脱敏后的 `ref`、`code`、`user`、`where` 与 `detail`。日志与记录都不得出现密钥。
+- **日志**：每条同时写一条 ERROR 日志，内容是同样脱敏后的 `ref`、`code`、`user`、`where` 与 `detail`。
+  - 缺省写 `server.errors`（500 中间件、章后整理）。
+  - 出片提交与合成的意外异常沿用子计划 2 原来的 logger（`render.runner`、`render.app`）。
+  - 日志与记录都不得出现密钥。
 
 **在哪里加编号**：
 - **接口 500**：在 `app.py` 加一个纯 ASGI 中间件，接住路由里没处理的异常，记一条、返回 `500 {"detail": <common.internal 消息对象，带 ref>}`。
   - 中间件要注册在 CORS 之内（代码里写在 `CORSMiddleware` 的 `add_middleware` **之前**；Starlette 后加的在外层）。这样 500 响应也带 CORS 头，跨源的前端能读到 detail。
   - 响应已经开始（流式接口中途出错）时不接管，照旧抛出。
   - `HTTPException` 由内层的 ExceptionMiddleware 处理，不会走到这里。
-  - 用户 id 从 `Authorization` 头按 `auth.verify_token` 解析，失败就记 null。
-- **后台线程**：在原来写失败的地方，调用 `error_refs.record_exc(...)` 拿到编号，再用 `with_ref(msg(code), ref)` 写入。
+  - 用户 id 从 `Authorization` 头按 `auth.verify_token` 解析，失败就记 null。解析与写盘放进 `anyio.to_thread.run_sync`，不卡事件循环。
+- **后台线程**：在原来写失败的地方，调用 `error_refs.record_exc(...)` 拿到编号，再用 `with_ref(msg(code), ref)` 写入。章后整理里可预期的失败（带代码的 `UserError`，如章节在整理中途被删）直接写那个代码，不记编号、不占错误记录。
 
 **管理后台**：
-- 接口：`GET /admin/errors?limit=200`（最新在前，带用户名）；`GET /admin/errors/{ref}`（找不到 404 `admin.error_ref.not_found`）。都要管理员权限。
-- 页签「错误记录」：顶部一个按编号查找的输入框，下面是最近记录表（时间、用户、编号、说明、位置），点开看脱敏后的 `detail`。说明按代码用当前界面语言渲染。
-- 管理员能看到的就是服务器日志里已有的内容，没有新增敏感面。
+- 接口（都要管理员权限）：
+  - `GET /admin/errors?limit=200`：最近记录的**摘要**，最新在前，带用户名，**不含 `detail`**；
+  - `GET /admin/errors/{ref}`：单条，带 `detail`。找不到时 404 `admin.error_ref.not_found`。**每次查看写一条审计** `view_error_ref`，对象为记录所属用户，`after` 为 `{ref}`。
+- 页签「错误记录」：
+  - 顶部一个按编号查找的输入框，下面是最近记录表（时间、用户、编号、说明、位置）；
+  - 展开某一行时才请求单条接口、显示脱敏后的 `detail`；
+  - 说明按代码用当前界面语言渲染；
+  - 审计页把 `view_error_ref` 显示为「查看错误详情」。
+- **敏感面**：这是新增的一个查看入口。后台管理员是网页角色（`python -m server.admin promote` 就能授予），与能登录服务器看日志的运维不是同一群人。堆栈里的异常文字可能带用户输入的片段。所以：
+  - 列表不给详情，详情逐条查看并留审计，符合商业化合约「排查问题……留访问日志」；
+  - 记录里不存主机绝对路径；
+  - 不记请求体与局部变量。
 
 **前端显示**：
 - `formatMsg` 遇到顶层带 `ref` 的消息对象，在渲染结果后附 `common.refSuffix`：中文「（参考编号 {ref}）」，英文「 (reference {ref})」。
@@ -533,6 +550,7 @@
 - **面向最终用户**（沿用子计划 2 B 节原则）：
   - 不出现环境变量名。`chapter.digest.off` 只说「章后整理功能没有开启，请联系管理员」，`STORYBOARD_CHAPTER_DIGEST=0` 写进日志。前端 `flow.digest.off` 同步去掉变量名。
   - 不出现内部枚举值。「这个版本的状态是 {status}，不能采用」去掉 `status`。
+  - 豁免：生命周期类型与状态、`admin.bad_role` 的可选值、`admin.bad_days`/`admin.bad_disabled` 的参数名保持原文。它们是接口取值，界面用下拉与开关挡住了，用户触发不到（计划 R14）。
 - **文字变化**：以下几条的中文兜底与现在不完全相同，计划里逐条列出：
   - `repr` 引号去掉：`novel.bad_id`、`novel.asset.id_mismatch`、`admin.pricing.bad_row`；
   - 列表改用「、」连接：`novel.unknown_params`；
@@ -545,8 +563,10 @@
 
 - 后端：
   - 各模块断言 `code` 与关键 `params`；
-  - 中间件 500：detail 形状、`ref` 能在记录里找到、记录与日志里没有测试密钥、带 `Origin` 时响应有 CORS 头；
-  - 错误记录：截断、超过上限时裁剪、查找不区分大小写；
+  - 中间件 500：detail 形状、`ref` 能在记录里找到、记录与日志里没有测试密钥（含模型密钥、签名密钥、`x-api-key` 头）、带 `Origin` 时响应有 CORS 头；
+  - 错误记录：头尾截断、超过上限时裁剪、查找不区分大小写（含 Crockford 映射）、数据目录换成 `<data>`；
+  - 管理接口：列表不含 `detail`，单条查看写审计；
+  - 测试隔离：所有会走到错误记录的测试在导入前设临时数据目录（`tests/render/test_runner.py` 原来没设）；
   - `set_error` 保留 `ref`；
   - 章后整理失败：`error_msg` 带编号，`error` 里没有异常类名。
 - ast 扫描：`MODULES` 加入上表七个模块与 `server/error_refs.py`（全文件），app 函数集合加入 A 节列出的函数。`SINK_NAME` 补上 `Busy`（novels 的 409 异常名不以 Error 结尾，现在扫不到）。扫描结果要清零。
@@ -555,3 +575,23 @@
   - 登录错误、页面提示条、管理后台错误条在切换语言后跟着变；
   - 错误记录页签能按编号查找；
   - 失败版本与章后整理失败按 `error_msg` 渲染，旧数据显示 `error`。
+
+### 设计审查修订记录（Opus，审 163c039，结论「有修改后通过」）
+
+- **I1 测试隔离**：`tests/render/test_runner.py` 原来不设数据目录，runner 接上错误记录后会写进开发机真实的 `backend/data/error_refs.jsonl`。计划 Task 1 在该文件导入前设临时目录，并逐条改写会失败的五处精确断言（runner :568/:756/:757，compose :277/:439）。Task 7 改为核对真实数据目录没被写入。
+- **I2 脱敏补齐**：`SECRET_ENVS` 补 `ANTHROPIC_API_KEY`、`STORYBOARD_SECRET`，`scrub` 补 `x-api-key` 头，并配测试（见 B「存储」）。
+- **I3 可见范围**：列表接口不含 `detail`；单条查看写审计；`where` 与 `detail` 里的数据目录换成 `<data>`。更正了原稿「没有新增敏感面」的说法（见 B「管理后台」）。
+- **Minor**：
+  - 采纳的：
+    - `App.tsx:966` 的画布 `notice` 列入计划；
+    - `test_render.py:189`、`test_render_free.py:142` 改为断言代码；
+    - `user_of_root` 改为相对 `DATA_DIR/users` 解析；
+    - 截断保留头尾；
+    - `normalize` 采用 Crockford 映射、只留 0-9A-Z；
+    - 500 中间件与章后整理用 `server.errors`；
+    - 列表去掉 `detail`，顺带解决响应体积；
+    - `chapter.digest.failed` 去掉主语，VersionBar 有 `error_msg` 时不再套「失败（…）」；
+    - 章后整理里可预期的失败不记编号；
+    - 计数时用 `with open`；
+    - 中间件里的阻塞操作放进线程。
+  - 以豁免裁定处理的：内部枚举值（生命周期类型与状态、角色名）保持原文（计划 R14）。
