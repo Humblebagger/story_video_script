@@ -26,6 +26,8 @@ for (const [code, { params, zh: zhText }] of Object.entries(codes)) {
   must(code in zhSrv, `zh 缺 srv.${code}`)
   must(code in enSrv, `en 缺 srv.${code}`)
   must(zhSrv[code] === zhText, `zh srv.${code} 与后端兜底不一致：${zhSrv[code]} ≠ ${zhText}`)
+  must(JSON.stringify([...new Set(holes(zhText))].sort()) === JSON.stringify([...new Set(params)].sort()),
+    `${code} 的中文模板占位符与登记的参数不一致`)
   for (const h of holes(enSrv[code])) must(params.includes(h), `en srv.${code} 的 {${h}} 不是登记过的参数`)
   for (const p of params) must(holes(enSrv[code]).includes(p), `en srv.${code} 漏了参数 {${p}}`)
 }

@@ -833,15 +833,17 @@ def _keyframe_paths(uid: str, nid: str, cid: str, vid: str) -> dict:
             for sid in novels.list_keyframes(uid, nid, cid, vid)}
 
 
-def _render_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = True) -> tuple:
-    """(会话目录, 已保存的分镜, 关键帧, 归属)。出片只用已保存的版本内容；gate 时过验证门。"""
+def _render_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = True, structured: bool = True) -> tuple:
+    """(会话目录, 已保存的分镜, 关键帧, 归属)。出片只用已保存的版本内容；gate 时过验证门。
+    structured=False 给还没改造的合成、音色接口：错误仍是字符串（子计划 2 再改）。"""
     uid = user["id"]
     record = _novel_call(novels.get_version, uid, nid, cid, vid)
     root = _novel_call(novels.render_dir, uid, nid, cid, vid)
     doc = record.get("result") or {}
     if gate:
         if not doc.get("episodes"):
-            raise HTTPException(422, detail=msg("film.session.no_storyboard"))
+            raise HTTPException(422, detail=msg("film.session.no_storyboard") if structured
+                                else "这个版本还没有分镜产物")  # i18n: todo(2)
         _render_gate(copy.deepcopy(doc), record)
     owner = {"user_id": uid, "nid": nid, "cid": cid, "vid": vid}
     return root, doc, _keyframe_paths(uid, nid, cid, vid), owner
@@ -859,6 +861,20 @@ def _render_call(fn, *args, **kwargs):
         raise HTTPException(500, detail=msg("film.session.corrupt_admin"))
     except render_session.SessionError as e:
         raise HTTPException(422, detail=to_detail(e))
+
+
+def _legacy_render_call(fn, *args, **kwargs):
+    """合成、音色接口用（子计划 2 才改造）：保持原来的字符串 / {message, expected_cny} 形状。"""
+    try:
+        return fn(*args, **kwargs)
+    except render_session.NotFound as e:
+        raise HTTPException(404, str(e))
+    except render_session.Conflict as e:
+        raise HTTPException(409, detail={"message": str(e), "expected_cny": e.expected_cny})
+    except render_session.Corrupt:
+        raise HTTPException(500, "出片记录文件已损坏，原文件已备份，请联系管理员处理")  # i18n: todo(2)
+    except render_session.SessionError as e:
+        raise HTTPException(422, str(e))
 
 
 def _style_for(uid: str, nid: str) -> Optional[dict]:
@@ -1180,7 +1196,7 @@ def render_voices_put(nid: str, cid: str, vid: str, body: RenderVoicesBody,
     bad = [v for v in body.voices.values() if v and v not in ids]
     if bad:
         raise HTTPException(422, f"没有这个音色：{'、'.join(bad)}")
-    _render_call(render_session.set_voices, root, body.voices)
+    _legacy_render_call(render_session.set_voices, root, body.voices)
     return render_voices(nid, cid, vid, user)
 
 
@@ -1243,7 +1259,7 @@ def _compose_blockers(p: dict, draft: bool) -> None:
 
 def _compose_quote(user: dict, nid: str, cid: str, vid: str, draft: bool) -> dict:
     """合成确认卡的预估：未缓存配音的字数与金额（元）。过验证门与合成前提；合成中 409。"""
-    _render_ctx(user, nid, cid, vid)          # 过验证门
+    _render_ctx(user, nid, cid, vid, structured=False)          # 过验证门
     _root, _doc, _kfs, _s, p = _compose_preview(user, nid, cid, vid, draft)
     if (p.get("final") or {}).get("state") in render_session.COMPOSE_BUSY:
         raise HTTPException(409, "正在合成，等它结束再合成")
@@ -1254,19 +1270,19 @@ def _compose_quote(user: dict, nid: str, cid: str, vid: str, draft: bool) -> dic
 def _compose_start(user: dict, nid: str, cid: str, vid: str, draft: bool,
                    expected_cny: Optional[float]) -> dict:
     """合成整章（后台线程，接口与助手共用）。配音金额大于 0 时必须带确认金额。"""
-    _render_ctx(user, nid, cid, vid)          # 过验证门
+    _render_ctx(user, nid, cid, vid, structured=False)          # 过验证门
     root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, draft)
     _compose_blockers(p, draft)
     if p["tts_cny"] > 0 and (expected_cny is None or abs(expected_cny - p["tts_cny"]) > 1e-6):
         raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
                                          "expected_cny": p["tts_cny"]})
-    s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
+    s = _legacy_render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
                      tts_cny=p["tts_cny"], draft=draft, voices=s.get("voices") or {})
     t = threading.Thread(target=_compose_worker, args=(root, doc, s, kfs, draft, render_mix.tools()),
                          name=f"compose-{vid}", daemon=True)
     _compose_threads[str(root)] = t
     t.start()
-    return _render_call(render_session.view, s)
+    return _legacy_render_call(render_session.view, s)
 
 
 def _export_check(user: dict, nid: str, cid: str, vid: str) -> tuple:

@@ -12,6 +12,12 @@ from render import providers  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FAKE_MP4, FakeVideo  # noqa: E402
 
+# 测试不读真实的 .env：各处 _load_dotenv 换成空操作（脚本独占进程，无需还原）
+import pipeline.config as _pc  # noqa: E402
+import render.providers.minimax as _mm  # noqa: E402
+import render.providers.seedance as _sd  # noqa: E402
+_pc._load_dotenv = _mm._load_dotenv = _sd._load_dotenv = lambda *_a, **_k: None
+
 
 def must_raise(exc, fn, *a, **kw):
     try:

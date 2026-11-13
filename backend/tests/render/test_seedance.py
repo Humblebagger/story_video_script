@@ -17,6 +17,10 @@ sys.path.insert(0, str(ROOT))
 from render.providers import base  # noqa: E402
 from render.providers.seedance import BASE_URL, MODELS, Seedance, rewrite_refs  # noqa: E402
 
+# 测试不读真实的 backend/.env 与仓库根 .env：from_env 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
+import render.providers.seedance as _prov_seedance  # noqa: E402
+_prov_seedance._load_dotenv = lambda *_a, **_k: None
+
 MP4 = b"\x00\x00\x00\x18ftypmp42" + b"0" * 8
 
 

@@ -21,6 +21,10 @@ from render.providers import base  # noqa: E402
 from render.providers import minimax as mm  # noqa: E402
 from render.providers.minimax import BASE_URL, MODELS, MiniMax, plan_normalize, rewrite_refs  # noqa: E402
 
+# 测试不读真实的 backend/.env 与仓库根 .env：from_env 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
+import render.providers.minimax as _prov_minimax  # noqa: E402
+_prov_minimax._load_dotenv = lambda *_a, **_k: None
+
 MP4 = b"\x00\x00\x00\x18ftypmp42" + b"0" * 8
 PNG_1x1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
