@@ -623,6 +623,24 @@ def main() -> int:
     text = "\n".join(g.lines)
     assert "RuntimeError" in text and "leak *** and *** and *** end" in text, text
     del fake._key
+
+    # 位置字段（会话目录）里带环境密钥：整行日志都不能出现，不只是堆栈部分
+    os.environ["ARK_API_KEY"] = str(r17)
+    fake._key = "inst-in-clip"
+
+    def submit_root17(req):
+        raise RuntimeError("boom")
+
+    fake.submit = submit_root17
+    sess.queue_run(r17, [i17[0]])
+    rn = quick()
+    rn.watch(r17)
+    with _LogGrab("render.runner") as g:
+        rn.tick()
+    errs = [r.getMessage() for r in g.records if r.levelno == logging.ERROR]
+    assert errs and "RuntimeError" in errs[0] and "提交异常" in errs[0], g.lines
+    assert not any(str(r17) in x for x in g.lines), g.lines
+    del fake._key
     os.environ["ARK_API_KEY"] = os.environ["MINIMAX_API_KEY"] = ""
 
     def submit_reject17(req):

@@ -446,6 +446,18 @@ def main() -> int:
         assert all(r.exc_info is None for r in errs), "不把原始 exc_info 交给日志"
         from render.providers import base as _b
         assert _b.scrub_secrets("x zq y tts-secret-1 z inst", ["inst"]) == "x *** y *** z ***", "app 与 runner 共用同一个脱敏帮手"
+        # 会话目录里带环境密钥：整行日志（位置字段 + 堆栈）都不含密钥
+        os.environ["ARK_API_KEY"] = str(root)
+        cap.records.clear()
+
+        def crash2(*a, **kw):
+            raise ValueError("boom")
+        mix.compose = crash2
+        assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
+        wait(root)
+        errs = [r.getMessage() for r in cap.records if r.levelno >= logging.ERROR]
+        assert errs and "合成异常" in errs[0] and "ValueError" in errs[0], errs
+        assert not any(str(root) in x for x in errs), errs
     finally:
         lg.removeHandler(cap)
         lg.level = old_level

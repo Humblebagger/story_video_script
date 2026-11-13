@@ -291,7 +291,7 @@ class Runner:
         except Exception as e:
             # 不把原始 exc_info 交给日志：堆栈文字（含 __cause__/__context__ 链）先脱敏再写
             tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            log.error("提交异常 root=%s clip=%s\n%s", root, c["id"], _scrub_secrets(tb, provider))  # i18n: internal
+            log.error("%s", _scrub_secrets(f'提交异常 root={root} clip={c["id"]}\n{tb}', provider))  # i18n: internal
             sess.submit_failed(root, c["id"], msg("film.submit.crashed"))
             return False
         try:
