@@ -536,6 +536,57 @@ def main() -> int:
     assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e), (e.code, e.params)
     assert any("nope-tier" in x and "fake" in x for x in g.lines), g.lines
     print("23. 错误对象持久化 ✓")
+    # 24. 合成状态带代码
+    root14 = Path(tmp.name) / "render" / "ev14"
+    sess.build(root14, doc, owner=OWNER, patch={}, keyframes={})
+    sess.begin_compose(root14, fingerprint="fp", tts_cny=0, draft=True)
+    f = sess.load(root14)["final"]
+    assert f["step"] == "开始" and f["step_msg"] == {"code": "compose.step.start", "params": {}}
+    assert f["error"] is None and f["error_msg"] is None
+    e = must_raise(sess.Conflict, sess.begin_compose, root14, fingerprint="fp", tts_cny=0, draft=True)
+    assert e.code == "compose.busy" and str(e) == "正在合成，等它结束再合成"
+    sess.compose_progress(root14, msg("compose.step.voice", n=3))
+    f = sess.load(root14)["final"]
+    assert f["step"] == "配音 3 条" and f["step_msg"] == {"code": "compose.step.voice", "params": {"n": 3}}
+    sess.compose_progress(root14, "旧字符串")
+    f = sess.load(root14)["final"]
+    assert f["step"] == "旧字符串" and f["step_msg"] is None
+    sess.compose_failed(root14, msg("compose.no_video", id="E01-C01"), "d")
+    f = sess.load(root14)["final"]
+    assert f["state"] == "failed" and f["error_msg"] == {"code": "compose.no_video", "params": {"id": "E01-C01"}}
+    assert "E01-C01 还没有可用的视频" in f["error"]
+    sess.compose_failed(root14, "纯字符串")
+    f = sess.load(root14)["final"]
+    assert f["error"] == "纯字符串" and f["error_msg"] is None
+    sess.compose_failed(root14, sess.Conflict.of("compose.busy"))
+    assert sess.load(root14)["final"]["error_msg"] == {"code": "compose.busy", "params": {}}
+    sess.begin_compose(root14, fingerprint="fp", tts_cny=0, draft=True)
+    sess.compose_done(root14, ["final/E01.mp4"], "final/mix_report.json")
+    f = sess.load(root14)["final"]
+    assert f["state"] == "done" and f["step"] == "完成" and f["step_msg"] == {"code": "compose.step.done", "params": {}}
+    assert f["error"] is None and f["error_msg"] is None
+    e = must_raise(sess.Conflict, sess.begin_compose, root14, fingerprint="fp", tts_cny=0, draft=True,
+                   voices={"x": "y"})
+    assert e.code == "compose.voices_changed" and e.expected_cny is None and "音色刚被改过" in str(e)
+    e = must_raise(sess.BudgetExceeded, sess.begin_compose, root14, fingerprint="fp", tts_cny=9999, draft=True)
+    assert e.code == "compose.over_budget" and e.params == {
+        "budget": {"t": "money", "cny": 200.0}, "spent": {"t": "money", "cny": 0.0},
+        "cost": {"t": "money", "cny": 9999.0}}, e.params
+    assert str(e) == "超出上限 ¥200.00：已花 ¥0.00，本次配音约 ¥9999.00"
+    with sess.mutate(root14) as s_:
+        s_["clips"][0]["state"] = "running"
+    e = must_raise(sess.Conflict, sess.begin_compose, root14, fingerprint="fp", tts_cny=0, draft=True)
+    assert e.code == "compose.clips_busy"
+    with sess.mutate(root14) as s_:
+        s_["clips"][0]["state"] = "planned"
+        s_["final"]["state"] = "running"
+    sess.recover_compose(root14)
+    f = sess.load(root14)["final"]
+    assert f["state"] == "failed" and f["error_msg"] == {"code": "compose.interrupted", "params": {}}
+    assert f["error"].startswith("合成时服务中断")
+    assert not hasattr(sess, "COMPOSE_INTERRUPTED")
+    print("24. 合成状态带代码 ✓")
+
     tmp2.cleanup()
 
     print("\nALL PASS")

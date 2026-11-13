@@ -4,6 +4,7 @@
 
 用法: python3 tests/render/test_mix.py
 """
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -11,7 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from render import mix  # noqa: E402
+from render import mix, voice  # noqa: E402
+from server.messages import compact, msg, render_zh  # noqa: E402
 
 EP = {"id": "E01", "shots": [
     {"id": "S1", "duration_sec": 4, "narration": {"text": "一" * 9}},
@@ -119,7 +121,7 @@ def main() -> int:
         ran = []
 
         def fake_run(cmd, what):
-            ran.append(what.strip())
+            ran.append(render_zh(what["code"], what["params"]).strip())
             Path(cmd[-1]).parent.mkdir(parents=True, exist_ok=True)
             Path(cmd[-1]).write_bytes(b"x")
         real_run, mix.run = mix.run, fake_run
@@ -143,6 +145,99 @@ def main() -> int:
         finally:
             mix.run = real_run
     print("7. 无声模式不需要 tts；换关键帧后补位段重新规整 ✓")
+
+    # 8. 合成过程带代码：ffmpeg 失败、缺视频、缺音色、语音条失败、配音异常、进度与报告
+    class _R:
+        returncode, stderr = 3, "boom" * 2000
+
+    real_sub, mix.subprocess.run = mix.subprocess.run, lambda *a, **k: _R()
+    try:
+        what = compact(msg("compose.step.normalize", id="E01-C01"))
+        try:
+            mix.run(["ffmpeg"], what)
+            raise AssertionError("应抛 MixError")
+        except mix.MixError as e:
+            assert e.code == "compose.ffmpeg_failed" and e.params == {"what": what, "rc": 3}, e.params
+            assert str(e) == "规整 E01-C01 失败（ffmpeg 退出码 3）" and len(e.stderr) == 4000
+    finally:
+        mix.subprocess.run = real_sub
+
+    def raises(fn):
+        try:
+            fn()
+        except mix.MixError as e:
+            return e
+        raise AssertionError("应抛 MixError")
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        doc = {"episodes": [EP]}
+        base = {"audio_mode": "silent", "resolution": "720p", "voices": {},
+                "clips": [dict(c, episode="E01", attempts=[], chosen=None) for c in CLIPS]}
+        e = raises(lambda: mix.compose(root, doc, base, tts=None, keyframes={}, bgm={}, draft=False,
+                                       tools=("f", "p")))
+        assert e.code == "compose.no_video" and e.params == {"id": "E01-C01"}
+        assert "E01-C01 还没有可用的视频" in str(e)
+
+        class _Caps:
+            voices = []
+        class _Tts:
+            caps = _Caps()
+        real_resolve = voice.resolve_voices
+        voice.resolve_voices = lambda *a, **k: ({}, ["", "C1"])
+        try:
+            e = raises(lambda: mix.compose(root, doc, dict(base, audio_mode="tts_all"), tts=_Tts(), keyframes={},
+                                           bgm={}, draft=True, tools=("f", "p")))
+        finally:
+            voice.resolve_voices = real_resolve
+        assert e.code == "compose.missing_voices"
+        assert e.params == {"speakers": [compact(msg("voice.unlabeled")), "C1"]}, e.params
+        assert str(e) == "还有说话人没选音色：（未标说话人）、C1"
+
+        real_syn = voice.synthesize
+        voice.resolve_voices = lambda *a, **k: ({}, [])
+        cause = compact(msg("film.session.dir_gone"))
+        fails = [{"id": f"S{i}-L1", "error": "x", "error_msg": cause} for i in range(7)]
+        voice.synthesize = lambda *a, **k: ([], fails)
+        try:
+            args = dict(tts=_Tts(), keyframes={}, bgm={}, draft=True, tools=("f", "p"))
+            e = raises(lambda: mix.compose(root, doc, dict(base, audio_mode="tts_all"), **args))
+            assert e.code == "compose.lines_failed" and len(e.params["items"]) == 5
+            assert e.params["items"][0] == {"code": "compose.line_failed",
+                                            "params": {"id": "S0-L1", "cause": cause}}, e.params["items"][0]
+            assert str(e).startswith("有语音条合成失败，为免成片漏句已停止合成：S0-L1：出片会话目录已不存在")
+            assert "、S1-L1：" in str(e)
+
+            def boom(*a, **k):
+                raise voice.VoiceError.of("film.session.dir_gone")
+            voice.synthesize = boom
+            e = raises(lambda: mix.compose(root, doc, dict(base, audio_mode="tts_all"), **args))
+            assert e.code == "compose.voice_failed" and e.params == {"cause": cause}, e.params
+            assert str(e) == "出片会话目录已不存在（版本可能已删除）"
+        finally:
+            voice.synthesize = real_syn
+            voice.resolve_voices = real_resolve
+
+        # 进度回调收到消息对象；报告的对齐说明与原声提示是 {code, params}
+        steps = []
+        voice.resolve_voices, voice.synthesize = (lambda *a, **k: ({}, [])), (lambda *a, **k: ([], []))
+        real_run, mix.run = mix.run, lambda cmd, what: (Path(cmd[-1]).parent.mkdir(parents=True, exist_ok=True),
+                                                        Path(cmd[-1]).write_bytes(b"x"))
+        try:
+            mix.compose(root, doc, dict(base, audio_mode="dialogue_native"), tts=_Tts(), keyframes={}, bgm={},
+                        draft=True, tools=("f", "p"), progress=steps.append)
+        finally:
+            mix.run = real_run
+            voice.resolve_voices, voice.synthesize = real_resolve, real_syn
+        assert [(x["code"], x["params"]) for x in steps] == [
+            ("compose.step.voice", {"n": 2}),
+            ("compose.step.normalize", {"id": "E01-C01"}), ("compose.step.normalize", {"id": "E01-C02"}),
+            ("compose.step.concat", {"id": "E01"}), ("compose.step.mix", {"id": "E01"})], steps
+        assert steps[1]["message"] == "规整 E01-C01"
+        rep = json.loads((root / "final" / "mix_report.json").read_text(encoding="utf-8"))
+        assert rep["alignment"] == {"code": "compose.alignment", "params": {}}
+        assert rep["warning"] == {"code": "compose.warning_native", "params": {}}
+    print("8. 合成过程带代码：ffmpeg 失败、缺视频、缺音色、语音条失败、配音异常、进度与报告 ✓")
 
     print("\nALL PASS")
     return 0

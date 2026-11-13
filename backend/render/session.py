@@ -18,7 +18,7 @@ from typing import Optional
 
 from render import compose
 from render.providers import base, default_fell_back, default_video_name, get_video, names
-from server.messages import UserError, money, msg, render_zh, vendor
+from server.messages import UserError, compact, money, msg, render_zh, vendor
 
 log = logging.getLogger("render.session")
 
@@ -30,7 +30,6 @@ DEFAULT_BUDGET_CNY = 200.0
 DEFAULT_CONFIRM_OVER_CNY = 20.0
 SETTING_KEYS = ("provider", "model", "resolution", "audio_mode", "budget_cny", "confirm_over_cny")
 COMPOSE_BUSY = ("queued", "running")
-COMPOSE_INTERRUPTED = "合成时服务中断，请重新合成（已合成的配音与已规整的片段会复用）"  # i18n: todo(2)
 FREE_PREFIX = "F"          # 自由节点 id 前缀（F01、F02…）；段 id 是 E01-C01，不会冲突
 
 
@@ -648,7 +647,8 @@ def _fail_interrupted_compose(s: dict) -> bool:
     f = s.get("final") or {}
     if f.get("state") not in COMPOSE_BUSY:
         return False
-    f.update(state="failed", error=COMPOSE_INTERRUPTED, finished_at=_now())  # i18n: todo(2)
+    f.update(state="failed", finished_at=_now())
+    set_error(f, msg("compose.interrupted"))
     s["final"] = f
     return True
 
@@ -682,25 +682,33 @@ def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool, voices
     with mutate(root) as s:
         f = s.get("final") or {}
         if f.get("state") in COMPOSE_BUSY:
-            raise Conflict("正在合成，等它结束再合成")  # i18n: todo(2)
+            raise Conflict.of("compose.busy")
         if voices is not None and (s.get("voices") or {}) != voices:
-            raise Conflict("音色刚被改过，请重新确认金额", expected_cny=None)  # i18n: todo(2)
+            raise Conflict.of("compose.voices_changed")
         if any_in_flight(s):
-            raise Conflict("有段在排队或生成中，等它们结束再合成")  # i18n: todo(2)
+            raise Conflict.of("compose.clips_busy")
         if s["spent_cny"] + tts_cny > s["budget_cny"] + 1e-9:
-            raise BudgetExceeded(f"超出上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"  # i18n: todo(2)
-                                 f"本次配音约 ¥{tts_cny:.2f}")  # i18n: todo(2)
-        s["final"] = {"state": "running", "fingerprint": fingerprint, "draft": draft, "step": "开始",  # i18n: todo(2)
+            raise BudgetExceeded.of("compose.over_budget", budget=money(s["budget_cny"]), spent=money(s["spent_cny"]),
+                                    cost=money(tts_cny))
+        s["final"] = {"state": "running", "fingerprint": fingerprint, "draft": draft,
+                      "step": render_zh("compose.step.start", {}),
+                      "step_msg": compact(msg("compose.step.start")),
                       "started_at": _now(), "files": f.get("files") or [], "report": f.get("report"),
                       "files_fingerprint": f.get("files_fingerprint", f.get("fingerprint")),
                       "files_draft": f.get("files_draft", f.get("draft")),
-                      "error": None, "detail": None}
+                      "error": None, "error_msg": None, "detail": None}
         return s
 
 
-def compose_progress(root, step: str) -> None:
+def compose_progress(root, step) -> None:
+    """step：消息对象（写 step 中文兜底与 step_msg）或字符串（只写 step）。"""
     with mutate(root) as s:
-        (s.get("final") or {})["step"] = step
+        f = s.get("final") or {}
+        if isinstance(step, dict) and step.get("code"):
+            f["step"] = step.get("message") or render_zh(step["code"], step.get("params") or {})
+            f["step_msg"] = compact(step)
+        else:
+            f["step"], f["step_msg"] = step, None
 
 
 def add_spent(root, cny: float) -> None:
@@ -712,12 +720,15 @@ def add_spent(root, cny: float) -> None:
 def compose_done(root, files: list, report: str) -> None:
     with mutate(root) as s:
         f = s["final"]
-        f.update(state="done", files=files, report=report, step="完成", error=None, detail=None,  # i18n: todo(2)
+        f.update(state="done", files=files, report=report, detail=None,
+                 step=render_zh("compose.step.done", {}), step_msg=compact(msg("compose.step.done")),
                  files_fingerprint=f.get("fingerprint"), files_draft=f.get("draft"), finished_at=_now())
+        set_error(f, None)
 
 
-def compose_failed(root, error: str, detail: str = "") -> None:
+def compose_failed(root, error, detail: str = "") -> None:
     with mutate(root) as s:
         f = s.get("final") or {}
-        f.update(state="failed", error=error, detail=detail or None, finished_at=_now())
+        f.update(state="failed", detail=detail or None, finished_at=_now())
+        set_error(f, error)
         s["final"] = f

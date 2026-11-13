@@ -101,7 +101,7 @@ def main() -> int:
         assert mix.has_audio(video, ffprobe)
         assert (root / "final" / "E01.srt").read_text(encoding="utf-8").count(" --> ") == 2
         assert report["episodes"][0]["placeholders"] == ["E01-C02"] and report["audio_mode"] == "tts_all"
-        assert len(tts.calls) == 2 and sum(spent) > 0 and any("混音" in s for s in steps)
+        assert len(tts.calls) == 2 and sum(spent) > 0 and any(s["code"] == "compose.step.mix" for s in steps) and steps[0]["code"] == "compose.step.voice" and steps[0]["params"] == {"n": 2}
         print(f"2. 整章合成：成片 {mix.media_seconds(video, ffprobe):.2f} 秒、有音轨、字幕 2 条、缺段补位写进报告 ✓")
 
         tl_path = root / "final" / "timeline.json"

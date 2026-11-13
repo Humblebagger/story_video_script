@@ -15,6 +15,7 @@ from typing import Optional
 from pipeline.quality import DEFAULT_SPEECH_CPS
 from render import compose as shotcalc, voice
 from render.providers import get_video
+from server.messages import UserError, cause_of, compact, msg
 
 FPS = 30
 SPEEDUP_MAX = 1.15
@@ -25,8 +26,8 @@ AUDIO_RATE = 48000
 SHORT_SIDE = {"480p": 480, "720p": 720, "1080p": 1080}
 
 
-class MixError(Exception):
-    """合成失败：message 给用户看；stderr 是 ffmpeg 的错误输出（截尾）。"""
+class MixError(UserError, Exception):
+    """合成失败：message 给用户看（带代码，见 UserError）；stderr 是 ffmpeg 的错误输出（截尾）。"""
 
     def __init__(self, message: str, stderr: str = ""):
         super().__init__(message)
@@ -240,10 +241,11 @@ def tools() -> Optional[tuple]:
     return (f, p) if f and p else None
 
 
-def run(cmd: list, what: str) -> None:
+def run(cmd: list, what: dict) -> None:
+    """what：环节名，消息对象（compact 后的 compose.step.*），嵌进 compose.ffmpeg_failed。"""
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        raise MixError(f"{what}失败（ffmpeg 退出码 {r.returncode}）", (r.stderr or "")[-4000:])
+        raise MixError.of("compose.ffmpeg_failed", (r.stderr or "")[-4000:], what=what, rc=r.returncode)
 
 
 def has_audio(path, ffprobe: str) -> bool:
@@ -351,21 +353,21 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
     if not draft:
         for c in s["clips"]:
             if not _video(root, c):
-                raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
+                raise MixError.of("compose.no_video", id=c["id"])
     lines = voice.tts_lines(voice.speech_lines(doc), s["audio_mode"])
     done, failed = [], []
     if lines:                       # 没有要配音的语音条就不碰 tts（tts 可为 None）
         voices, missing = voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
         if missing:
-            raise MixError("还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in missing))
-        say(f"配音 {len(lines)} 条")
+            raise MixError.of("compose.missing_voices", speakers=[k or compact(msg("voice.unlabeled")) for k in missing])
+        say(msg("compose.step.voice", n=len(lines)))
         try:
             done, failed = voice.synthesize(lines, voices, tts, root, on_cost=on_cost)
         except voice.VoiceError as e:
-            raise MixError(str(e))
+            raise MixError.of("compose.voice_failed", cause=cause_of(e))
     if failed:
-        raise MixError("有语音条合成失败，为免成片漏句已停止合成："
-                       + "；".join(f"{x['id']}：{x['error']}" for x in failed[:5]))
+        raise MixError.of("compose.lines_failed", items=[
+            {"code": "compose.line_failed", "params": {"id": x["id"], "cause": x["error_msg"]}} for x in failed[:5]])
     voiced = {x["id"]: x for x in done}
     size = _size(s, doc)
     work = out_dir / "work"
@@ -375,9 +377,9 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
     for c in s["clips"]:
         by_ep.setdefault(c["episode"], []).append(c)
     report = {"audio_mode": s["audio_mode"], "size": f"{size[0]}x{size[1]}", "draft": draft, "episodes": [],
-              "alignment": "段内镜头切换时刻由视频模型决定，台词按计划镜头起点放置，属近似对齐"}
+              "alignment": compact(msg("compose.alignment"))}
     if s["audio_mode"] == "dialogue_native":
-        report["warning"] = "台词由视频模型生成，不保证逐字"
+        report["warning"] = compact(msg("compose.warning_native"))
     files, tl_plans = [], []
     try:
         for ep in doc.get("episodes") or []:
@@ -391,7 +393,7 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
                 still = None
                 if not src:
                     if not draft:
-                        raise MixError(f"{c['id']} 还没有可用的视频；打开「草稿合成」可用关键帧补位")
+                        raise MixError.of("compose.no_video", id=c["id"])
                     kf = keyframes.get(c["shots"][0]) if c["shots"] else None
                     still = str(kf) if kf else None
                     placeholders.append(c["id"])
@@ -402,25 +404,26 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
                                                  seg["duration"], size, ndb, audio]).encode()).hexdigest()[:16]
                 out = work / f"{c['id']}.{key}.mp4"
                 if not out.exists():
-                    say(f"规整 {c['id']}")
+                    say(msg("compose.step.normalize", id=c["id"]))
                     tmp = out.with_suffix(".part.mp4")
                     run(normalize_cmd(src, still=still, duration=seg["duration"], size=size, native_db=ndb,
-                                      has_audio=audio, out=str(tmp), ffmpeg=ffmpeg), f"规整 {c['id']} ")
+                                      has_audio=audio, out=str(tmp), ffmpeg=ffmpeg),
+                        compact(msg("compose.step.normalize", id=c["id"])))
                     tmp.replace(out)
                 segs.append(out)
             lst = work / f"{ep['id']}.txt"
             lst.write_text(concat_list(segs), encoding="utf-8")
             joined = work / f"{ep['id']}.joined.mp4"
-            say(f"拼接 {ep['id']}")
-            run(concat_cmd(lst, joined, ffmpeg), f"拼接 {ep['id']} ")
+            say(msg("compose.step.concat", id=ep["id"]))
+            run(concat_cmd(lst, joined, ffmpeg), compact(msg("compose.step.concat", id=ep["id"])))
             final = nxt / f"{ep['id']}.mp4"
             tmp = final.with_suffix(".part.mp4")
-            say(f"混音 {ep['id']}")
+            say(msg("compose.step.mix", id=ep["id"]))
             music = bgm.get(ep["id"])
             if music and not Path(music).exists():
                 music = None
             run(mix_cmd(str(joined), plan, bgm=str(music) if music else None, out=str(tmp), ffmpeg=ffmpeg),
-                f"混音 {ep['id']} ")
+                compact(msg("compose.step.mix", id=ep["id"])))
             tmp.replace(final)
             tl_plans.append({
                 "plan": dict(plan, speech=[dict(x, file=_rel(root, x["file"])) for x in plan["speech"]]),

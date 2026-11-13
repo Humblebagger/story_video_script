@@ -31,6 +31,7 @@ MODULES: dict = {
     "render/providers/tts_base.py": None,
     "render/providers/tts_volc.py": None,
     "render/voice.py": None,
+    "render/mix.py": None,
     "server/app.py": {"_render_ctx", "_render_call", "render_session_post", "render_session_get",
                       "render_session_patch", "_film_quote", "_film_run", "render_clip_run", "render_run_all",
                       "render_clip_chosen", "render_clip_patch", "_free_ctx", "render_free_create",

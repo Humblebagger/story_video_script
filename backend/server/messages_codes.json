@@ -5,6 +5,108 @@
     ],
     "zh": "{message}"
   },
+  "compose.alignment": {
+    "params": [],
+    "zh": "段内镜头切换时刻由视频模型决定，台词按计划镜头起点放置，属近似对齐"
+  },
+  "compose.busy": {
+    "params": [],
+    "zh": "正在合成，等它结束再合成"
+  },
+  "compose.clips_busy": {
+    "params": [],
+    "zh": "有段在排队或生成中，等它们结束再合成"
+  },
+  "compose.ffmpeg_failed": {
+    "params": [
+      "what",
+      "rc"
+    ],
+    "zh": "{what} 失败（ffmpeg 退出码 {rc}）"
+  },
+  "compose.interrupted": {
+    "params": [],
+    "zh": "合成时服务中断，请重新合成（已合成的配音与已规整的片段会复用）"
+  },
+  "compose.line_failed": {
+    "params": [
+      "id",
+      "cause"
+    ],
+    "zh": "{id}：{cause}"
+  },
+  "compose.lines_failed": {
+    "params": [
+      "items"
+    ],
+    "zh": "有语音条合成失败，为免成片漏句已停止合成：{items}"
+  },
+  "compose.missing_voices": {
+    "params": [
+      "speakers"
+    ],
+    "zh": "还有说话人没选音色：{speakers}"
+  },
+  "compose.no_video": {
+    "params": [
+      "id"
+    ],
+    "zh": "{id} 还没有可用的视频；打开「草稿合成」可用关键帧补位"
+  },
+  "compose.over_budget": {
+    "params": [
+      "budget",
+      "spent",
+      "cost"
+    ],
+    "zh": "超出上限 {budget}：已花 {spent}，本次配音约 {cost}"
+  },
+  "compose.step.concat": {
+    "params": [
+      "id"
+    ],
+    "zh": "拼接 {id}"
+  },
+  "compose.step.done": {
+    "params": [],
+    "zh": "完成"
+  },
+  "compose.step.mix": {
+    "params": [
+      "id"
+    ],
+    "zh": "混音 {id}"
+  },
+  "compose.step.normalize": {
+    "params": [
+      "id"
+    ],
+    "zh": "规整 {id}"
+  },
+  "compose.step.start": {
+    "params": [],
+    "zh": "开始"
+  },
+  "compose.step.voice": {
+    "params": [
+      "n"
+    ],
+    "zh": "配音 {n} 条"
+  },
+  "compose.voice_failed": {
+    "params": [
+      "cause"
+    ],
+    "zh": "{cause}"
+  },
+  "compose.voices_changed": {
+    "params": [],
+    "zh": "音色刚被改过，请重新确认金额"
+  },
+  "compose.warning_native": {
+    "params": [],
+    "zh": "台词由视频模型生成，不保证逐字"
+  },
   "console.ark": {
     "params": [],
     "zh": "方舟控制台"

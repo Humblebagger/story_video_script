@@ -257,7 +257,7 @@ def main() -> int:
     assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 409
     render_session.recover(root)
     f = render_session.load(root)["final"]
-    assert f["state"] == "failed" and f["error"] == render_session.COMPOSE_INTERRUPTED
+    assert f["state"] == "failed" and f["error_msg"] == {"code": "compose.interrupted", "params": {}} and "服务中断" in f["error"]
     # 7b. 合成中不能出片
     render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True)
     clip0 = render_session.load(root)["clips"][0]["id"]
@@ -286,7 +286,7 @@ def main() -> int:
     render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True)
     app_mod._start_render_runner()
     f = render_session.load(root)["final"]
-    assert f["state"] == "failed" and f["error"] == render_session.COMPOSE_INTERRUPTED
+    assert f["state"] == "failed" and f["error_msg"] == {"code": "compose.interrupted", "params": {}} and "服务中断" in f["error"]
     mix.compose = fake_compose
     TTS.caps.cny_per_k_chars = 100000.0
     big = c.get(R + "/compose", headers=H).json()["tts_cny"]
