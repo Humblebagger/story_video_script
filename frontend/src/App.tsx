@@ -18,7 +18,8 @@ import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
 import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
-import { formatMsg } from './i18n/serverMsg'
+import { errText, errValue, formatMsg } from './i18n/serverMsg'
+import type { MsgLike } from './i18n/serverMsg'
 import type { MsgKey } from './i18n/core'
 import { BRAND } from './brand'
 import { Tour } from './components/common/Tour'
@@ -60,10 +61,13 @@ import { useJob } from './useJob'
 import { DUR, EASE_OUT } from './motion'
 
 const RUNNING = ['queued', 'running']
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const msg = (e: unknown) => errText(e)
+
+type AlertKey = 'app.err.preview' | 'app.err.version' | 'app.err.chapter' | 'app.err.createNovel' | 'app.err.novel' | 'app.versionFailed' | 'app.versionEmpty' | 'app.savedInvalid'
+type AlertState = { key?: AlertKey; err?: MsgLike }
 
 export default function App() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [ask, confirmUi] = useConfirm()
   const location = useLocation()
   const navigate = useNavigate()
@@ -121,7 +125,9 @@ export default function App() {
   /** 撤销的基准：上一次从服务端拿到（或存下）的那份 doc；编辑不改它 */
   const savedDoc = useRef<Storyboard | null>(null)
   const [saving, setSaving] = useState(false)
-  const [alert, setAlert] = useState<string | null>(null)
+  /** 页面提示条：存文案键与错误值，渲染时按当前语言拼（切换语言后跟着变） */
+  const [alert, setAlert] = useState<AlertState | null>(null)
+  const alertText = (a: AlertState) => (a.key ? t(a.key, { msg: formatMsg(a.err, locale) }) : formatMsg(a.err, locale))
   /** 服务端对当前产物的复验结果。保存一次刷新一次，不通过时它就是拦人的那块牌子 */
   const [verification, setVerification] = useState<VerificationReport | null>(null)
   /** 正在看的是整章跑完之前的部分产物（只读）。null = 看的是正式产物或什么都没开 */
@@ -187,7 +193,7 @@ export default function App() {
         if (here() && openChapterId.current === cid) setChapter(c)
       }
     } catch (e) {
-      if (here() && (!cid || openChapterId.current === cid)) setAlert(msg(e))
+      if (here() && (!cid || openChapterId.current === cid)) setAlert({ err: errValue(e) })
     }
   }, [])
 
@@ -264,9 +270,9 @@ export default function App() {
       setDirty(false)
       setPreview({ done: p.batches_done, total: p.batches })
     } catch (e) {
-      if (previewFor.current === jobId) setAlert(t('app.err.preview', { msg: msg(e) }))
+      if (previewFor.current === jobId) setAlert({ key: 'app.err.preview', err: errValue(e) })
     }
-  }, [t])
+  }, [])
 
   // 预览开着时又跑完了一批：自动换成更新的预览
   useEffect(() => {
@@ -380,7 +386,7 @@ export default function App() {
       const gone = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 403)
       if (nr.status === 'rejected') {
         if (gone(nr.reason)) { toast.error(f.t('route.err.novelGone')); navigate('/', { replace: true, state: { force: true } }) }
-        else setAlert(f.t('app.err.novel', { msg: msg(nr.reason) }))
+        else setAlert({ key: 'app.err.novel', err: errValue(nr.reason) })
         return
       }
       setNovel(nr.value)
@@ -389,7 +395,7 @@ export default function App() {
         if (gone(cr.reason)) {
           toast.error(f.t('route.err.chapterGone'))
           navigate(novelPath(nid, 'chapters'), { replace: true, state: { force: true } })
-        } else setAlert(f.t('app.err.chapter', { msg: msg(cr.reason) }))
+        } else setAlert({ key: 'app.err.chapter', err: errValue(cr.reason) })
         return
       }
       const c = cr.value!
@@ -501,15 +507,15 @@ export default function App() {
       if (!v.result) {
         setVerification(v.verification ?? null)
         setAlert(v.status === 'failed'
-          ? t('app.versionFailed', { msg: v.error_msg ? formatMsg(v.error_msg) : (v.error ?? '').split('\n')[0] })
-          : t('app.versionEmpty'))
+          ? { key: 'app.versionFailed', err: v.error_msg ?? (v.error ?? '').split('\n')[0] }
+          : { key: 'app.versionEmpty' })
       }
     } catch (e) {
-      if (current()) setAlert(t('app.err.version', { msg: msg(e) }))
+      if (current()) setAlert({ key: 'app.err.version', err: errValue(e) })
     } finally {
       if (versionSeq.current === seq) setVersionLoading(false)
     }
-  }, [reset, t])
+  }, [reset])
   fns.current.attach = attach
   fns.current.openVersion = openVersion
 
@@ -558,7 +564,7 @@ export default function App() {
         const target = c.adopted_version ?? c.versions[0]?.id
         if (target) void openVersion(nidT, cidT, target)
       } catch (e) {
-        setAlert(t('app.err.chapter', { msg: msg(e) }))
+        setAlert({ key: 'app.err.chapter', err: errValue(e) })
         return false
       }
       return true
@@ -700,7 +706,7 @@ export default function App() {
       if (chapters.length) await openChapter(chapters[0].id, created.id)
       else go(novelPath(created.id, 'overview'))
     } catch (e) {
-      setAlert(t('app.err.createNovel', { msg: msg(e) }))
+      setAlert({ key: 'app.err.createNovel', err: errValue(e) })
     } finally {
       setBusy(false)
     }
@@ -843,7 +849,7 @@ export default function App() {
       // 用户会一路改到点渲染时才被 422 挡住，那时早忘了改过什么。
       setVerification(res.verification)
       if (res.status === 'draft_invalid') {
-        setAlert(t('app.savedInvalid'))
+        setAlert({ key: 'app.savedInvalid' })
       }
       savedDoc.current = doc
       setDirty(false)
@@ -964,7 +970,7 @@ export default function App() {
             onAdopt: (vid) => void adopt(vid),
             onDeleteVersion: (vid) => void removeVersion(vid),
             onNovelChanged: () => { void reloadOpen(novel.id, chapter.id); void refreshNovels() },
-            notice: error ? t('app.err.submit', { msg: error }) : alert,
+            notice: error ? t('app.err.submit', { msg: formatMsg(error, locale) }) : alert && alertText(alert),
           } : null}
         />
       )}
@@ -1123,7 +1129,7 @@ export default function App() {
                 onDelete={() => void removeChapter()}
                 onRerunDigest={() => void rerunDigest(novel.id, chapter.id)
                   .then(() => reloadOpen(novel.id, chapter.id))
-                  .catch((e) => setAlert(msg(e)))}
+                  .catch((e) => setAlert({ err: errValue(e) }))}
                 storyboard={inWorkflow ? board : null}
                 step={loc.kind === 'chapter' ? loc.step : null}
                 onStep={stepNav}
@@ -1132,8 +1138,8 @@ export default function App() {
                 flow={flow}
               />
             )}
-            {error && <p className="alert">{t('app.err.submit', { msg: error })}</p>}
-            {alert && <p className="alert">{alert}</p>}
+            {error && <p className="alert">{t('app.err.submit', { msg: formatMsg(error, locale) })}</p>}
+            {alert && <p className="alert">{alertText(alert)}</p>}
             {job && (
               <JobPanel
                 job={job}

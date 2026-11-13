@@ -7,6 +7,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { errValue, formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 import { cn } from '@/lib/utils'
 import { JOB_STATUS, NARRATION_MODE, label } from '../labels'
 import type { Chapter, Job, NarrationMode, Novel } from '../types'
@@ -35,13 +37,12 @@ export interface Workbench {
 }
 
 const ADOPTABLE = ['succeeded', 'completed_with_warnings']
-const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export function NovelPanel({ bench }: { bench: Workbench }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [part, setPart] = useState<'plot' | 'constraints'>('plot')
   const [busy, setBusy] = useState(false)
-  const [alert, setAlert] = useState<string | null>(null)
+  const [alert, setAlert] = useState<{ what: string; err: MsgLike } | null>(null)
   const run = async (what: string, _done: string, fn: () => Promise<unknown>) => {
     setBusy(true)
     setAlert(null)
@@ -49,7 +50,7 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
       await fn()
       bench.onNovelChanged()
     } catch (e) {
-      setAlert(t('canvas.panel.failedWith', { what, error: err(e) }))
+      setAlert({ what, err: errValue(e) })
     } finally {
       setBusy(false)
     }
@@ -67,7 +68,7 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
                   onClick={() => setPart(id)}>{name}</button>
         ))}
       </div>
-      {alert && <p className="tlc__kferr">{alert}</p>}
+      {alert && <p className="tlc__kferr">{t('canvas.panel.failedWith', { what: alert.what, error: formatMsg(alert.err, locale) })}</p>}
       {part === 'plot'
         ? <PlotTab novel={bench.novel} busy={busy} run={run} />
         : <ConstraintsTab novel={bench.novel} busy={busy} run={run} />}

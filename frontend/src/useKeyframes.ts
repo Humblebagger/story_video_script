@@ -7,12 +7,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { tr } from './i18n/core'
 import { deleteKeyframe, keyframeUrl, listKeyframes, renderKeyframes, uploadKeyframe } from './api'
+import { errValue } from './i18n/serverMsg'
+import type { MsgLike } from './i18n/serverMsg'
 import type { KeyframePrompt, Storyboard, VersionRef } from './types'
 
 export function useKeyframes(doc: Storyboard, version: VersionRef | null | undefined) {
   const [prompts, setPrompts] = useState<Record<string, KeyframePrompt>>({})
   const [urls, setUrls] = useState<Record<string, string>>({})
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ key: 'keyframes.promptFailed' | 'keyframes.readFailed' | 'keyframes.uploadFailed' | 'keyframes.deleteFailed'; err: MsgLike } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const live = useRef<Record<string, string>>({})
   const { nid, cid, vid } = version ?? {}
@@ -46,7 +48,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
     let gone = false
     renderKeyframes(doc)
       .then((r) => { if (!gone) setPrompts(Object.fromEntries(r.keyframes.map((k) => [k.shot_id, k]))) })
-      .catch((e) => { if (!gone) setError(tr('keyframes.promptFailed', { error: e instanceof Error ? e.message : String(e) })) })
+      .catch((e) => { if (!gone) setError({ key: 'keyframes.promptFailed', err: errValue(e) }) })
     return () => { gone = true }
   }, [doc])
 
@@ -70,7 +72,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
           put(s, url)
         }
       } catch (e) {
-        if (!gone) setError(tr('keyframes.readFailed', { error: e instanceof Error ? e.message : String(e) }))
+        if (!gone) setError({ key: 'keyframes.readFailed', err: errValue(e) })
       }
     })()
     return () => {
@@ -89,7 +91,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
       await uploadKeyframe(nid, cid, vid, shotId, file)
       put(shotId, URL.createObjectURL(file))
     } catch (e) {
-      setError(tr('keyframes.uploadFailed', { error: e instanceof Error ? e.message : String(e) }))
+      setError({ key: 'keyframes.uploadFailed', err: errValue(e) })
     } finally {
       setBusy(null)
     }
@@ -101,7 +103,7 @@ export function useKeyframes(doc: Storyboard, version: VersionRef | null | undef
       await deleteKeyframe(nid, cid, vid, shotId)
       put(shotId, null)
     } catch (e) {
-      setError(tr('keyframes.deleteFailed', { error: e instanceof Error ? e.message : String(e) }))
+      setError({ key: 'keyframes.deleteFailed', err: errValue(e) })
     }
   }, [nid, cid, vid, put])
 

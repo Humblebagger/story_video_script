@@ -5,6 +5,8 @@ import { ApiError, renderPlan } from '../api'
 import type { RenderPack, Storyboard, VerificationReport } from '../types'
 import { VerificationPanel } from './VerificationPanel'
 import { tr, useI18n } from '@/i18n/core'
+import { errValue, formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 
 interface Props {
   doc: Storyboard
@@ -31,10 +33,10 @@ function saveFile(name: string, text: string, mime = 'text/plain;charset=utf-8')
  *  出图排在出视频之前：资产图没出，就只能纯文生视频，每个镜头换一张脸，
  *  整套资产引用制的防漂移能力等于白做。 */
 export function RenderView({ doc, runId }: Props) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [pack, setPack] = useState<RenderPack | null>(null)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const [err, setErr] = useState<MsgLike>(null)
   /** 被完整性检查拦下时服务端附的报告——光说「422」用户没法据此修改 */
   const [blocked, setBlocked] = useState<VerificationReport | null>(null)
   const [maxClip, setMaxClip] = useState(15)
@@ -63,7 +65,7 @@ export function RenderView({ doc, runId }: Props) {
         runId,
       }))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(errValue(e))
       if (e instanceof ApiError) setBlocked(e.verification)
     } finally {
       setBusy(false)
@@ -129,7 +131,7 @@ export function RenderView({ doc, runId }: Props) {
         </div>
       </header>
 
-      {err && <p className="alert">{err}</p>}
+      {err && <p className="alert">{formatMsg(err, locale)}</p>}
       {blocked && <VerificationPanel report={blocked} doc={doc} origin="render" />}
 
       {!plan && !busy && !err && (

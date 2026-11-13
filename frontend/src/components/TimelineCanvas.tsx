@@ -3,6 +3,7 @@ import { CircleHelp, ImageOff, Maximize2, Pause, Play, Redo2, SkipBack, SkipForw
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import type { Ctx } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
@@ -122,7 +123,7 @@ export function TimelineCanvas({
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
   styleUrl = null, styleMime, view: viewProp, onView,
 }: Props) {
-  const { t: tt } = useI18n()
+  const { t: tt, locale } = useI18n()
   const head = useContext(ChapterHeadContext)
   const kf = useKeyframes(doc, version)
   const idx = useMemo(() => buildIndex(doc), [doc])
@@ -1065,7 +1066,7 @@ export function TimelineCanvas({
                 </div>
               </>
             )}
-            {kf.error && <p className="tlc__kferr">{kf.error}</p>}
+            {kf.error && <p className="tlc__kferr">{tt(kf.error.key, { error: formatMsg(kf.error.err, locale) })}</p>}
           </section>
           <Button variant="ghost" size="sm" className="self-start" onClick={() => onJumpShot(cur.id)}>{tt('canvas.openShot')}</Button>
         </>}

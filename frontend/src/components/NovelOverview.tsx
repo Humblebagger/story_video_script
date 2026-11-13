@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { errText } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import { assetThumb } from '@/lib/assetThumb'
 import { costText, fmtDuration } from '@/lib/fmt'
@@ -33,7 +34,7 @@ interface Props {
   onDeleted: () => void
 }
 
-const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const err = errText
 const OUTLINE_LINES = 4
 
 function Avatar({ c }: { c: CharacterAsset }) {

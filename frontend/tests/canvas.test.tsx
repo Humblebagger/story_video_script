@@ -27,6 +27,9 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 const kfImages = new Map<string, string>([['E01-SH001', 'image/png']])
 const puts: { shot: string; type: string }[] = []
 const outlines: string[] = []
+/** 让关键帧上传 / 新增限制失败：detail 是消息对象（格式同后端 to_detail） */
+let failKf = false
+let failCons = false
 g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '')
   const method = init?.method ?? 'GET'
@@ -36,6 +39,14 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
     return json({ keyframes: d.episodes.flatMap((e) => e.shots).map((s) => ({
       shot_id: s.id, prompt: `写实，电影静帧\n画面：${s.action}\n场景：某处`, negative_prompt: '血腥',
       reference_assets: (s.characters ?? []).map((c) => c.ref), aspect_ratio: '9:16' })) })
+  }
+  if (failCons && path === '/novels/n1/memory/constraints' && method === 'POST') {
+    const detail = { code: 'novel.constraint.no_text', params: {}, message: '限制必须写明规则（text）' }
+    return { ok: false, status: 422, statusText: '', text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) }
+  }
+  if (failKf && /\/keyframes\/[^/]+$/.test(path) && method === 'PUT') {
+    const detail = { code: 'chapter.keyframe.bad_type', params: {}, message: '关键帧只收 PNG / JPEG / WebP 图片' }
+    return { ok: false, status: 422, statusText: '', text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) }
   }
   if (path === '/novels/n1/memory/plot' && method === 'PUT') {
     outlines.push(JSON.parse(String(init!.body)).outline)
@@ -465,5 +476,62 @@ console.log('7. Esc 关闭 ✓')
   console.log('8. 英文渲染 ✓')
 }
 
-await act(async () => { root.unmount() })
+// 9. 接口错误是消息对象：切换语言后画布侧栏与关键帧的提示跟着变，不出现 [object Object]
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { setCurrentLocale } = await import('../src/i18n/core')
+  const { useI18n } = await import('../src/i18n/core')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  function Grab() { setLoc = useI18n().setLocale; return null }
+  await act(async () => { root.unmount() })
+  const root2 = createRoot(container as unknown as HTMLElement)
+  await act(async () => {
+    root2.render(
+      <I18nProvider initial="zh">
+        <Grab />
+        <StoryboardView doc={doc} canSave dirty={false} saving={false}
+                        version={{ nid: 'n1', cid: 'c1', vid: 'v1' }} bench={bench}
+                        onChange={() => {}} onSave={() => {}} />
+      </I18nProvider>)
+  })
+  await click(button('时间轴画布'))
+  // 关键帧上传失败
+  failKf = true
+  const inp = container.querySelector('.tlc__kf input[type="file"]') as unknown as HTMLInputElement
+  must(!!inp, '有关键帧上传入口')
+  await act(async () => {
+    Object.defineProperty(inp, 'files', { value: [new File([new Uint8Array([1])], 'k.gif', { type: 'image/gif' })], configurable: true })
+    inp.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
+  })
+  await settle(80)
+  const kfErr = () => container.querySelector('.tlc__kferr')?.textContent ?? ''
+  must(kfErr() === '上传失败：关键帧只收 PNG / JPEG / WebP 图片', `中文关键帧错误：${kfErr()}`)
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(kfErr() === 'Upload failed: Keyframes must be PNG, JPEG or WebP images', `切英文后关键帧错误跟着变：${kfErr()}`)
+  must(!has('[object Object]'), '关键帧：结构化 detail 不能显示成 [object Object]')
+  failKf = false
+  // 侧栏新增限制失败
+  await act(async () => { setLoc('zh') })
+  await settle()
+  await click([...container.querySelectorAll('.tlc__tabs button')].find((b) => b.textContent === '剧情') as unknown as Element)
+  await click(button('创作限制'))
+  const rule = container.querySelector('.tlc__panel .cons__new input') as unknown as HTMLInputElement
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!.call(rule, '不要出现灯')
+    rule.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
+  })
+  failCons = true
+  await click(button('新增限制'))
+  const panelErr = () => container.querySelector('.tlc__novel .tlc__kferr')?.textContent ?? ''
+  must(panelErr().endsWith('失败：限制必须写明规则（text）'), `中文侧栏错误：${panelErr()}`)
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(panelErr().endsWith(' failed: A constraint needs a rule (text)'), `切英文后侧栏错误跟着变：${panelErr()}`)
+  must(!has('[object Object]'), '侧栏：结构化 detail 不能显示成 [object Object]')
+  failCons = false
+  setCurrentLocale('zh')
+  await act(async () => { root2.unmount() })
+  console.log('9. 关键帧上传与画布侧栏的接口错误按语言渲染并随切换更新 ✓')
+}
 console.log('\nALL PASS')

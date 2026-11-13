@@ -4,6 +4,7 @@ import { ImagePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { errText } from '@/i18n/serverMsg'
 import { notice } from '@/lib/notice'
 import { cn } from '@/lib/utils'
 import { deleteStyleImage, uploadStyleImage } from '../../api'
@@ -11,7 +12,7 @@ import type { StyleImageMeta } from '../../types'
 
 const TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_BYTES = 8 * 1024 * 1024
-const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const err = errText
 
 interface Props {
   nid: string

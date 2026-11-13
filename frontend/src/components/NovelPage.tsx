@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { errText } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import { notice } from '@/lib/notice'
 import {
@@ -51,7 +52,7 @@ const ASSET_SECTIONS: Section[] = ['characters', 'locations', 'props', 'creature
 
 const noop = () => {}
 
-const err = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const err = errText
 
 /** 小说页 = 总会话：制作参数默认值 + 长期记忆（主线剧情、创作限制、资产库、人物生命周期） */
 export function NovelPage({

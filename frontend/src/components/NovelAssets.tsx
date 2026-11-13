@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
+import { errText } from '@/i18n/serverMsg'
 import { assetThumb } from '@/lib/assetThumb'
 import { notice } from '@/lib/notice'
 import { deleteMemoryCard, upsertMemoryCard } from '../api'
@@ -102,7 +103,7 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
       await fn()
       notice.ok(done)
     } catch (e) {
-      notice.err(t('novel.failed', { what }), e instanceof Error ? e.message : String(e))
+      notice.err(t('novel.failed', { what }), errText(e))
     } finally {
       setBusy(false)
     }

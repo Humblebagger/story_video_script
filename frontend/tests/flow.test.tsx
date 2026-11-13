@@ -675,6 +675,17 @@ shelf('alice')[0].chapters[0].versions.find((x) => x.id === 'job2')!.error_msg =
 await click(findByText('button', 'v2'))
 must(has('这一版转换失败：服务器出了点问题') && has('参考编号 K7Q2M9XD') && !has('批 1 重试 2 次后仍未通过校验'),
      '失败版本带 error_msg：提示条按代码渲染并带编号')
+// 旧数据：只有多行 error、没有 error_msg → 提示条取原文第一行，不带后面几行
+{
+  const v2 = shelf('alice')[0].chapters[0].versions.find((x) => x.id === 'job2')!
+  delete v2.error_msg
+  v2.error = '批 1 重试 2 次后仍未通过校验\nFAIL: 引用了不存在的资产 C09'
+  await click(findByText('button', 'v1'))
+  await click(findByText('button', 'v2'))
+  const al = container.querySelector('p.alert')?.textContent ?? ''
+  must(al.includes('这一版转换失败：批 1 重试 2 次后仍未通过校验') && !al.includes('FAIL: 引用了不存在的资产 C09'),
+       `没有 error_msg 的旧失败版本：提示条只取原文第一行，实为 ${al}`)
+}
 must(!has('采用此版') || (findByText('button', '采用此版') as HTMLButtonElement).disabled,
      '失败版本不能采用')
 console.log('7. 失败 → 原因摊开显示（含结构化验证发现）/ 失败版本不可采用 ✓')
@@ -923,6 +934,39 @@ console.log('11d. 小说页英文 → 分区标题 / 新章节按钮 / 更多菜
   box.remove()
 }
 console.log('11e. 删除小说 → 取消确认后页面可点、小说还在 ✓')
+
+// 11f. toast：接口错误在弹出时按当时的界面语言格式化（英文界面下是英文，不是中文兜底）
+{
+  const { NovelAssets } = await import('../src/components/NovelAssets')
+  const { notice } = await import('../src/lib/notice')
+  const realFetch = g.fetch as (u: string, i?: unknown) => Promise<unknown>
+  g.fetch = async (url: string, init?: { method?: string }) => {
+    if (String(url).includes('/memory/assets/') && init?.method === 'PUT') {
+      const detail = { code: 'novel.asset.no_name', params: {}, message: '资产卡必须有名称' }
+      return { ok: false, status: 422, statusText: '', text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) }
+    }
+    return realFetch(url, init)
+  }
+  const box = doc.createElement('div')
+  doc.body.appendChild(box)
+  const r = createRoot(box)
+  await act(async () => {
+    r.render(<I18nProvider initial="en"><NovelAssets nid="n1" assets={{}} kind="characters" onSaved={() => {}} /></I18nProvider>)
+  })
+  await settle()
+  await type(box.querySelector('input[placeholder="New card name"]') as unknown as HTMLElement, '路人', false)
+  const addBtn = [...box.querySelectorAll('button')].find((b) => (b.textContent ?? '').startsWith('+ Create')) as unknown as HTMLElement
+  must(!!addBtn, '英文界面有新建按钮')
+  await click(addBtn)
+  const last = notice.log[notice.log.length - 1]
+  must(last?.kind === 'err' && last.description === 'An asset card needs a name', `toast 描述按英文渲染：${JSON.stringify(last)}`)
+  must(!JSON.stringify(notice.log).includes('[object Object]'), 'toast：结构化 detail 不能显示成 [object Object]')
+  g.fetch = realFetch
+  setCurrentLocale('zh')
+  await act(async () => { r.unmount() })
+  box.remove()
+}
+console.log('11f. toast 弹出时按当前语言格式化接口错误 ✓')
 
 // 12. 换个账号：看不到 alice 的任何东西
 await click(bell())

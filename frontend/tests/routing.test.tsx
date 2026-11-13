@@ -103,6 +103,9 @@ function resetData() {
   }
 }
 const unhandled = new Set<string>()
+/** 测试用：章节读取失败，detail 为消息对象（格式同后端 to_detail） */
+let submitFail = false
+let chapterFail: { status: number; detail: unknown } | null = null
 /** 测试用：让章节与版本的读取慢下来（lag 毫秒），或卡在 gate 上直到放行 */
 let lag = 0
 let gate: Promise<void> | null = null
@@ -138,6 +141,9 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     return json({ users: 2, active_7d: 1, tokens_30d: 0, cost_30d: 0, running: 0, failed_7d: 0, daily: [], unpriced_models: [] })
   }
   if (path === '/novels' && method === 'GET') return json({ novels: [{ id: novel.id, title: novel.title, updated_at: '', chapters: novel.chapters.length, asset_counts: counts(novel.memory.assets) }] })
+  if (submitFail && method === 'POST' && path === '/novels/n1/chapters/c1/versions') {
+    return err(422, { code: 'chapter.no_text', params: {}, message: '本章还没有原文' })
+  }
   const m = path.match(/^\/novels\/([^/]+)(?:\/chapters\/([^/]+)(?:\/versions\/([^/]+)(\/.*)?)?)?(\/summary)?$/)
   if (m && method === 'GET') {
     const [, nid, cid, vid, rest, summary] = m
@@ -149,6 +155,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     if (vid && vgate[vid]) await vgate[vid]
     const c = novel.chapters.find((x) => x.id === cid)
     if (!c) return err(404, '章节不存在')
+    if (chapterFail && !vid) return err(chapterFail.status, chapterFail.detail)
     if (!vid) return json(chapterView(c))
     const v = c.versions.find((x) => x.id === vid)
     if (!v) return err(404, '版本不存在')
@@ -166,6 +173,10 @@ const { createRoot } = await import('react-dom/client')
 const { createMemoryRouter } = await import('react-router')
 const { routes } = await import('../src/routes')
 const { AppRoot } = await import('../src/AppRoot')
+const { I18nProvider } = await import('../src/i18n')
+const { useI18n, setCurrentLocale } = await import('../src/i18n/core')
+let setLoc: (l: 'zh' | 'en') => void = () => {}
+function Grab() { setLoc = useI18n().setLocale; return null }
 const { setSession, clearSession } = await import('../src/auth')
 type Router = ReturnType<typeof createMemoryRouter>
 
@@ -185,7 +196,7 @@ async function boot(path: string, who?: string, cached?: Record<string, unknown>
   doc.body.appendChild(container)
   const root = createRoot(container)
   const router: Router = createMemoryRouter(routes, { initialEntries: [path] })
-  await act(async () => { root.render(<AppRoot router={router} />) })
+  await act(async () => { root.render(<I18nProvider initial="zh"><Grab /><AppRoot router={router} /></I18nProvider>) })
   await settle(150)
   const here = () => router.state.location.pathname + router.state.location.search
   const has = (s: string) => container.innerHTML.includes(s)
@@ -648,6 +659,43 @@ console.log('3b. 非法值规范化 ✓')
   await a.done()
 }
 console.log('10. 同址再打开不导航 ✓')
+
+// 页面提示条存「文案键 + 错误值」：切换语言后整句（含前缀）跟着变；结构化 detail 不显示成 [object Object]
+{
+  chapterFail = { status: 500, detail: { code: 'chapter.not_found', params: {}, message: '章节不存在' } }
+  const a = await boot('/novels/n1/chapters/c1', 'alice')
+  const alertText = () => a.q('p.alert')?.textContent ?? ''
+  must(alertText() === '打开章节失败：章节不存在', `中文提示条：${alertText()}`)
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(alertText() === 'Could not open the chapter: Chapter not found', `切英文后整句跟着变：${alertText()}`)
+  must(!a.has('[object Object]'), '结构化 detail 不能显示成 [object Object]')
+  await act(async () => { setLoc('zh') })
+  chapterFail = null
+  await a.done()
+  setCurrentLocale('zh')
+}
+console.log('I5. 章节读取失败的提示条按语言渲染并随切换更新 ✓')
+
+// 提交转换失败：app.err.submit 整句随语言变
+{
+  submitFail = true
+  const a = await boot('/novels/n1/chapters/c1', 'alice')
+  await click(a.q('[data-step="storyboard"]')!)
+  await click(a.q('[data-testid="primary-action"]')!)
+  await settle(200)
+  const alertText = () => a.q('p.alert')?.textContent ?? ''
+  must(alertText() === '提交失败：本章还没有原文', `中文提交错误：${alertText()}`)
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(alertText() === 'Submit failed: This chapter has no source text yet', `切英文后提交错误跟着变：${alertText()}`)
+  must(!a.has('[object Object]'), '结构化 detail 不能显示成 [object Object]')
+  await act(async () => { setLoc('zh') })
+  submitFail = false
+  await a.done()
+  setCurrentLocale('zh')
+}
+console.log('I6. 提交转换失败的提示按语言渲染并随切换更新 ✓')
 
 console.log('\nALL PASS')
 process.exit(0)

@@ -7,12 +7,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getJob, TERMINAL } from './api'
 import type { Job } from './types'
+import { errValue } from './i18n/serverMsg'
+import type { MsgLike } from './i18n/serverMsg'
 
 const POLL_MS = 1500
 
 export function useJob(onDone?: (job: Job) => void) {
   const [job, setJob] = useState<Job | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MsgLike>(null)
   const [submitting, setSubmitting] = useState(false)
   const timer = useRef<number | null>(null)
   /** 轮询代：reset / 重新 attach / 重新 start 都会换代，旧代的迟到响应一律丢弃 */
@@ -43,7 +45,7 @@ export function useJob(onDone?: (job: Job) => void) {
         }
       } catch (e) {
         if (gen.current !== mine) return
-        setError(e instanceof Error ? e.message : String(e))
+        setError(errValue(e))
         stop()
       }
     }
@@ -65,7 +67,7 @@ export function useJob(onDone?: (job: Job) => void) {
                quality_report: null, error: null, ...meta })
       poll(job_id)
     } catch (e) {
-      if (gen.current === before) setError(e instanceof Error ? e.message : String(e))
+      if (gen.current === before) setError(errValue(e))
     } finally {
       setSubmitting(false)
     }
