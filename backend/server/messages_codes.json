@@ -9,6 +9,20 @@
     "params": [],
     "zh": "段内镜头切换时刻由视频模型决定，台词按计划镜头起点放置，属近似对齐"
   },
+  "compose.bgm.bad_type": {
+    "params": [],
+    "zh": "BGM 只支持 mp3、wav、m4a、aac"
+  },
+  "compose.bgm.no_episode": {
+    "params": [
+      "episode"
+    ],
+    "zh": "没有这一集：{episode}"
+  },
+  "compose.bgm.too_big": {
+    "params": [],
+    "zh": "BGM 文件为空或超过 30MB"
+  },
   "compose.busy": {
     "params": [],
     "zh": "正在合成，等它结束再合成"
@@ -16,6 +30,16 @@
   "compose.clips_busy": {
     "params": [],
     "zh": "有段在排队或生成中，等它们结束再合成"
+  },
+  "compose.confirm_cny": {
+    "params": [
+      "cost"
+    ],
+    "zh": "本次配音约 {cost}，请确认金额后再合成"
+  },
+  "compose.crashed": {
+    "params": [],
+    "zh": "合成时出现意外错误，请重试；仍失败请联系管理员"
   },
   "compose.ffmpeg_failed": {
     "params": [
@@ -47,11 +71,21 @@
     ],
     "zh": "还有说话人没选音色：{speakers}"
   },
+  "compose.no_ffmpeg": {
+    "params": [],
+    "zh": "服务器缺少视频处理组件 ffmpeg，暂时无法合成，请联系管理员"
+  },
   "compose.no_video": {
     "params": [
       "id"
     ],
     "zh": "{id} 还没有可用的视频；打开「草稿合成」可用关键帧补位"
+  },
+  "compose.no_video_count": {
+    "params": [
+      "n"
+    ],
+    "zh": "{n} 段还没有可用的视频；打开「草稿合成」可用关键帧补位"
   },
   "compose.over_budget": {
     "params": [
@@ -118,6 +152,26 @@
   "console.minimax": {
     "params": [],
     "zh": "MiniMax 开放平台"
+  },
+  "export.busy": {
+    "params": [],
+    "zh": "正在合成，完成后再导出"
+  },
+  "export.no_ffmpeg": {
+    "params": [],
+    "zh": "服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员"
+  },
+  "export.no_timeline": {
+    "params": [],
+    "zh": "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）"
+  },
+  "export.none": {
+    "params": [],
+    "zh": "还没有合成好的成片"
+  },
+  "export.stale": {
+    "params": [],
+    "zh": "成片已过期，请先重新合成"
   },
   "film.ark.access_denied": {
     "params": [],

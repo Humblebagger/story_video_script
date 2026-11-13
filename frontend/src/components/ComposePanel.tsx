@@ -159,7 +159,7 @@ function Music({ c }: { c: Compose }) {
 
 /** 成片：状态、失败时的 ffmpeg 输出、各集播放与下载、合成报告 */
 function Final({ c }: { c: Compose }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const sep = t('common.listSep')
   const f = c.preview!.final!
   const r = c.preview!.report
@@ -205,8 +205,8 @@ function Final({ c }: { c: Compose }) {
         <details className="compose__box">
           <summary>{t('compose.panel.report')}</summary>
           <p>{r.size} · {label(AUDIO_MODE, r.audio_mode)}{r.draft ? t('compose.panel.draftUsed') : ''}</p>
-          {r.warning && <p className="tlc__notice">{r.warning}</p>}
-          <p className="film__dim">{r.alignment}</p>
+          {!!r.warning && <p className="tlc__notice">{formatMsg(r.warning, locale)}</p>}
+          <p className="film__dim">{formatMsg(r.alignment, locale)}</p>
           {r.episodes.map((x) => (
             <div key={x.episode} className="compose__ep">
               <b>{x.episode}</b>

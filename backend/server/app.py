@@ -57,6 +57,7 @@ completed_with_warnings：软质量门（旁白密度/评审分）重试耗尽�
   POST /auth/register / POST /auth/login → {"token": ...}；GET /auth/me
 """
 import hashlib
+import logging
 import os
 import re
 import copy
@@ -104,9 +105,11 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, library, novels, pricing, store, summary, usage
-from server.messages import compact, msg, to_detail
+from server.messages import compact, money, msg, render_zh, to_detail
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
+
+log = logging.getLogger("render.app")
 
 app = FastAPI(title="小说 → 分镜 IR 转换服务", version=__version__)
 
@@ -833,17 +836,15 @@ def _keyframe_paths(uid: str, nid: str, cid: str, vid: str) -> dict:
             for sid in novels.list_keyframes(uid, nid, cid, vid)}
 
 
-def _render_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = True, structured: bool = True) -> tuple:
-    """(会话目录, 已保存的分镜, 关键帧, 归属)。出片只用已保存的版本内容；gate 时过验证门。
-    structured=False 给还没改造的合成、音色接口：错误仍是字符串（子计划 2 再改）。"""
+def _render_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = True) -> tuple:
+    """(会话目录, 已保存的分镜, 关键帧, 归属)。出片只用已保存的版本内容；gate 时过验证门。"""
     uid = user["id"]
     record = _novel_call(novels.get_version, uid, nid, cid, vid)
     root = _novel_call(novels.render_dir, uid, nid, cid, vid)
     doc = record.get("result") or {}
     if gate:
         if not doc.get("episodes"):
-            raise HTTPException(422, detail=msg("film.session.no_storyboard") if structured
-                                else "这个版本还没有分镜产物")  # i18n: todo(2)
+            raise HTTPException(422, detail=msg("film.session.no_storyboard"))
         _render_gate(copy.deepcopy(doc), record)
     owner = {"user_id": uid, "nid": nid, "cid": cid, "vid": vid}
     return root, doc, _keyframe_paths(uid, nid, cid, vid), owner
@@ -861,20 +862,6 @@ def _render_call(fn, *args, **kwargs):
         raise HTTPException(500, detail=msg("film.session.corrupt_admin"))
     except render_session.SessionError as e:
         raise HTTPException(422, detail=to_detail(e))
-
-
-def _legacy_render_call(fn, *args, **kwargs):
-    """合成、音色接口用（子计划 2 才改造）：保持原来的字符串 / {message, expected_cny} 形状。"""
-    try:
-        return fn(*args, **kwargs)
-    except render_session.NotFound as e:
-        raise HTTPException(404, str(e))
-    except render_session.Conflict as e:
-        raise HTTPException(409, detail={"message": str(e), "expected_cny": e.expected_cny})
-    except render_session.Corrupt:
-        raise HTTPException(500, "出片记录文件已损坏，原文件已备份，请联系管理员处理")  # i18n: todo(2)
-    except render_session.SessionError as e:
-        raise HTTPException(422, str(e))
 
 
 def _style_for(uid: str, nid: str) -> Optional[dict]:
@@ -1240,29 +1227,27 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
     return root, doc, kfs, s, p
 
 
-_NO_FFMPEG = ("服务器没有装 ffmpeg：macOS 执行 brew install ffmpeg，"
-              "Ubuntu / Debian 执行 apt install ffmpeg，装好后重启后端")
-_EXPORT_REASONS = {"none": "还没有合成好的成片", "stale": "成片已过期，请先重新合成",
-                   "no_timeline": "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）",
-                   "busy": "正在合成，完成后再导出"}
+_EXPORT_REASONS = {"none": "export.none", "stale": "export.stale",
+                   "no_timeline": "export.no_timeline", "busy": "export.busy"}
 
 
 def _compose_blockers(p: dict, draft: bool) -> None:
     """合成前提：有 ffmpeg、说话人都有音色、非草稿时每段都有视频。"""
     if render_mix.tools() is None:
-        raise HTTPException(422, _NO_FFMPEG)
+        raise HTTPException(422, detail=msg("compose.no_ffmpeg"))
     if p["missing_voices"]:
-        raise HTTPException(422, "还有说话人没选音色：" + "、".join(k or "（未标说话人）" for k in p["missing_voices"]))
+        raise HTTPException(422, detail=msg("compose.missing_voices", speakers=[
+            k or compact(msg("voice.unlabeled")) for k in p["missing_voices"]]))
     if p["no_video"] and not draft:
-        raise HTTPException(422, f"{len(p['no_video'])} 段还没有可用的视频；打开「草稿合成」可用关键帧补位")
+        raise HTTPException(422, detail=msg("compose.no_video_count", n=len(p["no_video"])))
 
 
 def _compose_quote(user: dict, nid: str, cid: str, vid: str, draft: bool) -> dict:
     """合成确认卡的预估：未缓存配音的字数与金额（元）。过验证门与合成前提；合成中 409。"""
-    _render_ctx(user, nid, cid, vid, structured=False)          # 过验证门
+    _render_ctx(user, nid, cid, vid)          # 过验证门
     _root, _doc, _kfs, _s, p = _compose_preview(user, nid, cid, vid, draft)
     if (p.get("final") or {}).get("state") in render_session.COMPOSE_BUSY:
-        raise HTTPException(409, "正在合成，等它结束再合成")
+        raise HTTPException(409, detail=msg("compose.busy"))
     _compose_blockers(p, draft)
     return {"amount": p["tts_cny"], "chars": p["tts_chars"]}
 
@@ -1270,19 +1255,19 @@ def _compose_quote(user: dict, nid: str, cid: str, vid: str, draft: bool) -> dic
 def _compose_start(user: dict, nid: str, cid: str, vid: str, draft: bool,
                    expected_cny: Optional[float]) -> dict:
     """合成整章（后台线程，接口与助手共用）。配音金额大于 0 时必须带确认金额。"""
-    _render_ctx(user, nid, cid, vid, structured=False)          # 过验证门
+    _render_ctx(user, nid, cid, vid)          # 过验证门
     root, doc, kfs, s, p = _compose_preview(user, nid, cid, vid, draft)
     _compose_blockers(p, draft)
     if p["tts_cny"] > 0 and (expected_cny is None or abs(expected_cny - p["tts_cny"]) > 1e-6):
-        raise HTTPException(409, detail={"message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成",
+        raise HTTPException(409, detail={**msg("compose.confirm_cny", cost=money(p["tts_cny"])),
                                          "expected_cny": p["tts_cny"]})
-    s = _legacy_render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
+    s = _render_call(render_session.begin_compose, root, fingerprint=p["fingerprint"],
                      tts_cny=p["tts_cny"], draft=draft, voices=s.get("voices") or {})
     t = threading.Thread(target=_compose_worker, args=(root, doc, s, kfs, draft, render_mix.tools()),
                          name=f"compose-{vid}", daemon=True)
     _compose_threads[str(root)] = t
     t.start()
-    return _legacy_render_call(render_session.view, s)
+    return _render_call(render_session.view, s)
 
 
 def _export_check(user: dict, nid: str, cid: str, vid: str) -> tuple:
@@ -1290,10 +1275,10 @@ def _export_check(user: dict, nid: str, cid: str, vid: str) -> tuple:
     root, _doc, _kfs, _s, p = _compose_preview(user, nid, cid, vid, True)
     reason = p.get("export_reason")
     if reason:
-        raise HTTPException(409, _EXPORT_REASONS[reason])
+        raise HTTPException(409, detail=msg(_EXPORT_REASONS[reason]))
     tools = render_mix.tools()
     if not tools:
-        raise HTTPException(503, "服务器没有安装 ffmpeg，无法导出")
+        raise HTTPException(503, detail=msg("export.no_ffmpeg"))
     return root, tools
 
 
@@ -1327,9 +1312,39 @@ def _hide_root(text: str, root) -> str:
     return text
 
 
+def _hide_root_deep(v, root):
+    """消息对象（含 params 里的嵌套消息、列表）里的字符串一律隐去服务器目录。"""
+    if isinstance(v, str):
+        return _hide_root(v, root)
+    if isinstance(v, list):
+        return [_hide_root_deep(x, root) for x in v]
+    if isinstance(v, dict):
+        return {k: _hide_root_deep(x, root) for k, x in v.items()}
+    return v
+
+
+_LOG_KEY_ENVS = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY")
+
+
+def _scrub_log(text: str) -> str:
+    """日志文字脱敏：Bearer 凭据加环境里配置的厂商密钥（不设最短长度）。"""
+    out = render_video_base.scrub(text)
+    for name in _LOG_KEY_ENVS:
+        k = os.environ.get(name, "").strip()
+        if k:
+            out = out.replace(k, "***")
+    return out
+
+
 def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tuple) -> None:
-    def failed(error: str, detail: str = "") -> None:
-        render_session.compose_failed(root, _hide_root(error, root), _hide_root(detail or "", root))
+    def failed(err, detail: str = "") -> None:
+        m = err.as_msg() if hasattr(err, "as_msg") else err
+        if isinstance(m, dict) and m.get("code"):
+            m = _hide_root_deep({"code": m["code"], "params": m.get("params") or {},
+                                 "message": m.get("message") or render_zh(m["code"], m.get("params") or {})}, root)
+        else:
+            m = _hide_root(str(err), root)
+        render_session.compose_failed(root, m, _hide_root(detail or "", root))
 
     try:
         lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
@@ -1340,13 +1355,16 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
                                  progress=lambda step: render_session.compose_progress(root, step))
         render_session.compose_done(root, out["files"], out["report"])
     except render_mix.MixError as e:
-        failed(str(e), e.stderr)
+        failed(e, e.stderr)
     except Exception as e:  # noqa: BLE001  任何意外都要落到失败，不能卡在「合成中」
-        traceback.print_exc()
+        # 不把原始 exc_info 交给日志：堆栈文字（含 __cause__/__context__ 链）先脱敏再写
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        log.error("合成异常 root=%s\n%s", root, _scrub_log(tb))  # i18n: internal
         try:
-            failed(f"合成异常：{type(e).__name__}: {e}")
-        except Exception:  # noqa: BLE001
-            traceback.print_exc()
+            failed(msg("compose.crashed"))
+        except Exception as e2:  # noqa: BLE001
+            tb2 = "".join(traceback.format_exception(type(e2), e2, e2.__traceback__))
+            log.error("合成失败状态写回失败 root=%s\n%s", root, _scrub_log(tb2))  # i18n: internal
 
 
 @app.post(_R + "/compose")
@@ -1363,13 +1381,13 @@ async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Re
     root, doc, _kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
     _session_or_404(root)
     if episode not in {ep["id"] for ep in doc.get("episodes") or []}:
-        raise HTTPException(404, f"没有这一集：{episode}")
+        raise HTTPException(404, detail=msg("compose.bgm.no_episode", episode=episode))
     ext = BGM_TYPES.get(request.headers.get("content-type", "").split(";")[0].strip().lower())
     if ext is None:
-        raise HTTPException(422, "BGM 只支持 mp3、wav、m4a、aac")
+        raise HTTPException(422, detail=msg("compose.bgm.bad_type"))
     cl = request.headers.get("content-length")
     if cl and cl.isdigit() and int(cl) > BGM_MAX_BYTES:
-        raise HTTPException(422, "BGM 文件为空或超过 30MB")
+        raise HTTPException(422, detail=msg("compose.bgm.too_big"))
     d = Path(root) / "audio" / "bgm"
     d.mkdir(parents=True, exist_ok=True)
     tmp = d / f".{episode}{ext}.{uuid.uuid4().hex}.part"     # 同一集并发上传各写各的
@@ -1382,7 +1400,7 @@ async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Re
                     break
                 fh.write(chunk)
         if total == 0 or total > BGM_MAX_BYTES:
-            raise HTTPException(422, "BGM 文件为空或超过 30MB")
+            raise HTTPException(422, detail=msg("compose.bgm.too_big"))
         tmp.replace(d / f"{episode}{ext}")
     finally:
         tmp.unlink(missing_ok=True)
@@ -1396,7 +1414,7 @@ async def render_bgm_put(nid: str, cid: str, vid: str, episode: str, request: Re
 def render_bgm_delete(nid: str, cid: str, vid: str, episode: str, user: dict = Depends(novel_user)):
     root, doc, _kfs, _owner = _render_ctx(user, nid, cid, vid, gate=False)
     if episode not in {ep["id"] for ep in doc.get("episodes") or []}:
-        raise HTTPException(404, f"没有这一集：{episode}")
+        raise HTTPException(404, detail=msg("compose.bgm.no_episode", episode=episode))
     old = _bgm_files(root).get(episode)
     if old:
         old.unlink()

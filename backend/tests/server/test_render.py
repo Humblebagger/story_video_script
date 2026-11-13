@@ -276,15 +276,15 @@ def main() -> int:
     assert s["options"]["rate_note"] == {"code": "rate.fake", "params": {}}
     print("14. 出片接口错误带代码 ✓")
 
-    # 14b. 边界：合成接口仍返回字符串（Task 5 改）；音色接口已返回消息对象
+    # 14b. 合成与音色接口返回消息对象
     R2 = f"/novels/{nid}/chapters/{cid}/versions/v2/render"      # v2 没有分镜产物
     r = c.post(R2 + "/compose", headers=H, json={})
-    assert r.status_code == 422 and r.json()["detail"] == "这个版本还没有分镜产物", r.text
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "film.session.no_storyboard", r.text
     try:
         app_mod._compose_quote(user, nid, cid, "v2", True)
         raise AssertionError("应当 422")
     except HTTPException as e:
-        assert e.status_code == 422 and e.detail == "这个版本还没有分镜产物", e.detail
+        assert e.status_code == 422 and e.detail["code"] == "film.session.no_storyboard", e.detail
     real_tts, app_mod._tts = app_mod._tts, lambda: type("T", (), {"caps": type("C", (), {"voices": []})()})()
     r = c.put(R2 + "/voices", headers=H, json={"voices": {}})
     assert r.status_code == 404 and r.json()["detail"]["code"] == "film.session.none", r.text
@@ -296,7 +296,7 @@ def main() -> int:
     r = c.put(R15 + "/voices", headers=H, json={"voices": {}})
     app_mod._tts = real_tts
     assert r.status_code == 500 and r.json()["detail"]["code"] == "film.session.corrupt_admin", r.text
-    print("14b. 合成接口仍返回字符串；音色接口已返回消息对象 ✓")
+    print("14b. 合成与音色接口返回消息对象 ✓")
 
     print("\nALL PASS")
     return 0

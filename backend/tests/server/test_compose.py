@@ -9,6 +9,7 @@
 import copy
 import io
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -24,6 +25,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 os.environ["STORYBOARD_TTS_PROVIDER"] = "fake"
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"
 
+from fastapi import HTTPException  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from render import export_fcpxml, mix, providers, voice, session as render_session  # noqa: E402
 from render.providers.fake import FakeTts, FakeVideo  # noqa: E402
@@ -115,30 +117,34 @@ def main() -> int:
     assert p["missing_voices"] == v["missing"]
     assert p["exportable"] is False and p["export_reason"] == "none"
     r = c.get(R + "/export.zip", headers=H)
-    assert r.status_code == 409 and "还没有" in r.json()["detail"]
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "export.none", r.text
     print("3. 合成预览 ✓")
 
     # 4. 拦截：没装 ffmpeg → 422；缺音色 → 422；补齐音色后金额要确认（409 带金额）
     real_tools, real_compose = mix.tools, mix.compose
     mix.tools = lambda: None
     r = c.post(R + "/compose", headers=H, json={})
-    assert r.status_code == 422 and "brew install ffmpeg" in r.json()["detail"] \
-        and "apt install ffmpeg" in r.json()["detail"], "没装 ffmpeg 的提示写 macOS 与 Linux 两种装法"
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "compose.no_ffmpeg", r.text
+    assert "brew" not in json.dumps(r.json()["detail"], ensure_ascii=False), "面向用户，不写安装命令"
     mix.tools = lambda: ("ffmpeg", "ffprobe")
     if v["missing"]:
         r = c.post(R + "/compose", headers=H, json={})
-        assert r.status_code == 422 and "音色" in r.json()["detail"]
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "compose.missing_voices", r.text
         c.put(R + "/voices", headers=H, json={"voices": {k: "fake-male" for k in v["missing"]}})
     p = c.get(R + "/compose", headers=H).json()
     chars = sum(len(x["text"]) for x in lines)
     assert p["missing_voices"] == [] and p["tts_chars"] == chars and p["tts_cny"] == tts_cost(chars, TTS.caps)
     r = c.post(R + "/compose", headers=H, json={})
-    assert r.status_code == 409 and r.json()["detail"]["expected_cny"] == p["tts_cny"]
+    assert r.status_code == 409 and r.json()["detail"] == {
+        "code": "compose.confirm_cny", "params": {"cost": {"t": "money", "cny": round(p["tts_cny"], 2)}},
+        "message": f"本次配音约 ¥{p['tts_cny']:.2f}，请确认金额后再合成", "expected_cny": p["tts_cny"]}, r.text
     assert c.post(R + "/compose", headers=H, json={"expected_cny": p["tts_cny"] + 1}).status_code == 409
     assert c.post(R + "/compose", headers=H, json={"expected_cny": p["tts_cny"] + 0.004}).status_code == 409, \
         "差 0.004 元也要重新确认"
     r = c.post(R + "/compose", headers=H, json={"expected_cny": p["tts_cny"], "draft": False})
-    assert r.status_code == 422 and "草稿合成" in r.json()["detail"]
+    d = r.json()["detail"]
+    assert r.status_code == 422 and d["code"] == "compose.no_video_count" and d["params"] == {"n": len(p["no_video"])}, r.text
+    assert "草稿合成" in d["message"]
     print("4. 拦截：没装 ffmpeg、缺音色、配音金额确认、关掉草稿合成时缺段 ✓")
 
     # 5. 合成：后台线程推进到完成；配音费计入已花；成片可取；分镜一改成片过期
@@ -171,7 +177,7 @@ def main() -> int:
     p5 = c.get(R + "/compose", headers=H).json()
     assert p5["exportable"] is False and p5["export_reason"] == "no_timeline"
     r = c.get(R + "/export.zip", headers=H)
-    assert r.status_code == 409 and "重新合成" in r.json()["detail"]
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "export.no_timeline", r.text
     (Path(root) / "final" / "timeline.json").write_text("{}", encoding="utf-8")
     p5 = c.get(R + "/compose", headers=H).json()
     assert p5["exportable"] is True and p5["export_reason"] is None
@@ -208,11 +214,14 @@ def main() -> int:
             raise export_fcpxml.ExportError(f"缺文件 {root_}/final/x.mp4")
         export_fcpxml.export = boom
         r = c.get(R + "/export.zip", headers=H)
-        assert r.status_code == 409 and str(root) not in r.json()["detail"], r.text
+        dumped = json.dumps(r.json()["detail"], ensure_ascii=False)
+        assert r.status_code == 409 and str(root) not in dumped and str(Path(root).resolve()) not in dumped, r.text
         export_fcpxml.export = fake_export
         # 没装 ffmpeg
         mix.tools = lambda: None
-        assert c.get(R + "/export.zip", headers=H).status_code == 503
+        r = c.get(R + "/export.zip", headers=H)
+        assert r.status_code == 503 and r.json()["detail"]["code"] == "export.no_ffmpeg", r.text
+        assert "brew" not in json.dumps(r.json()["detail"], ensure_ascii=False)
         mix.tools = lambda: ("ffmpeg", "ffprobe")
         # 别的用户看不到
         uid2 = auth.register("bob", "secret2")["id"]
@@ -222,7 +231,8 @@ def main() -> int:
         novels.update_version_result(uid, nid, cid, "v1", edited, verification={}, status="succeeded")
         p5 = c.get(R + "/compose", headers=H).json()
         assert p5["exportable"] is False and p5["export_reason"] == "stale"
-        assert c.get(R + "/export.zip", headers=H).status_code == 409
+        r = c.get(R + "/export.zip", headers=H)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "export.stale", r.text
         novels.update_version_result(uid, nid, cid, "v1", copy.deepcopy(DOC), verification={}, status="succeeded")
     finally:
         export_fcpxml.export = real_export
@@ -249,12 +259,21 @@ def main() -> int:
     mix.compose = boom
     assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
     wait(root)
-    assert "RuntimeError" in c.get(R + "/compose", headers=H).json()["final"]["error"]
+    f = c.get(R + "/compose", headers=H).json()["final"]
+    assert f["error_msg"] == {"code": "compose.crashed", "params": {}}, f
+    assert "RuntimeError" not in f["error"] and "意外" not in f["error"].replace("意外错误", ""), "不显示异常类名与原文"
+    assert f["error"] == "合成时出现意外错误，请重试；仍失败请联系管理员"
     print("6. 合成失败与意外异常都落到失败 ✓")
 
     # 7. 合成中不能再合成；超上限拒绝；重启时中断的合成标失败
     render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True)
-    assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 409
+    r = c.post(R + "/compose", headers=H, json={"expected_cny": exp})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "compose.busy", r.text
+    try:
+        app_mod._compose_quote({"id": uid}, nid, cid, "v1", True)
+        raise AssertionError("合成中应 409")
+    except HTTPException as e:
+        assert e.status_code == 409 and e.detail["code"] == "compose.busy", e.detail
     render_session.recover(root)
     f = render_session.load(root)["final"]
     assert f["state"] == "failed" and f["error_msg"] == {"code": "compose.interrupted", "params": {}} and "服务中断" in f["error"]
@@ -291,23 +310,32 @@ def main() -> int:
     TTS.caps.cny_per_k_chars = 100000.0
     big = c.get(R + "/compose", headers=H).json()["tts_cny"]
     r = c.post(R + "/compose", headers=H, json={"expected_cny": big})
-    assert r.status_code == 422 and "上限" in r.json()["detail"]
+    d = r.json()["detail"]
+    assert r.status_code == 422 and d["code"] == "compose.over_budget", r.text
+    assert set(d["params"]) == {"budget", "spent", "cost"} and d["params"]["cost"]["t"] == "money", d
     TTS.caps.cny_per_k_chars = 0.3
     print("7. 合成中再合成 409、超上限 422、重启中断标失败（关掉后台出片也收尾）、预览后改音色 409 ✓")
 
     # 8. BGM：上传、预览里列出、类型与集号校验、删除
     assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/mpeg"}, content=b"ID3bgm").status_code == 200
     assert c.get(R + "/compose", headers=H).json()["bgm"] == ["E01"]
-    assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "text/plain"}, content=b"x").status_code == 422
-    assert c.put(R + "/bgm/E99", headers={**H, "Content-Type": "audio/mpeg"}, content=b"x").status_code == 404
+    r = c.put(R + "/bgm/E01", headers={**H, "Content-Type": "text/plain"}, content=b"x")
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "compose.bgm.bad_type", r.text
+    r = c.put(R + "/bgm/E99", headers={**H, "Content-Type": "audio/mpeg"}, content=b"x")
+    assert r.status_code == 404 and r.json()["detail"] == {
+        "code": "compose.bgm.no_episode", "params": {"episode": "E99"}, "message": "没有这一集：E99"}, r.text
+    r = c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/mpeg"}, content=b"")
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "compose.bgm.too_big", r.text
     assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/wav"}, content=b"RIFFwav").status_code == 200
     assert sorted(p.name for p in (root / "audio" / "bgm").iterdir()) == ["E01.wav"], "换格式时删掉旧文件"
     old_max = app_mod.BGM_MAX_BYTES
     app_mod.BGM_MAX_BYTES = 4
-    assert c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/mpeg"}, content=b"too-large").status_code == 422
+    r = c.put(R + "/bgm/E01", headers={**H, "Content-Type": "audio/mpeg"}, content=b"too-large")
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "compose.bgm.too_big", r.text
     app_mod.BGM_MAX_BYTES = old_max
     assert sorted(p.name for p in (root / "audio" / "bgm").iterdir()) == ["E01.wav"], "超限不动旧文件"
-    assert c.delete(R + "/bgm/E99", headers=H).status_code == 404
+    r = c.delete(R + "/bgm/E99", headers=H)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "compose.bgm.no_episode", r.text
     assert c.delete(R + "/bgm/*", headers=H).status_code == 404
     assert c.delete(R + "/bgm/E01", headers=H).status_code == 200
     assert c.get(R + "/compose", headers=H).json()["bgm"] == []
@@ -351,6 +379,54 @@ def main() -> int:
     (root / "final" / "mix_report.json").write_text("{坏", encoding="utf-8")
     assert c.get(R + "/compose", headers=H).json()["report"] is None
     print("10. 合成报告随预览返回 ✓")
+
+    # 11. 合成线程：带代码的 MixError 原样落到 error_msg；意外异常给固定说法，类名与堆栈只进日志（先脱敏）
+    class _Cap(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+
+        def emit(self, rec):
+            self.records.append(rec)
+    cap = _Cap()
+    lg = logging.getLogger("render.app")
+    lg.addHandler(cap)
+    old_level, lg.level = lg.level, logging.DEBUG
+    try:
+        def coded(*a, **kw):
+            raise mix.MixError.of("compose.ffmpeg_failed", what=f"混音 E01 {root}/x.mp4", rc=1)
+        mix.compose = coded
+        exp = c.get(R + "/compose", headers=H).json()["tts_cny"]
+        assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
+        wait(root)
+        f = render_session.load(root)["final"]
+        assert f["error_msg"]["code"] == "compose.ffmpeg_failed" and f["error_msg"]["params"]["rc"] == 1, f
+        assert str(root) not in json.dumps(f, ensure_ascii=False) and "…/x.mp4" in f["error"], f
+        assert "…/x.mp4" in json.dumps(f["error_msg"], ensure_ascii=False), "params 里的目录也隐去"
+
+        os.environ["ARK_API_KEY"] = "zq"                      # 短密钥也要抹掉
+        os.environ["VOLC_TTS_API_KEY"] = "tts-secret-1"
+
+        def crash(*a, **kw):
+            raise ValueError("炸了 Bearer abc.def zq tts-secret-1 " + str(root))
+        mix.compose = crash
+        assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
+        wait(root)
+        f = render_session.load(root)["final"]
+        assert f["error_msg"] == {"code": "compose.crashed", "params": {}}, f
+        assert "ValueError" not in f["error"] and "炸了" not in f["error"], f
+        errs = [r for r in cap.records if r.levelno >= logging.ERROR]
+        assert errs, "意外异常要写 ERROR 日志"
+        text = "\n".join(r.getMessage() for r in errs)
+        assert "ValueError" in text and "炸了" in text and "Traceback" in text, text
+        assert "abc.def" not in text and "tts-secret-1" not in text and " zq " not in text, text
+        assert all(r.exc_info is None for r in errs), "不把原始 exc_info 交给日志"
+    finally:
+        lg.removeHandler(cap)
+        lg.level = old_level
+        os.environ.pop("ARK_API_KEY", None)
+        os.environ.pop("VOLC_TTS_API_KEY", None)
+    print("11. 合成线程：带代码的错误落 error_msg，意外异常只给固定说法、日志脱敏 ✓")
 
     mix.tools, mix.compose = real_tools, real_compose
     print("\nALL PASS")

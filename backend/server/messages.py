@@ -315,6 +315,18 @@ register("compose.lines_failed", "有语音条合成失败，为免成片漏句�
 register("compose.voice_failed", "{cause}")
 register("compose.alignment", "段内镜头切换时刻由视频模型决定，台词按计划镜头起点放置，属近似对齐")
 register("compose.warning_native", "台词由视频模型生成，不保证逐字")
+register("compose.confirm_cny", "本次配音约 {cost}，请确认金额后再合成")
+register("compose.no_ffmpeg", "服务器缺少视频处理组件 ffmpeg，暂时无法合成，请联系管理员")
+register("compose.no_video_count", "{n} 段还没有可用的视频；打开「草稿合成」可用关键帧补位")
+register("compose.crashed", "合成时出现意外错误，请重试；仍失败请联系管理员")
+register("compose.bgm.no_episode", "没有这一集：{episode}")
+register("compose.bgm.bad_type", "BGM 只支持 mp3、wav、m4a、aac")
+register("compose.bgm.too_big", "BGM 文件为空或超过 30MB")
+register("export.none", "还没有合成好的成片")
+register("export.stale", "成片已过期，请先重新合成")
+register("export.no_timeline", "这份成片是旧版合成的，重新合成一次即可导出（会复用已有配音与规整结果，不花钱）")
+register("export.busy", "正在合成，完成后再导出")
+register("export.no_ffmpeg", "服务器缺少视频处理组件 ffmpeg，暂时无法导出，请联系管理员")
 
 
 if __name__ == "__main__":

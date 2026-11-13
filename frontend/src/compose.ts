@@ -2,7 +2,7 @@
  *  BGM 上传类型、按钮文字、什么时候重读预览。useCompose 与 ComposePanel 只吃这里的结果；单测见 tests/compose.test.tsx。 */
 import { inFlight } from './film'
 import { tr } from './i18n/core'
-import { formatMsg } from './i18n/serverMsg'
+import { formatMsg, itemError } from './i18n/serverMsg'
 import { INTENSITY, label, MOOD } from './labels'
 import type { ComposePreview, FilmSession, FinalState, MixNote, MusicSegment, VoicesInfo } from './types'
 
@@ -53,8 +53,8 @@ export function composeBlockers(p: ComposePreview, s: FilmSession, v: VoicesInfo
 }
 
 export function finalText(f: FinalState): string {
-  if (f.state === 'queued' || f.state === 'running') return tr('compose.running', { step: f.step || tr('compose.stepStart') })
-  if (f.state === 'failed') return tr('compose.failed', { error: f.error ?? tr('compose.unknownReason') })
+  if (f.state === 'queued' || f.state === 'running') return tr('compose.running', { step: (f.step_msg ? formatMsg(f.step_msg) : f.step) || tr('compose.stepStart') })
+  if (f.state === 'failed') return tr('compose.failed', { error: itemError(f) || tr('compose.unknownReason') })
   return f.stale ? tr('compose.stale') : tr('compose.fresh')
 }
 

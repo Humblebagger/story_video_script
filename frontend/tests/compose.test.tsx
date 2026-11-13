@@ -63,7 +63,7 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
     { ...S, clips: [{ ...S.clips[0], state: 'running' }] } as FilmSession, V,
     { dirty: true, gate: '分镜没通过完整性检查', draft: true })
   must(all.length === 5 && all[0].includes('先保存再合成') && all[1].includes('分镜没通过完整性检查')
-    && all[2].includes('apt install ffmpeg') && all[3].includes('排队或生成中') && all[4].includes('超过上限'),
+    && all[2].includes('ffmpeg') && !all[2].includes('brew') && all[3].includes('排队或生成中') && all[4].includes('超过上限'),
     `各种拦截按顺序列出：${all.join(' / ')}`)
   const busy: FinalState = { state: 'running', step: '混音 E01', files: [], report: null, error: null, detail: null }
   must(composing({ ...P, final: busy }) && !composing(P), '合成中')
@@ -312,10 +312,10 @@ must(!has('没选音色') && !composeBtn().disabled && (composeBtn().textContent
   '选完可以合成，按钮写金额')
 console.log('6. 选音色 ✓')
 
-// 7. 服务器没装 ffmpeg：写明 macOS 与 Linux 的装法，按钮禁用
+// 7. 服务器没装 ffmpeg：提示面向用户（不写安装命令），按钮禁用
 preview.tools = false
 await refresh()
-must(has('apt install ffmpeg') && has('brew install ffmpeg') && composeBtn().disabled, '没装 ffmpeg 的提示')
+must(has('ffmpeg') && !has('brew') && !has('apt install') && composeBtn().disabled, '没装 ffmpeg 的提示')
 preview.tools = true
 await refresh()
 must(!composeBtn().disabled, '装好后恢复')
@@ -525,6 +525,45 @@ console.log('18. 预览读取失败可重试 ✓')
   await lang('en')
   must(has(en.srv.tts.volc.no_key) && !has(zh.srv.tts.volc.no_key), '切英文：已显示的错误跟着变')
   console.log('19. 费率说明、旁白名、音色错误按界面语言渲染 ✓')
+
+  // 20. 合成进度、失败原因、报告按界面语言渲染；旧数据（只有字符串）原样显示
+  must(!zh.compose.ffmpegHint.includes('brew') && !en.compose.ffmpegHint.includes('brew'), 'ffmpeg 提示不写安装命令')
+  await lang('zh')
+  const base = { files: [], report: null, error: null, detail: null, draft: true, stale: false }
+  // 运行中：有 step_msg 按语言，只有 step（旧数据）原样
+  preview.final = { ...base, state: 'running', step: '混音 E01',
+                    step_msg: { code: 'compose.step.mix', params: { id: 'E01' } } }
+  await refresh()
+  must(has('混音 E01'), '运行中（中文）')
+  await lang('en')
+  must(has(en.srv.compose.step.mix.replace('{id}', 'E01')) && !has('混音 E01'), '运行中切英文跟着变')
+  preview.final = { ...base, state: 'running', step: '旧步骤原文' }
+  await click(button(en.compose.panel.refresh))
+  must(has('旧步骤原文'), '旧数据只有 step：原样显示')
+  // 失败：error_msg 优先，旧数据显示 error
+  preview.final = { ...base, state: 'failed', error: '混音 E01 失败（ffmpeg 退出码 1）', detail: null,
+                    error_msg: { code: 'compose.crashed', params: {} } }
+  await click(button(en.compose.panel.refresh))
+  must(has(en.srv.compose.crashed) && !has('混音 E01 失败'), '失败原因（英文，error_msg 优先）')
+  await lang('zh')
+  must(has(zh.srv.compose.crashed), '失败原因切回中文')
+  preview.final = { ...base, state: 'failed', error: '老会话的失败原因', detail: null }
+  await refresh()
+  must(has('老会话的失败原因'), '旧数据只有 error：原样显示')
+  // 报告：alignment / warning 为对象时按语言，字符串（旧报告）原样
+  preview.final = { ...base, state: 'done', files: FILES, report: 'final/mix_report.json',
+                    finished_at: '2026-10-31T04:06:00+00:00' }
+  preview.report = { ...REPORT, alignment: { code: 'compose.alignment', params: {} },
+                     warning: { code: 'compose.warning_native', params: {} } }
+  await refresh()
+  await lang('en')
+  must(has(en.srv.compose.alignment) && has(en.srv.compose.warning_native) && !has(zh.srv.compose.alignment),
+    '报告（对象）英文渲染')
+  preview.report = { ...REPORT, alignment: '旧报告的对齐说明', warning: '旧报告的提醒' }
+  await click(button(en.compose.panel.refresh))
+  must(has('旧报告的对齐说明') && has('旧报告的提醒'), '报告（字符串）原样')
+  preview.report = REPORT
+  console.log('20. 合成进度、失败原因、报告按界面语言渲染，旧数据原样 ✓')
 }
 
 await act(async () => { root.unmount() })

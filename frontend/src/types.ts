@@ -852,6 +852,9 @@ export interface VoicesInfo {
 export interface FinalState {
   state: 'queued' | 'running' | 'done' | 'failed'
   step?: string
+  /** 按代码渲染的步骤与失败原因；旧会话没有，退回 step / error */
+  step_msg?: ServerMsg | null
+  error_msg?: ServerMsg | null
   /** 现有成片（会话目录下的相对路径）；失败时仍是上一次的 */
   files: string[]
   report: string | null
@@ -871,8 +874,9 @@ export interface MixReport {
   audio_mode: AudioMode
   size: string
   draft: boolean
-  alignment: string
-  warning?: string
+  /** 对象（新报告）或字符串（旧报告，原样显示） */
+  alignment: MsgLike
+  warning?: MsgLike
   episodes: { episode: string; seconds: number; notes: MixNote[]; placeholders: string[]; stale: string[] }[]
 }
 
