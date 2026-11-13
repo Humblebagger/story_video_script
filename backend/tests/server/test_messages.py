@@ -79,6 +79,17 @@ def main() -> int:
         assert M.to_detail(Boom("旧写法")) == "旧写法"
         assert M.to_detail(Conf("旧写法"), expected_cny=None) == {"message": "旧写法", "expected_cny": None}
 
+        # 6b. 无代码时一定是字符串；KeyError 只在 args[0] 是 str 时取它
+        assert M.to_detail(KeyError("raw")) == "raw"
+        d = M.to_detail(KeyError(404))
+        assert isinstance(d, str) and d == str(KeyError(404))
+        assert M.cause_of(KeyError(404)) == {"t": "vendor", "text": "404"}
+
+        # 6c. params 是每个实例自己的，不共享类属性
+        b1, b2 = Boom("a"), Boom("b")
+        b1.params["k"] = 1
+        assert b2.params == {} and Boom("c").params == {}
+
         # 7. common.unknown 的模板只是 {message}
         assert M._REG["common.unknown"][1] == "{message}"
     finally:

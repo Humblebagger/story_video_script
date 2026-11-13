@@ -5,7 +5,9 @@
 """
 import ast
 import re
+import io
 import sys
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -20,11 +22,23 @@ MODULES: dict = {}
 
 
 def _cjk_consts(tree: ast.Module) -> set:
-    out = set()
+    """含中文的模块级常量名；赋值（含带注解的）与别名（A = B）用不动点传播。"""
+    assigns = []
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(isinstance(n, ast.Constant) and isinstance(n.value, str)
-                                                and CJK.search(n.value) for n in ast.walk(node.value)):
-            out |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        if isinstance(node, ast.Assign):
+            assigns.append(([t.id for t in node.targets if isinstance(t, ast.Name)], node.value))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            assigns.append(([node.target.id], node.value))
+    out: set = set()
+    changed = True
+    while changed:
+        changed = False
+        for names, value in assigns:
+            hit = any((isinstance(n, ast.Constant) and isinstance(n.value, str) and CJK.search(n.value))
+                      or (isinstance(n, ast.Name) and n.id in out) for n in ast.walk(value))
+            if hit and not set(names) <= out:
+                out |= set(names)
+                changed = True
     return out
 
 
@@ -65,12 +79,30 @@ def _sinks(node):
                         yield val, '["error"] ='
 
 
+def _marked_lines(src: str) -> set:
+    """真正的注释里带豁免标记的行号（字符串里的不算）。"""
+    out = set()
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+        if tok.type == tokenize.COMMENT and MARK.search(tok.string):
+            out.add(tok.start[0])
+    return out
+
+
+def _stmt_range(stmt: ast.stmt) -> range:
+    """语句的行范围；复合语句只取头部（到第一个子句前）。"""
+    body = getattr(stmt, "body", None)
+    end = body[0].lineno - 1 if isinstance(body, list) and body else (stmt.end_lineno or stmt.lineno)
+    return range(stmt.lineno, max(end, stmt.lineno) + 1)
+
+
 def scan(rel: str, funcs) -> list:
     path = ROOT / rel
     src = path.read_text(encoding="utf-8")
     lines = src.splitlines()
     tree = ast.parse(src)
     consts = _cjk_consts(tree)
+    marked = _marked_lines(src)
+    parent = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
     roots = [tree] if funcs is None else [n for n in ast.walk(tree)
                                           if isinstance(n, ast.FunctionDef) and n.name in funcs]
     hits = []
@@ -78,29 +110,46 @@ def scan(rel: str, funcs) -> list:
         for val, where in _sinks(root):
             if not _has_cjk(val, consts):
                 continue
-            span = lines[val.lineno - 1:(val.end_lineno or val.lineno)]
-            stmt = lines[val.lineno - 1]
-            if any(MARK.search(x) for x in span) or MARK.search(stmt):
+            node = val
+            while node in parent and not isinstance(node, ast.stmt):
+                node = parent[node]
+            span = _stmt_range(node) if isinstance(node, ast.stmt) else range(val.lineno, (val.end_lineno or val.lineno) + 1)
+            if marked & set(span) or marked & set(range(val.lineno, (val.end_lineno or val.lineno) + 1)):
                 continue
+            stmt = lines[val.lineno - 1]
             hits.append(f"{rel}:{val.lineno} {where}: {stmt.strip()[:100]}")
     return sorted(set(hits))
 
 
 def main() -> int:
-    # 扫描器自检：能抓到四种写法，豁免注释有效
+    # 扫描器自检：能抓到各种写法，豁免注释有效
     probe = ROOT / "tests" / "server" / "_i18n_probe.py"
-    probe.write_text('X = "中文"\n'
-                     'def f(e):\n'
-                     '    raise ValueError("中文")\n'
-                     '    raise ValueError(f"中{e}")\n'
-                     '    c["error"] = X\n'
-                     '    a.update(error="错")\n'
-                     '    raise ValueError("内部")  # i18n: internal\n', encoding="utf-8")
-    try:
-        got = scan("tests/server/_i18n_probe.py", None)
-        assert len(got) == 4, got
-    finally:
-        probe.unlink()
+
+    def probe_hits(code: str) -> int:
+        probe.write_text(code, encoding="utf-8")
+        try:
+            return len(scan("tests/server/_i18n_probe.py", None))
+        finally:
+            probe.unlink()
+
+    cases = [
+        ('X = "中文"\ndef f(e):\n    raise ValueError("中文")\n    raise ValueError(f"中{e}")\n'
+         '    c["error"] = X\n    a.update(error="错")\n    raise ValueError("内部")  # i18n: internal\n', 4),
+        # 字符串里的标记不算豁免；真注释算
+        ('raise ValueError("中文 # i18n: internal")\n', 1),
+        ('raise ValueError("中文")  # i18n: internal\n', 0),
+        # 多行语句：标记在收尾行也豁免；没标记仍命中
+        ('raise ValueError(\n    "中文",\n)  # i18n: internal\n', 0),
+        ('raise ValueError(\n    "中文",\n)\n', 1),
+        # 带注解的常量、别名、拼接
+        ('E: str = "中文"\nraise ValueError(E)\n', 1),
+        ('E = "中文"\nA = E\nB = A\nraise ValueError(B)\n', 1),
+        ('E = "中文"\nraise ValueError("x" + E)\n', 1),
+        ('E = "english"\nraise ValueError(E)\n', 0),
+    ]
+    for i, (code, want) in enumerate(cases):
+        got = probe_hits(code)
+        assert got == want, f"自检用例 {i} 应命中 {want} 处，实际 {got}"
 
     bad = []
     for rel, funcs in MODULES.items():

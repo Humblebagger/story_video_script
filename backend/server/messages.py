@@ -82,7 +82,15 @@ def msg(code: str, **params) -> dict:
 class UserError:
     """混入现有异常类：带代码与参数，str() 仍是中文兜底（原有 except 链、日志、测试不受影响）。"""
     code: Optional[str] = None
-    params: dict = {}
+
+    @property
+    def params(self) -> dict:
+        """每个实例自己的参数字典（不共享类属性）。"""
+        return self.__dict__.setdefault("_params", {})
+
+    @params.setter
+    def params(self, value: dict) -> None:
+        self.__dict__["_params"] = value
 
     @classmethod
     def of(cls, code: str, *args, **params):
@@ -98,10 +106,17 @@ class UserError:
         return {"code": self.code, "params": self.params, "message": text}
 
 
+def _raw_text(e: BaseException) -> str:
+    """无代码异常的原文：KeyError 的 str() 会加引号，args[0] 是 str 时取它，其余一律 str(e)。"""
+    if isinstance(e, KeyError) and e.args and isinstance(e.args[0], str):
+        return e.args[0]
+    return str(e)
+
+
 def cause_of(e: BaseException) -> dict:
     """异常 → 可嵌进外层消息的原因：带代码的给紧凑消息，其它给原文（截断）。"""
     m = e.as_msg() if isinstance(e, UserError) else None
-    return compact(m) if m else vendor(e.args[0] if isinstance(e, KeyError) and e.args else e)
+    return compact(m) if m else vendor(_raw_text(e))
 
 
 def to_detail(e: BaseException, **extra) -> Any:
@@ -109,7 +124,7 @@ def to_detail(e: BaseException, **extra) -> Any:
     m = e.as_msg() if isinstance(e, UserError) else None
     if m:
         return {**m, **extra}
-    text = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
+    text = _raw_text(e)
     return {"message": text, **extra} if extra else text
 
 
