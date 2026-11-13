@@ -81,7 +81,7 @@ function makeSession(): FilmSession {
     options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3,
                audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'],
-               rate_note: '假厂商：不联网、不花钱' },
+               rate_note: '假厂商：不联网、不花钱', default_note: null },
   })
 }
 
@@ -451,6 +451,18 @@ console.log('10c. 出错后轮询不断 ✓')
   await click(button('时间轴画布'))
   await click(tab('出片')!)
   await settle()
+}
+
+// 10f. 缺省回落提示：options.default_note 为代码时出片设置区显示对应文案，为 null 时不显示
+{
+  const NOTE = '没有配置 MINIMAX_API_KEY，新会话先用 Seedance'
+  film = { ...film!, options: { ...film!.options, default_note: 'minimax_key_missing' } }
+  await refresh()
+  must((container.textContent ?? '').includes(NOTE), '有 default_note 时显示提示')
+  film = { ...film!, options: { ...film!.options, default_note: null } }
+  await refresh()
+  must(!(container.textContent ?? '').includes('MINIMAX_API_KEY'), '为 null 时不显示')
+  console.log('10f. 缺省回落提示 ✓')
 }
 
 // 11. 播成片：有已出的段才有开关；切到「播成片」后播放，预览窗里是采用那次的视频

@@ -358,6 +358,66 @@ def main() -> int:
     assert clip(sess.load(root9), cid)["attempts"][-1]["images"] == 7
     print("19. 尝试记录图片张数 ✓")
 
+    # 20. 声音模式按厂商能力过滤；换厂商时继承的旧模式回落 tts_all；只读刷新不改写；明确指定不支持的模式报错
+    mute = FakeVideo(native_audio=False)
+    mute.name = "mute"
+    providers.register("mute", lambda: mute)
+    tmp2 = tempfile.TemporaryDirectory()
+    r2 = Path(tmp2.name) / "render" / "v"
+    b2 = lambda **patch: sess.build(r2, doc, owner=OWNER, patch=patch, keyframes={})  # noqa: E731
+    s = b2(audio_mode="all_native")
+    assert s["provider"] == "fake" and s["audio_mode"] == "all_native"
+    assert sess.view(s)["options"]["audio_modes"] == ["tts_all", "dialogue_native", "all_native", "silent"]
+    s = b2(provider="mute")
+    assert s["provider"] == "mute" and s["audio_mode"] == "tts_all", "换厂商时不支持的旧模式回落"
+    assert sess.view(s)["options"]["audio_modes"] == ["tts_all", "silent"]
+    e = must_raise(sess.SessionError, b2, audio_mode="dialogue_native")
+    assert "全部配音" in str(e)
+    # 只读刷新：旧会话里存着不支持的模式（例如手改、或厂商能力变了），patch 为空时不改写
+    with sess.mutate(r2) as cur:
+        cur["audio_mode"] = "all_native"
+    s = b2()
+    assert s["audio_mode"] == "all_native"
+    assert json.loads((r2 / "session.json").read_text(encoding="utf-8"))["audio_mode"] == "all_native"
+    print("20. 声音模式过滤与回落 ✓")
+
+    # 21. default_note：会话是 seedance 且缺省发生回落时给代码，其余为 None（文案在前端）
+    sd_fake = FakeVideo()
+    sd_fake.name = "seedance"
+    providers.register("seedance", lambda: sd_fake)
+    saved_env = os.environ.pop("STORYBOARD_VIDEO_PROVIDER")
+    real_has = providers._has_key
+    try:
+        providers._has_key = lambda n: n == "seedance"
+        r3 = Path(tmp2.name) / "render" / "v3"
+        s = sess.build(r3, doc, owner=OWNER, patch={}, keyframes={})
+        assert s["provider"] == "seedance"
+        assert sess.view(s)["options"]["default_note"] == "minimax_key_missing"
+        providers._has_key = lambda n: True
+        assert sess.view(s)["options"]["default_note"] is None, "配了 MiniMax 就不提示"
+        assert sess.build(r3, doc, owner=OWNER, patch={}, keyframes={})["provider"] == "seedance", \
+            "已有会话不迁移"
+    finally:
+        providers._has_key = real_has
+        os.environ["STORYBOARD_VIDEO_PROVIDER"] = saved_env
+        from render.providers import _seedance
+        providers.register("seedance", _seedance)
+    assert sess.view(sess.load(root))["options"]["default_note"] is None, "显式设置（fake）时不提示"
+    print("21. 缺省回落提示与已有会话不迁移 ✓")
+
+    # 22. 切到 minimax：默认档位与分辨率（不联网：只建会话，不提交）
+    import httpx
+    from render.providers.minimax import BASE_URL, MiniMax
+    mmx = MiniMax("k", client=httpx.Client(base_url=BASE_URL,
+                                           transport=httpx.MockTransport(lambda r: httpx.Response(500))))
+    providers.register("minimax", lambda: mmx)
+    s = b2(provider="minimax")
+    assert (s["provider"], s["model"], s["resolution"], s["audio_mode"]) == ("minimax", "minimax-h3", "768P", "tts_all")
+    from render.providers import _minimax
+    providers.register("minimax", _minimax)
+    print("22. 切到 MiniMax 的默认设置 ✓")
+    tmp2.cleanup()
+
     print("\nALL PASS")
     return 0
 

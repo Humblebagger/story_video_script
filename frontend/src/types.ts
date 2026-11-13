@@ -814,6 +814,8 @@ export interface FilmSession {
     frame_with_refs?: boolean
     audio_modes: AudioMode[]
     rate_note: string
+    /** 缺省厂商回落到 Seedance 的原因代码（文案走 i18n）；没有回落为 null */
+    default_note: 'minimax_key_missing' | null
   }
 }
 

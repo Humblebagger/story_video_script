@@ -88,6 +88,30 @@ def main() -> int:
     assert "MINIMAX_API_KEY" in str(e)
     print("4. 注册表 ✓")
 
+    # 5. 缺省厂商：显式设置照用；只有 MiniMax 密钥 → minimax；只有方舟 → 回落 seedance；都没有 → minimax
+    saved_env = os.environ.pop("STORYBOARD_VIDEO_PROVIDER", None)
+    real_has = providers._has_key
+    try:
+        for keys, want, fell in (({"minimax"}, "minimax", False), ({"minimax", "seedance"}, "minimax", False),
+                                 ({"seedance"}, "seedance", True), (set(), "minimax", False)):
+            providers._has_key = lambda n, ks=keys: n in ks
+            assert providers.default_video_name() == want, (keys, want)
+            assert providers.default_fell_back() is fell, (keys, fell)
+        os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
+        providers._has_key = lambda n: (_ for _ in ()).throw(AssertionError("显式设置时不该查密钥"))
+        assert providers.default_video_name() == "fake" and providers.default_fell_back() is False
+        assert "fake" in providers.names()
+        os.environ.pop("STORYBOARD_VIDEO_PROVIDER")
+        providers._has_key = lambda n: False
+        assert "fake" not in providers.names() and {"minimax", "seedance"} <= set(providers.names())
+    finally:
+        providers._has_key = real_has
+        if saved_env is None:
+            os.environ.pop("STORYBOARD_VIDEO_PROVIDER", None)
+        else:
+            os.environ["STORYBOARD_VIDEO_PROVIDER"] = saved_env
+    print("5. 缺省厂商与回落 ✓")
+
     print("\nALL PASS")
     return 0
 

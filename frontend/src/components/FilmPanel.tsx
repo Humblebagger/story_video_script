@@ -90,6 +90,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
           {[...new Set([s.provider, ...s.options.providers])].map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       </label>
+      {s.options.default_note ? <p className="tlc__kfnote">{t(`film.panel.defaultNote.${s.options.default_note}`)}</p> : null}
       {otherProvider ? (
         <p className="tlc__kfnote">{t('film.panel.providerNote')}</p>
       ) : (

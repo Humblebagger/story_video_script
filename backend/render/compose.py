@@ -18,6 +18,11 @@ from render.providers.base import ClipRequest, RefImage
 
 LEGACY = "legacy"          # 生产包写法：台词进提示词，只要音效
 AUDIO_MODES = ("tts_all", "dialogue_native", "all_native", "silent")
+
+
+def audio_modes(caps) -> list:
+    """这家厂商可选的声音模式：不出原声时只剩「全部配音」「静音」。"""
+    return [m for m in AUDIO_MODES if caps.native_audio or m in ("tts_all", "silent")]
 STYLE_ID = "__style__"    # 风格参考图占用参考位时的占位 id
 STYLE_TEXT = "画风参考：沿用它的色调、线条与光影，不要照搬其中的人物或场景内容"
 FIRST = "__first__"        # 首帧图占用参考位时的占位 id

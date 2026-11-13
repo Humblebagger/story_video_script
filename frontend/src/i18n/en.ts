@@ -1146,6 +1146,7 @@ export const en: Messages = {
       settingsSum: 'Settings · {model} · {res} · {audio} · cap {cap}',
       provider: 'Provider',
       providerNote: 'After switching provider, model and resolution use its defaults; fine-tune them after applying.',
+      defaultNote: { minimax_key_missing: 'MINIMAX_API_KEY is not set, so new sessions use Seedance for now; once it is set, newly created sessions default to MiniMax.' },
       tier: 'Model',
       resolution: 'Resolution',
       resPrice: ' (about ¥{price}/sec)',

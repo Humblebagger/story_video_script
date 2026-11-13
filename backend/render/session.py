@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from render import compose
-from render.providers import base, default_video_name, get_video, names
+from render.providers import base, default_fell_back, default_video_name, get_video, names
 
 SESSION_FILE = "session.json"
 IN_FLIGHT = ("queued", "running", "downloading")
@@ -176,6 +176,16 @@ def resolve_settings(old: Optional[dict], patch: dict) -> tuple:
     cur["audio_mode"] = cur["audio_mode"] or "tts_all"
     if cur["audio_mode"] not in compose.AUDIO_MODES:
         raise SessionError(f"未知的声音模式：{cur['audio_mode']}")
+    if cur["audio_mode"] not in compose.audio_modes(caps):
+        old_ = old or {}
+        switched = (("provider" in patch and patch["provider"] != old_.get("provider"))
+                    or ("model" in patch and patch["model"] != old_.get("model")))
+        if "audio_mode" in patch:
+            raise SessionError("这家厂商不出原声，可选：全部配音、静音")
+        if switched or old is None:
+            cur["audio_mode"] = "tts_all"
+        # 其它情况（只读刷新、patch 为空）不改写：避免把会话改得与已出片段不一致、触发过期；
+        # compose 侧 caps.native_audio 为 False 时本就不请求原声
     cur["budget_cny"] = float(cur["budget_cny"] or DEFAULT_BUDGET_CNY)
     cur["confirm_over_cny"] = float(DEFAULT_CONFIRM_OVER_CNY if cur["confirm_over_cny"] is None
                                     else cur["confirm_over_cny"])
@@ -311,6 +321,13 @@ def _style_outdated(c: dict) -> bool:
     return a.get("style_ref") != c.get("style_hash")
 
 
+def _default_note(s: dict):
+    """缺省厂商回落到 Seedance（没配 MiniMax 而配了方舟）且这个会话用的是 seedance 时给原因代码，文案由前端按语言给。"""
+    if s.get("provider") == "seedance" and default_fell_back():
+        return "minimax_key_missing"
+    return None
+
+
 def view(s: dict) -> dict:
     """给界面的会话：去掉归属，附状态计数、剩余与在跑预估、可选项。"""
     provider = _provider(s["provider"])
@@ -337,8 +354,9 @@ def view(s: dict) -> dict:
                       "resolutions": caps.resolutions, "cny_per_sec": caps.cny_per_sec,
                       "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
                       "first_frame": caps.first_frame, "frame_with_refs": caps.frame_with_refs,
-                      "audio_modes": list(compose.AUDIO_MODES),
-                      "rate_note": getattr(provider, "rate_note", "")}
+                      "audio_modes": compose.audio_modes(caps),
+                      "rate_note": getattr(provider, "rate_note", ""),
+                      "default_note": _default_note(s)}
     return out
 
 

@@ -1140,6 +1140,7 @@ export const zh = {
       settingsSum: '设置 · {model} · {res} · {audio} · 上限 {cap}',
       provider: '厂商',
       providerNote: '换厂商后档位与分辨率先用它的默认值，应用后再细调。',
+      defaultNote: { minimax_key_missing: '没有配置 MINIMAX_API_KEY，新会话先用 Seedance；配好后新建的会话会默认用 MiniMax' },
       tier: '档位',
       resolution: '分辨率',
       resPrice: '（约 ¥{price}/秒）',
