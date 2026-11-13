@@ -17,7 +17,7 @@ import httpx
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
-                                   TransientError, estimate_cny, last_frame_path, request_seconds)
+                                   TransientError, estimate_cny, last_frame_path, request_seconds, scrub)
 from server.messages import compact, msg, vendor
 
 BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
@@ -51,14 +51,22 @@ def rewrite_refs(text: str) -> str:
     return _REF.sub(lambda m: f"@图片{next(n)}", text)
 
 
-def _reject(r: httpx.Response) -> ProviderError:
-    """4xx：厂商原因原样（不含密钥）作原文参数。"""
+def _with_fallback(e: ProviderError, full: str) -> ProviderError:
+    """中文兜底保持原样不截断（结构化的 vendor 参数仍限长）。"""
+    e.args = (full,) + e.args[1:]
+    return e
+
+
+def _reject(r: httpx.Response, key: str) -> ProviderError:
+    """4xx：厂商原因脱敏（密钥、Bearer 凭据）后作原文参数。"""
     try:
         err = (r.json() or {}).get("error") or {}
     except ValueError:
-        return ProviderError.of("film.provider.http_rejected", status=r.status_code, detail=vendor(r.text[:300]))
-    text = "：".join(x for x in (err.get("code"), err.get("message")) if x)
-    return ProviderError.of("film.provider.rejected", detail=vendor(text or f"HTTP {r.status_code}"))
+        body = scrub(r.text, key)[:300]
+        return _with_fallback(ProviderError.of("film.provider.http_rejected", status=r.status_code,
+                                               detail=vendor(body)), f"HTTP {r.status_code}：{body}")
+    text = scrub("：".join(x for x in (err.get("code"), err.get("message")) if x) or f"HTTP {r.status_code}", key)
+    return _with_fallback(ProviderError.of("film.provider.rejected", detail=vendor(text)), text)
 
 
 class Seedance:
@@ -124,7 +132,7 @@ class Seedance:
                 raise AmbiguousSubmit.of("film.ark.http_ambiguous", status=r.status_code)
             raise TransientError.of("film.ark.unavailable", status=r.status_code)
         if r.status_code >= 400:
-            raise _reject(r)
+            raise _reject(r, self._key)
         try:
             return r.json()
         except ValueError:
@@ -158,12 +166,12 @@ class Seedance:
         error, error_msg = None, None
         if status == "failed":
             err = j.get("error") or {}
-            text = "：".join(x for x in (err.get("code"), err.get("message")) if x)
+            text = scrub("：".join(x for x in (err.get("code"), err.get("message")) if x), self._key)
             m = (msg("film.provider.rejected", detail=vendor(text)) if text
                  else msg("film.ark.task_expired") if raw == "expired"
                  else msg("film.provider.task_cancelled") if raw == "cancelled"
                  else msg("film.provider.generation_failed"))
-            error, error_msg = m["message"], compact(m)
+            error, error_msg = (text if text else m["message"]), compact(m)
         return TaskState(task_id, status, video_url=content.get("video_url"),
                          last_frame_url=content.get("last_frame_url"), error=error, error_msg=error_msg,
                          usage={"completion_tokens": (j.get("usage") or {}).get("completion_tokens")}

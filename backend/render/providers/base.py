@@ -4,6 +4,7 @@
 在 providers/__init__.py 注册一行。厂商的提示词语法（如 Seedance 的 @图片n）只在厂商模块里。
 """
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol
@@ -88,6 +89,15 @@ class VideoProvider(Protocol):
     def poll(self, task_id: str) -> TaskState: ...
     def download(self, st: TaskState, dest: Path) -> dict: ...   # {"video": Path, "last_frame": Path | None}
     def cost(self, st: TaskState, req: ClipRequest) -> float: ...
+
+
+def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:
+    """服务端文字进报错前：抹掉密钥与 Bearer 凭据；limit 不为 None 时再截断。"""
+    t = str(text)
+    if secret:
+        t = t.replace(secret, "***")
+    t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
+    return t if limit is None else t[:limit]
 
 
 def request_seconds(duration: float, caps: Caps) -> int:

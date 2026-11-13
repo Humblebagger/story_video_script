@@ -170,6 +170,20 @@ def main() -> int:
     assert Seedance.rate_note == {"code": "rate.ark", "params": {}} and Seedance.console_name == "console.ark"
     print("7. 错误带代码 ✓")
 
+    # 8. 厂商原文脱敏（三条路径）且兜底不截断、结构化参数限长
+    def flat(o):
+        return json.dumps(o, ensure_ascii=False)
+    leak = "echo k-secret and Bearer OTHER_TOKEN " + "x" * 400
+    e = must_raise(base.ProviderError, status(400, {"error": {"code": "Bad", "message": leak}}).submit, req)
+    assert "k-secret" not in flat([str(e), e.args, e.params]) and "OTHER_TOKEN" not in flat([str(e), e.params])
+    assert len(str(e)) > 400 and len(e.params["detail"]["text"]) == 300
+    e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(400, text=leak)).submit, req)
+    assert "k-secret" not in flat([str(e), e.params]) and "OTHER_TOKEN" not in flat([str(e), e.params])
+    st = task({"id": "x", "status": "failed", "error": {"code": "Bad", "message": leak}}).poll("x")
+    assert "k-secret" not in flat([st.error, st.error_msg]) and "OTHER_TOKEN" not in flat([st.error, st.error_msg])
+    assert len(st.error) > 400 and len(st.error_msg["params"]["detail"]["text"]) == 300
+    print("8. 原文脱敏 ✓")
+
     print("\nALL PASS")
     return 0
 

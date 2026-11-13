@@ -23,6 +23,7 @@ import httpx
 
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
+from render.providers import base
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, last_frame_path, request_seconds)
 from server.messages import compact, msg, vendor
@@ -116,11 +117,7 @@ def _error_of(j) -> tuple:
 
 def scrub(text, secret: str = "") -> str:
     """服务端文字进报错前：抹掉密钥与 Bearer 凭据，并截到 TEXT_MAX 字。"""
-    t = str(text)
-    if secret:
-        t = t.replace(secret, "***")
-    t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
-    return t[:TEXT_MAX]
+    return base.scrub(text, secret, TEXT_MAX)
 
 
 def _reject(code, msg_text, status=None, body: str = "", secret: str = "") -> ProviderError:
