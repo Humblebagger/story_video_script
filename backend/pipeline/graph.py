@@ -30,6 +30,17 @@ _DOC_WRITERS = {"json_patch", "task_done"}
 _MAX_TOOL_STEPS = 8          # 与改造前 `for _ in range(8)` 等价
 
 
+def _scrub_tree(v):
+    """尝试记录会落进版本清单、随任务接口返回：其中任何文字都先脱敏。"""
+    if isinstance(v, str):
+        return scrub_secrets(v)
+    if isinstance(v, list):
+        return [_scrub_tree(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _scrub_tree(x) for k, x in v.items()}
+    return v
+
+
 class BatchState(TypedDict):
     """单批转换的状态。
 
@@ -164,10 +175,10 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         usage = {k: after[k] - before.get(k, 0) for k in after}
         rec = {"batch": state["idx"], "attempt": state["attempt"],
                "mode": state["mode"], "status": status,
-               "report": report, "tools": list(state.get("used_tools") or []),
+               "report": scrub_secrets(report), "tools": list(state.get("used_tools") or []),
                "usage": usage}
         if structured is not None:
-            rec["verification"] = structured.to_dict()
+            rec["verification"] = _scrub_tree(structured.to_dict())
         attempt_records.append(rec)
 
     def generate(state: BatchState) -> dict:

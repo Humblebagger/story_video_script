@@ -132,6 +132,14 @@ def part_execute(nid, cid):
         app_mod._job_debug(big, f"l{i}")
     assert len(big["debug_log"]) == app_mod.DEBUG_MEM and "截断" in big["debug_log"][0]
     assert big["debug_log"][-1] == f"l{app_mod.DEBUG_MEM + 9}"
+    # 首次溢出：5001 行 → 恰好 DEBUG_MEM 行，第一行是标记，其后从 l2 起；再溢出仍稳定
+    one = {"debug_log": []}
+    for i in range(app_mod.DEBUG_MEM + 1):
+        app_mod._job_debug(one, f"l{i}")
+    assert len(one["debug_log"]) == app_mod.DEBUG_MEM and "截断" in one["debug_log"][0]
+    assert one["debug_log"][1] == "l2" and one["debug_log"][-1] == f"l{app_mod.DEBUG_MEM}"
+    app_mod._job_debug(one, "next")
+    assert len(one["debug_log"]) == app_mod.DEBUG_MEM and one["debug_log"][1] == "l3" and one["debug_log"][-1] == "next"
     job = new_job(nid, cid, "v_boom")
     v = run(job, fake_raise(RuntimeError(f"disk on fire {LLM_KEY}")))
     ref = v["error_msg"]["ref"]
@@ -144,6 +152,47 @@ def part_execute(nid, cid):
     v = run(job, fake_raise(ConversionError("分批范围不确定")))
     assert v["error_msg"]["code"] == "job.crashed" and v["error_msg"].get("ref")
     print("1. _execute：降级 / 带报告 / 映射 / 带编号 / 版本写全 ✓")
+
+
+def part_digest(nid, cid):
+    # 章后整理的模型服务错误（设计审查 I2）：映射类不记编号，needs_ref 的保留代码并带编号
+    req = httpx2.Request("POST", "http://127.0.0.1:9/v1/messages")
+    real_in, real_run = novels.digest_input, app_mod.novel_memory.run_digest
+    novels.digest_input = lambda *a, **k: ("v_d", [], [])
+
+    def run_with(exc):
+        def boom(*a, **k):
+            raise exc
+        app_mod.novel_memory.run_digest = boom
+        try:
+            app_mod._run_digest(U, nid, cid)
+        finally:
+            app_mod.novel_memory.run_digest = real_run
+        return novels.get_chapter(U, nid, cid)["digest"]
+
+    try:
+        body = {"type": "error", "error": {"type": "rate_limit_error", "message": f"{MODEL} quota {LLM_KEY}"}}
+        before = len(error_refs.recent(1000))
+        d = run_with(llm_error(anthropic.RateLimitError("x", body=body, response=httpx2.Response(429, request=req))))
+        assert d["status"] == "failed" and d["error_msg"] == {"code": "llm.busy", "params": {}}
+        assert len(error_refs.recent(1000)) == before and MODEL not in json.dumps(d, ensure_ascii=False)
+
+        raw400 = anthropic.BadRequestError("x", body={"type": "error", "error": {
+            "type": "invalid_request_error", "message": f"bad role {MODEL} {LLM_KEY}"}},
+            response=httpx2.Response(400, request=req))
+        e = llm_error(raw400)
+        e.__cause__ = raw400
+        d = run_with(e)
+        assert d["status"] == "failed" and d["error_msg"]["code"] == "llm.bad_request"
+        assert len(d["error_msg"]["ref"]) == 8
+        dumped = json.dumps(d, ensure_ascii=False)
+        assert MODEL not in dumped and LLM_KEY not in dumped and "chapter.digest.failed" not in dumped
+        row = error_refs.find(d["error_msg"]["ref"])
+        assert row and "BadRequestError" in row["detail"] and LLM_KEY not in row["detail"]
+    finally:
+        novels.digest_input = real_in
+        app_mod.novel_memory.run_digest = real_run
+    print("1b. 章后整理：映射不记编号 / needs_ref 保留代码带编号 ✓")
 
 
 def part_views(nid, cid):
@@ -167,6 +216,7 @@ def main() -> int:
     nid = novels.create_novel(U, "药")["id"]
     cid = novels.create_chapter(U, nid, "第一章", text="他推门。")["id"]
     part_execute(nid, cid)
+    part_digest(nid, cid)
     part_views(nid, cid)
     print("\nALL PASS")
     return 0

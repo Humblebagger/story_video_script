@@ -136,6 +136,9 @@ def main() -> int:
                 + "\n".join(logs3b)
             assert secret not in blob and "abcDEF123token456" not in blob, "密钥不得进警告、事件与日志"
             assert "评审意见" in warns[0]["params"]["report"]["text"]
+            rblob = json.dumps(records, ensure_ascii=False)
+            assert secret not in rblob and "abcDEF123token456" not in rblob, "密钥不得进尝试记录（清单）"
+            assert records and "评审意见" in rblob
     finally:
         graph_mod._check_batch = orig_check
         os.environ.pop("ANTHROPIC_API_KEY", None)

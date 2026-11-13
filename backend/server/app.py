@@ -281,7 +281,7 @@ def _job_debug(job: dict, line) -> None:
     lines = job.setdefault("debug_log", [])
     lines.append(error_refs.scrub_text(str(line)))
     if len(lines) > DEBUG_MEM:
-        del lines[:len(lines) - DEBUG_MEM + 1]
+        del lines[:len(lines) - DEBUG_MEM]
         lines[0] = "（更早的调试日志已截断）"  # i18n: internal
 
 
