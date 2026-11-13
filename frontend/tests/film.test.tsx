@@ -132,7 +132,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
   }
   if (sub === '/session' && method === 'GET') {
     if (failNextGet) { failNextGet = false; throw new Error('网络断了') }
-    return film ? ok({ ...film, gate: gateFail ? { ok: false, message: gateObj ? { code: 'verify.gate.blocked', params: {}, message: GATE } : GATE } : { ok: true, message: null } })
+    return film ? ok({ ...film, gate: gateFail ? { ok: false, message: gateObj ? { code: 'test.gate.unregistered', params: {}, message: GATE } : GATE } : { ok: true, message: null } })
       : fail(404, '还没有出片会话')
   }
   if (sub === '/session' && method === 'POST') {

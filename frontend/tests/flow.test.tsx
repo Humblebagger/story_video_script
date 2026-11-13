@@ -215,9 +215,10 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     json: async () => ({ detail }) })
   const body = () => JSON.parse(init!.body!)
 
-  if (path === '/healthz') return json({ status: 'ok', model: 'stub',
-                                         api_key_configured: true,
-                                         ...(legacyHealth ? { users: users.size } : { first_run: users.size === 0 }) })
+  if (path === '/healthz') {
+    if (legacyHealth) return json({ status: 'ok', users: 0 })   // 旧后端：只有 users
+    return json({ status: 'ok', model: 'stub', api_key_configured: true, first_run: users.size === 0 })
+  }
 
   // 认证：注册/登录发 token，其余接口一律要带 token
   if (path === '/auth/register' && method === 'POST') {
@@ -545,6 +546,35 @@ must(!container.querySelector('[data-testid="shelf-loading"]'), '读完后不应
        '读取中应显示 3 条骨架屏而不是文字')
   must(!probe.querySelector('[data-testid="empty-state"]'), '读取中不显示空状态')
   await act(async () => { pr.unmount() })
+  // 书架在跑项：last_log 是事件对象 / 旧字符串（无 progress）
+  const run = (id: string, last_log: unknown) => ({ id, status: 'running', created_at: null, work_title: '雾港', chapter: '第一章',
+    chars: 1, log_lines: 1, last_log, progress: null, novel_id: 'n', chapter_id: 'c' + id })
+  const probe2 = doc.createElement('div')
+  const pr2 = createRoot(probe2)
+  await act(async () => {
+    pr2.render(<I18nProvider initial="zh"><NovelSidebar novels={[]} novel={null} chapterId={null}
+      running={[run('a', { code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }), run('b', '旧的一行')] as never}
+      activeJobId={null} onOpenNovel={() => {}} onOpenChapter={() => {}} onOpenJob={() => {}}
+      onNewChapter={() => {}} onNewNovel={() => {}} /></I18nProvider>)
+  })
+  const lines = [...probe2.querySelectorAll('.hrun__last')].map((x) => x.textContent ?? '')
+  must(lines[0] === '输入 4 字符 → 1 批' && lines[1] === '旧的一行', '侧栏最近一行：事件对象与旧字符串 ' + lines.join('|'))
+  await act(async () => { pr2.unmount() })
+  // 画布任务面板：进度行最后一条是事件对象 / 旧字符串
+  const { TaskPanel } = await import('../src/components/CanvasPanels')
+  const bench = (log: unknown[]) => ({
+    novel: { id: 'n', title: '雾港' }, chapter: { id: 'c', title: '第一章', versions: [] }, versionId: null,
+    job: { id: 'j', status: 'running', log, result: null, quality_report: null, error: null },
+    converting: true, disabled: false, onConvert: () => {}, onOpenVersion: () => {}, onAdopt: () => {},
+    onDeleteVersion: () => {}, onNovelChanged: () => {} }) as never
+  for (const [log, want] of [[[{ code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }], '输入 4 字符 → 1 批'],
+                             [['旧的一行'], '旧的一行']] as const) {
+    const pb = doc.createElement('div')
+    const pt = createRoot(pb)
+    await act(async () => { pt.render(<I18nProvider initial="zh"><TaskPanel bench={bench([...log])} dirty={false} /></I18nProvider>) })
+    must((pb.querySelector('.tlc__jobline')?.textContent ?? '') === want, '任务面板进度行：' + want)
+    await act(async () => { pt.unmount() })
+  }
 }
 must(has('alice'), '顶栏应显示当前用户')
 must(![...container.querySelectorAll('button')].some((b) => b.textContent === '管理'),
@@ -1287,4 +1317,20 @@ console.log('18. 分批先看 → 跑完自动换完整产物 / 失败后已通�
 // 收尾前等在路上的请求落地，再在 act 里卸载，免得卸载后还有状态更新
 await settle(300)
 await act(async () => { root.unmount() })
+
+// 19. 旧后端的 /healthz 只有 {status, users: 0}：全新挂载、未登录，仍应自动弹出首次注册
+{
+  legacyHealth = true
+  ;(await import('../src/auth')).clearSession()
+  const router2 = createMemoryRouter(routes, { initialEntries: ['/'] })
+  const box = doc.createElement('div')
+  doc.body.appendChild(box)
+  const root2 = createRoot(box)
+  await act(async () => { root2.render(<AppRoot router={router2} />) })
+  await settle(400)
+  must(box.innerHTML.includes('第一个注册的账号'), '旧后端 users:0 仍进首次注册引导')
+  await act(async () => { root2.unmount() })
+  legacyHealth = false
+  console.log('19. 旧 healthz 形状进首次注册 ✓')
+}
 console.log('\nALL PASS')
