@@ -66,6 +66,52 @@
     "params": [],
     "zh": "不能修改自己的角色"
   },
+  "assistant.bad_decision": {
+    "params": [],
+    "zh": "id 或 decision 不合法"
+  },
+  "assistant.bad_step": {
+    "params": [],
+    "zh": "where.step 不合法"
+  },
+  "assistant.bad_text": {
+    "params": [
+      "max"
+    ],
+    "zh": "消息不能为空，且不超过 {max} 字"
+  },
+  "assistant.bad_tool_call": {
+    "params": [],
+    "zh": "tool_call_id 不合法"
+  },
+  "assistant.bad_where": {
+    "params": [],
+    "zh": "where 不合法"
+  },
+  "assistant.busy": {
+    "params": [],
+    "zh": "上一条还在回答"
+  },
+  "assistant.busy_clear": {
+    "params": [],
+    "zh": "助手正在回答，等它说完再清空"
+  },
+  "assistant.busy_undo": {
+    "params": [],
+    "zh": "助手正在回答，等它说完再撤销"
+  },
+  "assistant.card_done": {
+    "params": [],
+    "zh": "这张确认卡已经处理过"
+  },
+  "assistant.crashed": {
+    "params": [],
+    "zh": "助手出错了，请重试；仍失败请联系管理员"
+  },
+  "assistant.daily_limit": {
+    "params": [],
+    "zh": "今天的助手消息已用完，明天再来"
+  },
   "assistant.edit.already": {
     "params": [],
     "zh": "这些地方已经是要改成的样子，不用改"
@@ -186,6 +232,14 @@
     ],
     "zh": "一次最多改 {max} 处"
   },
+  "assistant.interrupted": {
+    "params": [],
+    "zh": "（已中断）"
+  },
+  "assistant.too_many_steps": {
+    "params": [],
+    "zh": "步骤太多，先停在这里。可以换个更具体的问法再问我。"
+  },
   "assistant.tool.ambiguous_chapter": {
     "params": [
       "text",
@@ -267,6 +321,10 @@
       "after"
     ],
     "zh": "章节或版本变了（{before} → {after}），没有执行；要的话我再出一张新卡"
+  },
+  "assistant.unavailable": {
+    "params": [],
+    "zh": "助手暂不可用，请稍后重试；仍失败请联系管理员"
   },
   "assistant.undo.already": {
     "params": [],

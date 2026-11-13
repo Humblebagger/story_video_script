@@ -1,7 +1,9 @@
 """LangGraph 流 → SSE 事件；存档 → 界面历史。
 
-事件（spec §5）：token {text} / tool_start {id,name,args} / tool_end {id,ok,summary} / goto {chapter_id,step} /
-confirm {卡, id} / action {tool_call_id, action, outcome, card?, task?, error?}（outcome 在历史里撤销过的修改为 undone）/ done {} / error {message}。
+事件（spec §5）：token {text} / tool_start {id,name,args} / tool_end {id,ok,summary,msg?} / goto {chapter_id,step} /
+confirm {卡, id} / action {tool_call_id, action, outcome, card?, task?, error?, error_msg?}（outcome 在历史里撤销过的修改为 undone）/
+notice {code, params, message}（步数上限等不属于回答的提示）/ done {} / error {消息对象：code, params, message, ref?}。
+tool_end 失败时带 msg?（工具报错的消息对象）；error / summary 仍是中文兜底。
 操作工具不发 tool_start / tool_end（用卡片表示）。文字只从 messages 流取（逐字），工具起止从 updates 流取，避免重复。
 """
 import json
@@ -13,12 +15,11 @@ from langgraph.errors import GraphRecursionError
 
 from assistant.actions import ACTIONS
 from assistant.edits import EDITS
+from pipeline.chat import llm_error
+from server import error_refs
+from server.messages import compact, msg as make_msg   # stream 里的 msg 是消息块，别名免得遮住
 
 CARD_TOOLS = ACTIONS + EDITS    # 出卡片的工具：不发 tool_start / tool_end，历史里进 cards
-
-TOO_MANY = "步骤太多，先停在这里。可以换个更具体的问法再问我。"
-INTERRUPTED = "（已中断）"
-
 
 def text_of(msg) -> str:
     c = msg.content
@@ -36,11 +37,49 @@ def _hide(text: str, hide: Optional[str]) -> str:
     return text
 
 
+def _hide_deep(v, hide: Optional[str]):
+    """消息对象里的字符串（含嵌套参数）一律隐去服务器目录。"""
+    if isinstance(v, str):
+        return _hide(v, hide)
+    if isinstance(v, list):
+        return [_hide_deep(x, hide) for x in v]
+    if isinstance(v, dict):
+        return {k: _hide_deep(x, hide) for k, x in v.items()}
+    return v
+
+
+def error_msg(e: BaseException, user_id: Optional[str] = None, where: str = "assistant") -> dict:
+    """一轮出错 → error 事件的消息对象（spec 子计划 4 D）：
+    模型服务错误按 llm.* 映射；needs_ref 的（llm.bad_request）保留代码并带参考编号（设计审查 I2）；其余带编号的 assistant.crashed。"""
+    mapped = llm_error(e)
+    if mapped is not None and error_refs.expected(mapped):
+        return mapped.as_msg()
+    if mapped is not None and mapped.code:
+        return error_refs.unexpected(e, mapped.code, user_id=user_id, where=where)
+    return error_refs.unexpected(e, "assistant.crashed", user_id=user_id, where=where)
+
+
+def _tool_msg(m: ToolMessage) -> Optional[dict]:
+    """失败的工具结果里带的消息对象（ToolError 经 graph._with_artifact 放进 artifact）；旧存档、无代码的报错为 None。"""
+    a = m.artifact if m.status == "error" else None
+    e = a.get("error") if isinstance(a, dict) else None
+    return compact(e) if isinstance(e, dict) and e.get("code") else None
+
+
+def _failed(m: dict) -> dict:
+    """失败条目：error 留中文兜底（旧前端、给模型的同一句话），error_msg 给界面按语言渲染。"""
+    return {"error": m["message"], "error_msg": compact(m)}
+
+
 def action_view(m: ToolMessage, hide: Optional[str] = None) -> dict:
     """操作工具的结果 → action 事件 / 历史里的卡。报错（或没有 artifact）算没做成。"""
     if m.status == "error" or not m.artifact:
-        return {"tool_call_id": m.tool_call_id, "action": m.name, "outcome": "failed",
-                "error": _hide(text_of(m), hide)[:300]}
+        out = {"tool_call_id": m.tool_call_id, "action": m.name, "outcome": "failed",
+               "error": _hide(text_of(m), hide)[:300]}
+        em = _tool_msg(m)
+        if em:
+            out["error_msg"] = _hide_deep(em, hide)
+        return out
     a = m.artifact
     return {"tool_call_id": m.tool_call_id, "action": m.name, "outcome": a["outcome"],
             "card": a.get("card"), "task": a.get("task")}
@@ -51,7 +90,8 @@ def confirm_view(it) -> dict:
     return {**it.value, "id": it.id}
 
 
-def stream(agent, config: dict, payload, hide: Optional[str] = None) -> Iterator[dict]:
+def stream(agent, config: dict, payload, hide: Optional[str] = None,
+           user_id: Optional[str] = None, where: str = "assistant") -> Iterator[dict]:
     """跑一轮，逐个产出事件。payload 是用户的文字，或恢复用的 Command。客户端断开时调用方停止迭代即可。"""
     inp = {"messages": [HumanMessage(payload)]} if isinstance(payload, str) else payload
     try:
@@ -78,14 +118,16 @@ def stream(agent, config: dict, payload, hide: Optional[str] = None) -> Iterator
                             yield {"event": "action", "data": action_view(m, hide)}
                             continue
                         ok = m.status != "error"
+                        em = _tool_msg(m)
                         yield {"event": "tool_end", "data": {"id": m.tool_call_id, "ok": ok,
-                                                             "summary": _hide(text_of(m), hide)[:200]}}
+                                                             "summary": _hide(text_of(m), hide)[:200],
+                                                             **({"msg": _hide_deep(em, hide)} if em else {})}}
                         if ok and m.name == "goto" and m.artifact:
                             yield {"event": "goto", "data": m.artifact}
     except GraphRecursionError:
-        yield {"event": "token", "data": {"text": TOO_MANY}}
+        yield {"event": "notice", "data": make_msg("assistant.too_many_steps")}
     except Exception as e:  # 模型、网关、存档出错：给用户一条报错，不抛到 SSE 外面
-        yield {"event": "error", "data": {"message": _hide(f"助手出错：{e}", hide)[:300]}}
+        yield {"event": "error", "data": _hide_deep(error_msg(e, user_id, where), hide)}
         return
     yield {"event": "done", "data": {}}
 
@@ -121,7 +163,7 @@ def history(agent, config: dict, hide: Optional[str] = None, undone: Optional[se
                     cur["cards"].append(
                         {"tool_call_id": tc["id"], "action": tc["name"], "outcome": "pending", "card": confirm_view(it)}
                         if it else {"tool_call_id": tc["id"], "action": tc["name"], "outcome": "failed",
-                                    "error": INTERRUPTED})
+                                    **_failed(make_msg("assistant.interrupted"))})
                 else:
                     cur["tools"].append({"id": tc["id"], "name": tc["name"], "args": tc["args"], "ok": None, "summary": ""})
         elif isinstance(m, ToolMessage):
@@ -135,10 +177,14 @@ def history(agent, config: dict, hide: Optional[str] = None, undone: Optional[se
                 if t["id"] == m.tool_call_id:
                     t["ok"] = m.status != "error"
                     t["summary"] = _hide(text_of(m), hide)[:200]
+                    em = _tool_msg(m)
+                    if em:
+                        t["msg"] = _hide_deep(em, hide)
             if m.status != "error" and m.name == "goto" and m.artifact:
                 cur["goto"].append(m.artifact)
     for entry in out:
         for t in entry.get("tools") or []:
             if t["ok"] is None:
-                t["ok"], t["summary"] = False, INTERRUPTED
+                m = make_msg("assistant.interrupted")
+                t["ok"], t["summary"], t["msg"] = False, m["message"], compact(m)
     return out

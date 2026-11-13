@@ -1699,6 +1699,15 @@ export const en: Messages = {
       job: { not_found: 'No debug log for this conversion: {id}' },
     },
     assistant: {
+      busy: 'Still answering the previous message', busy_clear: 'The assistant is answering; wait for it to finish before clearing',
+      busy_undo: 'The assistant is answering; wait for it to finish before undoing',
+      daily_limit: 'You’ve used up today’s assistant messages; come back tomorrow',
+      bad_text: 'Messages can’t be empty or longer than {max} characters',
+      bad_where: 'where is invalid', bad_step: 'where.step is invalid', bad_decision: 'id or decision is invalid',
+      bad_tool_call: 'tool_call_id is invalid', card_done: 'This confirmation card has already been handled',
+      unavailable: 'The assistant isn’t available right now. Please try again later; if it keeps failing, contact the administrator',
+      crashed: 'The assistant ran into a problem. Please try again; if it keeps failing, contact the administrator',
+      too_many_steps: 'That took too many steps, so I stopped here. Try asking more specifically', interrupted: '(interrupted)',
       tool: {
         no_chapters: '(no chapters yet)', pick_chapter: 'Please say which chapter. Available chapters: {options}',
         no_such_chapter: 'There is no chapter {n}. Available chapters: {options}',

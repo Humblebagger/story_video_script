@@ -1680,6 +1680,12 @@ export const zh = {
       job: { not_found: '没有这次转换的调试日志：{id}' },
     },
     assistant: {
+      busy: '上一条还在回答', busy_clear: '助手正在回答，等它说完再清空', busy_undo: '助手正在回答，等它说完再撤销',
+      daily_limit: '今天的助手消息已用完，明天再来', bad_text: '消息不能为空，且不超过 {max} 字',
+      bad_where: 'where 不合法', bad_step: 'where.step 不合法', bad_decision: 'id 或 decision 不合法',
+      bad_tool_call: 'tool_call_id 不合法', card_done: '这张确认卡已经处理过',
+      unavailable: '助手暂不可用，请稍后重试；仍失败请联系管理员', crashed: '助手出错了，请重试；仍失败请联系管理员',
+      too_many_steps: '步骤太多，先停在这里。可以换个更具体的问法再问我。', interrupted: '（已中断）',
       tool: {
         no_chapters: '（还没有章节）', pick_chapter: '请指明是哪一章。可选章节：{options}',
         no_such_chapter: '没有第 {n} 章。可选章节：{options}', ambiguous_chapter: '「{text}」对应不到唯一的章节。可选章节：{options}',

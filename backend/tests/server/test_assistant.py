@@ -63,7 +63,8 @@ def main() -> int:
 
     # 1. 鉴权
     assert c.get(A).status_code == 401
-    assert c.get(A, headers=HB).status_code == 404
+    r = c.get(A, headers=HB)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "novel.not_found", r.text
     assert c.post(A + "/messages", headers=HB, json={"text": "hi", "lang": "zh"}).status_code == 404
     assert c.delete(A, headers=HB).status_code == 404
     print("1. 鉴权 ✓")
@@ -96,18 +97,21 @@ def main() -> int:
     print("5. 用量 ✓")
 
     # 6. 校验：正文为空或过长、step 非法 → 422
-    assert c.post(A + "/messages", headers=H, json={"text": "  ", "lang": "zh"}).status_code == 422
-    assert c.post(A + "/messages", headers=H, json={"text": "字" * 2001, "lang": "zh"}).status_code == 422
-    assert c.post(A + "/messages", headers=H,
-                  json={"text": "hi", "lang": "zh", "where": {"step": "publish"}}).status_code == 422
+    for bad in ("  ", "字" * 2001):
+        r = c.post(A + "/messages", headers=H, json={"text": bad, "lang": "zh"})
+        d = r.json()["detail"]
+        assert r.status_code == 422 and d["code"] == "assistant.bad_text" and d["params"] == {"max": 2000}, r.text
+    r = c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh", "where": {"step": "publish"}})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "assistant.bad_step"
     print("6. 校验 ✓")
 
     # 7. 并发：同一部小说已在跑时 409
     assert store.try_begin(uid, nid)
     try:
         r = c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh"})
-        assert r.status_code == 409, r.status_code
-        assert c.delete(A, headers=H).status_code == 409
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "assistant.busy", r.text
+        r = c.delete(A, headers=H)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "assistant.busy_clear"
     finally:
         store.end(uid, nid)
     print("7. 并发 409 ✓")
@@ -117,7 +121,7 @@ def main() -> int:
     script[:] = [AIMessage("好。")]
     assert c.post(A + "/messages", headers=H, json={"text": "再来", "lang": "zh"}).status_code == 200
     r = c.post(A + "/messages", headers=H, json={"text": "还来", "lang": "zh"})
-    assert r.status_code == 429 and "今天" in r.json()["detail"]
+    assert r.status_code == 429 and r.json()["detail"]["code"] == "assistant.daily_limit"
     assert store.used_today(uid) == 2
     del os.environ["STORYBOARD_ASSISTANT_DAILY"]
     print("8. 每日上限 429 ✓")
@@ -128,11 +132,28 @@ def main() -> int:
             raise RuntimeError("网关炸了")
     app_mod._assistant_model = lambda: Boom(script=[])
     evs = events_of(c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh"}))
-    assert evs[-1][0] == "error"
+    assert evs[-1][0] == "error" and evs[-1][1]["code"] == "assistant.crashed" and evs[-1][1]["ref"]
+    assert "网关炸了" not in json.dumps(evs[-1][1], ensure_ascii=False)
     assert [r["ok"] for r in usage.read(user_id=uid) if r["purpose"] == "assistant"][-1] is False
     assert store.try_begin(uid, nid)
     store.end(uid, nid)
     print("9. 出错 ✓")
+
+    # 9b. 503：没配置带代码 → 原样代码且不带原文；意外异常 → assistant.unavailable 带编号，锁也放
+    from pipeline.chat import LLMError
+
+    def no_key():
+        raise LLMError.coded("llm.not_configured", hint="未配置 ANTHROPIC_API_KEY")
+    app_mod._assistant_model = no_key
+    r = c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh"})
+    assert r.status_code == 503 and r.json()["detail"]["code"] == "llm.not_configured" and "ANTHROPIC" not in r.text
+    app_mod._assistant_model = lambda: (_ for _ in ()).throw(RuntimeError("weird"))
+    r = c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh"})
+    assert r.status_code == 503 and r.json()["detail"]["code"] == "assistant.unavailable" and r.json()["detail"]["ref"]
+    assert "weird" not in r.text and store.try_begin(uid, nid), "503 也放锁"
+    store.end(uid, nid)
+    assert "底层模型" in app_mod.assistant_graph.PROMPT and "Inkreel" in app_mod.assistant_graph.PROMPT
+    print("9b. 503 与提示词 ✓")
 
     # 10. 清空
     assert c.delete(A, headers=H).status_code == 200
@@ -156,7 +177,8 @@ def main() -> int:
         assert store.try_begin(uid, nid), f"读 {reads} 块后关闭，锁没释放"
         store.end(uid, nid)
     # where 不是对象 → 422
-    assert c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh", "where": "x"}).status_code == 422
+    r = c.post(A + "/messages", headers=H, json={"text": "hi", "lang": "zh", "where": "x"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "assistant.bad_where"
     print("11. 提前断开释放锁 ✓")
 
     # 12. 关闭流不卡事件循环：模型还在生成（每块隔 1 秒）时 aclose，循环照常转，锁先放、旧凭据不误放新锁
@@ -238,7 +260,8 @@ def main() -> int:
     ok_body = {"id": conf["id"], "decision": "approve", "lang": "zh", "where": {"chapter_id": cid}}
     assert c.post(R2, json=ok_body).status_code == 401
     assert c.post(R2, headers=HB, json=ok_body).status_code == 404
-    assert c.post(R2, headers=H, json={**ok_body, "decision": "maybe"}).status_code == 422
+    r = c.post(R2, headers=H, json={**ok_body, "decision": "maybe"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "assistant.bad_decision"
     assert c.post(R2, headers=H, json={**ok_body, "id": "nope"}).status_code == 409
     print("16. 恢复校验 ✓")
 
@@ -335,7 +358,7 @@ def main() -> int:
     assert c.get(A, headers=H).json()["messages"][-1]["cards"][0]["outcome"] == "pending"
     n_jobs = len(app_mod._jobs)
     r = c.post(R2, headers=H, json={"id": did, "decision": "approve", "lang": "zh", "where": {"chapter_id": c3}})
-    assert r.status_code == 409 and "处理过" in r.json()["detail"], (r.status_code, r.text)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "assistant.card_done", (r.status_code, r.text)
     assert len(app_mod._jobs) == n_jobs
     assert store.try_begin(uid, nid) and store.end(uid, nid) is None
     app_mod._run_version_job = real_job
@@ -356,18 +379,22 @@ def main() -> int:
     n_usage = len(usage.read(user_id=uid))
     assert c.post(U, json={"tool_call_id": "pe1"}).status_code == 401
     assert c.post(U, headers=HB, json={"tool_call_id": "pe1"}).status_code == 404
-    assert c.post(U, headers=H, json={}).status_code == 422
-    assert c.post(U, headers=H, json={"tool_call_id": "nope"}).status_code == 404
+    r = c.post(U, headers=H, json={})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "assistant.bad_tool_call"
+    r = c.post(U, headers=H, json={"tool_call_id": "nope"})
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "assistant.undo.not_found"
     token = store.try_begin(uid, nid)
-    assert c.post(U, headers=H, json={"tool_call_id": "pe1"}).status_code == 409
+    r = c.post(U, headers=H, json={"tool_call_id": "pe1"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "assistant.busy_undo"
     store.end(uid, nid, token)
     r = c.post(U, headers=H, json={"tool_call_id": "pe1"})
     assert r.status_code == 200, r.text
+    assert r.json()["message"]["code"].startswith("assistant.undo.done_"), r.json()
     assert r.json()["ok"] is True and r.json()["task"] == {"kind": "edit", "chapter_id": None, "version_id": None}
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "旧梗概"
     assert len(usage.read(user_id=uid)) == n_usage, "撤销不调模型、不记用量"
     r = c.post(U, headers=H, json={"tool_call_id": "pe1"})
-    assert r.status_code == 409 and "撤销过" in r.json()["detail"]
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "assistant.undo.already"
     h = c.get(A, headers=H).json()["messages"]
     assert h[-1]["cards"][0]["outcome"] == "undone"
     assert store.try_begin(uid, nid) and store.end(uid, nid) is None
@@ -380,7 +407,7 @@ def main() -> int:
     events_of(c.post(A + "/resume", headers=H, json={"id": conf["id"], "decision": "approve", "lang": "zh", "where": {}}))
     novels.set_outline(uid, nid, "别处改的")
     r = c.post(U, headers=H, json={"tool_call_id": "pe2"})
-    assert r.status_code == 409 and "改过" in r.json()["detail"], r.text
+    assert r.status_code == 409 and r.json()["detail"]["code"].startswith("assistant.undo."), r.text
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "别处改的"
     print("24. 撤销被拒 ✓")
 
@@ -401,7 +428,7 @@ def main() -> int:
         r = c.post(U, headers=H, json={"tool_call_id": "dup"})
     finally:
         app_mod.assistant_edits.undo = real_undo
-    assert r.status_code == 409 and str(auth.DATA_DIR) not in r.json()["detail"], r.text
+    assert r.status_code == 409 and str(auth.DATA_DIR) not in r.text, r.text
     r = c.post(U, headers=H, json={"tool_call_id": "dup"})
     assert r.status_code == 200, r.text
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "甲版"

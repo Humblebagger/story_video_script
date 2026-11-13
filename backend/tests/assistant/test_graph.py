@@ -3,6 +3,7 @@
 事件流顺序（tool_start → tool_end → goto → token → done）、出错事件、存档跨轮接上、历史视图。
 用法: python3 tests/assistant/test_graph.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -106,6 +107,7 @@ def main() -> int:
         evs = list(events.stream(agent, graph.run_config(uid, nid, {}, "zh"), "第九章的镜头"))
     end = next(e for e in evs if e["event"] == "tool_end")
     assert end["data"]["ok"] is False and "可选章节" in end["data"]["summary"]
+    assert end["data"]["msg"]["code"] == "assistant.tool.no_such_chapter", end
     assert evs[-1]["event"] == "done"
     print("7. 工具出错不中断 ✓")
 
@@ -116,7 +118,39 @@ def main() -> int:
     with store.saver(uid, nid) as cp:
         agent = graph.build_agent(Boom(script=[]), cp)
         evs = list(events.stream(agent, graph.run_config(uid, nid, {}, "zh"), "hi", hide=_TMP.name))
-    assert evs[-1]["event"] == "error" and _TMP.name not in evs[-1]["data"]["message"]
+    assert evs[-1]["event"] == "error" and _TMP.name not in json.dumps(evs[-1]["data"], ensure_ascii=False)
+    d = evs[-1]["data"]
+    assert d["code"] == "assistant.crashed" and len(d["ref"]) == 8 and "网关炸了" not in d["message"]
+    from server import error_refs
+    assert "网关炸了" in error_refs.find(d["ref"])["detail"]
+    import anthropic
+    import httpx2
+    from server.messages import msg
+    req = httpx2.Request("POST", "http://127.0.0.1:9/v1/messages")
+
+    def status_err(cls, status, etype, text):
+        body = {"type": "error", "error": {"type": etype, "message": text}}
+        return cls(f"Error code: {status} - {body}", body=body,
+                   response=httpx2.Response(status, request=req, headers={"request-id": "req_42"}))
+
+    class Boom2(ScriptedChat):
+        def _generate(self, *a, **k):
+            raise status_err(anthropic.RateLimitError, 429, "rate_limit_error", "deepseek quota")
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(Boom2(script=[]), cp)
+        evs = list(events.stream(agent, graph.run_config(uid, nid, {}, "zh"), "hi", hide=_TMP.name))
+    assert evs[-1]["event"] == "error" and evs[-1]["data"] == {**msg("llm.busy")}, evs[-1]
+    assert "deepseek" not in json.dumps(evs).lower()
+
+    class Boom3(ScriptedChat):
+        def _generate(self, *a, **k):
+            raise status_err(anthropic.BadRequestError, 400, "invalid_request_error", "messages.0: bad role")
+    with store.saver(uid, nid) as cp:
+        agent = graph.build_agent(Boom3(script=[]), cp)
+        evs = list(events.stream(agent, graph.run_config(uid, nid, {}, "zh"), "hi", user_id=uid))
+    d = evs[-1]["data"]
+    assert d["code"] == "llm.bad_request" and len(d["ref"]) == 8 and "bad role" not in d["message"], d
+    assert "BadRequestError" in error_refs.find(d["ref"])["detail"]
     print("8. 出错事件 ✓")
 
     # 9. 步数上限：模型一直调工具，最后给出「步骤太多」并结束
@@ -124,7 +158,8 @@ def main() -> int:
     with store.saver(uid, nid) as cp:
         agent = graph.build_agent(loop, cp)
         evs = list(events.stream(agent, graph.run_config(uid, nid, {}, "zh"), "循环"))
-    assert evs[-2]["event"] == "token" and "步骤太多" in evs[-2]["data"]["text"] and evs[-1]["event"] == "done"
+    assert evs[-2]["event"] == "notice" and evs[-2]["data"]["code"] == "assistant.too_many_steps" and evs[-1]["event"] == "done"
+    assert not any("步骤太多" in e["data"].get("text", "") for e in evs if e["event"] == "token")
     print("9. 步数上限 ✓")
 
     # 10. 历史：被停掉的工具调用标「（已中断）」不再转圈；几条 AI 文字空行隔开；工具结果隐去服务器目录
@@ -138,7 +173,8 @@ def main() -> int:
     h = events.history(fake, {}, hide=_TMP.name)
     assert h[1]["text"] == "我查一下。\n\n再看看。", h[1]["text"]
     assert h[1]["tools"][0]["ok"] is True and _TMP.name not in h[1]["tools"][0]["summary"]
-    assert h[1]["tools"][1]["ok"] is False and h[1]["tools"][1]["summary"] == events.INTERRUPTED
+    assert h[1]["tools"][1]["ok"] is False and h[1]["tools"][1]["summary"] == "（已中断）"
+    assert h[1]["tools"][1]["msg"] == {"code": "assistant.interrupted", "params": {}}
     assert _TMP.name not in tools_mod._dump({"error": f"{auth.DATA_DIR}/u/clip.mp4 坏了"})
     print("10. 历史中断与隐去路径 ✓")
 
@@ -217,6 +253,7 @@ def main() -> int:
         evs = list(events.stream(agent, cfg, "出片"))
         assert [e["event"] for e in evs] == ["action", "token", "done"], evs
         assert evs[0]["data"]["outcome"] == "failed" and "分镜版本" in evs[0]["data"]["error"]
+        assert evs[0]["data"]["error_msg"]["code"] == "assistant.tool.no_version", evs[0]
         h = events.history(agent, cfg)
     assert h[-1]["cards"][0]["outcome"] == "failed"
     dangling = [HumanMessage("q"), call("film_run", {}, "f9")]
@@ -225,7 +262,15 @@ def main() -> int:
         agent.update_state(cfg, {"messages": dangling}, as_node="agent")
         h = events.history(agent, cfg)
     assert h[-1]["cards"][-1] == {"tool_call_id": "f9", "action": "film_run", "outcome": "failed",
-                                   "error": events.INTERRUPTED}, h[-1]
+                                   "error": "（已中断）",
+                                   "error_msg": {"code": "assistant.interrupted", "params": {}}}, h[-1]
+    # 兼容：旧存档里没有 artifact 的失败结果只有文字，没有 error_msg / msg
+    old = ToolMessage("坏了", tool_call_id="o1", name="film_run", status="error")
+    assert events.action_view(old) == {"tool_call_id": "o1", "action": "film_run", "outcome": "failed", "error": "坏了"}
+    old_t = [HumanMessage("q"), AIMessage("", tool_calls=[{"name": "plot_get", "args": {}, "id": "o2"}]),
+             ToolMessage("旧错误", tool_call_id="o2", name="plot_get", status="error")]
+    fk = SimpleNamespace(get_state=lambda c: SimpleNamespace(values={"messages": old_t}))
+    assert "msg" not in events.history(fk, {})[1]["tools"][0]
     print("15. 操作报错与被停掉 ✓")
 
     # 16. 改内容工具在智能体里：出卡发 confirm（不出工具行），应用后发 action（不带撤销数据）；历史里撤销过的卡标 undone

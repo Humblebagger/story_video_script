@@ -1654,7 +1654,7 @@ def _assistant_db(user: dict, nid: str):
     try:
         return novels.assistant_db(user["id"], nid)
     except novels.NotFound:
-        raise HTTPException(404, "小说不存在")
+        raise HTTPException(404, detail=msg("novel.not_found"))
 
 
 _VERSION_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")   # 用 fullmatch：$ 会放过结尾的换行
@@ -1692,7 +1692,7 @@ def assistant_clear(nid: str, user: dict = Depends(novel_user)):
     _assistant_db(user, nid)
     token = assistant_store.try_begin(user["id"], nid)
     if not token:
-        raise HTTPException(409, "助手正在回答，等它说完再清空")
+        raise HTTPException(409, detail=msg("assistant.busy_clear"))
     try:
         assistant_store.clear(user["id"], nid)
     finally:
@@ -1705,19 +1705,19 @@ def _assistant_ctx(user: dict, nid: str, body: dict) -> tuple:
     lang = body.get("lang") if body.get("lang") in ("zh", "en") else "zh"
     raw = body.get("where") or {}
     if not isinstance(raw, dict):
-        raise HTTPException(422, "where 不合法")
+        raise HTTPException(422, detail=msg("assistant.bad_where"))
     if raw.get("step") is not None and raw.get("step") not in _ASSISTANT_STEPS:
-        raise HTTPException(422, "where.step 不合法")
+        raise HTTPException(422, detail=msg("assistant.bad_step"))
     return lang, _assistant_where(user["id"], nid, raw)
 
 
 def _assistant_begin(user: dict, nid: str) -> float:
     """每日上限（429）与并发锁（409）；返回锁凭据。"""
     if assistant_store.used_today(user["id"]) >= assistant_store.daily_limit():
-        raise HTTPException(429, "今天的助手消息已用完，明天再来")
+        raise HTTPException(429, detail=msg("assistant.daily_limit"))
     token = assistant_store.try_begin(user["id"], nid)
     if not token:
-        raise HTTPException(409, "上一条还在回答")
+        raise HTTPException(409, detail=msg("assistant.busy"))
     return token
 
 
@@ -1749,10 +1749,11 @@ def _assistant_stream(user: dict, nid: str, where: dict, lang: str, payload, tok
                     if before:
                         before(agent, cfg)
                 except Exception as e:  # 存档读写出错：给一条报错，不开新一轮
-                    yield assistant_events.sse({"event": "error", "data": {
-                        "message": assistant_events._hide(f"助手出错：{e}", root)[:300]}})
+                    yield assistant_events.sse({"event": "error", "data": assistant_events._hide_deep(
+                        assistant_events.error_msg(e, user["id"], f"assistant {nid}"), root)})
                     return
-                for ev in assistant_events.stream(agent, cfg, payload, hide=root):
+                for ev in assistant_events.stream(agent, cfg, payload, hide=root,
+                                                  user_id=user["id"], where=f"assistant {nid}"):
                     if ev["event"] == "done":
                         ok = True
                     yield assistant_events.sse(ev)
@@ -1809,7 +1810,10 @@ def _assistant_model_or_503(user: dict, nid: str, token: float):
         return _assistant_model()
     except Exception as e:
         assistant_store.end(user["id"], nid, token)
-        raise HTTPException(503, assistant_events._hide(f"助手暂不可用：{e}", str(auth.DATA_DIR)))
+        if error_refs.expected(e):      # 没配置这类带代码的模型服务错误：原因说得清，不记编号
+            raise HTTPException(503, detail=to_detail(e))
+        raise HTTPException(503, detail=error_refs.unexpected(
+            e, "assistant.unavailable", user_id=user["id"], where=f"assistant {nid}"))
 
 
 @app.post("/novels/{nid}/assistant/messages")
@@ -1817,7 +1821,7 @@ def assistant_send(nid: str, body: dict = Body(...), user: dict = Depends(novel_
     _assistant_db(user, nid)
     text = str(body.get("text") or "").strip()
     if not text or len(text) > _ASSISTANT_MAX:
-        raise HTTPException(422, f"消息不能为空，且不超过 {_ASSISTANT_MAX} 字")
+        raise HTTPException(422, detail=msg("assistant.bad_text", max=_ASSISTANT_MAX))
     lang, where = _assistant_ctx(user, nid, body)
     token = _assistant_begin(user, nid)
     model = _assistant_model_or_503(user, nid, token)
@@ -1836,7 +1840,7 @@ def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(nove
     _assistant_db(user, nid)
     iid, decision = body.get("id"), body.get("decision")
     if not isinstance(iid, str) or decision not in ("approve", "reject"):
-        raise HTTPException(422, "id 或 decision 不合法")
+        raise HTTPException(422, detail=msg("assistant.bad_decision"))
     lang, where = _assistant_ctx(user, nid, body)
     token = _assistant_begin(user, nid)
     try:
@@ -1849,7 +1853,7 @@ def assistant_resume(nid: str, body: dict = Body(...), user: dict = Depends(nove
         done = key in _assistant_resumed
     if card is None or done:
         assistant_store.end(user["id"], nid, token)
-        raise HTTPException(409, "这张确认卡已经处理过")
+        raise HTTPException(409, detail=msg("assistant.card_done"))
     model = _assistant_model_or_503(user, nid, token)
     cmd = Command(resume={iid: {"decision": decision, "card": card}})
     with _assistant_resumed_lock:   # 校验都过了才记：校验失败（503 等）的还能再点
@@ -1878,23 +1882,22 @@ def assistant_undo(nid: str, body: dict = Body(...), user: dict = Depends(novel_
     _assistant_db(user, nid)
     tcid = body.get("tool_call_id")
     if not isinstance(tcid, str) or not tcid:
-        raise HTTPException(422, "tool_call_id 不合法")
+        raise HTTPException(422, detail=msg("assistant.bad_tool_call"))
     token = assistant_store.try_begin(user["id"], nid)
     if not token:
-        raise HTTPException(409, "助手正在回答，等它说完再撤销")
+        raise HTTPException(409, detail=msg("assistant.busy_undo"))
     try:
         if tcid in assistant_store.undone(user["id"], nid):
-            raise HTTPException(409, "这次修改已经撤销过了")
+            raise HTTPException(409, detail=msg("assistant.undo.already"))
         data = _assistant_undo_data(user["id"], nid, tcid)
         if data is None:
-            raise HTTPException(404, "找不到这次修改")
+            raise HTTPException(404, detail=msg("assistant.undo.not_found"))
         try:
             message = assistant_edits.undo(user["id"], nid, data)
         except (assistant_edits.UndoError, novels.NovelError, novels.NotFound) as e:
-            raise HTTPException(409, _hide_root(str(e), auth.DATA_DIR))
+            raise HTTPException(409, detail=_hide_root_deep(to_detail(e), auth.DATA_DIR))
         assistant_store.mark_undone(user["id"], nid, tcid)
-        # undo() 返回消息对象；接口的 message 暂取中文兜底，Task 8 再改为消息对象
-        return {"ok": True, "message": message["message"],
+        return {"ok": True, "message": _hide_root_deep(message, auth.DATA_DIR),
                 "task": {"kind": "edit", "chapter_id": data.get("chapter_id"), "version_id": data.get("version_id")}}
     finally:
         assistant_store.end(user["id"], nid, token)

@@ -47,6 +47,7 @@ MODULES: dict = {
     "assistant/actions.py": None,
     "assistant/edits.py": None,
     "assistant/graph.py": None,
+    "assistant/events.py": None,
     "server/usage.py": None,
     "server/pricing.py": None,
     "render/providers/tts_base.py": None,
@@ -69,7 +70,10 @@ MODULES: dict = {
                       "_execute", "_run_version_job", "list_jobs", "_jobs_view",
                       "_admin_call", "admin_usage", "admin_usage_csv", "admin_pricing_put",
                       "admin_errors", "admin_error_get", "healthz", "admin_service",
-                      "versions_get", "admin_job_debug", "_check_version_doc"},
+                      "versions_get", "admin_job_debug", "_check_version_doc",
+                      "_assistant_db", "assistant_clear", "_assistant_ctx", "_assistant_begin",
+                      "_assistant_stream", "_assistant_model_or_503", "assistant_send",
+                      "assistant_resume", "assistant_undo", "assistant_history"},
 }
 
 
