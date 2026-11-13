@@ -53,6 +53,12 @@ def part_prompt(doc):
     out = rewrite_refs(text)
     assert "{ref:" not in out and "@图片1" in out and f"@图片{len(ids)}" in out
     assert rewrite_refs("{ref:C01}{ref:S03}{ref:S03}") == "@图片1@图片2@图片3", "同一资产两次各占一张图"
+    assert compose.image_count({"refs": ["C01", "S01"], "first_frame": "keyframe:E01-S01"}) == 3
+    assert compose.image_count({"refs": ["C01"], "first_frame": None}) == 1
+    assert compose.image_count({"refs": [], "first_frame": "relay:E01-C01"}) == 1
+    assert compose.image_count({"refs": []}) == 0
+    assert compose.strip_placeholders("看参考图3和 {ref:C01} 与 @图片2") == "看和  与 "
+    assert compose.strip_placeholders("参考图参考图12") == "参考图", "清一层拼出新的不再是占位符时停"
     print("2. 占位符与改写 ✓")
 
     # 3. 四种声音模式

@@ -31,11 +31,14 @@ class Caps:
     max_refs: int
     first_frame: bool               # 可指定首帧
     last_frame: bool                # 可指定结束帧
-    returns_last_frame: bool        # 能返回成片尾帧，用于接力
+    returns_last_frame: bool        # 能返回成片尾帧，用于接力（拿不到时下一段不带首帧，链路自带兜底）
     native_audio: bool
-    frame_with_refs: bool           # 首帧与参考图能否同用（方舟不能：两种模式互斥）
+    frame_with_refs: bool           # 首帧与参考图能否同用（方舟、MiniMax 都不能：两种模式互斥）
     resolutions: list
     cny_per_sec: dict               # 分辨率 → 元/秒，只用于预估
+    short_side: dict = field(default_factory=dict)   # 分辨率 → 成片短边像素；空表时合成按 mix.SHORT_SIDE
+    free_images: int = 0            # 每个任务免费的输入图片张数
+    cny_per_image: float = 0.0      # 超出免费张数后每张的价格（元）
 
 
 @dataclass
@@ -56,6 +59,7 @@ class ClipRequest:
     refs: list = field(default_factory=list)   # list[RefImage]，已按 max_refs 裁剪
     first_frame: Optional[str] = None          # 首帧图，格式同 RefImage.source
     style_ref: Optional[str] = None            # 带上的风格图哈希（没带为 None）
+    images: Optional[int] = None               # 只用于计费：提交时实际发出的图片张数（submit 不读）
 
 
 @dataclass
@@ -87,8 +91,10 @@ def request_seconds(duration: float, caps: Caps) -> int:
     return int(min(caps.max_clip_sec, max(caps.min_clip_sec, math.ceil(duration - 1e-6))))
 
 
-def estimate_cny(duration: float, caps: Caps, resolution: str) -> float:
-    return round(request_seconds(duration, caps) * caps.cny_per_sec.get(resolution, 0.0), 2)
+def estimate_cny(duration: float, caps: Caps, resolution: str, images: int = 0) -> float:
+    """预估金额：整数秒 × 单价，加超出免费张数的图片费。"""
+    extra = max(0, int(images or 0) - caps.free_images) * caps.cny_per_image
+    return round(request_seconds(duration, caps) * caps.cny_per_sec.get(resolution, 0.0) + extra, 2)
 
 
 def last_frame_path(video: Path) -> Path:

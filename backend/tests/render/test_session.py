@@ -73,6 +73,15 @@ def main() -> int:
     assert "owner" not in v and v["counts"] == {"planned": len(s["clips"])}
     assert v["remaining_cny"] == round(sum(c["estimate_cny"] for c in s["clips"]), 2)
     assert "fake" in v["options"]["providers"] and v["options"]["resolutions"] == ["480p", "720p"]
+    seen_images = []
+    real_est = base.estimate_cny
+    base.estimate_cny = lambda d, c, r, images=0: (seen_images.append(images), real_est(d, c, r, images))[1]
+    try:
+        s2 = build()
+    finally:
+        base.estimate_cny = real_est
+    from render import compose as _compose
+    assert seen_images and seen_images[:len(s2["clips"])] == [_compose.image_count(c) for c in s2["clips"]]
     print("1. 建会话与校验 ✓")
 
     # 2. 单段排队：低于确认线直接排；在跑时不能改设置；读取时刷新不动在跑的段

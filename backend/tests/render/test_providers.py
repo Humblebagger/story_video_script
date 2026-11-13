@@ -32,6 +32,18 @@ def main() -> int:
     assert base.estimate_cny(4.2, caps, "480p") == 2.5
     print("1. 整数秒与预估 ✓")
 
+    # 1b. 图片费：缺省字段为 0 时与旧版相同；超出免费张数的部分按张计
+    assert base.estimate_cny(4.2, caps, "720p", images=9) == 5.0, "缺省不收图片费"
+    priced = base.Caps(max_clip_sec=15, min_clip_sec=4, max_refs=9, first_frame=True, last_frame=False,
+                       returns_last_frame=True, native_audio=False, frame_with_refs=False,
+                       resolutions=["768P"], cny_per_sec={"768P": 0.5},
+                       short_side={"768P": 768}, free_images=5, cny_per_image=0.2)
+    assert base.estimate_cny(4, priced, "768P") == 2.0
+    assert base.estimate_cny(4, priced, "768P", images=5) == 2.0, "前 5 张免费"
+    assert base.estimate_cny(4, priced, "768P", images=7) == 2.4, "超出 2 张"
+    assert base.ClipRequest(prompt="", model="m", duration=1, resolution="r").images is None
+    print("1b. 图片费 ✓")
+
     # 2. 可播放校验：MP4 容器头，不依赖 ffmpeg
     with tempfile.TemporaryDirectory() as d:
         good, bad = Path(d) / "a.mp4", Path(d) / "b.mp4"

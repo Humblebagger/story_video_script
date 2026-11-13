@@ -34,6 +34,11 @@ def main() -> int:
     assert mix.frame_size("1080p", "16:9") == (1920, 1080)
     assert mix.frame_size("720p", "1:1") == (720, 720)
     assert mix.frame_size("720p", "bad") == (720, 1280)
+    assert mix.frame_size("768P", "9:16", {"768P": 768}) == (768, 1366)
+    assert mix.frame_size("2K", "9:16", {"2K": 1440}) == (1440, 2560)
+    assert mix.frame_size("480P", "16:9", {"480P": 480}) == (854, 480)
+    assert mix.frame_size("720p", "9:16", {}) == (720, 1280), "不传短边表时旧行为不变"
+    assert mix.frame_size("768P", "9:16") == (720, 1280), "未知分辨率仍回落 720"
     assert mix.native_audio_policy("tts_all", False) == -12 and mix.native_audio_policy("tts_all", True) is None
     assert mix.native_audio_policy("dialogue_native", True) == 0.0 and mix.native_audio_policy("silent", False) is None
     print("1. 画幅与原声策略 ✓")

@@ -23,7 +23,7 @@ STYLE_TEXT = "画风参考：沿用它的色调、线条与光影，不要照搬
 FIRST = "__first__"        # 首帧图占用参考位时的占位 id
 
 
-_PLACEHOLDER = re.compile(r"\{ref:[^}]*\}|@图片\d+")
+_PLACEHOLDER = re.compile(r"\{ref:[^}]*\}|@图片\d+|参考图\d+")
 
 
 def strip_placeholders(text: str) -> str:
@@ -33,6 +33,14 @@ def strip_placeholders(text: str) -> str:
         if cleaned == text:
             return text
         text = cleaned
+
+
+def image_count(item: dict) -> int:
+    """一段（或自由节点）请求里的图片张数：参考位（含风格图）加首帧。
+
+    ref 模式下首帧在组装请求时才插到第一个参考位，落盘的 refs 里没有它，所以一律「refs + 有首帧加 1」。
+    接力尾帧缺失时实际不发首帧，预估会多算一张（偏向多估，与时长取整同类）。"""
+    return len(item.get("refs") or []) + (1 if item.get("first_frame") else 0)
 
 
 def ref(asset_id: str) -> str:

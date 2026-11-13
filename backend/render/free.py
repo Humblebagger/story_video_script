@@ -123,7 +123,7 @@ def create(root, ctx: Ctx, from_clip: Optional[str] = None) -> dict:
                 validate(root, s, node, ctx, caps, ("first_frame",))
             except sess.SessionError:
                 node["first_frame"] = None      # 首帧来源此刻不可用（上一段还没出、关键帧删了）：先不带
-        node["estimate_cny"] = base.estimate_cny(node["duration"], caps, s["resolution"])
+        node["estimate_cny"] = base.estimate_cny(node["duration"], caps, s["resolution"], compose.image_count(node))
         s["free_seq"] = seq
         s["free"] = list(s.get("free") or []) + [node]
         return s
@@ -160,7 +160,7 @@ def update(root, ctx: Ctx, fid: str, patch: dict) -> dict:
         if "first_frame" in patch:
             n["first_frame"] = patch["first_frame"] or None
         validate(root, s, n, ctx, caps, set(patch) | ({"duration"} if "target" in patch else set()))
-        n["estimate_cny"] = base.estimate_cny(n["duration"], caps, s["resolution"])
+        n["estimate_cny"] = base.estimate_cny(n["duration"], caps, s["resolution"], compose.image_count(n))
         return s
 
 

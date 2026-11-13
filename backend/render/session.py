@@ -238,7 +238,7 @@ def _sync_free(nodes: list, clips: list, caps, resolution: str) -> list:
                 n.update(target=None, target_shots=None, target_lost=True)
             else:
                 n["duration"] = t["duration"]
-        n["estimate_cny"] = base.estimate_cny(n["duration"], caps, resolution)
+        n["estimate_cny"] = base.estimate_cny(n["duration"], caps, resolution, compose.image_count(n))
     return nodes
 
 
@@ -280,7 +280,7 @@ def build(root, doc: dict, *, owner: dict, patch: dict, keyframes: dict,
                 clips.append(flying.pop(b["id"]))
                 continue
             row = {k: v for k, v in b.items() if not k.startswith("_")}
-            row["estimate_cny"] = base.estimate_cny(row["duration"], caps, settings["resolution"])
+            row["estimate_cny"] = base.estimate_cny(row["duration"], caps, settings["resolution"], compose.image_count(row))
             clips.append(_carry(row, olds.get(b["id"]), orph.pop(b["id"], None)))
         clips.extend(flying.values())
         kept = {c["id"] for c in clips}

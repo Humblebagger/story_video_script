@@ -54,6 +54,7 @@ def dump(compose, FakeVideo, rewrite_refs, doc: dict, workdir: Path, *, strip_ne
                         dct = dataclasses.asdict(rq)
                         if strip_new:
                             dct.pop("style_ref", None)
+                            dct.pop("images", None)   # 只用于计费的新字段，不属于旧请求
                         items.append({"clip": r, "req": dct, "used": used})
                     text = _canon(items).replace(str(workdir), "KF")
                     items = json.loads(text)

@@ -14,6 +14,7 @@ from typing import Optional
 
 from pipeline.quality import DEFAULT_SPEECH_CPS
 from render import compose as shotcalc, voice
+from render.providers import get_video
 
 FPS = 30
 SPEEDUP_MAX = 1.15
@@ -36,9 +37,9 @@ def _even(x: float) -> int:
     return int(round(x / 2)) * 2
 
 
-def frame_size(resolution: str, aspect: str) -> tuple:
-    """(宽, 高)：短边按分辨率档（480p/720p/1080p），长边按画幅，取偶数。"""
-    short = SHORT_SIDE.get(resolution, 720)
+def frame_size(resolution: str, aspect: str, short_side: Optional[dict] = None) -> tuple:
+    """(宽, 高)：短边先查厂商给的短边表，再查 SHORT_SIDE（480p/720p/1080p），都没有按 720；长边按画幅，取偶数。"""
+    short = (short_side or {}).get(resolution) or SHORT_SIDE.get(resolution, 720)
     try:
         a, b = (float(n) for n in (aspect or "9:16").split(":"))
     except ValueError:
@@ -48,6 +49,19 @@ def frame_size(resolution: str, aspect: str) -> tuple:
     if a <= b:
         return short, _even(short * b / a)
     return _even(short * a / b), short
+
+
+def _short_side(s: dict) -> dict:
+    """会话所用厂商档位的短边表；取不到（厂商未注册、缺密钥）时为空表，按 SHORT_SIDE 回落。"""
+    try:
+        return dict(get_video(s["provider"]).caps(s["model"]).short_side or {})
+    except Exception:
+        return {}
+
+
+def _size(s: dict, doc: dict) -> tuple:
+    aspect = ((doc.get("meta") or {}).get("video") or {}).get("aspect_ratio") or "9:16"
+    return frame_size(s["resolution"], aspect, _short_side(s))
 
 
 def native_audio_policy(audio_mode: str, mute: bool) -> Optional[float]:
@@ -283,7 +297,7 @@ def compose_fingerprint(root, doc: dict, s: dict, voices: dict, bgm: dict, draft
         st = _stat(v)
         if st:
             music[k] = st
-    size = frame_size(s["resolution"], ((doc.get("meta") or {}).get("video") or {}).get("aspect_ratio") or "9:16")
+    size = _size(s, doc)
     holes = {}
     if draft:
         for c in s["clips"]:
@@ -353,7 +367,7 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
         raise MixError("有语音条合成失败，为免成片漏句已停止合成："
                        + "；".join(f"{x['id']}：{x['error']}" for x in failed[:5]))
     voiced = {x["id"]: x for x in done}
-    size = frame_size(s["resolution"], ((doc.get("meta") or {}).get("video") or {}).get("aspect_ratio") or "9:16")
+    size = _size(s, doc)
     work = out_dir / "work"
     work.mkdir(parents=True, exist_ok=True)
     nxt.mkdir()
