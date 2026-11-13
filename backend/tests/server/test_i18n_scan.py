@@ -2,6 +2,7 @@
 """已改造模块里，给用户的错误出口不得再写中文字面量（spec §8）。用法: python3 tests/server/test_i18n_scan.py
 
 逐子计划把模块加进 MODULES；app.py 只扫列出的函数。豁免：行尾 # i18n: internal / llm / todo(N)。
+子计划 4 起还扫 `say(…)`、`job["log"].append(…)`、字典里 message/error/summary 键的值。
 """
 import ast
 import re
@@ -14,8 +15,10 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 CJK = re.compile(r"[\u4e00-\u9fff]")
 MARK = re.compile(r"#\s*i18n:\s*(internal|llm|todo\(\d\))")
 SINK_NAME = re.compile(r"(Error|Exception|Submit|Conflict|NotFound|Corrupt|Exceeded|Invalid|Stale|Busy)$")
-SINK_CALLS = {"HTTPException", "note_error", "submit_failed", "download_failed", "TaskState"}
+SINK_CALLS = {"HTTPException", "note_error", "submit_failed", "download_failed", "TaskState", "say"}
 SINK_KW = {"error", "detail", "message", "step"}
+SINK_DICT_KEYS = {"message", "error", "summary"}     # 字典字面量里这些键的值：SSE 事件、门的结果、历史条目
+SINK_SUBSCRIPTS = {"error", "summary", "message"}    # obj["error"] = … 这类赋值
 
 # 子计划 1 清零的模块；值为 None 表示全文件，集合表示只扫这些函数
 MODULES: dict = {
@@ -95,6 +98,11 @@ def _sinks(node):
     """(子节点, 描述) 迭代：只产出错误出口里的值。"""
     for n in ast.walk(node):
         if isinstance(n, ast.Call):
+            f = n.func
+            if (isinstance(f, ast.Attribute) and f.attr == "append" and isinstance(f.value, ast.Subscript)
+                    and isinstance(f.value.slice, ast.Constant) and f.value.slice.value == "log"):
+                for a in n.args:
+                    yield a, '["log"].append'
             name = _name(n.func)
             if name in SINK_CALLS or SINK_NAME.search(name):
                 for a in n.args:
@@ -111,8 +119,12 @@ def _sinks(node):
                          else [(t, n.value)])
                 for tgt, val in pairs:
                     if (isinstance(tgt, ast.Subscript) and isinstance(tgt.slice, ast.Constant)
-                            and tgt.slice.value == "error"):
-                        yield val, '["error"] ='
+                            and tgt.slice.value in SINK_SUBSCRIPTS):
+                        yield val, f'["{tgt.slice.value}"] ='
+        elif isinstance(n, ast.Dict):
+            for k, v in zip(n.keys, n.values):
+                if isinstance(k, ast.Constant) and k.value in SINK_DICT_KEYS:
+                    yield v, f'{{"{k.value}": …}}'
 
 
 def _marked_lines(src: str) -> set:
@@ -183,6 +195,13 @@ def main() -> int:
         ('E = "中文"\nA = E\nB = A\nraise ValueError(B)\n', 1),
         ('E = "中文"\nraise ValueError("x" + E)\n', 1),
         ('E = "english"\nraise ValueError(E)\n', 0),
+        # 子计划 4：SSE 事件与门结果的字典、历史条目的下标赋值、进度事件出口
+        ('def f(e):\n    yield {"event": "error", "data": {"message": f"出错：{e}"}}\n', 1),
+        ('def f(t):\n    t["ok"], t["summary"] = False, "中断"\n', 1),
+        ('def f(job):\n    job["log"].append("中文")\n    say("中文")\n', 2),
+        ('def f(job):\n    job["debug_log"].append("中文")\n    log("中文")\n', 0),
+        ('d = {"message": "中文"}  # i18n: llm\n', 0),
+        ('d = {"target": "全书梗概"}\n', 0),
     ]
     for i, (code, want) in enumerate(cases):
         got = probe_hits(code)

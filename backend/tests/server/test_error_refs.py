@@ -182,12 +182,25 @@ def part_api():
     print("4. 接口 500：消息对象带编号 / CORS 头 / 记录带用户与位置 / 不含密钥 ✓")
 
 
+def part_expected():
+    class Coded(M.UserError, RuntimeError):
+        needs_ref = False
+    assert error_refs.expected(Coded.of("common.internal"))
+    e = Coded.of("common.internal")
+    e.needs_ref = True
+    assert not error_refs.expected(e), "needs_ref 的要记编号"
+    assert not error_refs.expected(Coded("没有代码"))
+    assert not error_refs.expected(RuntimeError("x"))
+    print("5. expected：带代码且不需要编号才算可预期 ✓")
+
+
 def main() -> int:
     part_ref()
     part_record()
     part_write_fail()
     part_trim()
     part_api()
+    part_expected()
     print("\nALL PASS")
     return 0
 

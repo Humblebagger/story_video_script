@@ -18,7 +18,7 @@ from typing import Optional
 
 from render.providers.base import scrub_secrets
 from server import auth, usage
-from server.messages import msg, with_ref
+from server.messages import UserError, msg, with_ref
 from server.store import now_iso
 
 log = logging.getLogger("server.errors")
@@ -142,6 +142,12 @@ def record_exc(e: BaseException, code: str, *, context: str = "", **kw) -> str:
 def unexpected(e: BaseException, code: str = "common.internal", **kw) -> dict:
     """意外异常 → 带编号的消息对象。code 的模板不得有参数（这类文案只说「出了问题、联系管理员」）。"""
     return with_ref(msg(code), record_exc(e, code, **kw))
+
+
+def expected(e: BaseException) -> bool:
+    """可预期的失败：带代码，原因用文案就说清楚了，不记编号。
+    needs_ref 的（如模型服务拒绝了请求却说不清为什么）原因只在服务器上，要记编号。"""
+    return isinstance(e, UserError) and bool(e.code) and not getattr(e, "needs_ref", False)
 
 
 def _read() -> list:

@@ -124,6 +124,28 @@ def main() -> int:
     from render.providers.base import ProviderError
     e = ProviderError.of("tts.volc.rejected", code="401", detail=M.vendor("x"))
     assert e.params["code"] == "401" and str(e) == "豆包语音拒绝了请求（401）：x", "参数可以叫 code"
+
+    # 子计划 4：长报告参数、换异常类型保留代码
+    long = "行\n" * 5000
+    assert len(M.vendor(long)["text"]) == M.VENDOR_MAX
+    assert len(M.vendor(long, limit=M.REPORT_MAX)["text"]) == M.REPORT_MAX == 6000
+    m = M.msg("chapter.version.not_found")
+
+    class E1(M.UserError, ValueError):
+        pass
+
+    class E2(M.UserError, Exception):
+        pass
+
+    e = E2.from_msg({**m, "ref": "K7Q2M9XD"})
+    assert isinstance(e, E2) and e.code == "chapter.version.not_found" and e.params == {} and str(e) == "版本不存在"
+    e = M.recast(E2, E1.of("novel.bad_id", id="../x"))
+    assert e.code == "novel.bad_id" and e.params == {"id": "../x"} and str(e) == "非法的 ID：../x"
+    e = M.recast(E2, KeyError("raw"))
+    assert e.code is None and str(e) == "raw", "无代码的保留原文（KeyError 不加引号）"
+    e = E2.from_msg(M.with_ref(M.msg("common.internal"), "K7Q2M9XD"))
+    assert e.as_msg()["ref"] == "K7Q2M9XD" and "参考编号 K7Q2M9XD" in str(e)
+    print("子计划 4：vendor 上限 / from_msg / recast ✓")
     print("\nALL PASS")
     return 0
 
