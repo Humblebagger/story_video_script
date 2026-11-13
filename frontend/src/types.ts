@@ -1,4 +1,5 @@
 import type { StepId } from './workflow'
+import type { MsgLike, ServerMsg } from './i18n/serverMsg'
 
 /** NovelStoryboard v0.4 / v0.5 分镜 IR 的 TypeScript 镜像（对齐 backend/schema/storyboard.schema.json）。
  *  字段可选性以 schema 的 required 为准：非必填一律标 `?`，渲染层不得假设其存在。 */
@@ -685,6 +686,7 @@ export interface FilmAttempt {
   file: string | null
   last_frame: string | null
   error: string | null
+  error_msg?: ServerMsg | null
   at: string
   /** 自由节点的尝试没有分镜指纹，存 null */
   fingerprint: string | null
@@ -719,6 +721,7 @@ export interface FilmClip {
   /** 厂商那边可能还有这一段的任务（提交结果不明、查询放弃）：请到控制台核对，批量出片跳过 */
   uncertain: boolean
   error: string | null
+  error_msg?: ServerMsg | null
   state: FilmClipState
   queued_at?: string
   /** 风格图：used 已带上 / full 参考位已满 / first_frame 本段用首帧 / null 没有风格图 */
@@ -746,6 +749,7 @@ export interface FilmFreeNode {
   estimate_cny: number
   state: FilmClipState
   error: string | null
+  error_msg?: ServerMsg | null
   uncertain: boolean
   attempts: FilmAttempt[]
   chosen: number | null
@@ -813,7 +817,8 @@ export interface FilmSession {
     first_frame?: boolean
     frame_with_refs?: boolean
     audio_modes: AudioMode[]
-    rate_note: string
+    /** 费率说明：消息对象（按界面语言渲染）；旧数据是字符串 */
+    rate_note: MsgLike
     /** 缺省厂商回落到 Seedance 的原因代码（文案走 i18n）；没有回落为 null */
     default_note: 'minimax_key_missing' | null
   }

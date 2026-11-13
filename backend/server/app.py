@@ -104,6 +104,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, library, novels, pricing, store, summary, usage
+from server.messages import msg, to_detail
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -840,24 +841,24 @@ def _render_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = True) -> 
     doc = record.get("result") or {}
     if gate:
         if not doc.get("episodes"):
-            raise HTTPException(422, "这个版本还没有分镜产物")
+            raise HTTPException(422, detail=msg("film.session.no_storyboard"))
         _render_gate(copy.deepcopy(doc), record)
     owner = {"user_id": uid, "nid": nid, "cid": cid, "vid": vid}
     return root, doc, _keyframe_paths(uid, nid, cid, vid), owner
 
 
 def _render_call(fn, *args, **kwargs):
-    """把出片会话的业务异常翻成 HTTP 状态码。"""
+    """把出片会话的业务异常翻成 HTTP 状态码；带代码的给消息对象（spec §3.2）。"""
     try:
         return fn(*args, **kwargs)
     except render_session.NotFound as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, detail=to_detail(e))
     except render_session.Conflict as e:
-        raise HTTPException(409, detail={"message": str(e), "expected_cny": e.expected_cny})
+        raise HTTPException(409, detail=to_detail(e, expected_cny=e.expected_cny))
     except render_session.Corrupt:
-        raise HTTPException(500, "出片记录文件已损坏，原文件已备份，请联系管理员处理")
+        raise HTTPException(500, detail=msg("film.session.corrupt_admin"))
     except render_session.SessionError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, detail=to_detail(e))
 
 
 def _style_for(uid: str, nid: str) -> Optional[dict]:
@@ -947,7 +948,7 @@ def _gate_status(user: dict, nid: str, cid: str, vid: str) -> dict:
     record = _novel_call(novels.get_version, user["id"], nid, cid, vid)
     doc = record.get("result") or {}
     if not doc.get("episodes"):
-        return {"ok": False, "message": "这个版本还没有分镜产物"}
+        return {"ok": False, "message": "这个版本还没有分镜产物"}  # i18n: todo(4)
     try:
         _render_gate(copy.deepcopy(doc), record)
     except HTTPException as e:
@@ -961,7 +962,7 @@ def render_session_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_
     """查询；按当前已保存的分镜重算指纹并标过期（在跑的段不动），附验证门结果（只报告）。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid, gate=False)
     if render_session.load(root) is None:
-        raise HTTPException(404, "还没有出片会话")
+        raise HTTPException(404, detail=msg("film.session.none"))
     s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                      allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     out = _render_call(render_session.view, s)
@@ -975,7 +976,7 @@ def render_session_patch(nid: str, cid: str, vid: str, body: RenderSettingsBody,
     """改设置（厂商、档位、分辨率、声音模式、上限）。有段在跑时 409。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
     if render_session.load(root) is None:
-        raise HTTPException(404, "还没有出片会话")
+        raise HTTPException(404, detail=msg("film.session.none"))
     s = _render_call(render_session.build, root, doc, owner=owner,
                      patch=body.model_dump(exclude_none=True), keyframes=kfs,
                      style=_style_for(owner["user_id"], owner["nid"]))
@@ -986,7 +987,7 @@ def _film_quote(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[lis
     """出片确认卡的预估：要出哪几段、合计多少元（不改段状态）。厂商与档位由用户在出片那一步选，所以要求已有会话。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
     if render_session.load(root) is None:
-        raise HTTPException(404, "还没有出片会话：先到出片那一步选好厂商与档位")
+        raise HTTPException(404, detail=msg("film.session.none_pick"))
     s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                      allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     targets, total = _render_call(render_session.run_quote, s, clip_ids)
@@ -1051,7 +1052,7 @@ def _free_ctx(user: dict, nid: str, cid: str, vid: str, gate: bool = False) -> t
     返回 (会话目录, 校验用的分镜 / 关键帧 / 有无风格图)。生成时 gate=True 过验证门。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid, gate=gate)
     if render_session.load(root) is None:
-        raise HTTPException(404, "还没有出片会话")
+        raise HTTPException(404, detail=msg("film.session.none"))
     style = _style_for(owner["user_id"], owner["nid"])
     _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                  allow_in_flight=True, style=style)
@@ -1108,7 +1109,7 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid).resolve()
     target = (root / path).resolve()
     if root not in target.parents or not target.is_file():
-        raise HTTPException(404, "文件不存在")
+        raise HTTPException(404, detail=msg("film.file.not_found"))
     return FileResponse(target)
 
 

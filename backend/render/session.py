@@ -20,13 +20,6 @@ from render.providers import base, default_fell_back, default_video_name, get_vi
 from server.messages import UserError, money, msg, render_zh, vendor
 
 
-def _rate_zh(provider) -> str:
-    """临时（任务 4 改为消息对象）：费率说明代码 → 中文；非消息对象的旧字符串原样用。"""
-    v = getattr(provider, "rate_note", "")
-    if isinstance(v, dict) and v.get("code"):
-        return render_zh(v["code"], v.get("params") or {})
-    return v
-
 SESSION_FILE = "session.json"
 IN_FLIGHT = ("queued", "running", "downloading")
 REMAINING = ("planned", "failed")
@@ -383,7 +376,7 @@ def view(s: dict) -> dict:
                       "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
                       "first_frame": caps.first_frame, "frame_with_refs": caps.frame_with_refs,
                       "audio_modes": compose.audio_modes(caps),
-                      "rate_note": _rate_zh(provider),  # 临时：任务 5 随 API 与前端改为消息对象
+                      "rate_note": provider.rate_note,
                       "default_note": _default_note(s)}
     return out
 

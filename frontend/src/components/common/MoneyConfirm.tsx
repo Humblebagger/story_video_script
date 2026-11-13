@@ -6,6 +6,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
 
@@ -19,7 +21,7 @@ export interface MoneyConfirmProps {
   budget: number
   /** 服务端重算后金额变了 */
   changed?: boolean
-  rateNote?: string
+  rateNote?: MsgLike
   /** 确认按钮的动作词，如「确认出片」 */
   action: string
   /** 额外拦截（未保存、验证门没过）：为 true 时确认按钮禁用 */
@@ -32,7 +34,7 @@ export interface MoneyConfirmProps {
 }
 
 export function MoneyConfirm(p: MoneyConfirmProps) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const after = Math.round((p.spent + (p.reserved ?? 0) + p.cny) * 100) / 100
   const over = after > p.budget + 1e-9
   return (
@@ -58,7 +60,7 @@ export function MoneyConfirm(p: MoneyConfirmProps) {
               </div>
               {over && <p className="text-destructive">{t('money.over')}</p>}
               <p className="text-xs text-muted-foreground">
-                {t('money.rateNote', { note: p.rateNote || t('money.rateUnknown') })}
+                {t('money.rateNote', { note: formatMsg(p.rateNote, locale) || t('money.rateUnknown') })}
               </p>
             </div>
           </AlertDialogDescription>

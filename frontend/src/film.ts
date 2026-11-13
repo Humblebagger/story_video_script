@@ -1,6 +1,7 @@
 /** 出片（视频生成）在画布上的纯计算：段在时间轴上的位置、横条文字与样式、总览主按钮、
  *  确认清单、轮询间隔、前置检查。useFilm 与画布组件只吃这里的结果；单测见 tests/film-lane.test.ts。 */
 import { tr } from './i18n/core'
+import { itemError } from './i18n/serverMsg'
 import { fmtClock } from './timeline'
 import type { TShot, Timeline } from './timeline'
 import type { FilmAttempt, FilmClip, FilmClipState, FilmFreeNode, FilmSession } from './types'
@@ -70,7 +71,7 @@ export function laneText(c: FilmClip, now: number): string {
     case 'done':
       return tr('film.done', { id: shortId(c.id), n: (c.chosen ?? 0) + 1, cost: yuan(chosenAttempt(c)?.cost_cny ?? 0) })
     case 'failed':
-      return c.error ?? tr('film.failed')
+      return itemError(c) || tr('film.failed')
     case 'stale':
       return tr('film.stale')
     default:
@@ -84,7 +85,8 @@ export function laneTitle(c: FilmClip): string {
   if (c.dropped_refs.length) lines.push(tr('film.droppedRefs', { list: c.dropped_refs.join(tr('common.listSep')) }))
   if (c.truncated) lines.push(tr('film.truncated'))
   if (c.uncertain) lines.push(tr('film.uncertain'))
-  if (c.error) lines.push(c.error)
+  const e = itemError(c)
+  if (e) lines.push(e)
   return lines.join('\n')
 }
 

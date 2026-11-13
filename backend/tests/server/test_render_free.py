@@ -89,6 +89,8 @@ def main() -> int:
     assert r.status_code == 200, r.text
     assert pick(r.json(), "F01")["prompt"] == "空镜：河面" and pick(r.json(), "F01")["refs"] == [char]
     assert c.patch(R + "/free/F01", headers=H, json={"refs": ["ZZ"]}).status_code == 422
+    r = c.patch(R + "/free/F01", headers=H, json={"refs": [char, char]})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "film.free.dup_ref", r.text
     assert c.patch(R + "/free/F02", headers=H, json={"duration": 3}).status_code == 422
     r = c.patch(R + "/free/F02", headers=H, json={"target": None})
     assert pick(r.json(), "F02")["target"] is None

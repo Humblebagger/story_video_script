@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
+import { formatMsg, itemError } from '@/i18n/serverMsg'
 import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
@@ -33,7 +34,7 @@ interface Props {
 }
 
 export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const s = film.session
   if (film.status === 'loading') return <p className="tlc__kfnote">{t('film.panel.loading')}</p>
   const blocked = dirty ? t('film.panel.blockedDirty')
@@ -42,7 +43,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
   const freeSel = s?.free?.find((n) => n.id === selected)
   return (
     <div className="film">
-      {film.error && <p className="tlc__kferr">{film.error}</p>}
+      {film.error && <p className="tlc__kferr">{formatMsg(film.error, locale)}</p>}
       {blocked && <p className="tlc__notice">{blocked}</p>}
       {s && <FilmConfirm s={s} film={film} blocked={blocked} />}
       {!s ? (
@@ -216,7 +217,7 @@ function Overview({ s, film, selected, blocked }: {
 function ClipDetail({ c, film, blocked, onPickShot }: {
   c: FilmClip; film: Film; blocked: string | null; onPickShot: (shotId: string) => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const sep = t('common.listSep')
   const [watch, setWatch] = useState<number | null>(null)
   const file = watch === null ? null : (c.attempts[watch]?.file ?? null)
@@ -240,7 +241,7 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
       {c.uncertain && (
         <p className="tlc__kferr">{t('film.panel.clipUncertain')}</p>
       )}
-      {c.error && <p className="tlc__kferr">{c.error}</p>}
+      {itemError(c, locale) && <p className="tlc__kferr">{itemError(c, locale)}</p>}
       <details>
         <summary>{t('film.panel.promptSum')}</summary>
         <pre className="film__prompt">{c.prompt}</pre>
@@ -306,7 +307,7 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
 
 /** 选中的自由节点：完整正文、参考、首帧、全部尝试（可播放）、失败原因；编辑与生成在节点图的卡片上 */
 function FreeDetail({ n, film }: { n: FilmFreeNode; film: Film }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const sep = t('common.listSep')
   const [watch, setWatch] = useState<number | null>(null)
   const file = watch === null ? null : (n.attempts[watch]?.file ?? null)
@@ -318,7 +319,7 @@ function FreeDetail({ n, film }: { n: FilmFreeNode; film: Film }) {
         <b><i className={`film__dot film__dot--${n.state}`} aria-hidden="true" />{t('graph.free.detail', { id: n.id })}</b>
         <span>{label(FILM_STATE, n.state)} · {n.duration}s · {yuan(n.estimate_cny)}</span>
       </header>
-      {n.error && <p className="tlc__kferr">{n.error}</p>}
+      {itemError(n, locale) && <p className="tlc__kferr">{itemError(n, locale)}</p>}
       <pre className="film__prompt">{n.prompt || t('film.panel.none')}</pre>
       <p className="film__line">{t('film.panel.refs', { list: n.refs.length ? n.refs.join(sep) : t('film.panel.none') })}</p>
       <p className="film__line">{t('film.panel.firstFrame', { v: firstFrameText({ first_frame: n.first_frame, frame_mode: null }) })}</p>

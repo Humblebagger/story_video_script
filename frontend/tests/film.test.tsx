@@ -37,6 +37,8 @@ const calls: string[] = []
 /** 下一次花钱请求先回 409（模拟服务端重算的金额变了） */
 let nextConflict: number | null = null
 let gateFail = false
+/** 下一次花钱请求回这个错（模拟带代码的 422 / 409） */
+let nextFail: { status: number; detail: unknown } | null = null
 /** 下一次读取会话抛网络错误（只一次） */
 let failNextGet = false
 /** 记下长间隔（轮询）定时器，看出错后有没有重新排上 */
@@ -138,6 +140,11 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
   }
   if (gateFail) return fail(422, { message: GATE, verification: { ok: false } })
   const spend = (targets: FilmClip[], expected: number | undefined, batch: boolean) => {
+    if (nextFail) {
+      const f = nextFail
+      nextFail = null
+      return fail(f.status, f.detail)
+    }
     const total = Math.round(targets.reduce((n, c) => n + c.estimate_cny, 0) * 100) / 100
     if (nextConflict !== null) {
       const fresh = nextConflict
@@ -463,6 +470,58 @@ console.log('10c. 出错后轮询不断 ✓')
   await refresh()
   must(!(container.textContent ?? '').includes('MINIMAX_API_KEY'), '为 null 时不显示')
   console.log('10f. 缺省回落提示 ✓')
+}
+
+// 10g. 后端错误按界面语言渲染：有 error_msg 按代码、没有就原样显示旧的 error；错误条存原始 detail，切语言跟着变
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { useI18n } = await import('../src/i18n/core')
+  const { en } = await import('../src/i18n/en')
+  const { zh } = await import('../src/i18n/zh')
+  const { conflictCny, ApiError } = await import('../src/api')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  function Cap() { setLoc = useI18n().setLocale; return null }
+  const lang = async (l: 'zh' | 'en') => { await act(async () => { setLoc(l) }); await settle() }
+  const [ca, cb] = [film!.clips[2].id, film!.clips[3].id]
+  Object.assign(clipOf(ca), { state: 'failed', error: '内容被 MiniMax 审核拦下（1026）：…',
+                              error_msg: { code: 'film.minimax.moderated', params: {} } })
+  Object.assign(clipOf(cb), { state: 'failed', error: '旧中文原因', error_msg: null })
+  film = recount({ ...film!, options: { ...film!.options, rate_note: { code: 'rate.fake', params: {} } } })
+  await act(async () => { root.render(<I18nProvider initial="zh"><Cap /><Host key="g1" withVersion /></I18nProvider>) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
+  await click(bar(ca))
+  must(has(zh.srv.film.minimax.moderated) && !has(en.srv.film.minimax.moderated), '中文界面：按代码渲染中文')
+  await lang('en')
+  must(has(en.srv.film.minimax.moderated) && !has(zh.srv.film.minimax.moderated), '切英文：按代码渲染英文')
+  await click(bar(cb))
+  must(has('旧中文原因'), '只有旧 error 时原样显示，切英文也不变')
+  await lang('zh')
+  must(has('旧中文原因'), '切回中文仍原样显示')
+  // 确认框的费率依据随语言变
+  await click(button('出剩余'))
+  must(has(zh.srv.rate.fake), '确认框费率依据（中文）')
+  await lang('en')
+  must(has(en.srv.rate.fake) && !has(zh.srv.rate.fake), '确认框费率依据（英文）')
+  await lang('zh')
+  await click(button('取消'))
+  // 409 带代码仍取得到重算金额
+  const conflict = new ApiError('x', 409, { code: 'film.run.changed', params: { amount: { t: 'money', cny: 6 } },
+                                            message: '预估金额已变为 ¥6.00，请重新确认', expected_cny: 6 })
+  must(conflictCny(conflict) === 6, '409 带代码：conflictCny 取到 6')
+  // 出片失败的错误条：存原始 detail，切语言跟着变
+  nextFail = { status: 422, detail: { code: 'film.run.nothing', params: {}, message: '没有要出的段' } }
+  await click(button('出剩余'))
+  await click(button('确认出片'))
+  must(has(zh.srv.film.run.nothing), '错误条（中文）')
+  await lang('en')
+  must(has(en.srv.film.run.nothing) && !has(zh.srv.film.run.nothing), '切英文后已显示的错误条跟着变')
+  console.log('10g. 后端错误按界面语言渲染 ✓')
+  await act(async () => { root.render(<Host key="v1" withVersion />) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
 }
 
 // 11. 播成片：有已出的段才有开关；切到「播成片」后播放，预览窗里是采用那次的视频

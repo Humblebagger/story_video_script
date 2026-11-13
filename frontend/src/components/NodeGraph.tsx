@@ -6,6 +6,7 @@ import type { PointerEvent as RPointerEvent, WheelEvent as RWheelEvent } from 'r
 import { Maximize2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import { cn } from '@/lib/utils'
 import { chosenAttempt, freeNodes } from '../film'
 import { edgePath, fitView, layoutGraph, related } from '../nodeGraph'
@@ -29,7 +30,7 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   onOpenAssets: () => void
   onOpenFilm: () => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const s = film.session
   const assets = doc.assets
   const graph = useMemo(() => (s ? layoutGraph({ session: s, assets: assets ?? {}, hasStyle: !!styleUrl, styleUrl }) : null),
@@ -113,7 +114,7 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
         <Button size="sm" variant="ghost" disabled={film.busy} onClick={() => void film.createFree()}>
           <Plus aria-hidden />{t('graph.newFree')}
         </Button>
-        {film.error && <span className="ngv__err">{film.error}</span>}
+        {film.error && <span className="ngv__err">{formatMsg(film.error, locale)}</span>}
         {blocked && <span className="ngv__err">{blocked}</span>}
       </div>
       <div className="ngv__world"

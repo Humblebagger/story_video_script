@@ -9,6 +9,8 @@ import {
   filmFileUrl, getFilm, muteFilmClip, patchFilm, patchFreeNode, runFilmClip, runFilmRest, runFreeNode,
 } from './api'
 import { tr } from './i18n/core'
+import { errValue, formatMsg } from './i18n/serverMsg'
+import type { MsgLike } from './i18n/serverMsg'
 import { needsConfirm, pollDelay } from './film'
 import type { FilmClip, FilmSession, FilmSettings, FreePatch, VersionRef } from './types'
 
@@ -16,15 +18,13 @@ export type FilmConfirm =
   | { kind: 'clip'; clipId: string; cny: number; changed: boolean; uncertain?: boolean }
   | { kind: 'rest'; cny: number; changed: boolean }
 
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
-
 export function useFilm(version: VersionRef | null | undefined, opts: { active: boolean }) {
   const { nid, cid, vid } = version ?? {}
   const enabled = !!(nid && cid && vid)
   const [session, setSession] = useState<FilmSession | null>(null)
   /** off：没有版本（不出片）；none：还没建会话 */
   const [status, setStatus] = useState<'off' | 'loading' | 'none' | 'ready'>(enabled ? 'loading' : 'off')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MsgLike>(null)
   /** 验证门没过的原因（读取时报告的，或出片被 422 拦下的） */
   const [gate, setGate] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -50,7 +50,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   /** 验证门拦截记到 gate（按钮据此禁用），其余显示原因 */
   const fail = useCallback((e: unknown) => {
     if (e instanceof ApiError && e.verification) setGate(e.message)
-    else setError(msg(e))
+    else setError(errValue(e))
   }, [])
 
   const load = useCallback(async () => {
@@ -166,7 +166,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
         live.current[path] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setError(tr('film.readClipFailed', { error: msg(e) })) })
+      .catch((e) => { if (gen.current === mine) setError(tr('film.readClipFailed', { error: formatMsg(errValue(e)) })) })
       .finally(() => asking.current.delete(path))
   }, [nid, cid, vid])
   useEffect(() => () => {

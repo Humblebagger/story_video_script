@@ -142,7 +142,7 @@ def main() -> int:
     sp = novels.render_dir(uid, nid, cid, "v1") / "session.json"
     sp.write_text("{坏的", encoding="utf-8")
     r = c.patch(R + f"/clips/{second['id']}", headers=H, json={"mute_native": False})
-    assert r.status_code == 500 and "损坏" in r.json()["detail"], r.text
+    assert r.status_code == 500 and "损坏" in r.json()["detail"]["message"], r.text
     assert sp.read_text(encoding="utf-8") == "{坏的"
     print("6b. 会话损坏 500 ✓")
 
@@ -220,7 +220,7 @@ def main() -> int:
     assert c.post(R9 + "/session", headers=H, json={}).status_code == 200
     s = c.get(R9 + "/session", headers=H).json()
     assert s["gate"] == {"ok": True, "message": None}, s["gate"]
-    assert "假厂商" in s["options"]["rate_note"], s["options"]
+    assert s["options"]["rate_note"] == {"code": "rate.fake", "params": {}}, s["options"]
     real_gate = app_mod._render_gate
 
     def failing_gate(doc, record):
@@ -255,6 +255,26 @@ def main() -> int:
     assert req13.style_ref == hashlib.sha256(PNG).hexdigest()
     assert [r.role for r in req13.refs].count("style") == 1
     print("13. 风格图进会话、进请求 ✓")
+
+    # 14. 出片接口的错误是带代码的消息对象（409 仍带重算金额）
+    R14 = f"/novels/{nid}/chapters/{cid}/versions/v14/render"
+    novels.create_version(uid, nid, cid, "v14", {}, "原文")
+    novels.update_version_state(uid, nid, cid, "v14", "succeeded", result=copy.deepcopy(DOC))
+    r = c.get(R14 + "/session", headers=H)
+    assert r.status_code == 404 and r.json()["detail"] == {
+        "code": "film.session.none", "params": {}, "message": "还没有出片会话"}, r.text
+    assert c.post(R14 + "/session", headers=H, json={}).status_code == 200
+    r = c.post(R14 + "/run", headers=H, json={})
+    d = r.json()["detail"]
+    assert r.status_code == 409 and d["code"] == "film.run.confirm" and d["expected_cny"] > 0, r.text
+    assert d["params"]["amount"]["t"] == "money" and d["params"]["amount"]["cny"] == d["expected_cny"], d
+    r = c.patch(R14 + "/session", headers=H, json={"resolution": "4k"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "film.settings.bad_resolution", r.text
+    r = c.get(R14 + "/files/nope.mp4", headers=H)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "film.file.not_found", r.text
+    s = c.get(R14 + "/session", headers=H).json()
+    assert s["options"]["rate_note"] == {"code": "rate.fake", "params": {}}
+    print("14. 出片接口错误带代码 ✓")
 
     print("\nALL PASS")
     return 0
