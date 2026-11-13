@@ -436,6 +436,7 @@ const { notifyUnauthorized } = await import('../src/auth')
 const { NovelPage } = await import('../src/components/NovelPage')
 const { I18nProvider } = await import('../src/i18n')
 const { setCurrentLocale, useI18n } = await import('../src/i18n/core')
+const { en } = await import('../src/i18n/en')
 
 const doc = win.document as unknown as Document
 const container = doc.createElement('div')
@@ -728,7 +729,7 @@ must(has('这一版转换失败：服务器出了点问题') && has('参考编�
   must(al().includes('这一版转换失败：批 2 重试 3 次后仍未通过校验') && !al().includes('FAIL: E01'), `failed_report 提示条只取原因（中文），实为 ${al()}`)
   await act(async () => { setLoc('en') })
   await settle(100)
-  must(!al().includes('批 2') && !al().includes('FAIL: E01') && al().length > 0, `failed_report 提示条只取原因（英文），实为 ${al()}`)
+  must(al() === en.app.versionFailed.replace('{msg}', en.srv.job.batch_failed.replace('{batch}', '2').replace('{retries}', '3')), `failed_report 提示条只取原因（英文），实为 ${al()}`)
   await act(async () => { setLoc('zh') })
   await settle(100)
   setCurrentLocale('zh')

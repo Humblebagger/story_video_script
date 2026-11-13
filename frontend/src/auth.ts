@@ -49,12 +49,18 @@ export function getCachedUser(): User | null {
   }
 }
 
+/** 登录态代数：每次登录 / 清除加一。请求发出时记下，401 回来时若已换代，说明是旧会话的响应 */
+let gen = 0
+export const sessionGen = (): number => gen
+
 export function setSession(token: string, user: User): void {
+  gen += 1
   write(KEY, token)
   write(USER_KEY, JSON.stringify(user))
 }
 
 export function clearSession(): void {
+  gen += 1
   write(KEY, null)
   write(USER_KEY, null)
 }

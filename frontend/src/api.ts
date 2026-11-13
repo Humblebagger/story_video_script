@@ -4,7 +4,7 @@
  *  各人只看得到自己的小说。会话结构：小说（长期记忆）→ 章节 → 版本（每次转换）。
  */
 import { currentLocale, tr } from './i18n/core'
-import { getToken, notifyUnauthorized } from './auth'
+import { getToken, notifyUnauthorized, sessionGen } from './auth'
 import { parseSse } from './lib/sse'
 import type { User } from './auth'
 import type { ServerMsg } from './i18n/serverMsg'
@@ -46,6 +46,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? '/api'
 /** 带 token 发请求，统一处理 401 与错误 detail；成功时返回原始 Response */
 async function send(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken()
+  const startedGen = sessionGen()
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
@@ -54,7 +55,8 @@ async function send(path: string, init?: RequestInit): Promise<Response> {
     },
   })
   if (res.status === 401 && token) {   // 没带 token 的 401（登录 / 注册失败）交给下面带服务端 detail 的错误
-    notifyUnauthorized()          // 广播出去，让 App 退回登录页
+    // 只有当前会话的 401 才广播；退出 / 换账号之后迟到的旧会话 401 只拒绝，不能清掉新会话
+    if (sessionGen() === startedGen) notifyUnauthorized()
     throw new Error(tr('api.unauthenticated'))
   }
   if (!res.ok) {

@@ -116,6 +116,8 @@ let jobGate: Promise<void> | null = null
 let adminSvcCalls = 0
 /** 非空时 /admin/service 卡在它上面（模拟慢响应） */
 let svcGate: Promise<void> | null = null
+/** 放行后 /admin/service 回 401（旧会话迟到的失效响应） */
+let svcUnauth = false
 const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
@@ -127,7 +129,9 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (path === '/healthz') return json({ status: 'ok', first_run: false })
   if (path === '/admin/service' && method === 'GET') {
     adminSvcCalls += 1
+    const unauth = svcUnauth; svcUnauth = false   // 只有第一个（旧会话的）请求回 401
     if (svcGate) await svcGate
+    if (unauth) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
     if (!/tok-root/.test(init?.headers?.Authorization ?? '')) return err(403, '需要管理员')
     return json({ model: 'stub-model', review_model: null, api_key_configured: false })
   }
@@ -773,6 +777,36 @@ console.log('I6. 提交转换失败的提示按语言渲染并随切换更新 �
   await a.done()
 }
 console.log('T9b. 换账号后旧响应被丢弃 ✓')
+
+// 旧会话迟到的 401 只拒绝，不能清掉新会话（退出再登录、会话过期再登录；新账号是普通用户 / 同一管理员 / 另一管理员）
+{
+  const { getToken, notifyUnauthorized } = await import('../src/auth')
+  users.root2 = { role: 'admin' }
+  const cases: { how: 'logout' | 'expire'; next: string }[] = [
+    { how: 'logout', next: 'alice' }, { how: 'logout', next: 'root' }, { how: 'logout', next: 'root2' },
+    { how: 'expire', next: 'alice' }, { how: 'expire', next: 'root' }, { how: 'expire', next: 'root2' },
+  ]
+  for (const c of cases) {
+    let release!: () => void
+    svcGate = new Promise<void>((r) => { release = r })
+    svcUnauth = true
+    const a = await boot('/', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+    if (c.how === 'logout') await click(a.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
+    else await act(async () => { notifyUnauthorized() })
+    await settle(200)
+    await openLogin(a.container)
+    await loginAs(c.next, 'pw')
+    await settle(400)
+    release(); svcGate = null
+    await settle(300)
+    const tag = `${c.how} → ${c.next}`
+    must(getToken() === `tok-${c.next}`, `${tag}：旧会话迟到的 401 不能清掉新令牌`)
+    must(!!a.q('[data-testid="account-menu"]') && !doc.body.querySelector('.login__field input'), `${tag}：新会话仍在应用里，没被踢回登录页`)
+    await a.done()
+  }
+  delete users.root2
+}
+console.log('T9d. 旧会话迟到的 401 不影响新会话 ✓')
 
 
 console.log('\nALL PASS')
