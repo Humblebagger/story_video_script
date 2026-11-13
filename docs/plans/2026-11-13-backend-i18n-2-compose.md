@@ -80,7 +80,7 @@
   1. 提交返回 401 `{"error":{"code":"AuthenticationError","message":"The API key ... sk-test..."}}` → `ProviderError`，`code == "film.ark.auth"`，`str(e)` 是新中文兜底，**不含**密钥与厂商原文。
   2. 403 `AccountOverdueError`、403 `OperationDenied.ServiceOverdue` → `film.ark.overdue`；403 `AccessDenied`、403 `InvalidAccountStatus`、403 `OperationDenied.PermissionDenied` → `film.ark.access_denied`；`OperationDenied` 族其它码（如 `OperationDenied.InvalidState`）不映射，走 `film.provider.rejected`。
   3. 404 `InvalidEndpointOrModel.NotFound`、404 `InvalidEndpointOrModel.ModelIDAccessDisabled`、404 `ModelNotOpen`、`OperationDenied.ServiceNotOpen`、`InvalidEndpoint.ClosedEndpoint` → `film.ark.model_unavailable`。
-  4. **429 `QuotaExceeded`**（提交与查询各一次）→ `TransientError`，`code == "film.ark.quota"`（可重试）；`QuotaExceeded` 出现在非 429 的 4xx 时（`_reject` 路径）同样抛 `TransientError` `film.ark.quota`。
+  4. **429 `QuotaExceeded`**（提交与查询各一次）→ `TransientError`，`code == "film.ark.quota"`（可重试）；`QuotaExceeded` 出现在非 429 的 4xx 时（`_reject` 路径）同样抛 `TransientError` `film.ark.quota`；5xx + `QuotaExceeded` 行为不变（提交 `AmbiguousSubmit`、查询 `film.ark.unavailable`）；`poll` 返回 `failed` + `QuotaExceeded` 是终态失败，`error_msg` 为 `film.ark.quota`；429 + 鉴权 / `OperationDenied` / 审核类码 → `film.ark.throttled` 照旧重试。
   5. **429 `SetLimitExceeded`**（提交与查询各一次）→ `ProviderError`（不是 `TransientError`、不是 `AmbiguousSubmit`），`code == "film.ark.limit_paused"`。
   6. 429 `RateLimitExceeded.EndpointRPMExceeded`、429 `ServerOverloaded`、429 `RequestBurstTooFast`、429 无 JSON → 仍是 `TransientError`，`code == "film.ark.throttled"`。
   7. 400 `SensitiveContentDetected.Violence`、400 `InputTextSensitiveContentDetected`、400 `InputImageSensitiveContentDetected`、400 `InputVideoSensitiveContentDetected`、400 `InputTextRiskDetection`、400 `InputImageRiskDetection` → `film.ark.input_moderated`。
@@ -149,7 +149,7 @@
       "QuotaExceeded": "film.ark.quota",
   }
   _ARK_HTTP = {401: "film.ark.auth", 403: "film.ark.access_denied"}
-  _ARK_TRANSIENT = {"film.ark.quota"}          # 映射后仍可重试的代码
+  _ARK_TRANSIENT = {"film.ark.quota"}          # 映射后仍可重试的代码（仅 429 与明确拒绝的 4xx；5xx 不适用）
 
 
   def _ark_code(code) -> Optional[str]:
@@ -191,7 +191,7 @@
 
   - 定位信息：`request_id = r.headers.get("X-Request-Id")`；`_call` 增加关键字参数 `model=None`、`task_id=None` 透传给 `_reject` / `_mapped`（`submit` 传 `m["id"]`，`poll` 传 `task_id`）。
   - `_reject(r, key)`：先 `err = _err_body(r)`；`our = _ark_code((err or {}).get("code")) or (None if err and (err.get("code") or err.get("message")) else _ARK_HTTP.get(r.status_code))`；`our` 有值就 `return _mapped(our, r.status_code, err or {}, key)`；否则走现有逻辑（不改）。
-  - `_call` 的 429 分支：`err = _err_body(r)`；`our = _ark_code((err or {}).get("code"))`；若 `our` 存在 → `raise _mapped(our, 429, err, self._key, …)`（`SetLimitExceeded` 得 `ProviderError`，`QuotaExceeded` 得 `TransientError`）；否则照旧 `raise TransientError.of("film.ark.throttled")`。限流类码不进映射表，自然落到瞬时分支。`TransientError` 在 `submit=True` 时也照旧可重试（方舟没有受理）。
+  - `_call` 的 429 分支：`err = _err_body(r)`；`our = _ark_code((err or {}).get("code"))`；若 `our` 是 `film.ark.limit_paused` 或 `film.ark.quota` → `raise _mapped(our, 429, err, self._key, …)`（`SetLimitExceeded` 得 `ProviderError`，`QuotaExceeded` 得 `TransientError`）；其余 429（含其它映射码）照旧 `raise TransientError.of("film.ark.throttled")`。限流类码不进映射表，自然落到瞬时分支。`TransientError` 在 `submit=True` 时也照旧可重试（方舟没有受理）。
   - `poll` 的 `failed` 分支：先 `our = _ark_code(err.get("code"))`；命中时 `m = msg(our)`，并 `log.warning`（同 `_mapped` 的内容，状态写 `task`，带任务 id 与查询响应的请求 id）；未命中走现有逻辑。命中时 `error = m["message"]`（中文兜底改为映射文案，见 spec A「中文兜底」）。
 
 - [ ] **Step 5: 前端文案**：`zh.ts`、`en.ts` 的 `srv.film.ark` 下加 10 个键。zh 与登记的中文一字不差（`srv-codes` 会校验）；en 示例：

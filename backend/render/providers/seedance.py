@@ -200,7 +200,9 @@ class Seedance:
         if r.status_code == 429:
             err = _err_body(r)
             our = _ark_code((err or {}).get("code"))
-            if our:                                  # SetLimitExceeded 重试没用；QuotaExceeded 仍可重试
+            # 429 里只有 SetLimitExceeded 不重试、QuotaExceeded 用自己的代码；其余（含鉴权、审核等
+            # 不该出现在 429 的码）一律当限流重试
+            if our in ("film.ark.limit_paused", "film.ark.quota"):
                 raise _mapped(our, 429, err, self._key, request_id=r.headers.get("X-Request-Id"),
                               task_id=task_id, model=model)
             raise TransientError.of("film.ark.throttled")

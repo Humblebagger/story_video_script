@@ -253,6 +253,22 @@ def main() -> int:
     e = must_raise(base.TransientError, status(403, body_of("QuotaExceeded")).submit, req)     # 非 429 同样可重试
     assert e.code == "film.ark.quota"
 
+    # 429 里别的映射码不该出现：一律当限流重试，不给用户鉴权 / 审核之类的误导文案
+    for vcode in ("AuthenticationError", "OperationDenied.ServiceNotOpen", "SensitiveContentDetected.Violence"):
+        e = must_raise(base.TransientError, status(429, body_of(vcode)).submit, req)
+        assert e.code == "film.ark.throttled", (vcode, e.code)
+        e = must_raise(base.TransientError, status(429, body_of(vcode)).poll, "x")
+        assert e.code == "film.ark.throttled"
+
+    # QuotaExceeded 只在 429 与明确拒绝的 4xx 可重试；5xx 照旧（提交含糊、查询不可用），不自动重提
+    e = must_raise(base.AmbiguousSubmit, status(500, body_of("QuotaExceeded")).submit, req)
+    assert e.code == "film.ark.http_ambiguous"
+    e = must_raise(base.TransientError, status(503, body_of("QuotaExceeded")).poll, "x")
+    assert e.code == "film.ark.unavailable"
+    # 查询返回 failed + QuotaExceeded：终态失败（不重试、不重提），文案是额度
+    st = task({"id": "x", "status": "failed", "error": body_of("QuotaExceeded")["error"]}).poll("x")
+    assert st.status == "failed" and st.error_msg["code"] == "film.ark.quota" and st.error == ZH["film.ark.quota"]
+
     # 真正的限流仍可重试
     for vcode in ("RateLimitExceeded.EndpointRPMExceeded", "ServerOverloaded", "RequestBurstTooFast"):
         e = must_raise(base.TransientError, status(429, body_of(vcode)).submit, req)
