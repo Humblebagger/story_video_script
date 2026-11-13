@@ -82,6 +82,28 @@ def main() -> int:
         "降级要说一声：推理块会重新开始烧预算"
     print("chat: 网关不认 thinking 则摘掉重试 ✓")
 
+    # 5b. 降级日志：先整段脱敏再截断，密钥跨过 120 字边界也不能留半截（终审 I2）
+    _prev_key = os.environ.get("ANTHROPIC_API_KEY")
+    for place in ("edge", "inside"):
+        key = "sk-ant-synthetic-" + "Zx9Qw7Lm3Vb5Nc1Rt8Yh2"
+        os.environ["ANTHROPIC_API_KEY"] = key
+        text = ("x" * 100 + key + " thinking rejected") if place == "edge" else ("thinking " + key)
+
+        def picky_k(messages, _t=text):
+            raise anthropic.BadRequestError(
+                _t, response=httpx2.Response(400, request=httpx2.Request("POST", "http://x")), body=None)
+        logs5 = []
+        invk = ChatInvoker(Settings(api_key="k", thinking="2000"),
+                           chat=FakeChat(responses=[picky_k, "好"]), log=logs5.append)
+        invk.invoke([HumanMessage("x")])
+        out = "\n".join(logs5)
+        assert "不接受 thinking" in out and key not in out and key[:20] not in out, (place, out)
+    if _prev_key is None:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+    else:
+        os.environ["ANTHROPIC_API_KEY"] = _prev_key
+    print("chat: 降级日志先脱敏再截断 ✓")
+
     # 6. 非 thinking 的 400 不许吞掉
     calls6 = []
 

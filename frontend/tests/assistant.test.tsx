@@ -553,6 +553,8 @@ const enter = async (composing = false, keyCode = 13) => {
     { role: 'assistant', text: '', tools: [], goto: [], cards: [
       { tool_call_id: 'f1', action: 'compose', outcome: 'failed', error: '小说不存在', error_msg: { code: 'novel.not_found', params: {} } },
       { tool_call_id: 'f2', action: 'compose', outcome: 'failed', error: '旧存档原文' },
+      { tool_call_id: 'f3', action: 'compose', outcome: 'failed', error: '服务器出了点问题（参考编号 K7Q2M9XD）',
+        error_msg: { code: 'common.internal', params: {}, ref: 'K7Q2M9XD' } },
       { tool_call_id: 'p1', action: 'plot_edit', outcome: 'pending',
         card: { ...base, tool_call_id: 'p1',
                 warnings: [{ code: 'assistant.edit.nothing', params: {}, message: '没有要改的地方' }],
@@ -566,6 +568,7 @@ const enter = async (composing = false, keyCode = 13) => {
   root = await mountL('n-i18n3')
   const fails = $$('assistant-card-failed')
   must(fails[0].textContent!.includes('小说不存在') && fails[1].textContent!.includes('旧存档原文'), '失败卡中文')
+  must(fails[2].textContent!.includes('参考编号 K7Q2M9XD'), '失败卡带参考编号 ' + fails[2].textContent)
   const rowsT = () => $$('assistant-diff-row').map((r) => r.querySelector('p')!.textContent ?? '')
   must(rowsT()[0].startsWith('全书梗概') && rowsT()[1].startsWith('第一章 梗概') && rowsT()[2].startsWith('E01-SH003'), 'diff 目标中文 ' + rowsT().join('|'))
   must(txt('assistant-card-warnings').includes('没有要改的地方'), '警告中文')
@@ -573,6 +576,7 @@ const enter = async (composing = false, keyCode = 13) => {
   const fe = $$('assistant-card-failed')
   must(!hasZh(fe[0].textContent ?? '') && fe[0].textContent!.length > 10, '失败卡切英文 ' + fe[0].textContent)
   must(fe[1].textContent!.includes('旧存档原文'), '没有 error_msg 显示原文')
+  must(fe[2].textContent!.includes('reference K7Q2M9XD') && !hasZh(fe[2].textContent ?? ''), '失败卡英文带参考编号 ' + fe[2].textContent)
   must(rowsT()[0].startsWith('Book synopsis'), '全书梗概英文 ' + rowsT()[0])
   must(rowsT()[1].startsWith('第一章 synopsis'), '章梗概英文 ' + rowsT()[1])
   must(rowsT()[2].startsWith('E01-SH003'), '镜头目标原样 ' + rowsT()[2])

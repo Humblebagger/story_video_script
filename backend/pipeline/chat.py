@@ -327,7 +327,9 @@ class ChatInvoker:
                     or _thinking_param(self._settings.thinking) is None:
                 raise
             # 网关不认这个参数：退回默认行为，但要说一声——推理块会重新开始烧预算
-            self._log(f"服务端不接受 thinking 参数（{str(e)[:120]}），"
+            from render.providers.base import scrub_secrets   # 放函数里：pipeline 导入时不依赖 render
+            detail = scrub_secrets(str(e), (getattr(self._settings, "api_key", "") or "",))[:120]   # 先脱敏再截断
+            self._log(f"服务端不接受 thinking 参数（{detail}），"
                       "改用模型默认行为重试")
             self._no_thinking = self._model if self._injected else build_chat_model(
                 replace_thinking(self._settings), model=self._model_name)

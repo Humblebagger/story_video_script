@@ -273,6 +273,33 @@ def main() -> int:
     assert "msg" not in events.history(fk, {})[1]["tools"][0]
     print("15. 操作报错与被停掉 ✓")
 
+    # 15b. 带参考编号的工具报错（common.internal + ref）：编号经生产包装一路保留（终审 I1）
+    from server.messages import msg as _m, with_ref as _wr
+    from assistant.tools import ToolError as _TE
+    refd = _TE.from_msg(_wr(_m("common.internal"), "K7Q2M9XD"))
+
+    def _raise_ref(*a, **k):
+        raise refd
+    _old_doc, _old_ver = tools_mod._doc, actions._version
+    tools_mod._doc, actions._version = _raise_ref, _raise_ref
+    try:
+        model = ScriptedChat(script=[call("shots_get", {}, "r1"), call("film_run", {}, "r2"), AIMessage("坏了。")])
+        with store.saver(uid, nid) as cp:
+            agent = graph.build_agent(model, cp)
+            evs = list(events.stream(agent, cfg, "查镜头"))
+            h = events.history(agent, cfg)
+    finally:
+        tools_mod._doc, actions._version = _old_doc, _old_ver
+    te = next(e for e in evs if e["event"] == "tool_end")["data"]
+    ac = next(e for e in evs if e["event"] == "action")["data"]
+    want = {"code": "common.internal", "params": {}, "ref": "K7Q2M9XD"}
+    assert te["msg"] == want, te
+    assert ac["error_msg"] == want, ac
+    assert h[-1]["tools"][0]["msg"] == want and h[-1]["cards"][0]["error_msg"] == want, h[-1]
+    assert events.action_view(ToolMessage("x", tool_call_id="z", name="film_run", status="error",
+                                          artifact={"error": refd.as_msg()}))["error_msg"] == want
+    print("15b. 工具报错保留参考编号 ✓")
+
     # 16. 改内容工具在智能体里：出卡发 confirm（不出工具行），应用后发 action（不带撤销数据）；历史里撤销过的卡标 undone
     assert [t.name for t in graph.ALL_TOOLS][-3:] == list(edits.EDITS)
     novels.set_outline(uid, nid, "旧梗概")

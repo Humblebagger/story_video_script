@@ -808,6 +808,19 @@ console.log('T9b. 换账号后旧响应被丢弃 ✓')
 }
 console.log('T9d. 旧会话迟到的 401 不影响新会话 ✓')
 
+// 当前会话（没换过账号）的 401 经请求层（api.ts send）：清令牌、回登录页并提示登录已过期
+{
+  const { getToken } = await import('../src/auth')
+  svcUnauth = true
+  const a = await boot('/', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+  await settle(400)
+  must(getToken() === null, '当前会话的 401 经请求层应清掉令牌')
+  must(!a.q('[data-testid="account-menu"]'), '当前会话的 401 后不再显示账号菜单')
+  must(doc.body.textContent!.includes('登录已过期'), '当前会话的 401 后登录框带过期提示')
+  await a.done()
+}
+console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
+
 
 console.log('\nALL PASS')
 process.exit(0)

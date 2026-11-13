@@ -59,16 +59,24 @@ def error_msg(e: BaseException, user_id: Optional[str] = None, where: str = "ass
     return error_refs.unexpected(e, "assistant.crashed", user_id=user_id, where=where)
 
 
+def _ui(m: dict) -> dict:
+    """界面用的消息对象：code、params，加顶层参考编号 ref（不是嵌套原因，不能丢）。"""
+    out = compact(m)
+    if m.get("ref"):
+        out["ref"] = m["ref"]
+    return out
+
+
 def _tool_msg(m: ToolMessage) -> Optional[dict]:
     """失败的工具结果里带的消息对象（ToolError 经 graph._with_artifact 放进 artifact）；旧存档、无代码的报错为 None。"""
     a = m.artifact if m.status == "error" else None
     e = a.get("error") if isinstance(a, dict) else None
-    return compact(e) if isinstance(e, dict) and e.get("code") else None
+    return _ui(e) if isinstance(e, dict) and e.get("code") else None
 
 
 def _failed(m: dict) -> dict:
     """失败条目：error 留中文兜底（旧前端、给模型的同一句话），error_msg 给界面按语言渲染。"""
-    return {"error": m["message"], "error_msg": compact(m)}
+    return {"error": m["message"], "error_msg": _ui(m)}
 
 
 def action_view(m: ToolMessage, hide: Optional[str] = None) -> dict:
