@@ -1,7 +1,7 @@
 # 后端对用户文字统一中英双语 设计
 
 日期：2026-11-13
-状态：已过设计审查（Opus），修订完毕；子计划 1 已交付；子计划 2 范围已补充（见文末）
+状态：已过设计审查（Opus），修订完毕；子计划 1、2 已交付；子计划 2、3 范围已补充（见文末）
 
 ## 1. 目标与已决事项
 
@@ -405,3 +405,153 @@
 
 - **错误参考编号**：失败时给用户一个参考编号（与日志里的记录对应），方便用户报给管理员。放到子计划 3 的管理后台一起设计。
 - **豆包语音 4xx 映射**：鉴权失败、余额不足等 4xx 映射为友好代码（与方舟同法）。子计划 2 只做未配置与通用拒绝，映射留作后续。
+
+## 子计划 3 范围补充（2026-11-13，子计划 2 交付后）
+
+§9 子计划 3 原范围是「auth、novels、library、admin、usage、pricing、store，以及对应接口和 version.error」。本节把范围落到具体调用点，并补上子计划 2「后续事项」推过来的错误参考编号。
+
+### A. 范围
+
+**后端模块**（凡是会到达用户的 raise 都带代码；异常类保留原基类、混入 `UserError`，见 §5.2）：
+
+| 模块 | 异常类改法 | 说明 |
+|---|---|---|
+| `server/auth.py` | `AuthError(UserError, Exception)` | 注册、登录、停用、改密码、用户不存在。`user_dir` 的「非法的用户 ID」只来自签过名的 token 与目录名，标 `# i18n: internal`；`update_user` 的「不允许修改」只有 admin.py 用白名单字段调用，同样标 internal |
+| `server/novels.py` | `NovelError(UserError, ValueError)`、`NotFound(UserError, LookupError)`；`Busy` 继承 `NovelError` | 小说、章节、版本、采用、资产卡、人物生命周期、摘要、创作限制、关键帧、风格参考图 |
+| `server/library.py` | 新增 `LibraryError(UserError, ValueError)` | 目前没有接口直接调用（资产库已并进小说长期记忆），仍给代码，免得以后接回接口时漏掉。资产卡的三条与 novels 文字相同，复用 `novel.asset.*` |
+| `server/admin.py` | `AdminError(UserError, Exception)`、`NotFound(AdminError)` | 下层（auth、usage）带代码的异常换成 `AdminError` 时**保留原代码与参数**，不再 `AdminError(str(e))` |
+| `server/usage.py` | 新增 `UsageError(UserError, ValueError)` | 不支持的分组 |
+| `server/pricing.py` | 新增 `PricingError(UserError, ValueError)` | 价格表校验 |
+| `server/store.py` | 不改类 | 唯一的 raise（非法的记录 ID）只被迁移代码用目录里的文件名调用，标 `# i18n: internal` |
+
+**`server/app.py` 调用点**（逐个列在计划的「调用点清单」里）：
+- 守门：`current_user` 的 401、`admin_user` 的 403。
+- 账号：`/auth/register`、`/auth/login`。
+- 小说：`_novel_call`（404/409/422 一律 `to_detail(e)`）、`_clean_params`、`_start_version` 的「本章还没有原文」与月上限 429、`chapters_digest` 的「章后整理已关闭」、`memory_asset_upsert` 的卡片 id 不一致。
+- 渲染任务包：`render_plan` 的 `run_id` 非法（400）与版本不存在（404）。同一函数里「分镜结构不完整」和验证门属于子计划 4，行尾标 `# i18n: todo(4)`。
+- 管理：`_admin_call`、`admin_usage`/`admin_usage_csv` 的 `days` 校验、`admin_pricing_put`，以及新增的错误记录接口（见 C）。
+- 章后整理失败（`_run_digest`）的持久化原因（见 B）。
+
+**持久化错误**：
+- **版本**：`version.error` 旁加 `error_msg`，与会话同形（§3.3）。`novels.create_version` 初值 `error_msg: None`，`update_version_state` 接受 `error_msg` 字段，管理后台失败任务列表一并返回。
+  - 版本失败原因**只由转换任务路径产出**（`app._execute` 写 `error=`）。子计划 3 只做好存储与显示，产出点留给子计划 4。
+  - 显示处：App.tsx 打开失败版本时的提示、管理后台「任务」页的失败列表。有 `error_msg` 按代码，没有就原样显示 `error`。
+- **章后整理**：`chapter.digest.error` 现在存的是 `repr(e)[:300]`（Python 异常原文）。改为 `error`（中文兜底）加 `error_msg`（`chapter.digest.failed`，带参考编号），异常原文只进日志和错误记录。
+
+**前端**：凡是显示上述接口错误的地方，都改为存 `errValue(e)`（或带代码的持久化字段），渲染时 `formatMsg`，切换语言后跟着变。toast 是即时的，弹出时 `formatMsg(errValue(e))` 即可。涉及：
+- 登录注册弹窗；
+- App.tsx 的页面提示条（改为存「文案键 + 错误值」，渲染时再拼）与提交转换的错误（`useJob.start`）；
+- 小说页、小说概览、资产卡、画布侧栏（剧情、限制）、风格参考图、关键帧上传与删除、渲染任务包页；
+- 章后整理状态（VersionBar）；
+- 管理后台各页的读取错误条、操作 toast、任务页失败原因，以及新增的「错误记录」页签。
+
+**不在本子计划**：
+- job 接口（「job 不存在」、批次预览）、转换任务的进度、失败、quality_report、验证门、「分镜结构不完整」→ 子计划 4；
+- 助手接口（含 `_assistant_db` 的「小说不存在」、撤销时转 `NovelError` 的 409）→ 子计划 4；
+- 验证报告 → 子计划 5；
+- 豆包语音 4xx 映射 → 仍是后续事项；
+- `admin.py main()` 的命令行输出、启动与迁移时的 `print` → 运维看的，保持中文，行尾标 `# i18n: internal`；
+- pydantic 校验失败的 422（`detail` 是列表）：前端已有的登录、密码等输入框先挡住了空值，不在本次改。
+
+### B. 错误参考编号
+
+**目的**：意外失败时，界面只说「出了点问题，请联系管理员」。用户把参考编号报给管理员，管理员在后台按编号找到那次失败的完整记录（堆栈、位置、哪个用户）。
+
+**哪些失败带编号**（只给「用户自己解决不了、原因只在服务器上」的失败）：
+
+| 场景 | 代码 | 何时产生 |
+|---|---|---|
+| 接口里没接住的异常（原来变成纯文本 500） | `common.internal` | 每次 |
+| 章后整理失败（持久化在章节上） | `chapter.digest.failed` | 每次 |
+| 出片提交时的意外异常（子计划 2 的 `film.submit.crashed`） | 沿用 | 每次 |
+| 合成时的意外异常（子计划 2 的 `compose.crashed`） | 沿用 | 每次 |
+
+后两项的代码与文案不变，只是把子计划 2 已有的 `log.error`（脱敏后的堆栈）改为经错误记录写出，并把编号带进持久化的 `error_msg`。
+
+**不带编号**：
+- 可预期的业务错误（4xx，如重名、未登录、原文已锁定）：用户看文案就能处理。
+- 配置类与厂商映射类错误（如 `film.ark.no_key`、`film.ark.auth`、`usage.monthly_cap`）：原因确定，管理员看文案就知道去哪查，日志里已有明细。以后需要时可按同一套接口加，不改数据形状。
+
+**数据形状**：消息对象顶层多一个可选字段 `ref`。
+```json
+{"code": "common.internal", "params": {}, "message": "服务器出了点问题，请稍后重试；仍失败请联系管理员（参考编号 K7Q2M9XD）", "ref": "K7Q2M9XD"}
+```
+- `ref` 只出现在顶层，不进 `params`，嵌套原因（`compact`）不带它。
+- `message`（中文兜底）末尾附「（参考编号 X）」。这样旧前端、`ApiError.message`、还没改造的显示处也能看到编号。
+- 持久化：`error_msg` 为 `{code, params, ref}`；`error` 为带编号的中文兜底。`session.set_error` 与 `copy_error` 保留 `ref`。
+- 编号：8 位，取自 32 个字符（数字加大写字母，去掉 I、L、O、U），由 `secrets` 生成。查找时忽略大小写、空格与连字符。
+
+**存储**：`DATA_DIR/error_refs.jsonl`，追加写，一行一条：
+```json
+{"ref": "K7Q2M9XD", "at": "2026-11-13T08:00:00+00:00", "user_id": "a1b2c3d4e5f6", "code": "common.internal", "params": {}, "where": "GET /novels/n1", "detail": "Traceback …"}
+```
+- `user_id` 可为 null（取不到用户时）。用户名在读出时按 `user_id` 现查，不写进文件。
+- `where`：接口是「方法 + 路径」（不含查询串），后台线程是「digest 小说 id/章节 id」「submit 会话目录」「compose 会话目录」。
+- `detail`：堆栈或原文。先 `scrub_secrets`（Bearer 凭据、环境里的厂商密钥、调用方给的额外密钥，如厂商对象持有的 key），再截断到 8000 字。不记请求体、请求头、查询串、局部变量。
+- **上限**：保留最近 1000 条。行数超过 2000 时整体重写为最后 1000 条（临时文件 + `replace`，单进程内加锁）。服务是单进程部署（线程池并发），不考虑多进程同时写。
+- **日志**：每条同时写一条 `logging.getLogger("server.errors").error`，内容是同样脱敏后的 `ref`、`code`、`user`、`where` 与 `detail`。日志与记录都不得出现密钥。
+
+**在哪里加编号**：
+- **接口 500**：在 `app.py` 加一个纯 ASGI 中间件，接住路由里没处理的异常，记一条、返回 `500 {"detail": <common.internal 消息对象，带 ref>}`。
+  - 中间件要注册在 CORS 之内（代码里写在 `CORSMiddleware` 的 `add_middleware` **之前**；Starlette 后加的在外层）。这样 500 响应也带 CORS 头，跨源的前端能读到 detail。
+  - 响应已经开始（流式接口中途出错）时不接管，照旧抛出。
+  - `HTTPException` 由内层的 ExceptionMiddleware 处理，不会走到这里。
+  - 用户 id 从 `Authorization` 头按 `auth.verify_token` 解析，失败就记 null。
+- **后台线程**：在原来写失败的地方，调用 `error_refs.record_exc(...)` 拿到编号，再用 `with_ref(msg(code), ref)` 写入。
+
+**管理后台**：
+- 接口：`GET /admin/errors?limit=200`（最新在前，带用户名）；`GET /admin/errors/{ref}`（找不到 404 `admin.error_ref.not_found`）。都要管理员权限。
+- 页签「错误记录」：顶部一个按编号查找的输入框，下面是最近记录表（时间、用户、编号、说明、位置），点开看脱敏后的 `detail`。说明按代码用当前界面语言渲染。
+- 管理员能看到的就是服务器日志里已有的内容，没有新增敏感面。
+
+**前端显示**：
+- `formatMsg` 遇到顶层带 `ref` 的消息对象，在渲染结果后附 `common.refSuffix`：中文「（参考编号 {ref}）」，英文「 (reference {ref})」。
+- 若渲染结果已包含编号（缺译时回落到已带编号的 `message`），就不再重复附加。
+- 嵌套原因里的消息对象不附编号。
+
+**不采用的做法**：
+- **编号放进 `params`**：每个可能带编号的代码都得在模板里留 `{ref}`，嵌套时也会被一起渲染。放顶层与代码无关，前端统一处理。
+- **用 `@app.exception_handler(Exception)`**：Starlette 把它交给最外层的 ServerErrorMiddleware。它在 CORS 之外，响应不带 CORS 头，跨源前端读不到 detail；而且它处理完还会再抛一次，uvicorn 会把未脱敏的堆栈打进日志。
+- **所有错误都带编号**：4xx 业务错误自带说明，编号只会增加噪音和写盘量。
+- **用请求 id 或 UUID**：太长，用户口头或手抄转述时容易抄错。8 位、去掉易混字符就够。重复的概率在 1000 条的窗口里可以忽略。
+- **存进 SQLite 或按天分文件**：与 `usage.jsonl`、`admin_audit.jsonl` 的做法不一致；1000 条的规模用 JSONL 足够。
+
+**留给子计划 4**：转换任务 `_execute` 的通用异常分支（`except Exception`）、助手的 SSE `error` 事件，用同一套 `record_exc` / `with_ref` 接上。
+
+### C. 代码命名（新登记）
+
+按 §4 的域划分：
+- `auth.*`：账号与权限。
+- `novel.*`：小说本身，以及挂在小说上的长期记忆，子域有 `asset`、`lifecycle`、`constraint`、`style`。
+- `chapter.*`：章节，以及挂在章节上的内容，子域有 `version`、`keyframe`、`digest`。
+- `admin.*`：管理操作，子域有 `pricing`、`error_ref`。
+- `usage.*`：用量。
+- `library.*`：旧资产库。
+- `common.*`：跨域，有 `internal`、`image_too_big`。
+
+完整列表与中文兜底见计划。
+- **面向最终用户**（沿用子计划 2 B 节原则）：
+  - 不出现环境变量名。`chapter.digest.off` 只说「章后整理功能没有开启，请联系管理员」，`STORYBOARD_CHAPTER_DIGEST=0` 写进日志。前端 `flow.digest.off` 同步去掉变量名。
+  - 不出现内部枚举值。「这个版本的状态是 {status}，不能采用」去掉 `status`。
+- **文字变化**：以下几条的中文兜底与现在不完全相同，计划里逐条列出：
+  - `repr` 引号去掉：`novel.bad_id`、`novel.asset.id_mismatch`、`admin.pricing.bad_row`；
+  - 列表改用「、」连接：`novel.unknown_params`；
+  - 去掉状态值：`chapter.version.not_adoptable`；
+  - 不再出现环境变量名：`chapter.digest.off`；
+  - 不再存 `repr(e)`：`chapter.digest.failed`；
+  - 原来的纯文本「Internal Server Error」改为消息对象：`common.internal`。
+
+### D. 测试补充
+
+- 后端：
+  - 各模块断言 `code` 与关键 `params`；
+  - 中间件 500：detail 形状、`ref` 能在记录里找到、记录与日志里没有测试密钥、带 `Origin` 时响应有 CORS 头；
+  - 错误记录：截断、超过上限时裁剪、查找不区分大小写；
+  - `set_error` 保留 `ref`；
+  - 章后整理失败：`error_msg` 带编号，`error` 里没有异常类名。
+- ast 扫描：`MODULES` 加入上表七个模块与 `server/error_refs.py`（全文件），app 函数集合加入 A 节列出的函数。`SINK_NAME` 补上 `Busy`（novels 的 409 异常名不以 Error 结尾，现在扫不到）。扫描结果要清零。
+- 前端：
+  - `formatMsg` 附编号且不重复；
+  - 登录错误、页面提示条、管理后台错误条在切换语言后跟着变；
+  - 错误记录页签能按编号查找；
+  - 失败版本与章后整理失败按 `error_msg` 渲染，旧数据显示 `error`。
