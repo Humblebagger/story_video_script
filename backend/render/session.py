@@ -429,11 +429,13 @@ def begin_submit(root, clip_id: str) -> Optional[dict]:
 
 
 def submitted(root, clip_id: str, task_id: str, first_frame_used: Optional[str],
-              style_ref: Optional[str] = None) -> None:
+              style_ref: Optional[str] = None, images: Optional[int] = None) -> None:
     with mutate(root) as s:
         c = _item(s, clip_id)
         c["attempts"][-1].update(task_id=task_id, state="running", first_frame_used=first_frame_used,
                                  style_ref=style_ref)
+        if images is not None:
+            c["attempts"][-1]["images"] = int(images)
         c["state"] = "running"
 
 

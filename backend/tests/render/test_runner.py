@@ -326,7 +326,17 @@ def main() -> int:
     c = clip(r8, i8[0])
     assert len(calls) == 1, calls
     assert c["state"] == "failed" and c["uncertain"] is True and len(c["attempts"]) == 1
-    assert c["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到方舟控制台核对") and "ReadTimeout" in c["error"]
+    assert c["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到厂商控制台核对") and "ReadTimeout" in c["error"]
+    # 厂商自报控制台名时用它
+    r8b, i8b = fresh("ambiguous2")
+    sess.queue_run(r8b, [i8b[0]])
+    fake.console_name = "某某控制台"
+    rn = quick()
+    rn.watch(r8b)
+    rn.tick()
+    rn.tick()
+    assert clip(r8b, i8b[0])["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到某某控制台核对")
+    del fake.console_name
     fake.submit = real_submit
     print("13. 提交结果不明不重试 ✓")
 
@@ -418,6 +428,23 @@ def main() -> int:
     assert c3["attempts"][-1]["style_ref"] is None and not c3.get("error"), c3
     drain()
     print("风格图写回尝试（含建会话后换图 / 删图）✓")
+
+    # 16. 提交时算出实际张数写进尝试；计费时 _stub 把它带给 cost
+    costs = []
+    real_cost = fake.cost
+    fake.cost = lambda st, req: (costs.append(req.images), real_cost(st, req))[1]
+    r16, i16 = fresh("images")
+    sess.queue_run(r16, [i16[0]])
+    rn = quick()
+    rn.watch(r16)
+    for _ in range(5):
+        rn.tick()
+    a = clip(r16, i16[0])["attempts"][-1]
+    sent = fake.submitted[-1]
+    assert a["images"] == len(sent.refs) + (1 if sent.first_frame else 0)
+    assert costs and costs[-1] == a["images"]
+    fake.cost = real_cost
+    print("16. 尝试记张数、计费桩带张数 ✓")
 
     print("\nALL PASS")
     return 0

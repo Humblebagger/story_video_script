@@ -61,6 +61,7 @@ def _error_text(r: httpx.Response) -> str:
 
 class Seedance:
     name = "seedance"
+    console_name = "方舟控制台"
     default_model = DEFAULT_MODEL
     rate_note = ("2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，"
                  "token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对")

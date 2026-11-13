@@ -181,9 +181,10 @@ class Runner:
 
     @staticmethod
     def _stub(s: dict, c: dict) -> base.ClipRequest:
-        """计费用的最小请求：档位、分辨率、时长。"""
+        """计费用的最小请求：档位、分辨率、时长，以及提交时实际发出的图片张数（旧尝试没有记为 None）。"""
+        last = (c.get("attempts") or [{}])[-1]
         return base.ClipRequest(prompt=c["prompt"], model=s["model"], duration=c["duration"],
-                                resolution=s["resolution"])
+                                resolution=s["resolution"], images=last.get("images"))
 
     def _poll(self, root, provider, s, c) -> None:
         a = c["attempts"][-1]
@@ -212,7 +213,7 @@ class Runner:
         except base.TransientError as e:
             if self._transient("download", root, c, a["task_id"], e, self.download_give_up_sec):
                 sess.download_failed(root, c["id"], "下载一直失败，结果地址即将过期：" + str(e), cost)
-            return                                  # 结果地址 24 小时有效，下一轮再下
+            return                                  # 结果地址限时有效，下一轮再下
         except base.ProviderError as e:
             self._clear("download", root, c, a["task_id"])
             sess.download_failed(root, c["id"], str(e), cost)
@@ -242,7 +243,8 @@ class Runner:
         try:
             tid = self._retry(lambda: provider.submit(req))
         except base.AmbiguousSubmit as e:          # 厂商可能已建了付费任务：不重试
-            sess.submit_failed(root, c["id"], "提交时连接中断，不确定厂商是否已受理：请到方舟控制台核对，"
+            where = getattr(provider, "console_name", "") or "厂商控制台"
+            sess.submit_failed(root, c["id"], f"提交时连接中断，不确定厂商是否已受理：请到{where}核对，"
                                "确认没有生成再重做（" + str(e) + "）", uncertain=True)
             return False
         except base.TransientError as e:
@@ -255,7 +257,8 @@ class Runner:
             sess.submit_failed(root, c["id"], f"提交异常：{type(e).__name__}: {e}")
             return False
         try:
-            sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None))
+            sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None),
+                           images=len(req.refs) + (1 if req.first_frame else 0))
         except Exception:
             print(f"[render] 已提交但写回失败，任务 id {tid}（{root} {c['id']}），请到厂商控制台核对")
             raise

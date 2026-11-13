@@ -348,6 +348,16 @@ def main() -> int:
     assert next(c for c in v8["clips"] if c["id"] == x)["style_outdated"] is True
     print("18. 风格图记录与可重出 ✓")
 
+    # 19. 提交时在尝试里记实际发出的图片张数；不传时不写
+    root9 = Path(tmp.name) / "render" / "v9"
+    s9 = sess.build(root9, doc, owner=OWNER, patch={}, keyframes={})
+    cid = s9["clips"][0]["id"]
+    sess.queue_run(root9, [cid])
+    assert sess.begin_submit(root9, cid) is not None
+    sess.submitted(root9, cid, "t-img", None, images=7)
+    assert clip(sess.load(root9), cid)["attempts"][-1]["images"] == 7
+    print("19. 尝试记录图片张数 ✓")
+
     print("\nALL PASS")
     return 0
 
