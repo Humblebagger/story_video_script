@@ -26,6 +26,7 @@ os.environ["STORYBOARD_RENDER_RUNNER"] = "0"     # 不起后台线程，测试�
 
 from fastapi.testclient import TestClient  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
+from server.messages import msg  # noqa: E402
 from render import providers, session as render_session  # noqa: E402
 from render.providers.fake import FAKE_MP4, FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
@@ -228,17 +229,45 @@ def main() -> int:
     real_gate = app_mod._render_gate
 
     def failing_gate(doc, record):
-        raise HTTPException(422, detail={"message": "分镜未通过独立验证，禁止进入付费渲染",
-                                         "verification": {"ok": False}})
+        raise HTTPException(422, detail={**msg("verify.gate.blocked"), "verification": {"ok": False}})
 
     app_mod._render_gate = failing_gate
     try:
         r = c.get(R9 + "/session", headers=H)
         assert r.status_code == 200, "读取不被验证门拦下"
-        assert r.json()["gate"] == {"ok": False, "message": "分镜未通过独立验证，禁止进入付费渲染"}
-        assert c.post(R9 + "/run", headers=H, json={"expected_cny": 1}).status_code == 422
+        g = r.json()["gate"]
+        assert g["ok"] is False and g["message"]["code"] == "verify.gate.blocked" and "verification" not in g["message"]
+        r2 = c.post(R9 + "/run", headers=H, json={"expected_cny": 1})
+        assert r2.status_code == 422 and r2.json()["detail"]["code"] == "verify.gate.blocked"
+        assert r2.json()["detail"]["verification"] == {"ok": False}, "附加字段名字与内容不变"
     finally:
         app_mod._render_gate = real_gate
+    # 没有分镜产物的版本：还没会话 404；门状态给无分镜消息
+    novels.create_version(uid, nid, cid, "v0", {}, "原文")
+    assert c.get(f"/novels/{nid}/chapters/{cid}/versions/v0/render/session", headers=H).status_code == 404
+    gs = app_mod._gate_status({"id": uid}, nid, cid, "v0")
+    assert gs["ok"] is False and gs["message"]["code"] == "film.session.no_storyboard", gs
+    # 渲染任务包：分镜结构不完整
+    real_build, real_gate2 = app_mod.render_plan_mod.build_plan, app_mod._render_gate
+
+    def bad_build(*a, **k):
+        raise KeyError("shots")
+
+    app_mod.render_plan_mod.build_plan = bad_build
+    app_mod._render_gate = lambda doc, record: app_mod.verification.VerificationReport()
+    try:
+        r = c.post("/render/plan", headers=H, json={"result": DOC})
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "film.plan.incomplete", r.text
+        assert r.json()["detail"]["params"]["detail"]["t"] == "vendor"
+    finally:
+        app_mod.render_plan_mod.build_plan, app_mod._render_gate = real_build, real_gate2
+    real_kf = app_mod.keyframes_mod.keyframe_plan
+    app_mod.keyframes_mod.keyframe_plan = bad_build
+    try:
+        r = c.post("/render/keyframes", headers=H, json={"result": {}})
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "film.keyframes.incomplete", r.text
+    finally:
+        app_mod.keyframes_mod.keyframe_plan = real_kf
     print("12. 读取报告验证门、费率依据 ✓")
 
     # 13. 上传风格图后建会话：段用上风格图；读取带回可重出计数

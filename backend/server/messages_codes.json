@@ -656,6 +656,12 @@
     ],
     "zh": "首帧用的尾帧找不到了：{id}"
   },
+  "film.keyframes.incomplete": {
+    "params": [
+      "detail"
+    ],
+    "zh": "分镜结构不完整，无法组装关键帧提示词：{detail}"
+  },
   "film.minimax.bad_image": {
     "params": [
       "label"
@@ -780,6 +786,12 @@
   "film.minimax.url_expired": {
     "params": [],
     "zh": "结果地址已过期且重新查询失败；任务只能在 7 天内查询"
+  },
+  "film.plan.incomplete": {
+    "params": [
+      "detail"
+    ],
+    "zh": "分镜结构不完整，无法组装渲染任务：{detail}"
   },
   "film.poll.gave_up": {
     "params": [
@@ -1450,6 +1462,17 @@
   "usage.monthly_cap": {
     "params": [],
     "zh": "本月用量已达上限，请联系管理员"
+  },
+  "verify.finding": {
+    "params": [
+      "path",
+      "detail"
+    ],
+    "zh": "{path}: {detail}"
+  },
+  "verify.gate.blocked": {
+    "params": [],
+    "zh": "分镜未通过独立验证，禁止进入付费渲染"
   },
   "voice.narrator": {
     "params": [],

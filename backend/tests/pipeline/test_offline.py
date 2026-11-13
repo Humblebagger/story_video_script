@@ -172,13 +172,13 @@ def main() -> int:
             get_job_partial("pj1", user={"id": "someone-else"})
             raise AssertionError("别人的任务不能取")
         except _HE as e:
-            assert e.status_code == 404
+            assert e.status_code == 404 and e.detail["code"] == "job.not_found"
         pj["partial"] = None
         try:
             get_job_partial("pj1", user={"id": "u1"})
             raise AssertionError("没有部分产物时应 404")
         except _HE as e:
-            assert e.status_code == 404
+            assert e.status_code == 404 and e.detail["code"] == "job.no_partial"
         assert get_job("pj1", user={"id": "u1"})["partial_batches"] == 0
     finally:
         _jobs.pop("pj1", None)
@@ -1071,6 +1071,7 @@ def main() -> int:
             raise AssertionError("无效草稿不得进入付费渲染")
         except HTTPException as exc:
             assert exc.status_code == 422
+            assert exc.detail["code"] == "verify.gate.blocked" and "verification" in exc.detail
     finally:
         auth.DATA_DIR, auth.USERS_FILE, auth.SECRET_FILE, auth.LEGACY_RUNS = old_auth_paths
         shutil.rmtree(api_data, ignore_errors=True)

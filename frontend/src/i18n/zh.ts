@@ -1452,6 +1452,8 @@ export const zh = {
         in_flight: '有段在排队或生成中，等它们结束再改设置',
         incomplete: '分镜结构不完整，无法切段：{detail}',
       },
+      plan: { incomplete: '分镜结构不完整，无法组装渲染任务：{detail}' },
+      keyframes: { incomplete: '分镜结构不完整，无法组装关键帧提示词：{detail}' },
       run: {
         composing: '正在合成，等它结束再出片',
         busy: '{id} 已在排队或生成中',
@@ -1619,6 +1621,10 @@ export const zh = {
       connect_failed: '连接 AI 服务失败，请稍后重试；仍失败请联系管理员',
       gave_up: '已重试 {retries} 次仍失败：{cause}',
       truncated: 'AI 输出超出了长度上限，这次没有完成；请联系管理员调整转换设置',
+    },
+    verify: {
+      gate: { blocked: '分镜未通过独立验证，禁止进入付费渲染' },
+      finding: '{path}: {detail}',
     },
     job: {
       batch_failed: '批 {batch} 重试 {retries} 次后仍未通过校验',

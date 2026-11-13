@@ -1458,6 +1458,8 @@ export const en: Messages = {
         in_flight: 'Some clips are queued or generating; wait for them to finish before changing settings',
         incomplete: 'The storyboard is incomplete and cannot be split into clips: {detail}',
       },
+      plan: { incomplete: 'The storyboard structure is incomplete, so the render plan can’t be assembled: {detail}' },
+      keyframes: { incomplete: 'The storyboard structure is incomplete, so keyframe prompts can’t be assembled: {detail}' },
       run: {
         composing: 'Composing is in progress; wait for it to finish before rendering',
         busy: '{id} is already queued or generating',
@@ -1633,6 +1635,10 @@ export const en: Messages = {
       connect_failed: 'Couldn’t connect to the AI service. Please try again later; if it keeps failing, contact the administrator',
       gave_up: 'Still failing after {retries} retries: {cause}',
       truncated: 'The AI output hit its length limit, so this didn’t finish. Please ask the administrator to adjust the conversion settings',
+    },
+    verify: {
+      gate: { blocked: 'The storyboard failed independent verification, so paid rendering is blocked' },
+      finding: '{path}: {detail}',
     },
     job: {
       batch_failed: 'Batch {batch} still failed validation after {retries} retries',

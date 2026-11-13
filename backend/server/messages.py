@@ -244,6 +244,10 @@ register("film.minimax.request_too_big", "请求体约 {mb}MB，超过 MiniMax �
 register("film.minimax.no_task_id", "视频服务（MiniMax）受理了请求却没有返回任务编号")
 register("film.minimax.no_result_url", "MiniMax 没有返回结果地址")
 
+# 验证（子计划 5 的逐条规则在 verify.rule.*，与这里不冲突）
+register("verify.gate.blocked", "分镜未通过独立验证，禁止进入付费渲染")
+register("verify.finding", "{path}: {detail}")  # 编辑卡的复验原因（Task 7 用）；子计划 5 把 detail 换成逐条规则
+
 # 出片会话
 register("film.session.corrupt", "出片会话文件损坏：{path}，已保留原文件，请检查后再操作")
 register("film.session.corrupt_admin", "出片记录文件已损坏，原文件已备份，请联系管理员处理")
@@ -261,6 +265,8 @@ register("film.settings.no_native_audio", "这家厂商不出原声，可选：�
 register("film.build.no_shots", "这个版本的分镜没有镜头，无法切段")
 register("film.build.in_flight", "有段在排队或生成中，等它们结束再改设置")
 register("film.build.incomplete", "分镜结构不完整，无法切段：{detail}")
+register("film.plan.incomplete", "分镜结构不完整，无法组装渲染任务：{detail}")
+register("film.keyframes.incomplete", "分镜结构不完整，无法组装关键帧提示词：{detail}")
 register("film.run.composing", "正在合成，等它结束再出片")
 register("film.run.busy", "{id} 已在排队或生成中")
 register("film.run.nothing", "没有要出的段")

@@ -461,7 +461,7 @@ def get_job(job_id: str, user: dict = Depends(current_user)):
     with _lock:
         job = _jobs.get(job_id)
     if job is None or job.get("user_id") != user["id"]:
-        raise HTTPException(404, "job 不存在（服务重启会清空任务表）")
+        raise HTTPException(404, detail=msg("job.not_found"))
     # 部分产物有几百 KB，轮询每 1.5 秒一次，只带批数；要看再走 /partial 取
     out = {k: v for k, v in job.items() if k not in ("user_id", "partial")}
     out["progress"] = _progress_view(job)
@@ -475,9 +475,9 @@ def get_job_partial(job_id: str, user: dict = Depends(current_user)):
     with _lock:
         job = _jobs.get(job_id)
     if job is None or job.get("user_id") != user["id"]:
-        raise HTTPException(404, "job 不存在（服务重启会清空任务表）")
+        raise HTTPException(404, detail=msg("job.not_found"))
     if not job.get("partial"):
-        raise HTTPException(404, "暂无已完成的批次可预览")
+        raise HTTPException(404, detail=msg("job.no_partial"))
     return job["partial"]
 
 
@@ -828,10 +828,8 @@ def _render_gate(doc: dict, record: Optional[dict]):
     verification.recompute_coverage_field(doc, probe.coverage)
     report = verification.verify_document(doc, frozen_units=frozen or None)
     if not report.ok:
-        raise HTTPException(422, detail={
-            "message": "分镜未通过独立验证，禁止进入付费渲染",
-            "verification": report.to_dict(),
-        })
+        # 附加字段 verification 名字与内容不变（前端 ApiError.verification 在读）
+        raise HTTPException(422, detail={**msg("verify.gate.blocked"), "verification": report.to_dict()})
     return report
 
 
@@ -868,7 +866,7 @@ def render_plan(req: RenderPlanRequest, user: dict = Depends(current_user)):
         plan = render_plan_mod.build_plan(doc, req.max_clip_seconds, req.run_id,
                                           req.model, req.cny_per_second)
     except (KeyError, TypeError) as e:
-        raise HTTPException(422, f"分镜结构不完整，无法组装渲染任务：{e}")  # i18n: todo(4)
+        raise HTTPException(422, detail=msg("film.plan.incomplete", detail=vendor(e)))
 
     packs = []
     if req.include_markdown:
@@ -890,7 +888,7 @@ def render_keyframes(req: KeyframesRequest, user: dict = Depends(current_user)):
     try:
         return {"keyframes": keyframes_mod.keyframe_plan(req.result)}
     except (KeyError, TypeError, AttributeError) as e:
-        raise HTTPException(422, f"分镜结构不完整，无法组装关键帧提示词：{e}")
+        raise HTTPException(422, detail=msg("film.keyframes.incomplete", detail=vendor(e)))
 
 
 _KF = "/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes"
@@ -1069,11 +1067,13 @@ def _gate_status(user: dict, nid: str, cid: str, vid: str) -> dict:
     record = _novel_call(novels.get_version, user["id"], nid, cid, vid)
     doc = record.get("result") or {}
     if not doc.get("episodes"):
-        return {"ok": False, "message": "这个版本还没有分镜产物"}  # i18n: todo(4)
+        return {"ok": False, "message": msg("film.session.no_storyboard")}
     try:
         _render_gate(copy.deepcopy(doc), record)
     except HTTPException as e:
         d = e.detail
+        if isinstance(d, dict) and d.get("code"):
+            return {"ok": False, "message": {k: d[k] for k in ("code", "params", "message") if k in d}}
         return {"ok": False, "message": d.get("message") if isinstance(d, dict) else str(d)}
     return {"ok": True, "message": None}
 
