@@ -32,6 +32,8 @@ MODULES: dict = {
     "render/compose.py": None,
     "render/runner.py": None,
     "server/error_refs.py": None,
+    "pipeline/chat.py": None,
+    "pipeline/review.py": None,
     "server/auth.py": None,
     "server/novels.py": None,
     "server/library.py": None,

@@ -414,6 +414,22 @@ register("chapter.digest.failed", "没有完成，可以稍后重跑；仍失败
 register("chapter.keyframe.bad_type", "关键帧只收 PNG / JPEG / WebP 图片")
 register("chapter.keyframe.no_shot", "这个版本里没有镜头 {shot}")
 register("chapter.keyframe.not_found", "这个镜头还没有关键帧")
+# 模型服务（转换、章后整理、助手共用；统一称 AI 服务，不出现模型名与厂商名）
+register("llm.not_configured", "AI 服务还没有配置，请联系管理员")
+register("llm.auth", "AI 服务鉴权失败，请联系管理员")
+register("llm.balance", "AI 服务账户余额不足，暂时无法使用，请联系管理员")
+register("llm.access_denied", "AI 服务拒绝访问，请联系管理员")
+register("llm.model_unavailable", "AI 服务配置有误，暂时无法使用，请联系管理员")
+register("llm.too_long", "这次要处理的内容超出了 AI 服务单次能处理的长度；"
+                         "请缩短内容（助手对话可先清空）后重试，仍失败请联系管理员")
+register("llm.content_blocked", "内容没有通过 AI 服务的安全审核：请检查或改写相关内容后重试")
+register("llm.bad_request", "AI 服务拒绝了这次请求，请重试；仍失败请联系管理员")
+register("llm.busy", "AI 服务繁忙，请稍后重试")
+register("llm.unavailable", "AI 服务暂时不可用，请稍后重试")
+register("llm.timeout", "AI 服务响应超时，请稍后重试")
+register("llm.connect_failed", "连接 AI 服务失败，请稍后重试；仍失败请联系管理员")
+register("llm.gave_up", "已重试 {retries} 次仍失败：{cause}")
+register("llm.truncated", "AI 输出超出了长度上限，这次没有完成；请联系管理员调整转换设置")
 # 用量
 register("usage.monthly_cap", "本月用量已达上限，请联系管理员")
 # 管理后台

@@ -1608,6 +1608,18 @@ export const zh = {
         not_found: '这个镜头还没有关键帧',
       },
     },
+    llm: {
+      not_configured: 'AI 服务还没有配置，请联系管理员', auth: 'AI 服务鉴权失败，请联系管理员',
+      balance: 'AI 服务账户余额不足，暂时无法使用，请联系管理员', access_denied: 'AI 服务拒绝访问，请联系管理员',
+      model_unavailable: 'AI 服务配置有误，暂时无法使用，请联系管理员',
+      too_long: '这次要处理的内容超出了 AI 服务单次能处理的长度；请缩短内容（助手对话可先清空）后重试，仍失败请联系管理员',
+      content_blocked: '内容没有通过 AI 服务的安全审核：请检查或改写相关内容后重试',
+      bad_request: 'AI 服务拒绝了这次请求，请重试；仍失败请联系管理员',
+      busy: 'AI 服务繁忙，请稍后重试', unavailable: 'AI 服务暂时不可用，请稍后重试', timeout: 'AI 服务响应超时，请稍后重试',
+      connect_failed: '连接 AI 服务失败，请稍后重试；仍失败请联系管理员',
+      gave_up: '已重试 {retries} 次仍失败：{cause}',
+      truncated: 'AI 输出超出了长度上限，这次没有完成；请联系管理员调整转换设置',
+    },
     usage: { monthly_cap: '本月用量已达上限，请联系管理员', bad_group: '不支持的分组：{group}' },
     admin: {
       one_field: '一次只能修改一项', bad_disabled: 'disabled 必须是 true 或 false', self_disable: '不能停用自己',

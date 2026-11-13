@@ -351,7 +351,7 @@ def main() -> int:
             run_batch(graph, user=user_msg, batch_text=batch, idx=1, frozen_units=None)
             raise AssertionError("推理块烧光预算应抛 LLMError")
         except LLMError as e:
-            assert "推理块" in str(e)
+            assert e.code == "llm.truncated" and "推理块" in e.hint
         print("graph: 修复轮推理块烧光预算 → 仍报补偿 2 的诊断 ✓")
 
     # 11c. music.curve 镜号写成序号：程序换成镜头 ID，不为它花一轮修复

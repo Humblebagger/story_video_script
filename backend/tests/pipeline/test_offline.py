@@ -1028,7 +1028,8 @@ def main() -> int:
     failing_review = review_invoker([])
     failing_review.invoke = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("offline"))
     ok, report_text, overall = run_review(failing_review, "原文", evidence_doc, 3.0)
-    assert ok is None and overall is None and "服务不可用" in report_text
+    assert ok is None and overall is None and "服务不可用" in report_text \
+        and "offline" not in report_text and "RuntimeError" not in report_text
     print("可验证审查: 冻结范围 / 证据定位 / 覆盖率重算 / 受限补丁 / 语义独立门槛 ✓")
 
     # 无效人工编辑允许保存为草稿，但不能借此绕过渲染前验证；没有清单的版本（旧记录迁来的）

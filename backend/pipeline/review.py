@@ -5,6 +5,7 @@ inference_note 敷衍）。默认关闭（STORYBOARD_REVIEW=1 开启），
 建议生成用便宜档模型时，评审用更强档（STORYBOARD_REVIEW_MODEL）。
 """
 import json
+import logging
 import math
 from typing import Optional, Tuple
 
@@ -46,18 +47,23 @@ def run_review(chat, batch_text: str, doc: dict,
         raw = chat.text(chat.invoke([SystemMessage(REVIEW_SYSTEM),
                                      HumanMessage(user)]))
     except Exception as e:
-        return None, f"[review] 评审服务不可用（{type(e).__name__}: {e}）", None
+        # 原文（可能带模型名、厂商报错）只进日志；报告会进质量报告与界面
+        from .chat import llm_error
+        from render.providers.base import scrub_secrets
+        mapped = llm_error(e)
+        logging.getLogger("pipeline.review").warning("评审调用失败：%s", scrub_secrets(repr(e))[:500])  # i18n: internal
+        return None, f"[review] 评审服务不可用：{mapped if mapped is not None else '调用出错'}", None
     try:
         verdict = extract_json(raw)
         scores = verdict["scores"]
         if not isinstance(scores, dict) or set(scores) != set(SCORE_KEYS):
-            raise ValueError(f"scores 必须且只能包含 {', '.join(SCORE_KEYS)}")
+            raise ValueError(f"scores 必须且只能包含 {', '.join(SCORE_KEYS)}")  # i18n: llm
         if any(isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 5
                for v in scores.values()):
-            raise ValueError("所有评分必须是 1-5 的整数")
+            raise ValueError("所有评分必须是 1-5 的整数")  # i18n: llm
         overall = round(sum(scores[k] for k in SCORE_KEYS) / len(SCORE_KEYS), 1)
         if not math.isfinite(overall):
-            raise ValueError("总分不是有限数值")
+            raise ValueError("总分不是有限数值")  # i18n: llm
     except (ValueError, KeyError, TypeError, ZeroDivisionError) as e:
         return None, f"[review] 评审输出不可验证（{e}）", None
 

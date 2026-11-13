@@ -3,18 +3,37 @@
 取代改造前的 llm.py：传输重试交给 Runnable 的 with_retry，用量统计交给
 callback handler，但 thinking 降级与截断诊断这两条实测补偿必须自己留着
 （见 docs/specs/2026-10-10-langchain-langgraph-refactor-design.md §6）。
+模型接口错误一律经 llm_error 映射为带代码的 LLMError（用户文案统一称「AI 服务」）。
 """
 import json
+import logging
 import re
 from typing import List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.runnables import RunnableLambda
 
+from server.messages import UserError, compact
 from .config import Settings
 
+log = logging.getLogger("pipeline.chat")
 
-class LLMError(RuntimeError):
-    pass
+
+class LLMError(UserError, RuntimeError):
+    """模型服务调用失败（spec 子计划 4 C）。
+
+    str() 是给用户的中文兜底：统一称「AI 服务」，不含模型名、厂商名与接口原文。
+    hint 是给开发看的排查细节（环境变量名、状态码、请求 id、脱敏后的原文摘要），只进日志、
+    转换调试日志与命令行。needs_ref：原因只在服务器上（请求被拒却说不清为什么），调用方要记参考编号。
+    没有代码的 LLMError（测试替身等）行为与改造前一致。"""
+    hint: str = ""
+    needs_ref: bool = False
+
+    @classmethod
+    def coded(cls, code: str, /, *, hint: str = "", needs_ref: bool = False, **params) -> "LLMError":
+        e = cls.of(code, **params)
+        e.hint, e.needs_ref = hint, needs_ref
+        return e
 
 
 def _thinking_param(mode: str):
@@ -71,9 +90,13 @@ def build_chat_model(settings: Settings, *, model: Optional[str] = None):
     try:
         from langchain_anthropic import ChatAnthropic
     except ImportError:
-        raise LLMError("未安装 langchain-anthropic：pip install -r requirements.txt")
+        hint = "未安装 langchain-anthropic：pip install -r requirements.txt"
+        log.warning("模型服务没有配置：%s", hint)  # i18n: internal
+        raise LLMError.coded("llm.not_configured", hint=hint)
     if not settings.api_key:
-        raise LLMError("未配置 ANTHROPIC_API_KEY（写入 .env 或环境变量）")
+        hint = "未配置 ANTHROPIC_API_KEY（写入 .env 或环境变量）"
+        log.warning("模型服务没有配置：%s", hint)  # i18n: internal
+        raise LLMError.coded("llm.not_configured", hint=hint)
     kwargs: dict = {
         "model": model or settings.model,
         "max_tokens": settings.max_tokens,
@@ -95,20 +118,136 @@ def build_chat_model(settings: Settings, *, model: Optional[str] = None):
     return ChatAnthropic(**kwargs)
 
 
-def _transient_errors() -> tuple:
-    """可重试的瞬时传输故障——with_retry 与耗尽后的 LLMError 包装共用这一个来源。
+_MIDSTREAM_TRANSIENT = {"overloaded_error", "api_error", "rate_limit_error"}
 
-    anthropic 1.13 起 SDK 跑在 httpx2 上；httpx(0.28) 只是 langchain-core
-    传递带入的，本调用路径永不抛它的异常。写错这一行，传输重试会静默失效，
-    而它正是为实测到的网关流式中途断连而建。
-    APITimeoutError 是 APIConnectionError 的子类，无需单列。
+
+class _StreamInterrupted(Exception):
+    """流式中途的瞬时 event: error。SDK 以 HTTP 200 的 APIStatusError 抛出，类型上与 401、400 无法区分，
+    换成这个类型，with_retry 才能只按类型重试它。original 是原异常，映射时取它。"""
+
+    def __init__(self, original: BaseException) -> None:
+        super().__init__(str(original))
+        self.original = original
+
+
+def _midstream_transient(e: BaseException) -> bool:
+    import anthropic
+    return (isinstance(e, anthropic.APIStatusError) and e.status_code == 200
+            and _status_info(e)[1] in _MIDSTREAM_TRANSIENT)
+
+
+def _transient_errors() -> tuple:
+    """可重试的瞬时故障——with_retry 与耗尽后的 LLMError 包装共用这一个来源。
+
+    主清单是 langchain_core 的 Model*Error（is_retryable=True 的四类）：langchain_anthropic 抛出的异常
+    同时继承它们，529（AnthropicOverloadedError）属于 ModelAPIError，自然在内。
+    SDK 类型留作兜底：流式中途的错误、测试替身直接抛的异常没有经过包装。anthropic 1.13 把 529 单列为
+    OverloadedError，它不是 InternalServerError 的子类，必须单列，否则未包装的 529 一次都不重试。
+    httpx2 的原生传输异常照旧（Ruling-6 的护栏：anthropic 1.13 起 SDK 跑在 httpx2 上）。
+    流式中途的瞬时 event: error 由 _StreamInterrupted 承接。
     """
     import anthropic
     import httpx2
-    return (anthropic.APIConnectionError,
-            anthropic.InternalServerError,
-            anthropic.RateLimitError,
-            httpx2.HTTPError)
+    from langchain_core.exceptions import (ModelAPIError, ModelConnectionError,
+                                           ModelRateLimitError, ModelTimeoutError)
+    return (ModelRateLimitError, ModelAPIError, ModelConnectionError, ModelTimeoutError,
+            anthropic.APIConnectionError, anthropic.InternalServerError,
+            anthropic.OverloadedError, anthropic.RateLimitError,
+            httpx2.HTTPError, _StreamInterrupted)
+
+
+# 先按原文特征（只看请求类错误），再按响应体错误类型，最后按 HTTP 状态。流式中途的 event: error
+# 由 SDK 以 HTTP 200 的 APIStatusError 抛出，只能靠错误类型，所以类型排在状态之前。
+_BY_TYPE = {"authentication_error": "llm.auth", "permission_error": "llm.access_denied",
+            "not_found_error": "llm.model_unavailable", "request_too_large": "llm.too_long",
+            "rate_limit_error": "llm.busy", "overloaded_error": "llm.busy",
+            "api_error": "llm.unavailable", "billing_error": "llm.balance"}
+_BY_STATUS = {401: "llm.auth", 402: "llm.balance", 403: "llm.access_denied", 404: "llm.model_unavailable",
+              413: "llm.too_long", 429: "llm.busy", 529: "llm.busy"}
+_BLOCKED = re.compile(r"(?i)content\s*exists?\s*risk|content[\s_-]*(filter|policy|moderation)|safety|sensitive")
+_TOO_LONG = re.compile(r"(?i)context[\s_-]*(length|window)|maximum context|too long|exceeds?.{0,40}tokens?")
+# Anthropic 风格网关的余额不足是 400 + invalid_request_error（设计审查 I3）
+_BALANCE = re.compile(r"(?i)credit balance|insufficient (balance|credit|funds)|余额不足")
+# 输出上限配置错误（max_tokens 超出模型允许值）：是配置问题，不能叫用户「缩短内容」（设计审查 M2）
+_MAX_TOKENS = re.compile(r"(?i)max_tokens")
+
+
+def _status_info(e) -> tuple:
+    """(HTTP 状态, 错误类型, 原文, 请求 id)：原文优先取响应体里的 error.message。"""
+    body = getattr(e, "body", None)
+    err = body.get("error") if isinstance(body, dict) else None
+    if isinstance(err, dict):
+        etype, raw = str(err.get("type") or ""), str(err.get("message") or "")
+    else:
+        etype, raw = "", str(getattr(e, "message", "") or e)
+    return getattr(e, "status_code", None), etype, raw, getattr(e, "request_id", None)
+
+
+def _status_code(status, etype: str, raw: str) -> str:
+    if status in (400, 413, 422) or etype == "invalid_request_error":
+        if _BLOCKED.search(raw):
+            return "llm.content_blocked"
+        if _BALANCE.search(raw):
+            return "llm.balance"
+        if _MAX_TOKENS.search(raw):
+            return "llm.model_unavailable"
+        if _TOO_LONG.search(raw):
+            return "llm.too_long"
+    if etype in _BY_TYPE:
+        return _BY_TYPE[etype]
+    if status in _BY_STATUS:
+        return _BY_STATUS[status]
+    if isinstance(status, int) and status >= 500:
+        return "llm.unavailable"
+    return "llm.bad_request"
+
+
+def llm_error(e: BaseException) -> Optional["LLMError"]:
+    """模型接口异常 → 带友好代码的 LLMError；不认识的异常返回 None（调用方当意外处理）。
+    原文脱敏后写 pipeline.chat 的 WARNING 日志（状态、类型、请求 id），hint 里留一份摘要。"""
+    if isinstance(e, LLMError):
+        return e
+    if isinstance(e, _StreamInterrupted):
+        e = e.original
+    import anthropic
+    import httpx2
+    from langchain_core.exceptions import (ContextOverflowError, ModelAuthenticationError,
+                                           ModelConnectionError, ModelNotFoundError,
+                                           ModelPermissionDeniedError, ModelRateLimitError,
+                                           ModelTimeoutError)
+    from render.providers.base import scrub_secrets   # 放函数里：pipeline 导入时不依赖 render
+    status = etype = rid = None
+    raw = str(e)
+    if isinstance(e, anthropic.APIStatusError):
+        status, etype, raw, rid = _status_info(e)
+    # 先按 LangChain 的厂商无关分类（langchain_anthropic 抛出的异常同时继承它们，设计审查 M4），
+    # 认不出的再按 SDK 的类型、响应体错误类型与状态码细分。注意顺序：超时是连接错误的子类，要先判。
+    if isinstance(e, ContextOverflowError):
+        code = "llm.too_long"
+    elif isinstance(e, ModelAuthenticationError):
+        code = "llm.auth"
+    elif isinstance(e, ModelPermissionDeniedError):
+        code = "llm.access_denied"
+    elif isinstance(e, ModelNotFoundError):
+        code = "llm.model_unavailable"
+    elif isinstance(e, ModelRateLimitError):
+        code = "llm.busy"
+    elif isinstance(e, (ModelTimeoutError, anthropic.APITimeoutError, httpx2.TimeoutException)):
+        code = "llm.timeout"
+    elif isinstance(e, (ModelConnectionError, anthropic.APIConnectionError, httpx2.HTTPError)):
+        code = "llm.connect_failed"
+    elif isinstance(e, anthropic.APIStatusError):
+        # ModelInvalidRequestError（400 的余额、审核、内容太长要看原文）与 ModelAPIError（529 与 5xx 要分开）
+        # 都需要细分，交给状态与原文判定
+        code = _status_code(status, etype, raw)
+    else:
+        return None
+    clean = scrub_secrets(raw)[:500]
+    log.warning("模型服务错误 code=%s status=%s type=%s request_id=%s：%s",  # i18n: internal
+                code, status or "-", etype or "-", rid or "-", clean)
+    return LLMError.coded(code, needs_ref=(code == "llm.bad_request"),
+                          hint=f"{type(e).__name__} status={status or '-'} type={etype or '-'} "
+                               f"request_id={rid or '-'}：{clean[:300]}")
 
 
 class ChatInvoker:
@@ -142,17 +281,40 @@ class ChatInvoker:
                         else _thinking_param(self._settings.thinking))
             budget = (thinking or {}).get("budget_tokens", 0)
             runnable = runnable.bind(max_tokens=max_tokens + budget)
-        return runnable.with_retry(
+
+        def call(messages, config):
+            try:
+                return runnable.invoke(messages, config)
+            except Exception as e:
+                if _midstream_transient(e):
+                    raise _StreamInterrupted(e) from e
+                raise
+
+        # 中途出错时这一次的输出 token 已经花了（用量回调收不到 on_llm_end，不计入账本），
+        # 但转换按批串行，这一批失败就是整个版本失败，重放一次远比整章重转便宜。次数与连接类故障共用 transport_retries。
+        return RunnableLambda(call, name="chat_call").with_retry(
             retry_if_exception_type=_transient_errors(),
             stop_after_attempt=self._settings.transport_retries + 1,
             wait_exponential_jitter=True,
         )
 
     def invoke(self, messages, tools=None, max_tokens=None):
-        """调模型，返回 AIMessage。瞬时传输故障由 with_retry 指数退避重试。
+        """调模型，返回 AIMessage。瞬时传输故障由 with_retry 指数退避重试；
+        其余接口错误映射为带代码的 LLMError（spec 子计划 4 C），原文只进日志。
 
         max_tokens 覆盖本次调用的输出上限（缺省用 settings.max_tokens）。
         """
+        try:
+            return self._invoke_once(messages, tools, max_tokens)
+        except LLMError:
+            raise
+        except Exception as e:
+            mapped = llm_error(e)
+            if mapped is None:
+                raise
+            raise mapped from e
+
+    def _invoke_once(self, messages, tools=None, max_tokens=None):
         import anthropic
         config = {"callbacks": [self.usage]}
         model = self._no_thinking if (self._thinking_rejected
@@ -178,9 +340,9 @@ class ChatInvoker:
             return self._runnable(model, tools, max_tokens).invoke(messages,
                                                                    config=config)
         except _transient_errors() as e:
-            raise LLMError(
-                f"LLM 传输重试 {self._settings.transport_retries} 次后仍失败：{e!r}"
-            ) from e
+            inner = llm_error(e)        # _StreamInterrupted 在 llm_error 里取 original 再映射
+            raise LLMError.coded("llm.gave_up", hint=inner.hint, retries=self._settings.transport_retries,
+                                 cause=compact(inner.as_msg())) from e
 
     def text(self, msg) -> str:
         """AIMessage → 正文文本。撞 max_tokens 时按原因分别报错。"""
@@ -224,14 +386,16 @@ def check_truncation(msg, settings: Settings) -> str:
     if not text.strip() and thinking_chars:
         # 这条路径以前会被报成「输出膨胀」，把人引去调小批长——没用，
         # 因为一个字正文都没产出，膨胀的是推理块不是产物
-        raise LLMError(
-            f"模型把全部 {out_tokens} 个输出 token 花在推理块上"
-            f"（{thinking_chars} 字思考），没产出任何正文：{settings.model} 是推理模型。"
-            "把 STORYBOARD_THINKING 设为 disabled 关掉推理块，或换非推理模型；"
-            "调小 STORYBOARD_BATCH_CHARS 对这种情况无效。")
-    raise LLMError(
-        f"输出被 max_tokens={settings.max_tokens} 截断——"
-        "调大 STORYBOARD_MAX_TOKENS 或调小 STORYBOARD_BATCH_CHARS 后重试")
+        hint = (f"模型把全部 {out_tokens} 个输出 token 花在推理块上"
+                f"（{thinking_chars} 字思考），没产出任何正文：{settings.model} 是推理模型。"
+                "把 STORYBOARD_THINKING 设为 disabled 关掉推理块，或换非推理模型；"
+                "调小 STORYBOARD_BATCH_CHARS 对这种情况无效。")
+        log.warning("模型输出被截断：%s", hint)  # i18n: internal
+        raise LLMError.coded("llm.truncated", hint=hint)
+    hint = (f"输出被 max_tokens={settings.max_tokens} 截断——"
+            "调大 STORYBOARD_MAX_TOKENS 或调小 STORYBOARD_BATCH_CHARS 后重试")
+    log.warning("模型输出被截断：%s", hint)  # i18n: internal
+    raise LLMError.coded("llm.truncated", hint=hint)
 
 
 def extract_json(text: str) -> dict:
@@ -242,5 +406,5 @@ def extract_json(text: str) -> dict:
         t = re.sub(r"\s*```$", "", t)
     start, end = t.find("{"), t.rfind("}")
     if start < 0 or end <= start:
-        raise ValueError("输出中找不到 JSON 对象")
+        raise ValueError("输出中找不到 JSON 对象")  # i18n: llm
     return json.loads(t[start:end + 1])

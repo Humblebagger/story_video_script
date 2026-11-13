@@ -71,7 +71,7 @@ def main(argv=None) -> int:
         print(f"\n转换失败：{e}\n{e.report}", file=sys.stderr)
         return 1
     except LLMError as e:
-        print(f"\n转换失败：{e}", file=sys.stderr)
+        print(f"\n转换失败：{e}" + (f"\n{e.hint}" if e.hint else ""), file=sys.stderr)
         return 1
 
     out = Path(args.output)
