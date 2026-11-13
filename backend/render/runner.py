@@ -31,7 +31,7 @@ def _scrub_secrets(text: str, provider) -> str:
     out = base.scrub(text)
     keys = [getattr(provider, "_key", "")] + [os.environ.get(k, "") for k in ("ARK_API_KEY", "MINIMAX_API_KEY")]
     for k in keys:
-        if isinstance(k, str) and len(k.strip()) >= 4:
+        if isinstance(k, str) and k.strip():
             out = out.replace(k.strip(), "***")
     return out
 

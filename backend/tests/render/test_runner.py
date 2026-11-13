@@ -595,6 +595,24 @@ def main() -> int:
     assert "SECRET_TOKEN" not in blob and "sk-SYNTH-KEY-12345" not in blob
     del fake._key
 
+    # 短密钥也要抹掉：厂商对象的 _key 与环境里的厂商密钥都只有几个字符
+    fake._key = "xyz"
+    os.environ["ARK_API_KEY"], os.environ["MINIMAX_API_KEY"] = "ab1", "q9"
+
+    def submit_short17(req):
+        raise RuntimeError("leak xyz and ab1 and q9 end")
+
+    fake.submit = submit_short17
+    sess.queue_run(r17, [i17[0]])
+    rn = quick()
+    rn.watch(r17)
+    with _LogGrab("render.runner") as g:
+        rn.tick()
+    text = "\n".join(g.lines)
+    assert "RuntimeError" in text and "leak *** and *** and *** end" in text, text
+    del fake._key
+    os.environ["ARK_API_KEY"] = os.environ["MINIMAX_API_KEY"] = ""
+
     def submit_reject17(req):
         raise base.ProviderError.of("film.ark.auth")
 
