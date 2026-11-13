@@ -113,8 +113,9 @@ let nextConflict: number | null = null
 /** 下一次 POST /compose 直接按这个失败（测报错留在界面上） */
 let nextPostFail: { status: number; detail: unknown } | null = null
 /** 读预览 / 音色表失败 */
-let composeDown = false
-let voicesDown = false
+let composeDown: unknown = false
+let voicesDown: unknown = false
+let filesDown: unknown = false
 
 /** 每集两镜一段；最后一段还没出片 */
 function makeSession(): FilmSession {
@@ -189,6 +190,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
   }
   if (sub.startsWith('/files/')) {
     calls.push(`GET ${sub}`)
+    if (filesDown) return fail(404, filesDown)
     return { ok: true, status: 200,
              blob: async () => new Blob(['x'], { type: sub.endsWith('.mp4') ? 'video/mp4' : 'text/plain' }) }
   }
@@ -207,11 +209,11 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
   const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
   calls.push(`${method} ${sub}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`)
   if (sub.startsWith('/compose') && method === 'GET') {
-    if (composeDown) return fail(500, '合成预览读不出来')
+    if (composeDown) return fail(500, composeDown)
     const draft = new URL(`http://x${sub}`).searchParams.get('draft') !== 'false'
     return ok({ ...preview, fingerprint: draft ? 'fp1' : 'fp1-nodraft' })
   }
-  if (sub === '/voices' && method === 'GET') return voicesDown ? fail(500, '音色服务挂了') : ok(voicesInfo)
+  if (sub === '/voices' && method === 'GET') return voicesDown ? fail(500, voicesDown) : ok(voicesInfo)
   if (sub === '/voices' && method === 'PUT') {
     for (const [k, v] of Object.entries(body.voices as Record<string, string>)) {
       const sp = voicesInfo.speakers.find((x) => x.key === k)!
@@ -442,7 +444,7 @@ must(has('还有说话人没选音色：路人') && !has('确认合成'), '422 �
 console.log('16. 422 原因留着 ✓')
 
 // 17. 音色表读不出来：预览照常、按钮还在，音色那块写原因；恢复后音色表回来
-voicesDown = true
+voicesDown = '音色服务挂了'
 await refresh()
 must(has('配音 40 条') && !!composeBtn() && has('读取音色表失败：音色服务挂了'), '音色表出错不挡预览')
 voicesDown = false
@@ -451,7 +453,7 @@ must(!has('读取音色表失败') && !!container.querySelector('select[aria-lab
 console.log('17. 音色表出错不挡整块 ✓')
 
 // 18. 预览读不出来：写原因并给「重试」；重试成功后显示预览
-composeDown = true
+composeDown = '合成预览读不出来'
 await click(tab('资产')!)
 await click(tab('出片')!)
 await settle()
@@ -480,6 +482,41 @@ console.log('18. 预览读取失败可重试 ✓')
   must(has(en.srv.voice.narrator) && !!container.querySelector('select[aria-label="Voice for Narrator"]'),
     '英文界面：旁白名与音色选择框的无障碍名')
   must(has('假男声'), '音色名是专有名，不翻译')
+  // 未标说话人（空 key）：英文界面显示 (no speaker)
+  voicesInfo.speakers.push({ key: '', name: { code: 'voice.unlabeled', params: {} }, hint: null, voice: null, chosen: null })
+  await click(button(en.compose.panel.refresh))
+  must(has(en.srv.voice.unlabeled) && !has(zh.srv.voice.unlabeled), '英文界面：未标说话人')
+  voicesInfo.speakers.pop()
+  // 读取失败的几种错误（预览、音色表、成片文件）存原始对象，切语言跟着变
+  const gone = { code: 'film.file.not_found', params: {}, message: zh.srv.film.file.not_found }
+  voicesDown = gone
+  await click(button(en.compose.panel.refresh))
+  must(has(en.srv.film.file.not_found) && !has(zh.srv.film.file.not_found), '音色表错误（英文）')
+  await lang('zh')
+  must(has(zh.srv.film.file.not_found), '音色表错误切回中文跟着变')
+  voicesDown = false
+  await lang('zh')
+  preview.final = { state: 'done', step: '完成', files: FILES, report: 'final/mix_report.json', error: null,
+                    detail: null, draft: true, finished_at: '2026-10-31T04:06:00+00:00', stale: false }
+  filesDown = gone
+  await refresh()
+  await click(button('播放 / 下载'))
+  await settle()
+  must(has('读取成片文件失败：' + zh.srv.film.file.not_found), '成片读取失败（中文）')
+  await lang('en')
+  must(has(en.compose.readFinalFailed.replace('{error}', en.srv.film.file.not_found)), '成片读取失败切英文跟着变')
+  filesDown = false
+  composeDown = gone
+  await lang('zh')
+  await click(tab('资产')!)
+  await click(tab('出片')!)
+  await settle()
+  await lang('en')
+  must(has(en.srv.film.file.not_found), '预览错误（英文）')
+  await lang('zh')
+  must(has(zh.srv.film.file.not_found) && !has(en.srv.film.file.not_found), '预览错误切回中文跟着变')
+  composeDown = false
+  await click(button('重试'))
   await lang('zh')
   nextPostFail = { status: 422, detail: { code: 'tts.volc.no_key', params: {}, message: zh.srv.tts.volc.no_key } }
   await click(composeBtn())

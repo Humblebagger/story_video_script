@@ -54,6 +54,14 @@ def _per_k() -> float:
     return v if v > 0 else DEFAULT_CNY_PER_K
 
 
+def _clean(text, secrets: list) -> str:
+    """厂商文字进报错参数前：抹掉密钥与 Bearer 凭据。"""
+    t = str(text)
+    for s in secrets:
+        t = scrub(t, s)
+    return scrub(t)
+
+
 def _reject(r: httpx.Response, secrets: list) -> ProviderError:
     """4xx：厂商给了 message 就带上（先抹掉密钥与 Bearer 凭据），否则只报 HTTP 状态。"""
     try:
@@ -64,12 +72,10 @@ def _reject(r: httpx.Response, secrets: list) -> ProviderError:
         msg = d.get("message") or head.get("message") or ""
         code = d.get("code") or head.get("code") or r.status_code
     except ValueError:
-        msg, code = r.text[:200], r.status_code
-    for s in secrets:
-        msg = scrub(msg, s)
-    msg = scrub(msg)
+        msg, code = _clean(r.text, secrets)[:200], r.status_code    # 先抹掉再截断，免得密钥被截半漏出
+    msg = _clean(msg, secrets)
     if msg:
-        return ProviderError.of("tts.volc.rejected", code=str(code), detail=vendor(msg))
+        return ProviderError.of("tts.volc.rejected", code=_clean(code, secrets), detail=vendor(msg))
     return ProviderError.of("tts.volc.rejected_http", status=r.status_code)
 
 
@@ -141,10 +147,11 @@ class VolcTts:
                         break
                     if code != 0:
                         detail = msg.get("message") or ""
+                        safe_code = self._scrub(code) if isinstance(code, str) else code
                         if detail:
-                            raise self._billed("tts.volc.failed_detail", text, code=code,
+                            raise self._billed("tts.volc.failed_detail", text, code=safe_code,
                                                detail=vendor(self._scrub(detail)))
-                        raise self._billed("tts.volc.failed", text, code=code)
+                        raise self._billed("tts.volc.failed", text, code=safe_code)
                     if msg.get("data"):
                         try:
                             pcm += base64.b64decode(msg["data"], validate=True)

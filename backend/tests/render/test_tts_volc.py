@@ -107,6 +107,13 @@ def main() -> int:
         assert e.code == "tts.volc.unavailable" and e.params == {"status": 503}, (e.code, e.params)
         e = must_raise(ProviderError, status(400).synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert e.code == "tts.volc.rejected_http" and e.params == {"status": 400}, (e.code, e.params)
+        echo = status(401, {"code": "k-secret", "message": "denied"})
+        e = must_raise(ProviderError, echo.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert "k-secret" not in json.dumps(e.params) and "k-secret" not in str(e), e.params
+        text = "a" * 198 + "k-secret" + "zz"          # 密钥跨过 200 字截断线
+        edge = volc(lambda r: httpx.Response(400, content=text.encode()))
+        e = must_raise(ProviderError, edge.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert "k-secre" not in json.dumps(e.params) and "k-secret" not in str(e), e.params
         leaky = status(401, {"message": "bad Bearer sk-abc123xyz", "code": 7})
         e = must_raise(ProviderError, leaky.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert "sk-abc123xyz" not in json.dumps(e.params), e.params
@@ -115,6 +122,10 @@ def main() -> int:
         e = must_raise(BilledError, bad.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert "45000000" in str(e) and "permission" in str(e) and e.billed_cny == tts_cost(1, bad.caps)
         assert e.code == "tts.volc.failed_detail" and e.params["code"] == 45000000, (e.code, e.params)
+        echo2 = volc(lambda r: httpx.Response(200, content=(json.dumps(
+            {"code": "k-secret", "message": "no k-secret here"}) + "\n").encode()))
+        e = must_raise(BilledError, echo2.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert "k-secret" not in json.dumps(e.params) and "k-secret" not in str(e), e.params
         bad0 = volc(lambda r: httpx.Response(200, content=(json.dumps({"code": 45000001}) + "\n").encode()))
         e = must_raise(BilledError, bad0.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert e.code == "tts.volc.failed" and e.params == {"code": 45000001}

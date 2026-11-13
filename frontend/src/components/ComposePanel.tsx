@@ -51,6 +51,7 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
         <button className="tlc__linkbtn" onClick={() => void c.load()}>{t('compose.panel.refresh')}</button>
       </div>
       {c.error && <p className="tlc__kferr">{formatMsg(c.error, locale)}</p>}
+      {c.finalError && <p className="tlc__kferr">{t('compose.readFinalFailed', { error: formatMsg(c.finalError, locale) })}</p>}
       <Voices c={c} />
       <Music c={c} />
       <ComposeConfirm s={s} c={c} blockers={blockers} />

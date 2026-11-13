@@ -83,6 +83,15 @@ def main() -> int:
 
     def _no_key():
         raise _PE.of("tts.volc.no_key")
+    real_lines = voice.speech_lines
+    voice.speech_lines = lambda d: real_lines(d) + [{"id": "X-L1", "episode": "E01", "shot": "X", "kind": "dialogue",
+                                                      "speaker": "", "text": "无名氏", "emotion": None}]
+    try:
+        v2 = c.get(R + "/voices", headers=H).json()
+    finally:
+        voice.speech_lines = real_lines
+    unl = next(x for x in v2["speakers"] if x["key"] == "")
+    assert unl["name"] == {"code": "voice.unlabeled", "params": {}}, unl
     providers.register_tts("fake", _no_key)
     r = c.get(R + "/voices", headers=H)
     assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.volc.no_key", r.text

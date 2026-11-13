@@ -9,7 +9,7 @@
  *  免得操作失败后紧跟的重读把原因清掉。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { tr } from './i18n/core'
-import { errValue, formatMsg } from './i18n/serverMsg'
+import { errValue } from './i18n/serverMsg'
 import type { MsgLike } from './i18n/serverMsg'
 import { conflictCny, deleteBgm, filmFileUrl, getCompose, getVoices, putBgm, putVoices, startCompose } from './api'
 import { COMPOSE_POLL_MS, bgmType, composeKey, composing } from './compose'
@@ -25,6 +25,8 @@ export function useCompose(film: Film, dirty: boolean) {
   const [draft, setDraft] = useState(true)
   const [loadError, setLoadError] = useState<MsgLike>(null)
   const [actionError, setActionError] = useState<MsgLike>(null)
+  /** 读取成片文件失败：存原始错误，文案在渲染时按界面语言拼 */
+  const [finalError, setFinalError] = useState<MsgLike>(null)
   /** 音色表读取失败：只挡音色那一块，预览照常显示 */
   const [voicesError, setVoicesError] = useState<MsgLike>(null)
   const [busy, setBusy] = useState(false)
@@ -104,7 +106,7 @@ export function useCompose(film: Film, dirty: boolean) {
         live.current[k] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setActionError(tr('compose.readFinalFailed', { error: formatMsg(errValue(e)) })) })
+      .catch((e) => { if (gen.current === mine) setFinalError(errValue(e)) })
       .finally(() => asking.current.delete(k))
   }, [nid, cid, vid, stamp])
   const url = (path?: string | null) => (path ? files[`${stamp}|${path}`] : undefined)
@@ -131,6 +133,7 @@ export function useCompose(film: Film, dirty: boolean) {
     const mine = gen.current
     setBusy(true)
     setActionError(null)
+    setFinalError(null)
     try {
       await fn()
       if (gen.current === mine) await load()
@@ -146,6 +149,7 @@ export function useCompose(film: Film, dirty: boolean) {
     const mine = gen.current
     setBusy(true)
     setActionError(null)
+    setFinalError(null)
     try {
       await startCompose(nid!, cid!, vid!, draft, cny)
       if (gen.current !== mine) return
@@ -166,7 +170,7 @@ export function useCompose(film: Film, dirty: boolean) {
   }
 
   return {
-    preview, voices, voicesError, draft, error: actionError ?? loadError, busy, confirm, load, ensure, url,
+    preview, voices, voicesError, draft, error: actionError ?? loadError, finalError, busy, confirm, load, ensure, url,
     setDraft,
     setVoice: (speaker: string, voice: string) => apply(() => putVoices(nid!, cid!, vid!, { [speaker]: voice })),
     uploadBgm: (episode: string, file: File) => {
