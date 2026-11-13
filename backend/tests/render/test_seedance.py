@@ -4,6 +4,7 @@
 用 httpx.MockTransport 模拟方舟，不联网、不花钱。用法: python3 tests/render/test_seedance.py
 """
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -124,7 +125,8 @@ def main() -> int:
     assert task({"id": "x", "status": "running"}).poll("x").status == "running"
     st = task({"id": "x", "status": "failed",
                "error": {"code": "OutputVideoSensitiveContentDetected", "message": "审核未通过"}}).poll("x")
-    assert st.status == "failed" and "审核未通过" in st.error
+    assert st.status == "failed" and st.error_msg["code"] == "film.ark.output_moderated"
+    assert "审核未通过" not in st.error      # 厂商原文不进界面，只进日志
     st = task({"id": "x", "status": "expired"}).poll("x")
     assert st.status == "failed" and st.error
     print("3. 查询映射 ✓")
@@ -189,6 +191,105 @@ def main() -> int:
     assert len(st.error) > 400 and len(st.error_msg["params"]["detail"]["text"]) == 300
     assert st.error_msg["params"]["detail"]["text"].startswith("Bad: ") and st.error.startswith("Bad：")
     print("8. 原文脱敏 ✓")
+
+    # 9. 方舟错误码友好映射：界面只给友好文案，厂商原文只进日志
+    KEY = "k-secret"
+    ZH = {
+        "film.ark.auth": "视频服务（方舟）鉴权失败，请联系管理员",
+        "film.ark.overdue": "视频服务（方舟）账户欠费，暂时无法出片，请联系管理员",
+        "film.ark.access_denied": "视频服务（方舟）拒绝访问，请联系管理员",
+        "film.ark.model_unavailable": "所选的视频档位暂时不可用（模型未开通），请换一个档位或联系管理员",
+        "film.ark.limit_paused": "视频服务（方舟）已达到用量上限并暂停，请联系管理员",
+        "film.ark.quota": "视频服务（方舟）额度已用尽，请联系管理员",
+        "film.ark.input_moderated": "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试",
+        "film.ark.copyright": "这一段的描述可能涉及版权限制：改写后重试",
+        "film.ark.output_moderated": "生成的视频没通过内容审核：调整这一段的描述后重试",
+    }
+
+    def body_of(code):
+        return {"error": {"code": code, "message": f"vendor text with {KEY} sk-test"}}
+
+    cases = [
+        (401, "AuthenticationError", "film.ark.auth"),
+        (401, "InvalidSubscription", "film.ark.auth"),
+        (403, "AccountOverdueError", "film.ark.overdue"),
+        (403, "AccessDenied", "film.ark.access_denied"),
+        (403, "InvalidAccountStatus", "film.ark.access_denied"),
+        (404, "InvalidEndpointOrModel.NotFound", "film.ark.model_unavailable"),
+        (404, "InvalidEndpointOrModel.ModelIDAccessDisabled", "film.ark.model_unavailable"),
+        (404, "ModelNotOpen", "film.ark.model_unavailable"),
+        (403, "QuotaExceeded", "film.ark.quota"),
+        (400, "SensitiveContentDetected.Violence", "film.ark.input_moderated"),
+        (400, "InputTextSensitiveContentDetected", "film.ark.input_moderated"),
+        (400, "InputImageSensitiveContentDetected", "film.ark.input_moderated"),
+        (400, "InputTextRiskDetection", "film.ark.input_moderated"),
+        (400, "SensitiveContentDetected.PolicyViolation", "film.ark.copyright"),
+        (400, "InputTextSensitiveContentDetected.PolicyViolation", "film.ark.copyright"),
+    ]
+    for http, vcode, ours in cases:
+        e = must_raise(base.ProviderError, status(http, body_of(vcode)).submit, req)
+        assert type(e) is base.ProviderError and e.code == ours, (vcode, e.code)
+        assert str(e) == ZH[ours] and KEY not in flat([str(e), e.args, e.params]) and "vendor text" not in str(e)
+
+    # SetLimitExceeded 的 429：不重试（不是瞬时错误，也不是 AmbiguousSubmit），提交与查询都一样
+    for call in (lambda s: s.submit(req), lambda s: s.poll("x")):
+        e = must_raise(base.ProviderError, call, status(429, body_of("SetLimitExceeded")))
+        assert type(e) is base.ProviderError and e.code == "film.ark.limit_paused" and str(e) == ZH[e.code]
+        assert not isinstance(e, (base.TransientError, base.AmbiguousSubmit))
+
+    # 真正的限流仍可重试
+    for vcode in ("RateLimitExceeded.EndpointRPMExceeded", "ServerOverloaded", "RequestBurstTooFast"):
+        e = must_raise(base.TransientError, status(429, body_of(vcode)).submit, req)
+        assert e.code == "film.ark.throttled"
+    e = must_raise(base.TransientError, ark(lambda r: httpx.Response(429, text="slow down")).submit, req)
+    assert e.code == "film.ark.throttled"
+
+    # 轮询里的失败
+    for vcode, ours in (("OutputVideoSensitiveContentDetected", "film.ark.output_moderated"),
+                        ("OutputAudioSensitiveContentDetected", "film.ark.output_moderated")):
+        st = task({"id": "x", "status": "failed", "error": body_of(vcode)["error"]}).poll("x")
+        assert st.error_msg["code"] == ours and st.error == ZH[ours]
+        assert KEY not in flat([st.error, st.error_msg])
+
+    # 未映射：照旧带厂商原文
+    e = must_raise(base.ProviderError, status(400, {"error": {"code": "InvalidParameter",
+                                                              "message": "duration 不合法"}}).submit, req)
+    assert e.code == "film.provider.rejected" and "duration 不合法" in e.params["detail"]["text"]
+    e = must_raise(base.ProviderError, status(400, {"error": {}}).submit, req)
+    assert e.code == "film.provider.rejected" and str(e) == "HTTP 400"
+    e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(401, text="nope")).submit, req)
+    assert e.code == "film.ark.auth"
+    e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(403, text="nope")).submit, req)
+    assert e.code == "film.ark.access_denied"
+    e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(418, text="teapot")).submit, req)
+    assert e.code == "film.provider.http_rejected"
+    # 有 code 但没命中时不做 HTTP 回落
+    e = must_raise(base.ProviderError, status(403, body_of("SomethingNew")).submit, req)
+    assert e.code == "film.provider.rejected"
+
+    # 日志：命中映射时原文进 WARNING，密钥不进
+    class _Grab(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.lines = []
+
+        def emit(self, rec):
+            self.lines.append(rec.getMessage())
+
+    grab = _Grab()
+    lg = logging.getLogger("render.providers.seedance")
+    lg.addHandler(grab)
+    try:
+        must_raise(base.ProviderError, status(401, body_of("AuthenticationError")).submit, req)
+        must_raise(base.ProviderError, status(429, body_of("SetLimitExceeded")).submit, req)
+        task({"id": "x", "status": "failed", "error": body_of("OutputVideoSensitiveContentDetected")["error"]}).poll("x")
+    finally:
+        lg.removeHandler(grab)
+    assert any("AuthenticationError" in x and "401" in x for x in grab.lines), grab.lines
+    assert any("SetLimitExceeded" in x and "429" in x for x in grab.lines), grab.lines
+    assert any("OutputVideoSensitiveContentDetected" in x for x in grab.lines), grab.lines
+    assert not any(KEY in x for x in grab.lines), grab.lines
+    print("9. 方舟错误码映射 ✓")
 
     print("\nALL PASS")
     return 0

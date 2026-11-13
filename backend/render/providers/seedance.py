@@ -8,9 +8,11 @@
 密钥 ARK_API_KEY 写在 backend/.env，只放进请求头，不进日志与报错。
 """
 import itertools
+import logging
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 import httpx
 
@@ -19,6 +21,8 @@ from pipeline.config import _load_dotenv
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, estimate_cny, last_frame_path, request_seconds, scrub)
 from server.messages import compact, msg, vendor
+
+log = logging.getLogger("render.providers.seedance")
 
 BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 # 2026-10 刊例价（元/百万 token，输入不含视频）；资源包与折扣不建模。
@@ -57,11 +61,72 @@ def _with_fallback(e: ProviderError, full: str) -> ProviderError:
     return e
 
 
-def _reject(r: httpx.Response, key: str) -> ProviderError:
-    """4xx：厂商原因脱敏（密钥、Bearer 凭据）后作原文参数。"""
+# 方舟错误码 → 我们的代码（官方错误码页 https://www.volcengine.com/docs/82379/1299023）。
+# 先全名、再族名（第一个「.」之前）；Input*/Output* + SensitiveContentDetected 按前缀归类。
+# 限流族（RateLimitExceeded、ServerOverloaded、RequestBurstTooFast）不登记：落到可重试的瞬时分支。
+_ARK_EXACT = {
+    "SensitiveContentDetected.PolicyViolation": "film.ark.copyright",
+    "InputTextSensitiveContentDetected.PolicyViolation": "film.ark.copyright",
+}
+_ARK_FAMILY = {
+    "AuthenticationError": "film.ark.auth", "InvalidSubscription": "film.ark.auth",
+    "AccountOverdueError": "film.ark.overdue",
+    "AccessDenied": "film.ark.access_denied", "InvalidAccountStatus": "film.ark.access_denied",
+    "InvalidEndpointOrModel": "film.ark.model_unavailable", "ModelNotOpen": "film.ark.model_unavailable",
+    "SetLimitExceeded": "film.ark.limit_paused",
+    "QuotaExceeded": "film.ark.quota",
+    "SensitiveContentDetected": "film.ark.input_moderated",
+    "InputTextRiskDetection": "film.ark.input_moderated",
+}
+_ARK_HTTP = {401: "film.ark.auth", 403: "film.ark.access_denied"}
+
+
+def _ark_code(code) -> Optional[str]:
+    if not isinstance(code, str) or not code:
+        return None
+    if code in _ARK_EXACT:
+        return _ARK_EXACT[code]
+    fam = code.split(".", 1)[0]
+    if fam in _ARK_FAMILY:
+        return _ARK_FAMILY[fam]
+    if fam.endswith("SensitiveContentDetected"):
+        if fam.startswith("Input"):
+            return "film.ark.input_moderated"
+        if fam.startswith("Output"):
+            return "film.ark.output_moderated"
+    return None
+
+
+def _err_body(r: httpx.Response) -> Optional[dict]:
+    """响应体里的 error 对象；不是 JSON 或没有为 None。"""
     try:
-        err = (r.json() or {}).get("error") or {}
+        j = r.json()
     except ValueError:
+        return None
+    err = j.get("error") if isinstance(j, dict) else None
+    return err if isinstance(err, dict) else None
+
+
+def _log_ark(status, err: dict, key: str) -> None:
+    """方舟原文脱敏后只进日志，不进界面。"""
+    parts = [str(x) for x in (err.get("code"), err.get("message")) if x]
+    log.warning("方舟错误 HTTP %s：%s", status, scrub(": ".join(parts), key))  # i18n: internal
+
+
+def _mapped(our: str, status, err: dict, key: str) -> ProviderError:
+    _log_ark(status, err, key)
+    return ProviderError.of(our)
+
+
+def _reject(r: httpx.Response, key: str) -> ProviderError:
+    """4xx：已知方舟错误码给友好文案（原文进日志）；其余把厂商原因脱敏（密钥、Bearer 凭据）后作原文参数。"""
+    err = _err_body(r)
+    our = _ark_code((err or {}).get("code"))
+    if our is None and not (err and (err.get("code") or err.get("message"))):
+        our = _ARK_HTTP.get(r.status_code)          # 没有任何错误信息时才按 HTTP 状态回落
+    if our:
+        return _mapped(our, r.status_code, err or {}, key)
+    if err is None:
         body = scrub(r.text, key)[:300]
         return _with_fallback(ProviderError.of("film.provider.http_rejected", status=r.status_code,
                                                detail=vendor(body)), f"HTTP {r.status_code}：{body}")
@@ -128,6 +193,10 @@ class Seedance:
                 raise AmbiguousSubmit.of("film.provider.submit_cut", kind=type(e).__name__)
             raise TransientError.of("film.ark.connect_failed", kind=type(e).__name__)
         if r.status_code == 429:
+            err = _err_body(r)
+            our = _ark_code((err or {}).get("code"))
+            if our:                                  # 如 SetLimitExceeded：重试没用，直接告诉用户
+                raise _mapped(our, 429, err, self._key)
             raise TransientError.of("film.ark.throttled")
         if r.status_code >= 500:
             if submit:
@@ -168,14 +237,18 @@ class Seedance:
         error, error_msg = None, None
         if status == "failed":
             err = j.get("error") or {}
+            our = _ark_code(err.get("code"))
+            if our:
+                _log_ark("task", err, self._key)
             parts = [x for x in (err.get("code"), err.get("message")) if x]
             text = scrub(": ".join(parts), self._key)
             zh = scrub("：".join(parts), self._key)              # 中文兜底保持原样
-            m = (msg("film.provider.rejected", detail=vendor(text)) if text
+            m = (msg(our) if our
+                 else msg("film.provider.rejected", detail=vendor(text)) if text
                  else msg("film.ark.task_expired") if raw == "expired"
                  else msg("film.provider.task_cancelled") if raw == "cancelled"
                  else msg("film.provider.generation_failed"))
-            error, error_msg = (zh if zh else m["message"]), compact(m)
+            error, error_msg = (zh if zh and not our else m["message"]), compact(m)
         return TaskState(task_id, status, video_url=content.get("video_url"),
                          last_frame_url=content.get("last_frame_url"), error=error, error_msg=error_msg,
                          usage={"completion_tokens": (j.get("usage") or {}).get("completion_tokens")}
