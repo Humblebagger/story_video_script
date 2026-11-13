@@ -15,19 +15,22 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolCallId, ToolException
 from langgraph.types import interrupt
 
-from assistant.tools import LIVE, _chapters, _ctx, _tool, resolve_chapter
+from assistant.tools import LIVE, ToolError, _chapters, _ctx, _tool, resolve_chapter
 from server import summary
+from server.messages import money, msg, ref
 
 # 名字 → app 里的执行函数：start_version / film_quote / film_run / compose_quote / compose_start / export_check
 ops: dict = {}
 
 
 def _op(name: str, *args):
-    """调 app 里的执行函数；HTTPException 的说明变成给模型看的工具报错。"""
+    """调 app 里的执行函数；HTTPException 变成工具报错：带代码的保留代码（界面按语言渲染），正文给模型。"""
     try:
         return ops[name](*args)
     except HTTPException as e:
         d = e.detail
+        if isinstance(d, dict) and d.get("code"):
+            raise ToolError.from_msg(d)
         raise ToolException(d.get("message", str(d)) if isinstance(d, dict) else str(d))
 
 
@@ -39,7 +42,7 @@ def _where(config: RunnableConfig, chapter: Optional[str]) -> tuple:
 def _version(ch: dict) -> str:
     vid = summary._pick_version(ch)
     if not vid:
-        raise ToolException(f"{ch['title']} 还没有可用的分镜版本")
+        raise ToolError.of("assistant.tool.no_version", chapter=ch["title"])
     return vid
 
 
@@ -57,8 +60,8 @@ def _same(a: dict, b: dict) -> bool:
     return a["detail"] == b["detail"] and a.get("clips") == b.get("clips")
 
 
-def _money(q: dict) -> str:
-    return "按模型用量计费" if q["amount"] is None else f"¥{q['amount']:.2f}"
+def _money(q: dict):
+    return ref("assistant.tool.model_cost") if q["amount"] is None else money(q["amount"])
 
 
 def _target(c: dict) -> str:
@@ -76,12 +79,12 @@ def _ask(fresh_card: Callable[[], dict]) -> tuple:
         return False, seen
     fresh = fresh_card()
     if (fresh["chapter_id"], fresh["version_id"]) != (seen["chapter_id"], seen["version_id"]):
-        raise ToolException(f"章节或版本变了（{_target(seen)} → {_target(fresh)}），没有执行；要的话我再出一张新卡")
+        raise ToolError.of("assistant.tool.target_changed", before=_target(seen), after=_target(fresh))
     if not _same(fresh, seen):
-        clips = (f"，要出的段 {'、'.join(seen['clips'])} → {'、'.join(fresh['clips'])}"
+        clips = (msg("assistant.tool.clips_changed", before=list(seen["clips"]), after=list(fresh["clips"]))
                  if fresh.get("clips") != seen.get("clips") else "")
-        raise ToolException(f"预估变了（{_money(seen)} → {_money(fresh)}，要点 {seen['detail']} → {fresh['detail']}"
-                            f"{clips}），没有执行；要的话我再出一张新卡")
+        raise ToolError.of("assistant.tool.quote_changed", before=_money(seen), after=_money(fresh),
+                           detail_before=str(seen["detail"]), detail_after=str(fresh["detail"]), clips=clips)
     return True, seen
 
 
@@ -102,9 +105,9 @@ def generate_storyboard(config: RunnableConfig, tool_call_id: Annotated[str, Inj
     def fresh_card() -> dict:
         uid, nid, ch = _where(config, chapter)
         if not ch.get("chars"):
-            raise ToolException(f"{ch['title']} 还没有原文")
+            raise ToolError.of("assistant.tool.no_text", chapter=ch["title"])
         if ch.get("latest_status") in LIVE:
-            raise ToolException(f"{ch['title']} 正在生成分镜，等它跑完再说")
+            raise ToolError.of("assistant.tool.job_running", chapter=ch["title"])
         return _card(tool_call_id, "generate_storyboard", ch, None, {
             "amount": None, "currency": "usd",
             "detail": {"chars": ch["chars"], "archived": bool(ch.get("adopted_version"))}})

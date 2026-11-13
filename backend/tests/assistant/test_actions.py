@@ -24,11 +24,13 @@ _pipeline_config._load_dotenv = lambda *_a, **_k: None
 from fastapi import HTTPException  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
-from langgraph.prebuilt import create_react_agent  # noqa: E402
+from langgraph.prebuilt import ToolNode, create_react_agent  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from fake_model import ScriptedChat, call  # noqa: E402
 from assistant import actions as A  # noqa: E402
+from assistant import graph as G  # noqa: E402
 from server import auth, novels  # noqa: E402
+from server.messages import money, msg  # noqa: E402
 
 DOC = json.loads((ROOT / "tests" / "real_text_yao" / "output_merged.json").read_text(encoding="utf-8"))
 calls: list = []
@@ -53,7 +55,7 @@ def fake_ops():
 
 
 def agent_for(script: list):
-    return create_react_agent(ScriptedChat(script=script), A.TOOLS, checkpointer=InMemorySaver())
+    return create_react_agent(ScriptedChat(script=script), ToolNode(A.TOOLS, wrap_tool_call=G._with_artifact), checkpointer=InMemorySaver())
 
 
 def run(agent, cfg, payload) -> list:
@@ -123,6 +125,7 @@ def main() -> int:
     assert run(ag, C, answer(its[0])) == [], "不再在同一次调用里出第二张卡"
     m = result(ag, C)
     assert calls == [] and m.status == "error" and "预估变了" in m.content and "1.50" in m.content and "2.00" in m.content, m.content
+    assert m.artifact["error"]["code"] == "assistant.tool.quote_changed", m.artifact
     film["amount"] = 1.5
     print("3. 金额变了不执行 ✓")
 
@@ -171,6 +174,8 @@ def main() -> int:
     assert run(ag, C, {"messages": [HumanMessage("生成第二章")]}) == []
     m = result(ag, C)
     assert m.status == "error" and "原文" in m.content and calls == []
+    assert m.artifact == {"error": {"code": "assistant.tool.no_text", "params": {"chapter": "第二章 刑场"},
+                                    "message": m.content}}, m.artifact
     C = cfg()
     ag = agent_for([call("generate_storyboard", {}, "g2"), AIMessage("好")])
     its = run(ag, C, {"messages": [HumanMessage("生成")]})
@@ -204,6 +209,18 @@ def main() -> int:
     run(ag, C, answer(its[0]))
     m = result(ag, C)
     assert m.status == "error" and "¥9.00" in m.content, m.content
+    assert m.artifact is None, "只有 message 的 detail 仍是普通工具报错"
+
+    def coded(*a):
+        raise HTTPException(409, detail={**msg("film.run.changed", amount=money(9.0)), "expected_cny": 9.0})
+    A.ops["film_run"] = coded
+    C = cfg()
+    ag = agent_for([call("film_run", {}, "f6"), AIMessage("好")])
+    run(ag, C, answer(run(ag, C, {"messages": [HumanMessage("出片")]})[0]))
+    m = result(ag, C)
+    assert m.status == "error" and m.content == "预估金额已变为 ¥9.00，请重新确认", m.content
+    assert m.artifact["error"]["code"] == "film.run.changed"
+    assert m.artifact["error"]["params"]["amount"] == {"t": "money", "cny": 9.0}
     fake_ops()
     print("8. 报错转述 ✓")
 
@@ -228,6 +245,7 @@ def main() -> int:
     run(ag, C, answer(its[0]))
     m = result(ag, C)
     assert calls == [] and m.status == "error" and "章节或版本" in m.content, (calls, m.content)
+    assert m.artifact["error"]["code"] == "assistant.tool.target_changed", m.artifact
     # 生成分镜同样
     C = cfg()
     ag = agent_for([call("generate_storyboard", {}, "g3"), AIMessage("好")])

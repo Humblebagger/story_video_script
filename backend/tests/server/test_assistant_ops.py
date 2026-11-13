@@ -127,7 +127,7 @@ def main() -> int:
     bad["episodes"][0]["shots"][0]["narration"]["unit_refs"] = ["u99999"]   # 引用不存在的句单元：高危，才算不合格
     chk = app_mod._check_version_doc(user, nid, cid, "v1", bad)
     assert chk["ok"] is False and chk["warnings"] and len(chk["warnings"]) <= 5, chk
-    assert all(isinstance(w, str) and _TMP.name not in w for w in chk["warnings"])
+    assert all(w["code"] == "verify.finding" and _TMP.name not in json.dumps(w, ensure_ascii=False) for w in chk["warnings"])
     assert app_mod._save_version_doc(user, nid, cid, "v1", bad)["status"] == "draft_invalid"
     app_mod._save_version_doc(user, nid, cid, "v1", doc)      # 改回去，免得影响后面
     print("6. 复验与保存 ✓")

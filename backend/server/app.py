@@ -767,12 +767,13 @@ def versions_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user))
 
 
 def _check_version_doc(user: dict, nid: str, cid: str, vid: str, doc: dict) -> dict:
-    """人工编辑后的整份复验，不保存（助手出对比卡时预先告诉用户）：{ok, warnings（最多 5 条，隐去服务器目录）}。"""
+    """人工编辑后的整份复验，不保存（助手出对比卡时预先告诉用户）：{ok, warnings（最多 5 条，隐去服务器目录，每条是 verify.finding 消息对象）}。"""
     existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
     context = _novel_call(novels.novel_context, user["id"], nid, cid)
     _doc, report, _status, _frozen = _reverify(existing, doc, context)
     return {"ok": report.ok,
-            "warnings": [_hide_root(f"{f.object_path}: {f.message}", auth.DATA_DIR) for f in report.errors][:5]}
+            "warnings": [_hide_root_deep(msg("verify.finding", path=f.object_path, detail=vendor(f.message)),
+                                         auth.DATA_DIR) for f in report.errors][:5]}
 
 
 def _save_version_doc(user: dict, nid: str, cid: str, vid: str, doc: dict) -> dict:
@@ -1892,7 +1893,8 @@ def assistant_undo(nid: str, body: dict = Body(...), user: dict = Depends(novel_
         except (assistant_edits.UndoError, novels.NovelError, novels.NotFound) as e:
             raise HTTPException(409, _hide_root(str(e), auth.DATA_DIR))
         assistant_store.mark_undone(user["id"], nid, tcid)
-        return {"ok": True, "message": message,
+        # undo() 返回消息对象；接口的 message 暂取中文兜底，Task 8 再改为消息对象
+        return {"ok": True, "message": message["message"],
                 "task": {"kind": "edit", "chapter_id": data.get("chapter_id"), "version_id": data.get("version_id")}}
     finally:
         assistant_store.end(user["id"], nid, token)

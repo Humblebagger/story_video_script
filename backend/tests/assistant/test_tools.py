@@ -61,6 +61,16 @@ def main() -> int:
             raise AssertionError(f"{bad!r} 应报错")
         except ToolException as e:
             assert "第一章 茶馆" in str(e), "报错里要列出候选章节"
+            want = {"章": "assistant.tool.ambiguous_chapter", "第九章": "assistant.tool.no_such_chapter",
+                    None: "assistant.tool.pick_chapter"}[bad]
+            assert isinstance(e, T.ToolError) and e.code == want, (bad, e.code)
+            assert "第一章 茶馆" in e.params["options"]
+    try:
+        T.resolve_chapter([], "x", None)
+        raise AssertionError("没有章节应报错")
+    except ToolException as e:
+        assert e.params["options"] == {"t": "ref", "code": "assistant.tool.no_chapters"}, e.params
+        assert "（还没有章节）" in str(e)
     print("1. 章节解析 ✓")
 
     # 2. novel_overview：各章与所在步骤
@@ -109,8 +119,8 @@ def main() -> int:
     try:
         call(T.assets_find, C, kind="weapons")
         raise AssertionError("未知类型应报错")
-    except ToolException:
-        pass
+    except ToolException as e:
+        assert e.code == "assistant.tool.bad_kind", e.code
     print("5. assets_find ✓")
 
     # 6. plot_get、film_status（没会话）、jobs_running
@@ -159,7 +169,7 @@ def main() -> int:
 
     # 10. 工具都设了 handle_tool_error，且给模型的参数说明里没有 config
     for tool in T.TOOLS:
-        assert tool.handle_tool_error is True, tool.name
+        assert tool.handle_tool_error is T._tool_error_text, tool.name
         assert "config" not in tool.tool_call_schema.model_json_schema().get("properties", {}), tool.name
     print("10. 工具约定 ✓")
 

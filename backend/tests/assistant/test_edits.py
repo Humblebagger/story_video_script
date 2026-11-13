@@ -23,10 +23,10 @@ _pipeline_config._load_dotenv = lambda *_a, **_k: None
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
-from langgraph.prebuilt import create_react_agent  # noqa: E402
+from langgraph.prebuilt import ToolNode, create_react_agent  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from fake_model import ScriptedChat, call  # noqa: E402
-from assistant import actions as A, edits as E  # noqa: E402
+from assistant import actions as A, edits as E, graph as G  # noqa: E402
 from server import auth, novels  # noqa: E402
 
 DOC = json.loads((ROOT / "tests" / "real_text_yao" / "output_merged.json").read_text(encoding="utf-8"))
@@ -45,7 +45,7 @@ def fake_ops(uid):
 
 
 def agent_for(script):
-    return create_react_agent(ScriptedChat(script=script), E.TOOLS, checkpointer=InMemorySaver())
+    return create_react_agent(ScriptedChat(script=script), ToolNode(E.TOOLS, wrap_tool_call=G._with_artifact), checkpointer=InMemorySaver())
 
 
 def run(agent, cfg, payload) -> list:
@@ -149,6 +149,7 @@ def main() -> int:
         assert run(ag, C, {"messages": [HumanMessage("改")]}) == []
         m = result(ag, C)
         assert m.status == "error" and word in m.content, (bad, m.content)
+        assert m.artifact and m.artifact["error"]["code"].startswith("assistant.edit."), (bad, m.artifact)
     print("3. 改镜头被拒 ✓")
 
     # 4. 复验警告写在卡上；取消不保存
@@ -311,7 +312,13 @@ def main() -> int:
     finally:
         novels.set_synopsis = real
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "新的全书"
-    assert E.undo(uid, nid, data) == "已撤销剧情的修改"
+    r = E.undo(uid, nid, data)
+    assert r["code"] == "assistant.undo.done_plot" and r["message"] == "已撤销剧情的修改", r
+    try:
+        E.undo(uid, nid, {"kind": "bogus"})
+        raise AssertionError("未知类型应报 UndoError")
+    except E.UndoError as e:
+        assert e.code == "assistant.undo.unsupported", e.code
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "旧的全书"
     print("10. 撤销剧情不留半截 ✓")
 

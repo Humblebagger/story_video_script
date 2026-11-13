@@ -5,10 +5,10 @@ from typing import Optional
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.prebuilt import create_react_agent
+from langgraph.prebuilt import ToolNode, create_react_agent
 
 from assistant import actions, edits, store
-from assistant.tools import TOOLS
+from assistant.tools import TOOLS, ToolError
 from server import novels
 
 ALL_TOOLS = TOOLS + actions.TOOLS + edits.TOOLS
@@ -67,10 +67,21 @@ def _pre_model(state: dict, config: RunnableConfig) -> dict:
     return {"llm_input_messages": [sys_msg] + close_dangling(trim(state["messages"]))}
 
 
+def _with_artifact(request, execute):
+    """带代码的工具报错（ToolError）→ status=error 的 ToolMessage：正文是给模型的中文兜底，
+    artifact={"error": 消息对象} 给界面（spec 子计划 4 D）。interrupt 的 GraphBubbleUp 与普通报错不经过这里。"""
+    try:
+        return execute(request)
+    except ToolError as e:
+        tc = request.tool_call
+        return ToolMessage(str(e), tool_call_id=tc["id"], name=tc["name"], status="error",
+                           artifact={"error": e.as_msg()})
+
+
 def build_agent(model, checkpointer):
     """一次只调一个工具（parallel_tool_calls=False）：每步最多一个操作，确认卡始终一张一张出、好推理，
     模型也不能在同一步里连发两个花钱的操作。create_react_agent 接受已绑定工具的模型。"""
-    return create_react_agent(model.bind_tools(ALL_TOOLS, parallel_tool_calls=False), ALL_TOOLS,
+    return create_react_agent(model.bind_tools(ALL_TOOLS, parallel_tool_calls=False), ToolNode(ALL_TOOLS, wrap_tool_call=_with_artifact),
                               pre_model_hook=_pre_model, checkpointer=checkpointer)
 
 
@@ -100,7 +111,7 @@ class NullModel(BaseChatModel):
         return self
 
     def _generate(self, *a, **k):
-        raise RuntimeError("NullModel 不应被调用")
+        raise RuntimeError("NullModel 不应被调用")  # i18n: internal
 
 
 def run_config(user_id: str, nid: str, where: Optional[dict], lang: str, callbacks: Optional[list] = None,

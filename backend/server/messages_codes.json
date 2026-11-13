@@ -66,6 +66,260 @@
     "params": [],
     "zh": "不能修改自己的角色"
   },
+  "assistant.edit.already": {
+    "params": [],
+    "zh": "这些地方已经是要改成的样子，不用改"
+  },
+  "assistant.edit.bad_enum": {
+    "params": [
+      "field",
+      "options"
+    ],
+    "zh": "{field} 只能是 {options}"
+  },
+  "assistant.edit.bad_shot_field": {
+    "params": [
+      "field",
+      "options"
+    ],
+    "zh": "不能改 {field}：镜头只能改 {options}"
+  },
+  "assistant.edit.changed": {
+    "params": [],
+    "zh": "要改的内容或位置在这之后变了，没有应用；要的话我再出一张新的对比卡"
+  },
+  "assistant.edit.duration_number": {
+    "params": [],
+    "zh": "duration_sec 要给数字（秒）"
+  },
+  "assistant.edit.duration_range": {
+    "params": [],
+    "zh": "duration_sec 要在 0.5 到 15 秒之间"
+  },
+  "assistant.edit.empty_name": {
+    "params": [],
+    "zh": "名称不能为空"
+  },
+  "assistant.edit.empty_text": {
+    "params": [
+      "field"
+    ],
+    "zh": "{field} 要给非空的文字"
+  },
+  "assistant.edit.fields_already": {
+    "params": [],
+    "zh": "这些字段已经是要改成的样子，不用改"
+  },
+  "assistant.edit.list_field": {
+    "params": [],
+    "zh": "列表字段要给文字列表"
+  },
+  "assistant.edit.locked_asset": {
+    "params": [
+      "path"
+    ],
+    "zh": "不能改 {path}：编号、服装、状态、角度、参考图被镜头引用，改了会对不上"
+  },
+  "assistant.edit.locked_shot": {
+    "params": [
+      "field"
+    ],
+    "zh": "不能改 {field}：旁白、台词与溯源是原文，必须逐字保留"
+  },
+  "assistant.edit.need_plot": {
+    "params": [],
+    "zh": "要给 outline 或 synopsis"
+  },
+  "assistant.edit.need_text": {
+    "params": [
+      "path"
+    ],
+    "zh": "{path} 要给文字"
+  },
+  "assistant.edit.no_asset": {
+    "params": [
+      "id"
+    ],
+    "zh": "没有编号为 {id} 的资产卡"
+  },
+  "assistant.edit.no_field": {
+    "params": [
+      "id",
+      "path"
+    ],
+    "zh": "{id} 没有 {path} 这个字段"
+  },
+  "assistant.edit.no_fields": {
+    "params": [],
+    "zh": "没有要改的字段"
+  },
+  "assistant.edit.no_shot": {
+    "params": [
+      "shot"
+    ],
+    "zh": "找不到唯一的镜头「{shot}」"
+  },
+  "assistant.edit.not_text_field": {
+    "params": [
+      "path"
+    ],
+    "zh": "{path} 不是文字字段，不能改"
+  },
+  "assistant.edit.nothing": {
+    "params": [],
+    "zh": "没有要改的地方"
+  },
+  "assistant.edit.plot_already": {
+    "params": [],
+    "zh": "剧情已经是要改成的样子，不用改"
+  },
+  "assistant.edit.synopsis_too_long": {
+    "params": [
+      "max",
+      "len"
+    ],
+    "zh": "章节梗概不超过 {max} 字（现在 {len} 字）"
+  },
+  "assistant.edit.too_many": {
+    "params": [
+      "max"
+    ],
+    "zh": "一次最多改 {max} 处"
+  },
+  "assistant.tool.ambiguous_chapter": {
+    "params": [
+      "text",
+      "options"
+    ],
+    "zh": "「{text}」对应不到唯一的章节。可选章节：{options}"
+  },
+  "assistant.tool.bad_kind": {
+    "params": [
+      "options"
+    ],
+    "zh": "kind 只能是 {options}"
+  },
+  "assistant.tool.bad_step": {
+    "params": [
+      "options"
+    ],
+    "zh": "step 只能是 {options}"
+  },
+  "assistant.tool.clips_changed": {
+    "params": [
+      "before",
+      "after"
+    ],
+    "zh": "，要出的段 {before} → {after}"
+  },
+  "assistant.tool.job_running": {
+    "params": [
+      "chapter"
+    ],
+    "zh": "{chapter} 正在生成分镜，等它跑完再说"
+  },
+  "assistant.tool.model_cost": {
+    "params": [],
+    "zh": "按模型用量计费"
+  },
+  "assistant.tool.no_chapters": {
+    "params": [],
+    "zh": "（还没有章节）"
+  },
+  "assistant.tool.no_such_chapter": {
+    "params": [
+      "n",
+      "options"
+    ],
+    "zh": "没有第 {n} 章。可选章节：{options}"
+  },
+  "assistant.tool.no_text": {
+    "params": [
+      "chapter"
+    ],
+    "zh": "{chapter} 还没有原文"
+  },
+  "assistant.tool.no_version": {
+    "params": [
+      "chapter"
+    ],
+    "zh": "{chapter} 还没有可用的分镜版本"
+  },
+  "assistant.tool.pick_chapter": {
+    "params": [
+      "options"
+    ],
+    "zh": "请指明是哪一章。可选章节：{options}"
+  },
+  "assistant.tool.quote_changed": {
+    "params": [
+      "before",
+      "after",
+      "detail_before",
+      "detail_after",
+      "clips"
+    ],
+    "zh": "预估变了（{before} → {after}，要点 {detail_before} → {detail_after}{clips}），没有执行；要的话我再出一张新卡"
+  },
+  "assistant.tool.target_changed": {
+    "params": [
+      "before",
+      "after"
+    ],
+    "zh": "章节或版本变了（{before} → {after}），没有执行；要的话我再出一张新卡"
+  },
+  "assistant.undo.already": {
+    "params": [],
+    "zh": "这次修改已经撤销过了"
+  },
+  "assistant.undo.asset_changed": {
+    "params": [
+      "id"
+    ],
+    "zh": "资产卡 {id} 在这之后又被改过，不能撤销"
+  },
+  "assistant.undo.done_asset": {
+    "params": [
+      "id"
+    ],
+    "zh": "已撤销 {id} 的修改"
+  },
+  "assistant.undo.done_plot": {
+    "params": [],
+    "zh": "已撤销剧情的修改"
+  },
+  "assistant.undo.done_shots": {
+    "params": [
+      "n"
+    ],
+    "zh": "已撤销 {n} 个镜头的修改"
+  },
+  "assistant.undo.not_found": {
+    "params": [],
+    "zh": "找不到这次修改"
+  },
+  "assistant.undo.outline_changed": {
+    "params": [],
+    "zh": "全书梗概在这之后又被改过，不能撤销"
+  },
+  "assistant.undo.shot_changed": {
+    "params": [
+      "id"
+    ],
+    "zh": "镜头 {id} 在这之后又被改过，不能撤销"
+  },
+  "assistant.undo.synopsis_changed": {
+    "params": [],
+    "zh": "这一章的梗概在这之后又被改过，不能撤销"
+  },
+  "assistant.undo.unsupported": {
+    "params": [],
+    "zh": "这条修改不能撤销"
+  },
+  "assistant.undo.version_gone": {
+    "params": [],
+    "zh": "这个版本已经不在了，不能撤销"
+  },
   "auth.admin_only": {
     "params": [],
     "zh": "需要管理员权限"

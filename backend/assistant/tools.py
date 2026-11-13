@@ -1,6 +1,6 @@
 """助手的只读工具。身份（user_id / novel_id）与当前位置从 RunnableConfig 读，由服务端注入，模型改不了。
 
-返回 JSON 文本，给模型看；条数与长度都有上限，免得一次塞爆上下文。出错抛 ToolException，
+返回 JSON 文本，给模型看；条数与长度都有上限，免得一次塞爆上下文。出错抛 ToolException（带代码的是 ToolError），
 ToolNode 会把它变成 status=error 的 ToolMessage，对话不中断。
 """
 import json
@@ -13,6 +13,7 @@ from langchain_core.tools import ToolException, tool
 from render import session
 from server import auth, novels, summary
 from server.library import KINDS
+from server.messages import UserError, ref
 
 MAX_CHARS = 4000
 MAX_ITEMS = 20
@@ -23,11 +24,24 @@ LIVE = ("queued", "running")
 jobs_source: Callable[[str], list] = lambda user_id: []
 
 
+class ToolError(UserError, ToolException):
+    """带代码的工具报错（spec 子计划 4 D）：str() 是给模型的中文兜底，与改造前一字不差；
+    消息对象由 graph._with_artifact 放进 ToolMessage.artifact 给界面。仍是 ToolException，原有 except 照样接住。"""
+
+
+def _tool_error_text(e: ToolException) -> str:
+    """工具报错 → 给模型的正文。带代码的 ToolError 再抛出去，交给 ToolNode 的包装补上 artifact
+    （LangChain 的工具在报错时不带 artifact）；普通 ToolException 照旧只有正文。"""
+    if isinstance(e, ToolError):
+        raise e
+    return e.args[0] if e.args else "Tool execution error"
+
+
 def _tool(fn=None, **kwargs):
-    """@tool（可带 response_format 等参数），并让 ToolException 变成 error 结果而不是中断整轮。"""
+    """@tool（可带 response_format 等参数），并让 ToolException 变成 error 结果而不是中断整轮；带代码的 ToolError 交给 ToolNode 的包装补 artifact。"""
     def wrap(f):
         t = tool(**kwargs)(f) if kwargs else tool(f)
-        t.handle_tool_error = True
+        t.handle_tool_error = _tool_error_text
         return t
     return wrap(fn) if fn is not None else wrap
 
@@ -55,7 +69,7 @@ def _novel(user_id: str, nid: str) -> dict:
     try:
         return novels.get_novel(user_id, nid)
     except novels.NotFound:
-        raise ToolException("小说不存在")
+        raise ToolError.of("novel.not_found")
 
 
 def _chapters(user_id: str, nid: str) -> list:
@@ -77,29 +91,29 @@ def _cn_num(s: str) -> Optional[int]:
     return None if t is None or o is None else t * 10 + o
 
 
-def resolve_chapter(chapters: list, ref: Optional[str], default_id: Optional[str]) -> dict:
+def resolve_chapter(chapters: list, ref_: Optional[str], default_id: Optional[str]) -> dict:
     """章节编号 / 第N章 / 纯数字（序号）/ 标题片段 → 章节摘要；不给 ref 时取当前章。解析不出来时列候选。"""
-    def fail(msg: str):
-        listing = "；".join(f"{c['id']} {c['title']}" for c in chapters) or "（还没有章节）"
-        raise ToolException(f"{msg}。可选章节：{listing}")
+    def fail(code: str, **params):
+        listing = "；".join(f"{c['id']} {c['title']}" for c in chapters)
+        raise ToolError.of(code, options=listing or ref("assistant.tool.no_chapters"), **params)
 
-    ref = (ref or "").strip()
-    if not ref:
+    ref_ = (ref_ or "").strip()
+    if not ref_:
         hit = next((c for c in chapters if c["id"] == default_id), None)
-        return hit or fail("请指明是哪一章")
-    hit = next((c for c in chapters if c["id"] == ref), None)
+        return hit or fail("assistant.tool.pick_chapter")
+    hit = next((c for c in chapters if c["id"] == ref_), None)
     if hit:
         return hit
-    m = re.fullmatch(r"第?\s*([0-9]+|[零一二两三四五六七八九十]+)\s*章?", ref)
+    m = re.fullmatch(r"第?\s*([0-9]+|[零一二两三四五六七八九十]+)\s*章?", ref_)
     if m:
         n = int(m.group(1)) if m.group(1).isdigit() else _cn_num(m.group(1))
         if n and 1 <= n <= len(chapters):
             return chapters[n - 1]
-        fail(f"没有第 {m.group(1)} 章")
-    found = [c for c in chapters if ref in c["title"]]
+        fail("assistant.tool.no_such_chapter", n=m.group(1))
+    found = [c for c in chapters if ref_ in c["title"]]
     if len(found) == 1:
         return found[0]
-    fail(f"「{ref}」对应不到唯一的章节")
+    fail("assistant.tool.ambiguous_chapter", text=ref_)
 
 
 def _session(user_id: str, nid: str, cid: str, vid: Optional[str]) -> Optional[dict]:
@@ -182,7 +196,7 @@ def shots_get(config: RunnableConfig, chapter: Optional[str] = None,
     ch = resolve_chapter(_chapters(uid, nid), chapter, where.get("chapter_id"))
     vid, doc = _doc(uid, nid, ch)
     if not vid:
-        raise ToolException(f"{ch['title']} 还没有可用的分镜版本")
+        raise ToolError.of("assistant.tool.no_version", chapter=ch["title"])
     rows = []
     for ep in doc.get("episodes") or []:
         for s in ep.get("shots") or []:
@@ -202,7 +216,7 @@ def assets_find(config: RunnableConfig, query: Optional[str] = None, kind: Optio
     """查资产卡（角色 characters、场景 locations、道具 props、生物 creatures）：按名字、别名或编号匹配 query，可按 kind 过滤。最多 20 张。"""
     uid, nid, _ = _ctx(config)
     if kind and kind not in KINDS:
-        raise ToolException(f"kind 只能是 {', '.join(KINDS)}")
+        raise ToolError.of("assistant.tool.bad_kind", options=", ".join(KINDS))
     assets = _novel(uid, nid)["memory"]["assets"]
     q = (query or "").strip().lower()
     rows = []
@@ -271,7 +285,7 @@ def goto(config: RunnableConfig, step: str, chapter: Optional[str] = None):
     """在回答下方放一个跳转按钮，让用户自己去那一步操作。step 取 import / storyboard / review / render / compose / download；chapter 缺省为当前章。没有副作用。"""
     uid, nid, where = _ctx(config)
     if step not in STEPS:
-        raise ToolException(f"step 只能是 {', '.join(STEPS)}")
+        raise ToolError.of("assistant.tool.bad_step", options=", ".join(STEPS))
     ch = resolve_chapter(_chapters(uid, nid), chapter, where.get("chapter_id"))
     return f"已在回答下方放了「{ch['title']} · {step}」的跳转按钮", {"chapter_id": ch["id"], "step": step}
 

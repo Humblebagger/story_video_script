@@ -14,9 +14,10 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
 from assistant.actions import _op, _resuming, _version, _where
-from assistant.tools import _ctx, _tool
+from assistant.tools import ToolError, _ctx, _tool
 from server import novels
 from server.library import KINDS
+from server.messages import UserError, msg, recast
 
 MAX_EDITS = 20
 # 镜头可改的字段（与前端 edit.ts 的可编辑边界一致）；枚举取自 schema/storyboard.schema.json
@@ -35,8 +36,8 @@ LOCKED_ASSET = ("id", "outfits", "states", "angles", "reference_images")
 _MISSING = object()
 
 
-class UndoError(Exception):
-    """撤销不了（之后被别处改过、对象不在了）：说明给用户看。"""
+class UndoError(UserError, Exception):
+    """撤销不了（之后被别处改过、对象不在了）：带代码，说明给用户看。"""
 
 
 class ShotEdit(BaseModel):
@@ -78,30 +79,30 @@ def _as_list(value) -> list:
         return [s.strip() for s in value.replace("，", "、").replace(",", "、").replace("/", "、").split("、") if s.strip()]
     if isinstance(value, list) and all(isinstance(x, str) for x in value):
         return [x.strip() for x in value if x.strip()]
-    raise ToolException("列表字段要给文字列表")
+    raise ToolError.of("assistant.edit.list_field")
 
 
 def _coerce(field: str, value):
     """镜头字段的值：白名单、类型、枚举与范围。"""
     if field.split(".")[0] in LOCKED_SHOT:
-        raise ToolException(f"不能改 {field}：旁白、台词与溯源是原文，必须逐字保留")
+        raise ToolError.of("assistant.edit.locked_shot", field=field)
     kind = SHOT_FIELDS.get(field)
     if kind is None:
-        raise ToolException(f"不能改 {field}：镜头只能改 {', '.join(SHOT_FIELDS)}")
+        raise ToolError.of("assistant.edit.bad_shot_field", field=field, options=", ".join(SHOT_FIELDS))
     if kind is float:
         try:
             v = float(value)
         except (TypeError, ValueError):
-            raise ToolException("duration_sec 要给数字（秒）")
+            raise ToolError.of("assistant.edit.duration_number")
         if not 0.5 <= v <= 15:
-            raise ToolException("duration_sec 要在 0.5 到 15 秒之间")
+            raise ToolError.of("assistant.edit.duration_range")
         return int(v) if v.is_integer() else v
     if kind is list:
         return _as_list(value)
     if not isinstance(value, str) or not value.strip():
-        raise ToolException(f"{field} 要给非空的文字")
+        raise ToolError.of("assistant.edit.empty_text", field=field)
     if field in ENUMS and value not in ENUMS[field]:
-        raise ToolException(f"{field} 只能是 {', '.join(ENUMS[field])}")
+        raise ToolError.of("assistant.edit.bad_enum", field=field, options=", ".join(ENUMS[field]))
     return value.strip()
 
 
@@ -113,7 +114,7 @@ def _find_shot(doc: dict, ref: str) -> tuple:
     rows = _shots(doc)
     hit = [r for r in rows if r[2].get("id") == ref] or [r for r in rows if (r[2].get("id") or "").endswith("-" + ref)]
     if len(hit) != 1:
-        raise ToolException(f"找不到唯一的镜头「{ref}」")
+        raise ToolError.of("assistant.edit.no_shot", shot=ref)
     return hit[0]
 
 
@@ -145,7 +146,7 @@ def _ask_edit(build: Callable[[], tuple], resuming: bool = False) -> tuple:
         return False, seen, None
     fresh, plan = build()
     if (fresh["chapter_id"], fresh["version_id"], fresh["diff"]) != (seen["chapter_id"], seen["version_id"], seen["diff"]):
-        raise ToolException("要改的内容或位置在这之后变了，没有应用；要的话我再出一张新的对比卡")
+        raise ToolError.of("assistant.edit.changed")
     return True, seen, plan
 
 
@@ -161,9 +162,9 @@ def shots_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
     user = {"id": uid}
     rows = [e if isinstance(e, dict) else e.model_dump() for e in edits or []]
     if not rows:
-        raise ToolException("没有要改的地方")
+        raise ToolError.of("assistant.edit.nothing")
     if len(rows) > MAX_EDITS:
-        raise ToolException(f"一次最多改 {MAX_EDITS} 处")
+        raise ToolError.of("assistant.edit.too_many", max=MAX_EDITS)
 
     def build() -> tuple:
         ch = _where(config, chapter)[2]
@@ -182,7 +183,7 @@ def shots_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
             if (i, j) not in touched:
                 touched.append((i, j))
         if not diff:
-            raise ToolException("这些地方已经是要改成的样子，不用改")
+            raise ToolError.of("assistant.edit.already")
         chk = _op("version_check", user, nid, ch["id"], vid, new)
         shots = {new["episodes"][i]["shots"][j]["id"]: {"before": doc["episodes"][i]["shots"][j],
                                                          "after": new["episodes"][i]["shots"][j]} for i, j in touched}
@@ -204,7 +205,7 @@ def _find_asset(uid: str, nid: str, card_id: str) -> tuple:
         for c in assets.get(kind) or []:
             if c.get("id") == card_id:
                 return kind, c
-    raise ToolException(f"没有编号为 {card_id} 的资产卡")
+    raise ToolError.of("assistant.edit.no_asset", id=card_id)
 
 
 @_tool(response_format="content_and_artifact")
@@ -213,7 +214,7 @@ def asset_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
     """改一张资产卡（角色、场景、道具、生物）上已有的文字字段。fields 的键是字段名，嵌套字段用点号（如 appearance.face），值是改成的完整内容（别名等列表字段给列表）。编号、服装、状态、角度、参考图不能改。先给用户一张「原 → 新」的对比卡，用户点「应用」才保存；应用后可以撤销。"""
     uid, nid, _ = _ctx(config)
     if not fields:
-        raise ToolException("没有要改的字段")
+        raise ToolError.of("assistant.edit.no_fields")
 
     def build() -> tuple:
         kind, cur = _find_asset(uid, nid, card_id)
@@ -221,29 +222,29 @@ def asset_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
         diff = []
         for path, value in fields.items():
             if path.split(".")[0] in LOCKED_ASSET:
-                raise ToolException(f"不能改 {path}：编号、服装、状态、角度、参考图被镜头引用，改了会对不上")
+                raise ToolError.of("assistant.edit.locked_asset", path=path)
             old = _get(cur, path)
             if old is _MISSING:
-                raise ToolException(f"{card_id} 没有 {path} 这个字段")
+                raise ToolError.of("assistant.edit.no_field", id=card_id, path=path)
             if isinstance(old, str):
                 if not isinstance(value, str):
-                    raise ToolException(f"{path} 要给文字")
+                    raise ToolError.of("assistant.edit.need_text", path=path)
                 value = value.strip()
                 if path in ASSET_ENUMS and value not in ASSET_ENUMS[path]:
-                    raise ToolException(f"{path} 只能是 {', '.join(ASSET_ENUMS[path])}")
+                    raise ToolError.of("assistant.edit.bad_enum", field=path, options=", ".join(ASSET_ENUMS[path]))
                 if path == "name" and not value:
-                    raise ToolException("名称不能为空")
+                    raise ToolError.of("assistant.edit.empty_name")
             elif isinstance(old, list) and all(isinstance(x, str) for x in old):
                 value = _as_list(value)
             else:
-                raise ToolException(f"{path} 不是文字字段，不能改")
+                raise ToolError.of("assistant.edit.not_text_field", path=path)
             if old == value:
                 continue
             _set(new, path, value)
             diff.append({"target": f"{card_id} {cur.get('name', '')}", "field": path,
                          "before": _show(old), "after": _show(value)})
         if not diff:
-            raise ToolException("这些字段已经是要改成的样子，不用改")
+            raise ToolError.of("assistant.edit.fields_already")
         card = _edit_card(tool_call_id, "asset_edit", None, "", None, diff, [])
         return card, {"kind": kind, "undo": {"kind": "asset", "asset_kind": kind, "card_id": card_id,
                                              "before": cur, "after": new}}
@@ -254,7 +255,7 @@ def asset_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedTool
     try:
         novels.upsert_asset(uid, nid, plan["kind"], plan["undo"]["after"])
     except novels.NovelError as e:
-        raise ToolException(str(e))
+        raise recast(ToolError, e)
     return _done(f"已改好 {card_id}；用户可以在卡上撤销", card, "approved",
                  {"kind": "edit", "chapter_id": None, "version_id": None}, plan["undo"])
 
@@ -265,7 +266,7 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
     """改主线剧情：outline 是全书梗概，synopsis 是某一章的梗概（chapter 指明哪一章，缺省为当前章），都给改后的全文。先给用户一张「原 → 新」的对比卡，用户点「应用」才保存；应用后可以撤销。"""
     uid, nid, _ = _ctx(config)
     if outline is None and synopsis is None:
-        raise ToolException("要给 outline 或 synopsis")
+        raise ToolError.of("assistant.edit.need_plot")
 
     def build() -> tuple:
         plot = novels.get_memory(uid, nid)["plot"]
@@ -274,7 +275,7 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
         if outline is not None:
             old, new = plot.get("outline") or "", outline.strip()
             if old != new:
-                diff.append({"target": "全书梗概", "field": "outline", "before": old, "after": new})
+                diff.append({"target": "全书梗概", "field": "outline", "before": old, "after": new})  # 内部值：_ask_edit 恢复时比对 diff，不能改；前端按 field 翻译（spec 子计划 4 D）
                 undo["outline"] = {"before": old, "after": new}
         if synopsis is not None:
             ch = _where(config, chapter)[2]
@@ -282,12 +283,12 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
             old = next((s.get("synopsis") or "" for s in plot.get("chapters") or [] if s.get("chapter_id") == cid), "")
             new = synopsis.strip()
             if len(new) > novels.SYNOPSIS_MAX:
-                raise ToolException(f"章节梗概不超过 {novels.SYNOPSIS_MAX} 字（现在 {len(new)} 字）")
+                raise ToolError.of("assistant.edit.synopsis_too_long", max=novels.SYNOPSIS_MAX, len=len(new))
             if old != new:
-                diff.append({"target": f"{title} 梗概", "field": "synopsis", "before": old, "after": new})
+                diff.append({"target": f"{title} 梗概", "field": "synopsis", "before": old, "after": new})  # 内部值：_ask_edit 恢复时比对 diff，不能改；前端按 field 翻译（spec 子计划 4 D）
                 undo["synopsis"] = {"chapter_id": cid, "before": old, "after": new}
         if not diff:
-            raise ToolException("剧情已经是要改成的样子，不用改")
+            raise ToolError.of("assistant.edit.plot_already")
         return _edit_card(tool_call_id, "plot_edit", cid, title, None, diff, []), {"undo": undo}
 
     ok, card, plan = _ask_edit(build, _resuming(config, tool_call_id))
@@ -300,60 +301,60 @@ def plot_edit(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolC
         if u["outline"]:
             novels.set_outline(uid, nid, u["outline"]["after"])
     except novels.NovelError as e:
-        raise ToolException(str(e))
+        raise recast(ToolError, e)
     return _done("已改好剧情；用户可以在卡上撤销", card, "approved",
                  {"kind": "edit", "chapter_id": card["chapter_id"], "version_id": None}, u)
 
 
-def undo(user_id: str, nid: str, data: dict) -> str:
-    """把一次应用的改动写回去；那几处在这之后被别处改过（不再等于「改后」）就拒绝。返回给用户看的一句话。"""
+def undo(user_id: str, nid: str, data: dict) -> dict:
+    """把一次应用的改动写回去；那几处在这之后被别处改过（不再等于「改后」）就拒绝。返回给用户看的消息对象。"""
     kind = data.get("kind")
     if kind == "shots":
         cid, vid = data["chapter_id"], data["version_id"]
         try:
             doc = copy.deepcopy(novels.get_version(user_id, nid, cid, vid).get("result") or {})
         except novels.NotFound:
-            raise UndoError("这个版本已经不在了，不能撤销")
+            raise UndoError.of("assistant.undo.version_gone")
         for sid, pair in data["shots"].items():
             hit = [r for r in _shots(doc) if r[2].get("id") == sid]
             if len(hit) != 1 or hit[0][2] != pair["after"]:
-                raise UndoError(f"镜头 {sid} 在这之后又被改过，不能撤销")
+                raise UndoError.of("assistant.undo.shot_changed", id=sid)
             i, j, _s = hit[0]
             doc["episodes"][i]["shots"][j] = copy.deepcopy(pair["before"])
         try:
             _op("version_save", {"id": user_id}, nid, cid, vid, doc)
         except ToolException as e:
-            raise UndoError(str(e))
-        return f"已撤销 {len(data['shots'])} 个镜头的修改"
+            raise recast(UndoError, e)
+        return msg("assistant.undo.done_shots", n=len(data["shots"]))
     if kind == "asset":
         cards = novels.get_memory(user_id, nid)["assets"].get(data["asset_kind"]) or []
         cur = next((c for c in cards if c.get("id") == data["card_id"]), None)
         if cur != data["after"]:
-            raise UndoError(f"资产卡 {data['card_id']} 在这之后又被改过，不能撤销")
+            raise UndoError.of("assistant.undo.asset_changed", id=data["card_id"])
         try:
             novels.upsert_asset(user_id, nid, data["asset_kind"], copy.deepcopy(data["before"]))
         except (novels.NovelError, novels.NotFound) as e:
-            raise UndoError(str(e))
-        return f"已撤销 {data['card_id']} 的修改"
+            raise recast(UndoError, e)
+        return msg("assistant.undo.done_asset", id=data["card_id"])
     if kind == "plot":
         plot = novels.get_memory(user_id, nid)["plot"]
         o, s = data.get("outline"), data.get("synopsis")
         if o and (plot.get("outline") or "") != o["after"]:
-            raise UndoError("全书梗概在这之后又被改过，不能撤销")
+            raise UndoError.of("assistant.undo.outline_changed")
         if s:
             cur = next((x.get("synopsis") or "" for x in plot.get("chapters") or []
                         if x.get("chapter_id") == s["chapter_id"]), "")
             if cur != s["after"]:
-                raise UndoError("这一章的梗概在这之后又被改过，不能撤销")
+                raise UndoError.of("assistant.undo.synopsis_changed")
         try:  # 与应用同序：先写可能失败的章节梗概，失败时什么都没改
             if s:
                 novels.set_synopsis(user_id, nid, s["chapter_id"], s["before"])
             if o:
                 novels.set_outline(user_id, nid, o["before"])
         except (novels.NovelError, novels.NotFound) as e:
-            raise UndoError(str(e))
-        return "已撤销剧情的修改"
-    raise UndoError("这条修改不能撤销")
+            raise recast(UndoError, e)
+        return msg("assistant.undo.done_plot")
+    raise UndoError.of("assistant.undo.unsupported")
 
 
 TOOLS = [shots_edit, asset_edit, plot_edit]
