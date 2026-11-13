@@ -67,4 +67,17 @@ must(errValue(apiStr) === '串', '字符串 detail')
 const apiCoded = new ApiError('m', 409, { ...confirm, expected_cny: 6 })
 must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
 
+// 10. 旧会话里存的消息带已被拿掉的参数：按新模板渲染，不报错、不留占位符
+{
+  const old = { code: 'film.ark.connect_failed', params: { kind: 'ConnectError' } }
+  const enText = formatMsg(old, 'en')
+  must(enText === en.srv.film.ark.connect_failed && !enText.includes('{kind}') && !enText.includes('ConnectError'),
+    '旧会话多余参数（en）渲染为新模板')
+  const zhText = formatMsg(old, 'zh')
+  must(zhText === zh.srv.film.ark.connect_failed && !zhText.includes('{kind}') && !zhText.includes('ConnectError'),
+    '旧会话多余参数（zh）渲染为新模板')
+  const unk = formatMsg({ code: 'film.ark.unknown_model', params: { model: 'doubao-x' } }, 'en')
+  must(unk === en.srv.film.ark.unknown_model && !unk.includes('doubao-x'), '旧会话 unknown_model 多余参数')
+}
+
 console.log('\nALL PASS')

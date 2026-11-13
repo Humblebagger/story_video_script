@@ -81,7 +81,7 @@ _ARK_FAMILY = {
     "SensitiveContentDetected": "film.ark.input_moderated",
 }
 _ARK_HTTP = {401: "film.ark.auth", 403: "film.ark.access_denied"}
-_ARK_TRANSIENT = {"film.ark.quota"}          # 映射后仍可重试的代码（不论 HTTP 状态）
+_ARK_TRANSIENT = {"film.ark.quota"}          # 映射后可重试的代码：只在 429 与明确拒绝的 4xx 上可重试；5xx 与任务终态 failed 保持原行为
 
 
 def _ark_code(code) -> Optional[str]:
@@ -158,13 +158,15 @@ class Seedance:
         _load_dotenv(BACKEND_ROOT.parent / ".env")
         key = os.environ.get("ARK_API_KEY", "").strip()
         if not key:
+            log.warning("未配置 ARK_API_KEY，请在 backend/.env 里设置")  # i18n: internal
             raise ProviderError.of("film.ark.no_key")
         return cls(key)
 
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
-            raise ProviderError.of("film.ark.unknown_model", model=model)
+            log.warning("未知的 Seedance 档位：%s", model)  # i18n: internal
+            raise ProviderError.of("film.ark.unknown_model")
         return m
 
     def _per_m(self, model: str) -> float:
@@ -192,11 +194,13 @@ class Seedance:
         try:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
-            raise TransientError.of("film.ark.connect_failed", kind=type(e).__name__)
+            log.warning("连接方舟失败：%s task=%s model=%s", type(e).__name__, task_id, model)  # i18n: internal
+            raise TransientError.of("film.ark.connect_failed")
         except httpx.TransportError as e:
+            log.warning("方舟连接异常：%s submit=%s task=%s model=%s", type(e).__name__, submit, task_id, model)  # i18n: internal
             if submit:
-                raise AmbiguousSubmit.of("film.provider.submit_cut", kind=type(e).__name__)
-            raise TransientError.of("film.ark.connect_failed", kind=type(e).__name__)
+                raise AmbiguousSubmit.of("film.provider.submit_cut")
+            raise TransientError.of("film.ark.connect_failed")
         if r.status_code == 429:
             err = _err_body(r)
             our = _ark_code((err or {}).get("code"))
@@ -282,7 +286,8 @@ class Seedance:
                     for chunk in r.iter_bytes():
                         f.write(chunk)
         except httpx.TransportError as e:
-            raise TransientError.of("film.provider.download_connect", kind=type(e).__name__)
+            log.warning("下载视频连接失败：%s", type(e).__name__)  # i18n: internal
+            raise TransientError.of("film.provider.download_connect")
         part.replace(dest)
 
     def download(self, st: TaskState, dest: Path) -> dict:

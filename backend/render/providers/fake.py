@@ -1,4 +1,5 @@
 """假视频厂商：不联网、不花钱，按调用次数推进状态。测试与本地演示用。"""
+import logging
 import re
 from pathlib import Path
 from typing import Optional
@@ -7,6 +8,8 @@ from render.providers.base import (Caps, ProviderError, TaskState, TransientErro
                                    last_frame_path, request_seconds)
 from server.messages import compact, msg, vendor
 from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
+
+log = logging.getLogger("render.providers.fake")
 
 FAKE_MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
 FAKE_JPG = b"\xff\xd8\xff\xe0fake-last-frame"
@@ -35,7 +38,8 @@ class FakeVideo:
 
     def caps(self, model):
         if model not in self.models:
-            raise ProviderError.of("film.fake.unknown_model", model=model)
+            log.warning("未知的假厂商档位：%s", model)  # i18n: internal
+            raise ProviderError.of("film.fake.unknown_model")
         return self._caps
 
     def rewrite_prompt(self, text):

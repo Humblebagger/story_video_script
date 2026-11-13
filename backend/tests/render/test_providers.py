@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """出片：厂商统一接口的公共函数、假厂商、注册表。用法: python3 tests/render/test_providers.py"""
+import logging
 import os
 import sys
 import tempfile
@@ -17,6 +18,25 @@ import pipeline.config as _pc  # noqa: E402
 import render.providers.minimax as _mm  # noqa: E402
 import render.providers.seedance as _sd  # noqa: E402
 _pc._load_dotenv = _mm._load_dotenv = _sd._load_dotenv = lambda *_a, **_k: None
+
+
+class _LogGrab(logging.Handler):
+    """挂在某个 logger 上收日志文字与记录（测试不读真实日志配置）。"""
+    def __init__(self, name):
+        super().__init__(logging.DEBUG)
+        self.lines, self.records = [], []
+        self._lg = logging.getLogger(name)
+
+    def emit(self, rec):
+        self.records.append(rec)
+        self.lines.append(rec.getMessage())
+
+    def __enter__(self):
+        self._lg.addHandler(self)
+        return self
+
+    def __exit__(self, *a):
+        self._lg.removeHandler(self)
 
 
 def must_raise(exc, fn, *a, **kw):
@@ -90,8 +110,14 @@ def main() -> int:
     assert providers.get_video("fake") is mine and providers.get_video("fake") is mine
     must_raise(KeyError, providers.get_video, "nope")
     os.environ["MINIMAX_API_KEY"] = ""          # 先置空串：.env 不会覆盖已有变量
-    e = must_raise(base.ProviderError, providers.get_video, "minimax")
-    assert "MINIMAX_API_KEY" in str(e)
+    with _LogGrab("render.providers.minimax") as g:
+        e = must_raise(base.ProviderError, providers.get_video, "minimax")
+    assert e.code == "film.minimax.no_key" and "MINIMAX_API_KEY" not in str(e)
+    assert any("MINIMAX_API_KEY" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.fake") as g:
+        e = must_raise(base.ProviderError, FakeVideo().caps, "nope-tier")
+    assert e.code == "film.fake.unknown_model" and e.params == {} and "nope-tier" not in str(e)
+    assert any("nope-tier" in x for x in g.lines), g.lines
     print("4. 注册表 ✓")
 
     # 5. 缺省厂商：显式设置照用；只有 MiniMax 密钥 → minimax；只有方舟 → 回落 seedance；都没有 → minimax

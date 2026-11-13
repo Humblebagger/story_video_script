@@ -26,10 +26,8 @@
     "zh": "视频服务（方舟）鉴权失败，请联系管理员"
   },
   "film.ark.connect_failed": {
-    "params": [
-      "kind"
-    ],
-    "zh": "连接方舟失败：{kind}"
+    "params": [],
+    "zh": "连接视频服务（方舟）失败"
   },
   "film.ark.copyright": {
     "params": [],
@@ -61,7 +59,7 @@
   },
   "film.ark.no_key": {
     "params": [],
-    "zh": "没有配置方舟密钥：在 backend/.env 写 ARK_API_KEY=…"
+    "zh": "视频服务（方舟）还没有配置，请联系管理员"
   },
   "film.ark.no_result_url": {
     "params": [],
@@ -69,11 +67,11 @@
   },
   "film.ark.no_task_id": {
     "params": [],
-    "zh": "方舟受理了请求却没有返回任务 id"
+    "zh": "视频服务（方舟）受理了请求却没有返回任务编号"
   },
   "film.ark.not_json": {
     "params": [],
-    "zh": "方舟返回的不是 JSON"
+    "zh": "视频服务（方舟）返回了无法识别的响应"
   },
   "film.ark.output_copyright": {
     "params": [],
@@ -97,7 +95,7 @@
   },
   "film.ark.throttled": {
     "params": [],
-    "zh": "方舟限流（HTTP 429）"
+    "zh": "视频服务（方舟）繁忙"
   },
   "film.ark.unavailable": {
     "params": [
@@ -106,10 +104,8 @@
     "zh": "方舟暂时不可用（HTTP {status}）"
   },
   "film.ark.unknown_model": {
-    "params": [
-      "model"
-    ],
-    "zh": "未知的 Seedance 档位：{model}"
+    "params": [],
+    "zh": "所选的视频档位已不可用，请在出片设置里重新选择"
   },
   "film.budget.exceeded": {
     "params": [
@@ -169,10 +165,8 @@
     "zh": "假的限流"
   },
   "film.fake.unknown_model": {
-    "params": [
-      "model"
-    ],
-    "zh": "未知的档位：{model}"
+    "params": [],
+    "zh": "所选的视频档位已不可用，请在出片设置里重新选择"
   },
   "film.file.not_found": {
     "params": [],
@@ -333,17 +327,14 @@
   },
   "film.minimax.bad_resolution": {
     "params": [
-      "model",
       "resolution",
       "options"
     ],
-    "zh": "{model} 不支持 {resolution}，可选：{options}"
+    "zh": "这个档位不支持 {resolution}，可选：{options}"
   },
   "film.minimax.connect_failed": {
-    "params": [
-      "kind"
-    ],
-    "zh": "连接 MiniMax 失败：{kind}"
+    "params": [],
+    "zh": "连接视频服务（MiniMax）失败"
   },
   "film.minimax.corrupt_image": {
     "params": [
@@ -366,11 +357,11 @@
   },
   "film.minimax.insufficient_balance": {
     "params": [],
-    "zh": "MiniMax 账户余额不足（1008），充值后重新出这一段"
+    "zh": "视频服务（MiniMax）账户余额不足，暂时无法出片，请联系管理员"
   },
   "film.minimax.invalid_key": {
     "params": [],
-    "zh": "MiniMax 密钥无效（1004），检查 MINIMAX_API_KEY"
+    "zh": "视频服务（MiniMax）鉴权失败，请联系管理员"
   },
   "film.minimax.label_first": {
     "params": [],
@@ -388,11 +379,11 @@
   },
   "film.minimax.moderated": {
     "params": [],
-    "zh": "内容被 MiniMax 审核拦下（1026）：改写这一段的画面描述或换参考图后重试"
+    "zh": "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试"
   },
   "film.minimax.no_key": {
     "params": [],
-    "zh": "没有配置 MiniMax 密钥：在 backend/.env 写 MINIMAX_API_KEY=…"
+    "zh": "视频服务（MiniMax）还没有配置，请联系管理员"
   },
   "film.minimax.no_result_url": {
     "params": [],
@@ -400,11 +391,11 @@
   },
   "film.minimax.no_task_id": {
     "params": [],
-    "zh": "MiniMax 受理了请求却没有返回任务 id"
+    "zh": "视频服务（MiniMax）受理了请求却没有返回任务编号"
   },
   "film.minimax.not_json": {
     "params": [],
-    "zh": "MiniMax 返回的不是 JSON"
+    "zh": "视频服务（MiniMax）返回了无法识别的响应"
   },
   "film.minimax.prompt_too_long": {
     "params": [
@@ -432,10 +423,8 @@
     "zh": "MiniMax 暂时不可用（HTTP {status}）"
   },
   "film.minimax.unknown_model": {
-    "params": [
-      "model"
-    ],
-    "zh": "未知的 MiniMax 档位：{model}"
+    "params": [],
+    "zh": "所选的视频档位已不可用，请在出片设置里重新选择"
   },
   "film.minimax.unsupported_format": {
     "params": [
@@ -455,10 +444,8 @@
     "zh": "多次查询都失败，已放弃；请到厂商控制台核对这个任务：{cause}"
   },
   "film.provider.download_connect": {
-    "params": [
-      "kind"
-    ],
-    "zh": "下载连接失败：{kind}"
+    "params": [],
+    "zh": "下载视频时连接失败"
   },
   "film.provider.download_failed": {
     "params": [
@@ -500,10 +487,8 @@
     "zh": "厂商暂时不可达，正在重试：{cause}"
   },
   "film.provider.submit_cut": {
-    "params": [
-      "kind"
-    ],
-    "zh": "提交时连接中断：{kind}"
+    "params": [],
+    "zh": "网络中断"
   },
   "film.provider.task_cancelled": {
     "params": [],
@@ -581,11 +566,8 @@
     "zh": "这个档位不支持 {resolution}，可选：{options}"
   },
   "film.settings.no_model": {
-    "params": [
-      "provider",
-      "model"
-    ],
-    "zh": "{provider} 没有档位 {model}"
+    "params": [],
+    "zh": "所选的视频档位已不可用，请在出片设置里重新选择"
   },
   "film.settings.no_native_audio": {
     "params": [],
@@ -611,11 +593,8 @@
     "zh": "组装请求失败：{cause}"
   },
   "film.submit.crashed": {
-    "params": [
-      "kind",
-      "cause"
-    ],
-    "zh": "提交异常：{kind}: {cause}"
+    "params": [],
+    "zh": "提交时出现意外错误，请重试；仍失败请联系管理员"
   },
   "film.submit.interrupted": {
     "params": [],

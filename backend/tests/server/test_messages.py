@@ -100,6 +100,19 @@ def main() -> int:
     on_disk = json.loads(M.CODES_FILE.read_text(encoding="utf-8"))
     assert on_disk == M.dump_codes(), "messages_codes.json 过期：cd backend && .venv/bin/python -m server.messages --write"
 
+    # 9. 面向最终用户的出片文案：不再带异常类名、档位 id、环境变量名等内部参数
+    codes = M.dump_codes()
+    for c in ("film.ark.no_key", "film.minimax.no_key", "film.minimax.invalid_key",
+              "film.minimax.insufficient_balance", "film.minimax.moderated", "film.ark.unknown_model",
+              "film.minimax.unknown_model", "film.fake.unknown_model", "film.settings.no_model",
+              "film.ark.connect_failed", "film.minimax.connect_failed", "film.provider.submit_cut",
+              "film.provider.download_connect", "film.submit.crashed", "film.ark.not_json",
+              "film.minimax.not_json", "film.ark.no_task_id", "film.minimax.no_task_id", "film.ark.throttled"):
+        assert codes[c]["params"] == [], (c, codes[c])
+    assert codes["film.minimax.bad_resolution"]["params"] == ["resolution", "options"]
+    assert M.render_zh("film.provider.submit_cut", {}) == "网络中断"
+    assert M.render_zh("film.submit.crashed", {}) == "提交时出现意外错误，请重试；仍失败请联系管理员"
+
     print("\nALL PASS")
     return 0
 

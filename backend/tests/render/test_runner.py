@@ -4,6 +4,7 @@
 """
 import copy
 import json
+import logging
 import os
 import shutil
 import sys
@@ -33,6 +34,25 @@ def drain_runner(rn, limit=200):
             return
         rn.tick()
     raise AssertionError("没跑完")
+
+
+class _LogGrab(logging.Handler):
+    """挂在某个 logger 上收日志文字与记录（测试不读真实日志配置）。"""
+    def __init__(self, name):
+        super().__init__(logging.DEBUG)
+        self.lines, self.records = [], []
+        self._lg = logging.getLogger(name)
+
+    def emit(self, rec):
+        self.records.append(rec)
+        self.lines.append(rec.getMessage())
+
+    def __enter__(self):
+        self._lg.addHandler(self)
+        return self
+
+    def __exit__(self, *a):
+        self._lg.removeHandler(self)
 
 
 def main() -> int:
@@ -235,7 +255,8 @@ def main() -> int:
     rn.watch(r4)
     rn.tick()
     c = clip(r4, i4[0])
-    assert c["state"] == "failed" and "提交异常" in c["error"] and len(c["attempts"]) == 1
+    assert c["state"] == "failed" and "意外错误" in c["error"] and len(c["attempts"]) == 1
+    assert "ValueError" not in c["error"] and "坏了" not in c["error"]
     fake.submit = real_submit
     before = len(fake.submitted)
     rn.tick()
@@ -520,7 +541,7 @@ def main() -> int:
     real_submit17 = fake.submit
 
     def submit_amb17(req):
-        raise base.AmbiguousSubmit.of("film.provider.submit_cut", kind="ReadTimeout")
+        raise base.AmbiguousSubmit.of("film.provider.submit_cut")
 
     fake.submit = submit_amb17
     rn = quick()
@@ -529,9 +550,10 @@ def main() -> int:
     c = clip(r17, i17[0])
     assert c["error_msg"] == {"code": "film.submit.ambiguous", "params": {
         "console": {"t": "ref", "code": "console.generic"},
-        "cause": {"code": "film.provider.submit_cut", "params": {"kind": "ReadTimeout"}}}}, c["error_msg"]
+        "cause": {"code": "film.provider.submit_cut", "params": {}}}}, c["error_msg"]
     assert c["attempts"][-1]["error_msg"]["code"] == "film.submit.ambiguous"
     assert "提交时连接中断，不确定厂商是否已受理：请到厂商控制台核对" in c["error"]
+    assert c["error"].endswith("（网络中断）") and c["error"].count("提交时连接中断") == 1, c["error"]
 
     def submit_crash17(req):
         raise ValueError("坏了")
@@ -540,9 +562,26 @@ def main() -> int:
     sess.queue_run(r17, [i17[0]])
     rn = quick()
     rn.watch(r17)
-    rn.tick()
+    with _LogGrab("render.runner") as g:
+        rn.tick()
     c = clip(r17, i17[0])
-    assert c["error_msg"]["code"] == "film.submit.crashed" and c["error_msg"]["params"]["cause"]["t"] == "vendor"
+    assert c["error_msg"] == {"code": "film.submit.crashed", "params": {}}, c["error_msg"]
+    errs = [r for r in g.records if r.levelno == logging.ERROR]
+    assert len(errs) == 1 and errs[0].exc_info and errs[0].exc_info[0] is ValueError, g.lines
+    assert str(r17) in errs[0].getMessage() and i17[0] in errs[0].getMessage(), g.lines
+
+    def submit_reject17(req):
+        raise base.ProviderError.of("film.ark.auth")
+
+    fake.submit = submit_reject17
+    sess.queue_run(r17, [i17[0]])
+    rn = quick()
+    rn.watch(r17)
+    with _LogGrab("render.runner") as g:
+        rn.tick()
+    warns = [r for r in g.records if r.levelno == logging.WARNING]
+    assert any(str(r17) in r.getMessage() and i17[0] in r.getMessage() and "film.ark.auth" in r.getMessage()
+               for r in warns), g.lines
     fake.submit = real_submit17
 
     # 查询一直失败：重试提示带嵌套原因，放弃时 cause 是内层错误的紧凑消息
@@ -637,9 +676,8 @@ def main() -> int:
     rn.tick()
     fake.submit = real_submit18
     c = clip(r21, i21[0])
-    assert c["error"] == f"提交异常：ValueError: {long_raw}", len(c["error"])
-    cause = c["error_msg"]["params"]["cause"]
-    assert cause["t"] == "vendor" and len(cause["text"]) == 300
+    assert c["error"] == "提交时出现意外错误，请重试；仍失败请联系管理员", c["error"]   # 异常原文不再进界面
+    assert c["error_msg"] == {"code": "film.submit.crashed", "params": {}}
 
     r22, i22 = fresh("fallback2")
     sess.queue_run(r22, [i22[0]])

@@ -10,6 +10,7 @@
 import base64
 import binascii
 import itertools
+import logging
 import math
 import os
 import re
@@ -27,6 +28,8 @@ from render.providers import base
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, last_frame_path, request_seconds)
 from server.messages import compact, msg, vendor
+
+log = logging.getLogger("render.providers.minimax")
 
 BASE_URL = "https://api.minimax.cn"
 # 2026-11 官方刊例价（元/秒，输出）；resolutions 的第一个为默认分辨率
@@ -253,6 +256,7 @@ class MiniMax:
         _load_dotenv(BACKEND_ROOT.parent / ".env")
         key = os.environ.get("MINIMAX_API_KEY", "").strip()
         if not key:
+            log.warning("未配置 MINIMAX_API_KEY，请在 backend/.env 里设置")  # i18n: internal
             raise ProviderError.of("film.minimax.no_key")
         base_url = os.environ.get("STORYBOARD_MINIMAX_BASE_URL", "").strip() or BASE_URL
         return cls(key, base_url=base_url)
@@ -260,7 +264,8 @@ class MiniMax:
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
-            raise ProviderError.of("film.minimax.unknown_model", model=model)
+            log.warning("未知的 MiniMax 档位：%s", model)  # i18n: internal
+            raise ProviderError.of("film.minimax.unknown_model")
         return m
 
     def caps(self, model: str) -> Caps:
@@ -282,11 +287,13 @@ class MiniMax:
         try:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
-            raise TransientError.of("film.minimax.connect_failed", kind=type(e).__name__)
+            log.warning("连接 MiniMax 失败：%s", type(e).__name__)  # i18n: internal
+            raise TransientError.of("film.minimax.connect_failed")
         except httpx.TransportError as e:
+            log.warning("MiniMax 连接异常：%s submit=%s", type(e).__name__, submit)  # i18n: internal
             if submit:
-                raise AmbiguousSubmit.of("film.provider.submit_cut", kind=type(e).__name__)
-            raise TransientError.of("film.minimax.connect_failed", kind=type(e).__name__)
+                raise AmbiguousSubmit.of("film.provider.submit_cut")
+            raise TransientError.of("film.minimax.connect_failed")
         try:
             j = r.json()
         except ValueError:
@@ -312,7 +319,8 @@ class MiniMax:
         m = self._model(req.model)
         caps = self.caps(req.model)
         if req.resolution not in caps.resolutions:
-            raise ProviderError.of("film.minimax.bad_resolution", model=m["label"], resolution=req.resolution,
+            log.warning("档位 %s 不支持 %s", m["label"], req.resolution)  # i18n: internal
+            raise ProviderError.of("film.minimax.bad_resolution", resolution=req.resolution,
                                    options=list(caps.resolutions))
         if len(req.prompt) > PROMPT_MAX:
             raise ProviderError.of("film.minimax.prompt_too_long", max=PROMPT_MAX, len=len(req.prompt))
@@ -389,7 +397,8 @@ class MiniMax:
                     for chunk in r.iter_bytes():
                         f.write(chunk)
         except httpx.TransportError as e:
-            raise TransientError.of("film.provider.download_connect", kind=type(e).__name__)
+            log.warning("下载视频连接失败：%s", type(e).__name__)  # i18n: internal
+            raise TransientError.of("film.provider.download_connect")
         part.replace(dest)
 
     def download(self, st: TaskState, dest: Path) -> dict:

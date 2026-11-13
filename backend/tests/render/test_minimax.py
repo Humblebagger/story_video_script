@@ -5,6 +5,7 @@
 """
 import base64
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -29,6 +30,25 @@ MP4 = b"\x00\x00\x00\x18ftypmp42" + b"0" * 8
 PNG_1x1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 HAS_FF = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+
+
+class _LogGrab(logging.Handler):
+    """挂在某个 logger 上收日志文字与记录（测试不读真实日志配置）。"""
+    def __init__(self, name):
+        super().__init__(logging.DEBUG)
+        self.lines, self.records = [], []
+        self._lg = logging.getLogger(name)
+
+    def emit(self, rec):
+        self.records.append(rec)
+        self.lines.append(rec.getMessage())
+
+    def __enter__(self):
+        self._lg.addHandler(self)
+        return self
+
+    def __exit__(self, *a):
+        self._lg.removeHandler(self)
 
 
 def must_raise(exc, fn, *a, **kw):
@@ -202,7 +222,7 @@ def main() -> int:
     assert "余额不足" in str(e)
     e = must_raise(base.ProviderError, answer(httpx.Response(401, json={"error": {"type": "authorized_error",
                    "message": "invalid api key (1004)"}})).submit, q)                      # 6
-    assert "密钥无效" in str(e) and "k-secret" not in str(e)
+    assert "鉴权失败" in str(e) and "k-secret" not in str(e) and "MINIMAX_API_KEY" not in str(e)
     e = must_raise(base.ProviderError, answer(httpx.Response(422, json={"error": {"code": 1026,
                    "message": "video description contains sensitive content"}})).submit, q)  # 7
     assert "审核" in str(e)
@@ -300,8 +320,10 @@ def main() -> int:
 
     # 8. 密钥与地址：没配时报错说明去哪配；可换地址
     os.environ["MINIMAX_API_KEY"] = ""
-    e = must_raise(base.ProviderError, MiniMax.from_env)
-    assert "MINIMAX_API_KEY" in str(e)
+    with _LogGrab("render.providers.minimax") as g:
+        e = must_raise(base.ProviderError, MiniMax.from_env)
+    assert e.code == "film.minimax.no_key" and "MINIMAX_API_KEY" not in str(e) and ".env" not in str(e)
+    assert any("MINIMAX_API_KEY" in x for x in g.lines), g.lines
     os.environ["MINIMAX_API_KEY"] = "k-env"
     os.environ["STORYBOARD_MINIMAX_BASE_URL"] = "https://api.example.io"
     try:
@@ -356,8 +378,23 @@ def main() -> int:
     st = task("failed", error={"code": "2056", "message": "boom k-secret"}).poll("t")
     assert st.error_msg["code"] == "film.provider.rejected" and "k-secret" not in json.dumps(st.error_msg)
     assert st.error_msg["params"]["detail"]["text"].startswith("2056: ") and st.error.startswith("2056：")
-    e = code_of(exc=httpx.ReadTimeout("x"), cls=base.AmbiguousSubmit)
-    assert e.code == "film.provider.submit_cut"
+    with _LogGrab("render.providers.minimax") as g:
+        e = code_of(exc=httpx.ReadTimeout("x"), cls=base.AmbiguousSubmit)
+    assert e.code == "film.provider.submit_cut" and e.params == {} and str(e) == "网络中断"
+    assert any("ReadTimeout" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.minimax") as g:
+        e = code_of(exc=httpx.ConnectError("x"), cls=base.TransientError)
+    assert e.code == "film.minimax.connect_failed" and e.params == {} and "ConnectError" not in str(e)
+    assert any("ConnectError" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.minimax") as g:
+        e = must_raise(base.ProviderError, MiniMax("k").caps, "nope-tier")
+    assert e.code == "film.minimax.unknown_model" and e.params == {} and "nope-tier" not in str(e)
+    assert any("nope-tier" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.minimax") as g:
+        e = must_raise(base.ProviderError, answer(None).submit, base.ClipRequest(
+            prompt="p", model="minimax-h3", duration=4, resolution="9999P"))
+    assert e.code == "film.minimax.bad_resolution" and set(e.params) == {"resolution", "options"}
+    assert any("9999P" in x for x in g.lines), g.lines
     e = must_raise(base.ProviderError, mmx(lambda r: httpx.Response(200)).submit, base.ClipRequest(
         prompt="p", model="minimax-h3", duration=4, resolution="768P",
         refs=[base.RefImage("C01", "character", "data:image/png;base64,@@@@!!!")]))

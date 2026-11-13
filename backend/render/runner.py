@@ -4,6 +4,7 @@
 厂商调用都在会话锁之外做，结果再用 session 的迁移函数写回。启动时 recover() 续上未完成的段：
 已有任务 id 的接着查、接着下，不重复提交。
 """
+import logging
 import threading
 import time
 import traceback
@@ -12,6 +13,9 @@ from pathlib import Path
 from render import compose, session as sess
 from render.providers import base, get_video
 from server.messages import cause_of, compact, msg, ref, render_zh
+
+
+log = logging.getLogger("render.runner")
 
 
 def _coded(zh: str, code: str, **params) -> dict:
@@ -211,6 +215,7 @@ class Runner:
             # 查询本身出错不等于任务失败：厂商那边可能还在跑、还在计费。只有厂商报的终态
             # （TaskState 里的 failed）才算结束；查询一直出错到期限才放弃，并标待核对
             if self._transient("poll", root, c, a["task_id"], e, self.poll_give_up_sec):
+                log.warning("查询放弃 root=%s clip=%s task=%s", root, c["id"], a["task_id"])  # i18n: internal
                 m = _coded("多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + str(e), "film.poll.gave_up",
                            cause=cause_of(e))
                 st = base.TaskState(a["task_id"], "failed", error=m["message"], error_msg=compact(m))
@@ -274,11 +279,12 @@ class Runner:
                                                   cause=cause_of(e)))
             return False
         except base.ProviderError as e:
+            log.warning("段失败 root=%s clip=%s code=%s", root, c["id"], getattr(e, "code", None))  # i18n: internal
             sess.submit_failed(root, c["id"], e)
             return False
-        except Exception as e:
-            sess.submit_failed(root, c["id"], _coded(f"提交异常：{type(e).__name__}: {e}", "film.submit.crashed",  # i18n: internal（中文兜底与旧文一致）
-                                                  kind=type(e).__name__, cause=cause_of(e)))
+        except Exception:
+            log.exception("提交异常 root=%s clip=%s", root, c["id"])  # i18n: internal
+            sess.submit_failed(root, c["id"], msg("film.submit.crashed"))
             return False
         try:
             sess.submitted(root, c["id"], tid, used, style_ref=getattr(req, "style_ref", None),

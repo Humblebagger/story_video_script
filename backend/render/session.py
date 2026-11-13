@@ -5,6 +5,7 @@
 当前分镜不符，旧视频仍可播）。每段保留全部尝试，chosen 指向采用的那次。
 """
 import json
+import logging
 import os
 import re
 import shutil
@@ -18,6 +19,8 @@ from typing import Optional
 from render import compose
 from render.providers import base, default_fell_back, default_video_name, get_video, names
 from server.messages import UserError, money, msg, render_zh, vendor
+
+log = logging.getLogger("render.session")
 
 
 SESSION_FILE = "session.json"
@@ -185,7 +188,8 @@ def resolve_settings(old: Optional[dict], patch: dict) -> tuple:
     cur["provider"] = provider.name
     if cur["model"] not in provider.models:
         if "model" in patch:
-            raise SessionError.of("film.settings.no_model", provider=provider.name, model=str(cur["model"]))
+            log.warning("厂商 %s 没有档位 %s", provider.name, cur["model"])  # i18n: internal
+            raise SessionError.of("film.settings.no_model")
         cur["model"] = provider.default_model
     caps = provider.caps(cur["model"])
     if cur["resolution"] not in caps.resolutions:

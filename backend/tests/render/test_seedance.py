@@ -25,6 +25,26 @@ _prov_seedance._load_dotenv = lambda *_a, **_k: None
 MP4 = b"\x00\x00\x00\x18ftypmp42" + b"0" * 8
 
 
+
+class _LogGrab(logging.Handler):
+    """挂在某个 logger 上收日志文字（测试不读真实日志配置）。"""
+    def __init__(self, name, level=logging.DEBUG):
+        super().__init__(level)
+        self.lines, self.records = [], []
+        self._lg = logging.getLogger(name)
+
+    def emit(self, rec):
+        self.records.append(rec)
+        self.lines.append(rec.getMessage())
+
+    def __enter__(self):
+        self._lg.addHandler(self)
+        return self
+
+    def __exit__(self, *a):
+        self._lg.removeHandler(self)
+
+
 def must_raise(exc, fn, *a, **kw):
     try:
         fn(*a, **kw)
@@ -163,8 +183,10 @@ def main() -> int:
 
     # 6. 密钥：没配时报错说明去哪配（设为空串，.env 不会覆盖已有变量）
     os.environ["ARK_API_KEY"] = ""
-    e = must_raise(base.ProviderError, Seedance.from_env)
-    assert "ARK_API_KEY" in str(e)
+    with _LogGrab("render.providers.seedance") as g:
+        e = must_raise(base.ProviderError, Seedance.from_env)
+    assert e.code == "film.ark.no_key" and "ARK_API_KEY" not in str(e) and ".env" not in str(e)
+    assert any("ARK_API_KEY" in x for x in g.lines), g.lines
     print("6. 密钥 ✓")
 
     # 7. 错误带代码
@@ -174,6 +196,24 @@ def main() -> int:
     st = task({"id": "x", "status": "expired"}).poll("x")
     assert st.error_msg["code"] == "film.ark.task_expired" and st.error == "任务超时"
     assert Seedance.rate_note == {"code": "rate.ark", "params": {}} and Seedance.console_name == "console.ark"
+    # 7b. 面向最终用户的文案：档位、异常类名不进界面，只进日志
+    with _LogGrab("render.providers.seedance") as g:
+        e = must_raise(base.ProviderError, sd.caps, "nope-tier")
+    assert e.code == "film.ark.unknown_model" and e.params == {} and "nope-tier" not in str(e)
+    assert any("nope-tier" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.seedance") as g:
+        e = must_raise(base.TransientError, ark(refused).submit, req)
+    assert e.code == "film.ark.connect_failed" and e.params == {} and "ConnectError" not in str(e)
+    assert any("ConnectError" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.seedance") as g:
+        e = must_raise(base.AmbiguousSubmit, raising(httpx.ReadTimeout).submit, req)
+    assert e.code == "film.provider.submit_cut" and e.params == {} and str(e) == "网络中断"
+    assert any("ReadTimeout" in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.seedance") as g:
+        ds = Seedance("k", client=httpx.Client(base_url=BASE_URL, transport=httpx.MockTransport(refused)))
+        e2 = must_raise(base.TransientError, ds._fetch, "https://tos.example/v.mp4", Path(tempfile.mkdtemp()) / "x.mp4")
+    assert e2.code == "film.provider.download_connect" and e2.params == {}
+    assert any("ConnectError" in x for x in g.lines), g.lines
     print("7. 错误带代码 ✓")
 
     # 8. 厂商原文脱敏（三条路径）且兜底不截断、结构化参数限长

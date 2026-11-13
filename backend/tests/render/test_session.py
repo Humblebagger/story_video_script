@@ -5,6 +5,7 @@
 """
 import copy
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -33,6 +34,25 @@ def must_raise(exc, fn, *a, **kw):
 
 def clip(s, cid):
     return next(c for c in s["clips"] if c["id"] == cid)
+
+
+class _LogGrab(logging.Handler):
+    """挂在某个 logger 上收日志文字与记录（测试不读真实日志配置）。"""
+    def __init__(self, name):
+        super().__init__(logging.DEBUG)
+        self.lines, self.records = [], []
+        self._lg = logging.getLogger(name)
+
+    def emit(self, rec):
+        self.records.append(rec)
+        self.lines.append(rec.getMessage())
+
+    def __enter__(self):
+        self._lg.addHandler(self)
+        return self
+
+    def __exit__(self, *a):
+        self._lg.removeHandler(self)
 
 
 def finish(root, fake, clip_id, style_ref=None):
@@ -511,6 +531,10 @@ def main() -> int:
     assert e.code == "film.settings.bad_resolution" and isinstance(e.params["options"], list)
     e = must_raise(sess.SessionError, build, provider="nope")
     assert e.code == "film.provider.unknown", e.code
+    with _LogGrab("render.session") as g:
+        e = must_raise(sess.SessionError, build, model="nope-tier")
+    assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e), (e.code, e.params)
+    assert any("nope-tier" in x and "fake" in x for x in g.lines), g.lines
     print("23. 错误对象持久化 ✓")
     tmp2.cleanup()
 
