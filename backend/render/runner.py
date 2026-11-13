@@ -221,7 +221,7 @@ class Runner:
             # 查询本身出错不等于任务失败：厂商那边可能还在跑、还在计费。只有厂商报的终态
             # （TaskState 里的 failed）才算结束；查询一直出错到期限才放弃，并标待核对
             if self._transient("poll", root, c, a["task_id"], e, self.poll_give_up_sec):
-                log.warning("查询放弃 root=%s clip=%s task=%s", root, c["id"], a["task_id"])  # i18n: internal
+                log.warning("%s", _scrub_secrets(f'查询放弃 root={root} clip={c["id"]} task={a["task_id"]}', provider))  # i18n: internal
                 m = _coded("多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + str(e), "film.poll.gave_up",
                            cause=cause_of(e))
                 st = base.TaskState(a["task_id"], "failed", error=m["message"], error_msg=compact(m))
@@ -285,7 +285,7 @@ class Runner:
                                                   cause=cause_of(e)))
             return False
         except base.ProviderError as e:
-            log.warning("段失败 root=%s clip=%s code=%s", root, c["id"], getattr(e, "code", None))  # i18n: internal
+            log.warning("%s", _scrub_secrets(f'段失败 root={root} clip={c["id"]} code={getattr(e, "code", None)}', provider))  # i18n: internal
             sess.submit_failed(root, c["id"], e)
             return False
         except Exception as e:

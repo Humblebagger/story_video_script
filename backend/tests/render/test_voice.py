@@ -98,6 +98,20 @@ def main() -> int:
         assert [x["id"] for x in failed] == ["S1-L1"] and "限流" in failed[0]["error"]
         assert failed[0]["error_msg"] == {"code": "tts.fake.throttled", "params": {}}, failed[0]
         assert [x["id"] for x in done] == ["S1-L2"] and len(sleeps) == 4
+    # 连接一直失败直到重试耗尽：最终失败原因不能再承诺「自动重试」
+    import httpx
+    from render.providers.tts_volc import VOICES, VolcTts
+
+    def refused(request):
+        raise httpx.ConnectError("refused", request=request)
+    with tempfile.TemporaryDirectory() as d:
+        volc = VolcTts(api_key="k-secret", client=httpx.Client(transport=httpx.MockTransport(refused)))
+        vv = {"narration": VOICES[0].id}
+        _, failed = voice.synthesize(lines[:1], vv, volc, Path(d), retries=2, sleep=lambda s: None)
+        assert len(failed) == 1 and failed[0]["error_msg"]["code"] == "tts.volc.connect_failed", failed
+        assert "自动重试" not in failed[0]["error"] and "retrying" not in failed[0]["error"], failed[0]["error"]
+        from server.messages import render_zh
+        assert "自动重试" not in render_zh(failed[0]["error_msg"]["code"], failed[0]["error_msg"]["params"]), failed[0]
     with tempfile.TemporaryDirectory() as d:
         bad = FakeTts(fail_with="音色无权限")
         done, failed = voice.synthesize(two, voices, bad, Path(d), sleep=lambda s: None)

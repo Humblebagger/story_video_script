@@ -318,7 +318,7 @@
   register("tts.volc.failed_detail", "豆包语音合成失败（{code}）：{detail}")
   register("tts.volc.bad_audio", "豆包语音返回的音频无法解码")
   register("tts.volc.cut", "豆包语音中途断开")
-  register("tts.volc.connect_failed", "连接豆包语音失败，稍后自动重试")
+  register("tts.volc.connect_failed", "连接豆包语音失败")
   register("tts.volc.incomplete", "豆包语音没有返回完整的音频")
   register("voice.narrator", "旁白")
   register("voice.unlabeled", "（未标说话人）")

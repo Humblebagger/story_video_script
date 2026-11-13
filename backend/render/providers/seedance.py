@@ -19,7 +19,8 @@ import httpx
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
-                                   TransientError, estimate_cny, last_frame_path, request_seconds, scrub)
+                                   TransientError, estimate_cny, last_frame_path, request_seconds, scrub,
+                                   scrub_secrets)
 from server.messages import compact, msg, vendor
 
 log = logging.getLogger("render.providers.seedance")
@@ -116,8 +117,9 @@ def _err_body(r: httpx.Response) -> Optional[dict]:
 def _mapped(our: str, status, err: dict, key: str, *, request_id=None, task_id=None, model=None):
     """命中映射：原文脱敏进日志（带定位信息），返回带代码的异常；额度类可重试。"""
     parts = [str(x) for x in (err.get("code"), err.get("message")) if x]
-    log.warning("方舟错误 HTTP %s request_id=%s task=%s model=%s：%s", status, request_id or "-",  # i18n: internal
-                task_id or "-", model or "-", scrub(": ".join(parts), key))
+    log.warning("%s", scrub_secrets(  # i18n: internal
+        f"方舟错误 HTTP {status} request_id={request_id or '-'} task={task_id or '-'} "
+        f"model={model or '-'}：{': '.join(parts)}", (key,)))
     cls = TransientError if our in _ARK_TRANSIENT else ProviderError
     return cls.of(our)
 
@@ -165,7 +167,7 @@ class Seedance:
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
-            log.warning("未知的 Seedance 档位：%s", model)  # i18n: internal
+            log.warning("%s", scrub_secrets(f"未知的 Seedance 档位：{model}", (self._key,)))  # i18n: internal
             raise ProviderError.of("film.ark.unknown_model")
         return m
 
@@ -194,10 +196,11 @@ class Seedance:
         try:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
-            log.warning("连接方舟失败：%s task=%s model=%s", type(e).__name__, task_id, model)  # i18n: internal
+            log.warning("%s", scrub_secrets(f"连接方舟失败：{type(e).__name__} task={task_id} model={model}", (self._key,)))  # i18n: internal
             raise TransientError.of("film.ark.connect_failed")
         except httpx.TransportError as e:
-            log.warning("方舟连接异常：%s submit=%s task=%s model=%s", type(e).__name__, submit, task_id, model)  # i18n: internal
+            log.warning("%s", scrub_secrets(
+                f"方舟连接异常：{type(e).__name__} submit={submit} task={task_id} model={model}", (self._key,)))  # i18n: internal
             if submit:
                 raise AmbiguousSubmit.of("film.provider.submit_cut")
             raise TransientError.of("film.ark.connect_failed")

@@ -1525,7 +1525,7 @@ export const zh = {
         failed_detail: '豆包语音合成失败（{code}）：{detail}',
         bad_audio: '豆包语音返回的音频无法解码',
         cut: '豆包语音中途断开',
-        connect_failed: '连接豆包语音失败，稍后自动重试',
+        connect_failed: '连接豆包语音失败',
         incomplete: '豆包语音没有返回完整的音频',
       },
     },

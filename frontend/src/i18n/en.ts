@@ -1531,7 +1531,7 @@ export const en: Messages = {
         failed_detail: 'Doubao TTS synthesis failed ({code}): {detail}',
         bad_audio: 'Doubao TTS returned audio that could not be decoded',
         cut: 'Doubao TTS disconnected midway',
-        connect_failed: 'Couldn\'t connect to Doubao TTS; retrying shortly',
+        connect_failed: 'Couldn\'t connect to Doubao TTS.',
         incomplete: 'Doubao TTS did not return the complete audio',
       },
     },

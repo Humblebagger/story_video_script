@@ -390,6 +390,20 @@ def main() -> int:
         e = must_raise(base.ProviderError, MiniMax("k").caps, "nope-tier")
     assert e.code == "film.minimax.unknown_model" and e.params == {} and "nope-tier" not in str(e)
     assert any("nope-tier" in x for x in g.lines), g.lines
+    # 档位参数里的密钥与 Bearer 凭据不进日志
+    OTHER = "FAKE-ARK-ENV-VALUE-xyz"
+    old_env = os.environ.get("ARK_API_KEY")
+    os.environ["ARK_API_KEY"] = OTHER
+    try:
+        with _LogGrab("render.providers.minimax") as g:
+            must_raise(base.ProviderError, MiniMax("k-inst").caps, "Bearer FAKE_TOKEN k-inst " + OTHER)
+        assert g.lines, g.lines
+        assert not any("FAKE_TOKEN" in x or "k-inst" in x or OTHER in x for x in g.lines), g.lines
+    finally:
+        if old_env is None:
+            os.environ.pop("ARK_API_KEY", None)
+        else:
+            os.environ["ARK_API_KEY"] = old_env
     with _LogGrab("render.providers.minimax") as g:
         e = must_raise(base.ProviderError, answer(None).submit, base.ClipRequest(
             prompt="p", model="minimax-h3", duration=4, resolution="9999P"))

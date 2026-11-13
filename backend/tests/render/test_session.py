@@ -535,6 +535,9 @@ def main() -> int:
         e = must_raise(sess.SessionError, build, model="nope-tier")
     assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e), (e.code, e.params)
     assert any("nope-tier" in x and "fake" in x for x in g.lines), g.lines
+    with _LogGrab("render.session") as g:
+        must_raise(sess.SessionError, build, model="Bearer FAKE_TOKEN")
+    assert g.lines and not any("FAKE_TOKEN" in x for x in g.lines), g.lines
     print("23. 错误对象持久化 ✓")
     # 24. 合成状态带代码
     root14 = Path(tmp.name) / "render" / "ev14"

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from render.providers.base import (Caps, ProviderError, TaskState, TransientError,
-                                   last_frame_path, request_seconds)
+                                   last_frame_path, request_seconds, scrub_secrets)
 from server.messages import compact, msg, vendor
 from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
 
@@ -38,7 +38,7 @@ class FakeVideo:
 
     def caps(self, model):
         if model not in self.models:
-            log.warning("未知的假厂商档位：%s", model)  # i18n: internal
+            log.warning("%s", scrub_secrets(f"未知的假厂商档位：{model}"))  # i18n: internal
             raise ProviderError.of("film.fake.unknown_model")
         return self._caps
 

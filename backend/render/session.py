@@ -187,7 +187,7 @@ def resolve_settings(old: Optional[dict], patch: dict) -> tuple:
     cur["provider"] = provider.name
     if cur["model"] not in provider.models:
         if "model" in patch:
-            log.warning("厂商 %s 没有档位 %s", provider.name, cur["model"])  # i18n: internal
+            log.warning("%s", base.scrub_secrets(f'厂商 {provider.name} 没有档位 {cur["model"]}'))  # i18n: internal
             raise SessionError.of("film.settings.no_model")
         cur["model"] = provider.default_model
     caps = provider.caps(cur["model"])

@@ -264,7 +264,7 @@ class MiniMax:
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
-            log.warning("未知的 MiniMax 档位：%s", model)  # i18n: internal
+            log.warning("%s", base.scrub_secrets(f"未知的 MiniMax 档位：{model}", (self._key,)))  # i18n: internal
             raise ProviderError.of("film.minimax.unknown_model")
         return m
 
@@ -319,7 +319,7 @@ class MiniMax:
         m = self._model(req.model)
         caps = self.caps(req.model)
         if req.resolution not in caps.resolutions:
-            log.warning("档位 %s 不支持 %s", m["label"], req.resolution)  # i18n: internal
+            log.warning("%s", base.scrub_secrets(f'档位 {m["label"]} 不支持 {req.resolution}', (self._key,)))  # i18n: internal
             raise ProviderError.of("film.minimax.bad_resolution", resolution=req.resolution,
                                    options=list(caps.resolutions))
         if len(req.prompt) > PROMPT_MAX:

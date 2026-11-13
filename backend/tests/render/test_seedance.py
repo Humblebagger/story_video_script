@@ -373,6 +373,32 @@ def main() -> int:
     assert not any(KEY in x or "OTHER_TOKEN" in x for x in grab.lines), grab.lines
     print("9. 方舟错误码映射 ✓")
 
+    # 9b. 日志整体脱敏：响应头回显实例密钥、正文含其他厂商环境密钥、任务编号与档位里带密钥、Bearer 凭据
+    OTHER = "FAKE-MINIMAX-ENV-VALUE-xyz"
+    old_env = os.environ.get("MINIMAX_API_KEY")
+    os.environ["MINIMAX_API_KEY"] = OTHER
+    try:
+        skey = "k-instance-secret"
+        with _LogGrab("render.providers.seedance") as g:
+            sdk = ark(lambda r: httpx.Response(401, json={"error": {"code": "AuthenticationError", "message": f"bad {OTHER}"}},
+                                               headers={"X-Request-Id": skey}), key=skey)
+            must_raise(base.ProviderError, sdk.submit, req)
+            sdt = ark(lambda r: httpx.Response(401, json={"error": {"code": "AuthenticationError", "message": "x"}}), key=skey)
+            must_raise(base.ProviderError, sdt.poll, f"cgt-{skey}")
+            def refused2(request):
+                raise httpx.ConnectError("refused", request=request)
+            must_raise(base.TransientError, ark(refused2, key=skey).poll, f"cgt-{skey}")
+            must_raise(base.ProviderError, ark(accept, key=skey).caps, f"Bearer {skey}-FAKE_TOKEN")
+        assert g.lines and any("AuthenticationError" in x for x in g.lines), g.lines
+        for x in g.lines:
+            assert skey not in x and OTHER not in x and "FAKE_TOKEN" not in x, x
+    finally:
+        if old_env is None:
+            os.environ.pop("MINIMAX_API_KEY", None)
+        else:
+            os.environ["MINIMAX_API_KEY"] = old_env
+    print("9b. 日志整体脱敏 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -841,7 +841,7 @@
   },
   "tts.volc.connect_failed": {
     "params": [],
-    "zh": "连接豆包语音失败，稍后自动重试"
+    "zh": "连接豆包语音失败"
   },
   "tts.volc.cut": {
     "params": [],
