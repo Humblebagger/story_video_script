@@ -1354,7 +1354,7 @@ export const en: Messages = {
   },
   srv: {
     common: { unknown: '{message}' },
-    console: { generic: 'the provider console', ark: 'Volcano Ark console', minimax: 'MiniMax Open Platform' },
+    console: { generic: 'the provider console', ark: 'the Volcano Engine Ark console', minimax: 'the MiniMax Open Platform' },
     rate: {
       fake: 'Fake provider: offline and free; amounts are for demo only',
       ark: 'Volcano Ark list price, 2026-10 (2.0: 46, fast: 37, mini: 23 CNY per million tokens; tokens ≈ seconds × width × height × 24 / 1024), not yet checked against a bill',
@@ -1464,10 +1464,10 @@ export const en: Messages = {
         crashed: 'Submit error: {kind}: {cause}',
       },
       poll: {
-        gave_up: 'Status checks kept failing and were abandoned; please check this task in the provider console: {cause}',
+        gave_up: 'Gave up after repeated status-check failures; check this task in the provider console: {cause}',
       },
       download: {
-        keeps_failing: 'Download keeps failing and the result address is about to expire: {cause}',
+        keeps_failing: 'Download keeps failing and the result URL is about to expire: {cause}',
         not_playable: 'The downloaded file is not a playable video',
       },
       free: {

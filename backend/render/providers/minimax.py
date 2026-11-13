@@ -124,9 +124,11 @@ def _reject(code, msg_text, status=None, body: str = "", secret: str = "") -> Pr
     key = code if code in _KNOWN else _HTTP_CODE.get(status)
     if key in _KNOWN:
         return ProviderError.of(_KNOWN[key])
-    text = "：".join(str(x) for x in (code, msg_text) if x)
-    if text:
-        return ProviderError.of("film.provider.rejected", detail=vendor(scrub(text, secret)))
+    parts = [str(x) for x in (code, msg_text) if x]
+    if parts:
+        e = ProviderError.of("film.provider.rejected", detail=vendor(scrub(": ".join(parts), secret)))
+        e.args = (scrub("：".join(parts), secret),) + e.args[1:]       # 中文兜底保持原样
+        return e
     return ProviderError.of("film.provider.http_rejected", status=status, detail=vendor(scrub(body, secret)))
 
 
@@ -356,10 +358,14 @@ class MiniMax:
             else:
                 err = t.get("error") if isinstance(t.get("error"), dict) else {}
                 code = _code(err.get("code") or err.get("type"), err.get("message"))
-                text = scrub("：".join(str(x) for x in (code, err.get("message")) if x), self._key)
+                parts = [str(x) for x in (code, err.get("message")) if x]
+                text = scrub(": ".join(parts), self._key)
+                zh = scrub("：".join(parts), self._key)          # 中文兜底保持原样
                 m = (msg(_KNOWN[code]) if code in _KNOWN
                      else msg("film.provider.rejected", detail=vendor(text)) if text
                      else msg("film.provider.generation_failed"))
+                if m["code"] == "film.provider.rejected":
+                    m["message"] = zh
             error, error_msg = m["message"], compact(m)
         usage = t.get("usage") if status == "succeeded" and isinstance(t.get("usage"), dict) else {}
         return TaskState(task_id, status, video_url=content.get("url"), last_frame_url=None,

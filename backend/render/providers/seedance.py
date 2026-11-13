@@ -65,8 +65,10 @@ def _reject(r: httpx.Response, key: str) -> ProviderError:
         body = scrub(r.text, key)[:300]
         return _with_fallback(ProviderError.of("film.provider.http_rejected", status=r.status_code,
                                                detail=vendor(body)), f"HTTP {r.status_code}：{body}")
-    text = scrub("：".join(x for x in (err.get("code"), err.get("message")) if x) or f"HTTP {r.status_code}", key)
-    return _with_fallback(ProviderError.of("film.provider.rejected", detail=vendor(text)), text)
+    parts = [x for x in (err.get("code"), err.get("message")) if x]
+    zh = scrub("：".join(parts) or f"HTTP {r.status_code}", key)
+    text = scrub(": ".join(parts) or f"HTTP {r.status_code}", key)
+    return _with_fallback(ProviderError.of("film.provider.rejected", detail=vendor(text)), zh)
 
 
 class Seedance:
@@ -166,12 +168,14 @@ class Seedance:
         error, error_msg = None, None
         if status == "failed":
             err = j.get("error") or {}
-            text = scrub("：".join(x for x in (err.get("code"), err.get("message")) if x), self._key)
+            parts = [x for x in (err.get("code"), err.get("message")) if x]
+            text = scrub(": ".join(parts), self._key)
+            zh = scrub("：".join(parts), self._key)              # 中文兜底保持原样
             m = (msg("film.provider.rejected", detail=vendor(text)) if text
                  else msg("film.ark.task_expired") if raw == "expired"
                  else msg("film.provider.task_cancelled") if raw == "cancelled"
                  else msg("film.provider.generation_failed"))
-            error, error_msg = (text if text else m["message"]), compact(m)
+            error, error_msg = (zh if zh else m["message"]), compact(m)
         return TaskState(task_id, status, video_url=content.get("video_url"),
                          last_frame_url=content.get("last_frame_url"), error=error, error_msg=error_msg,
                          usage={"completion_tokens": (j.get("usage") or {}).get("completion_tokens")}

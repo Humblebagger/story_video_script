@@ -352,8 +352,10 @@ def main() -> int:
     e = code_of(httpx.Response(400, json={"error": {"code": 2013, "message": "echo k-secret here"}}))
     assert e.code == "film.provider.rejected" and e.params["detail"]["t"] == "vendor"
     assert "k-secret" not in json.dumps(e.params, ensure_ascii=False)
+    assert e.params["detail"]["text"].startswith("2013: ") and str(e).startswith("2013：")   # 结构化 ASCII，兜底全角
     st = task("failed", error={"code": "2056", "message": "boom k-secret"}).poll("t")
     assert st.error_msg["code"] == "film.provider.rejected" and "k-secret" not in json.dumps(st.error_msg)
+    assert st.error_msg["params"]["detail"]["text"].startswith("2056: ") and st.error.startswith("2056：")
     e = code_of(exc=httpx.ReadTimeout("x"), cls=base.AmbiguousSubmit)
     assert e.code == "film.provider.submit_cut"
     e = must_raise(base.ProviderError, mmx(lambda r: httpx.Response(200)).submit, base.ClipRequest(

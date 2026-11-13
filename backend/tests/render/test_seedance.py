@@ -181,11 +181,13 @@ def main() -> int:
     e = must_raise(base.ProviderError, status(400, {"error": {"code": "Bad", "message": leak}}).submit, req)
     assert "k-secret" not in flat([str(e), e.args, e.params]) and "OTHER_TOKEN" not in flat([str(e), e.params])
     assert len(str(e)) > 400 and len(e.params["detail"]["text"]) == 300
+    assert e.params["detail"]["text"].startswith("Bad: ") and str(e).startswith("Bad：")   # 结构化 ASCII，兜底全角
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(400, text=leak)).submit, req)
     assert "k-secret" not in flat([str(e), e.params]) and "OTHER_TOKEN" not in flat([str(e), e.params])
     st = task({"id": "x", "status": "failed", "error": {"code": "Bad", "message": leak}}).poll("x")
     assert "k-secret" not in flat([st.error, st.error_msg]) and "OTHER_TOKEN" not in flat([st.error, st.error_msg])
     assert len(st.error) > 400 and len(st.error_msg["params"]["detail"]["text"]) == 300
+    assert st.error_msg["params"]["detail"]["text"].startswith("Bad: ") and st.error.startswith("Bad：")
     print("8. 原文脱敏 ✓")
 
     print("\nALL PASS")
