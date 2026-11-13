@@ -407,7 +407,7 @@ def main() -> int:
     events_of(c.post(A + "/resume", headers=H, json={"id": conf["id"], "decision": "approve", "lang": "zh", "where": {}}))
     novels.set_outline(uid, nid, "别处改的")
     r = c.post(U, headers=H, json={"tool_call_id": "pe2"})
-    assert r.status_code == 409 and r.json()["detail"]["code"].startswith("assistant.undo."), r.text
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "assistant.undo.outline_changed", r.text
     assert novels.get_memory(uid, nid)["plot"]["outline"] == "别处改的"
     print("24. 撤销被拒 ✓")
 

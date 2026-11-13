@@ -7,6 +7,7 @@ import { currentLocale, tr } from './i18n/core'
 import { getToken, notifyUnauthorized } from './auth'
 import { parseSse } from './lib/sse'
 import type { User } from './auth'
+import type { ServerMsg } from './i18n/serverMsg'
 import type {
   Chapter, Constraint, NovelSummaryData, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
@@ -574,7 +575,7 @@ export const clearAssistant = (nid: string) =>
 
 /** 撤销助手的一次修改（不调模型）。之后被别处改过等情况以 ApiError（409，带原因）抛出 */
 export const undoAssistant = (nid: string, toolCallId: string) =>
-  req<{ ok: true; message: string; task: AssistantTask }>(`/novels/${encodeURIComponent(nid)}/assistant/undo`,
+  req<{ ok: true; message: ServerMsg; task: AssistantTask }>(`/novels/${encodeURIComponent(nid)}/assistant/undo`,
                                                           jsonPost({ tool_call_id: toolCallId }))
 
 /** POST 一个 JSON，逐个回调返回的 SSE 事件；signal 中止即停止。429 / 409 / 422 等在开始流之前以 ApiError 抛出。 */

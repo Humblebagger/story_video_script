@@ -313,6 +313,21 @@ def main() -> int:
                                      "message": body}}, tm.artifact
     print("17. 生产智能体的带代码工具报错 ✓")
 
+    # 18. 历史：归档里带代码的失败工具，tools[].msg 带代码与参数；嵌套参数里的服务器目录也隐去
+    deep = {"code": "assistant.tool.bad_step",
+            "params": {"options": f"{_TMP.name}/a, b", "nested": {"paths": [f"{_TMP.name}/x.mp4", "ok"]}},
+            "message": f"错在 {_TMP.name}/u"}
+    arc = [HumanMessage("q"),
+           AIMessage("", tool_calls=[{"name": "goto", "args": {}, "id": "d1"}]),
+           ToolMessage(f"错在 {_TMP.name}/u", tool_call_id="d1", name="goto", status="error",
+                       artifact={"error": deep})]
+    fk2 = SimpleNamespace(get_state=lambda c: SimpleNamespace(values={"messages": arc}))
+    t0 = events.history(fk2, {}, hide=_TMP.name)[1]["tools"][0]
+    assert t0["ok"] is False and t0["msg"]["code"] == "assistant.tool.bad_step", t0
+    assert t0["msg"]["params"]["options"].endswith("a, b") and _TMP.name not in json.dumps(t0, ensure_ascii=False), t0
+    assert t0["msg"]["params"]["nested"]["paths"][1] == "ok"
+    print("18. 历史里失败工具带代码与参数、嵌套路径隐去 ✓")
+
     print("\nALL PASS")
     return 0
 

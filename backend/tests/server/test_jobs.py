@@ -19,6 +19,7 @@ os.environ["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:9"  # 保险：漏了桩也
 LLM_KEY = "sk-test-llm-0123456789"
 os.environ["ANTHROPIC_API_KEY"] = LLM_KEY              # 只为验证脱敏
 MODEL = "secret-model-x9"
+REVIEW_MODEL = "secret-review-q3"                       # 特征评审模型名：同样不得出现在普通用户接口里
 os.environ["STORYBOARD_MODEL"] = MODEL                  # 特征模型名：普通用户接口里不得出现
 os.environ["STORYBOARD_CHAPTER_DIGEST"] = "0"           # 不排章后整理（它会调模型）
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"
@@ -61,7 +62,8 @@ def fake_ok(warn=None):
     def f(text, params, settings=None, log=print, on_event=None, warnings_out=None, manifest_out=None, **kw):
         log("调试细节 工作目录 /tmp/storyboard_x")
         on_event({"code": "job.event.verified", "params": {}, "message": "整章终检通过"})
-        manifest_out.update({"contracts": {"model": settings.model, "temperature": 0.2},
+        manifest_out.update({"contracts": {"model": settings.model, "review_model": REVIEW_MODEL,
+                                         "temperature": 0.2},
                              "attempts": [], "verification": {"status": "verified", "findings": []}})
         if warn:
             warnings_out.append(warn)
@@ -233,6 +235,8 @@ def part_no_model(nid, cid):
         app_mod.convert_text = real
     stored = novels.get_version(U, nid, cid, vid)
     assert stored["manifest"]["contracts"]["model"] == MODEL and stored["debug_log"], "存储不动"
+    assert stored["manifest"]["contracts"]["review_model"] == REVIEW_MODEL, "评审模型名也留在存储里"
+    assert REVIEW_MODEL not in json.dumps(app_mod.get_job(vid, user={"id": U})), "任务响应不带评审模型"
     from server import usage
     usage.record(user_id=U, purpose="convert", model=MODEL, usage={"calls": 1, "input": 1, "output": 1},
                  ok=True, novel_id=nid, chapter_id=cid)
@@ -242,9 +246,10 @@ def part_no_model(nid, cid):
     for u in urls:
         r = c.get(u, headers=H)
         assert r.status_code == 200, (u, r.status_code)
-        assert MODEL not in r.text and "debug_log" not in r.json(), u
+        assert MODEL not in r.text and REVIEW_MODEL not in r.text and "debug_log" not in r.json(), u
     v = c.get(f"/novels/{nid}/chapters/{cid}/versions/{vid}", headers=H).json()
-    assert "model" not in v["manifest"]["contracts"] and v["manifest"]["contracts"]["temperature"] == 0.2
+    assert "model" not in v["manifest"]["contracts"] and "review_model" not in v["manifest"]["contracts"]
+    assert v["manifest"]["contracts"]["temperature"] == 0.2
     assert c.get("/admin/service", headers=H).status_code == 403, "普通用户看不到服务信息"
     print("3. 普通用户接口不透出模型名、存储不动 ✓")
     return vid
@@ -259,9 +264,40 @@ def part_admin(nid, cid, vid):
     HA = {"Authorization": f"Bearer {auth.issue_token(admin['id'])}"}
     s = c.get("/admin/service", headers=HA).json()
     assert s["model"] == MODEL and s["api_key_configured"] is True and s["review_model"] is None, s
+    # 评审：关 / 开且同一模型 / 开且不同模型
+    keys = ("STORYBOARD_REVIEW", "STORYBOARD_REVIEW_MODEL")
+    saved = {k: os.environ.get(k) for k in keys}
+    try:
+        os.environ["STORYBOARD_REVIEW_MODEL"] = REVIEW_MODEL
+        os.environ.pop("STORYBOARD_REVIEW", None)
+        assert c.get("/admin/service", headers=HA).json()["review_model"] is None, "评审关着不报"
+        os.environ["STORYBOARD_REVIEW"] = "1"
+        os.environ["STORYBOARD_REVIEW_MODEL"] = MODEL
+        assert c.get("/admin/service", headers=HA).json()["review_model"] is None, "与转换同模型不报"
+        os.environ["STORYBOARD_REVIEW_MODEL"] = REVIEW_MODEL
+        assert c.get("/admin/service", headers=HA).json()["review_model"] == REVIEW_MODEL
+    finally:
+        for k, x in saved.items():
+            if x is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = x
+
+    def views():
+        return [a for a in audit.read(1000) if a["action"] == "view_job_debug"]
+    n0 = len(views())
     r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": U}, headers=HA)
     assert r.status_code == 200 and r.json()["lines"], r.text
-    assert any(a["action"] == "view_job_debug" and a["after"] == {"version_id": vid} for a in audit.read(20))
+    rows = views()
+    assert len(rows) == n0 + 1, "每次查看恰好一条审计"
+    assert rows[0]["after"] == {"version_id": vid} and rows[0]["target_id"] == U and rows[0]["target"] == "jobuser"
+    # 内存里没有了（服务重启后）：从版本记录读回落盘的日志
+    app_mod._jobs.pop(vid, None)
+    r2 = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": U}, headers=HA)
+    assert r2.status_code == 200 and r2.json()["lines"], r2.text
+    assert r2.json()["lines"] == novels.get_version(U, nid, cid, vid)["debug_log"], "磁盘回退返回落盘的日志"
+    rows = views()
+    assert len(rows) == n0 + 2 and rows[0]["target_id"] == U, "回退读取同样记一条审计，对象是任务所属用户"
     r = c.get("/admin/jobs/nope/debug", params={"user_id": U}, headers=HA)
     assert r.status_code == 404 and r.json()["detail"]["code"] == "admin.job.not_found"
     r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": "../x"}, headers=HA)

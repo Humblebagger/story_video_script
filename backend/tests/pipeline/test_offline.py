@@ -180,6 +180,12 @@ def main() -> int:
         except _HE as e:
             assert e.status_code == 404 and e.detail["code"] == "job.no_partial"
         assert get_job("pj1", user={"id": "u1"})["partial_batches"] == 0
+        for who, jid in (("u1", "no-such-job"), ("someone-else", "pj1")):
+            try:
+                get_job(jid, user={"id": who})
+                raise AssertionError("不存在的任务与别人的任务都应 404")
+            except _HE as e:
+                assert e.status_code == 404 and e.detail["code"] == "job.not_found", (who, jid)
     finally:
         _jobs.pop("pj1", None)
     print("分批先看: 非末批交部分产物 / 轮询只带批数 / 单独接口取且隔离用户 ✓")
