@@ -309,6 +309,33 @@ def main() -> int:
     assert len(seen) >= n_before
     print("8. 密钥与地址 ✓")
 
+    # 9. 复审修正：adaptive 画幅；错误文本脱敏与截断；损坏的 data URI
+    ad = base.ClipRequest(prompt="p", model="minimax-h3", duration=4, resolution="768P", aspect="adaptive",
+                          refs=[base.RefImage("C01", "character", "https://img/c01.png")])
+    m.submit(ad)
+    assert json.loads(seen[-1].content)["ratio"] == "adaptive"
+    m.submit(base.ClipRequest(prompt="p", model="minimax-h3-highspeed", duration=4, resolution="480P",
+                              aspect="adaptive", refs=[base.RefImage("C01", "character", "https://img/c01.png")]))
+    assert json.loads(seen[-1].content)["ratio"] == "adaptive"
+    n_sent = len(seen)
+    e = must_raise(base.ProviderError, m.submit, base.ClipRequest(
+        prompt="p", model="minimax-h3-lite", duration=4, resolution="480P", aspect="adaptive",
+        refs=[base.RefImage("C01", "character", "https://img/c01.png")]))
+    assert "Lite" in str(e) and "adaptive" in str(e) and len(seen) == n_sent, "Lite 参考生不发 adaptive"
+    leak = answer(httpx.Response(400, json={"error": {"code": 2013, "message":
+                  "bad Authorization: Bearer k-secret and key k-secret " + "x" * 600}}))
+    e = must_raise(base.ProviderError, leak.submit, q)
+    assert "k-secret" not in str(e) and len(str(e)) < 400, str(e)
+    e = must_raise(base.ProviderError, answer(httpx.Response(418, text="echo k-secret " + "y" * 900)).submit, q)
+    assert "k-secret" not in str(e) and len(str(e)) < 400
+    st = task("failed", error={"code": "2056", "message": "boom k-secret " + "z" * 600}).poll("t")
+    assert "k-secret" not in st.error and len(st.error) < 400
+    e = must_raise(base.ProviderError, m.submit, base.ClipRequest(
+        prompt="p", model="minimax-h3", duration=4, resolution="768P",
+        refs=[base.RefImage("C01", "character", "data:image/png;base64,@@@@!!!")]))
+    assert "C01" in str(e) and "损坏" in str(e)
+    print("9. 复审修正 ✓")
+
     print("\nALL PASS")
     return 0
 

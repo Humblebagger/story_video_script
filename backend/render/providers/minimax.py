@@ -39,7 +39,8 @@ MODELS = {
 DEFAULT_MODEL = "minimax-h3"
 FREE_IMAGES = 5
 SHORT_SIDE = {"480P": 480, "768P": 768, "2K": 1440}     # 2K 的实际像素待真跑核对（spec §5.1）
-RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16")
+RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive")
+TEXT_MAX = 300                                          # 拼进报错的服务端文字上限
 PROMPT_MAX = 7000
 IMAGE_MAX_BYTES = 30 * 1024 * 1024
 BODY_MAX_BYTES = 60 * 1024 * 1024                       # 官方 64MB，留余量
@@ -116,12 +117,21 @@ def _error_of(j) -> tuple:
     return code, msg
 
 
-def _reject(code, msg, status=None, body: str = "") -> ProviderError:
+def scrub(text, secret: str = "") -> str:
+    """服务端文字进报错前：抹掉密钥与 Bearer 凭据，并截到 TEXT_MAX 字。"""
+    t = str(text)
+    if secret:
+        t = t.replace(secret, "***")
+    t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
+    return t[:TEXT_MAX]
+
+
+def _reject(code, msg, status=None, body: str = "", secret: str = "") -> ProviderError:
     key = code if code in MSG else _HTTP_CODE.get(status)
     if key in MSG:
         return ProviderError(MSG[key])
     text = "：".join(str(x) for x in (code, msg) if x)
-    return ProviderError(text or f"HTTP {status}：{body[:300]}")
+    return ProviderError(scrub(text, secret) if text else f"HTTP {status}：{scrub(body, secret)}")
 
 
 def _even(x: float) -> int:
@@ -197,7 +207,7 @@ def _check_image(uri: str, label: str) -> tuple:
     if mime not in MIMES:
         raise ProviderError(f"{label} 的格式 {mime} MiniMax 不支持（只收 JPG、PNG、WEBP、HEIC、HEIF）")
     try:
-        raw = base64.b64decode(m.group(2))
+        raw = base64.b64decode(m.group(2), validate=True)
     except (binascii.Error, ValueError):
         raise ProviderError(f"{label} 的图片数据损坏")
     if len(raw) > IMAGE_MAX_BYTES:
@@ -292,9 +302,9 @@ class MiniMax:
                 raise AmbiguousSubmit(f"MiniMax 返回 HTTP {r.status_code}")
             raise TransientError(f"MiniMax 暂时不可用（HTTP {r.status_code}）")
         if r.status_code >= 400:
-            raise _reject(code, msg, r.status_code, r.text)
+            raise _reject(code, msg, r.status_code, r.text, self._key)
         if code:                                      # 2xx 但厂商明确报了错：没建任务
-            raise _reject(code, msg)
+            raise _reject(code, msg, secret=self._key)
         if not isinstance(j, dict):
             if submit:
                 raise AmbiguousSubmit("MiniMax 返回的不是 JSON")
@@ -323,6 +333,8 @@ class MiniMax:
             content.append({"type": "image_url", "image_url": {"url": url}, "role": "first_frame"})
             size += n
         if req.refs or not req.first_frame:           # 参考生与文生显式给比例；图生由图决定
+            if req.aspect == "adaptive" and req.refs and req.model == "minimax-h3-lite":
+                raise ProviderError("MiniMax H3 Lite 的参考生视频必须明确画幅，不支持 adaptive")
             if req.aspect not in RATIOS:
                 raise ProviderError(f"MiniMax 不支持画幅 {req.aspect}，可选：{'、'.join(RATIOS)}")
             body["ratio"] = req.aspect
@@ -347,7 +359,7 @@ class MiniMax:
             else:
                 err = t.get("error") if isinstance(t.get("error"), dict) else {}
                 code = _code(err.get("code") or err.get("type"), err.get("message"))
-                error = (MSG.get(code) or "：".join(str(x) for x in (code, err.get("message")) if x)
+                error = (MSG.get(code) or scrub("：".join(str(x) for x in (code, err.get("message")) if x), self._key)
                          or "生成失败")
         usage = t.get("usage") if status == "succeeded" and isinstance(t.get("usage"), dict) else {}
         return TaskState(task_id, status, video_url=content.get("url"), last_frame_url=None,
