@@ -102,7 +102,7 @@ export default function App() {
   const [svc, setSvc] = useState<Health | null>(null)
   const [svcDown, setSvcDown] = useState(false)
   /** 管理员才有的服务信息（模型、密钥状态）；普通用户永远是 null */
-  const [svcInfo, setSvcInfo] = useState<AdminService | null>(null)
+  const [svcInfo, setSvcInfo] = useState<{ uid: string; info: AdminService } | null>(null)
 
   const [novels, setNovels] = useState<NovelSummary[]>([])
   const [novelsLoading, setNovelsLoading] = useState(true)
@@ -443,8 +443,12 @@ export default function App() {
 
   // 账号菜单的模型信息只有管理员取得到
   useEffect(() => {
-    if (user?.role === 'admin') adminService().then(setSvcInfo).catch(() => setSvcInfo(null))
-    else setSvcInfo(null)
+    setSvcInfo(null)
+    if (user?.role !== 'admin') return
+    const uid = user.id
+    let stale = false   // 换账号、退出后，旧会话的响应一律丢弃
+    adminService().then((info) => { if (!stale) setSvcInfo({ uid, info }) }).catch(() => { if (!stale) setSvcInfo(null) })
+    return () => { stale = true }
   }, [user?.id, user?.role])
 
   // 随登录态重取：否则注册后再退出，登录页仍显示「服务端还没有任何账号」
@@ -1050,7 +1054,7 @@ export default function App() {
                            document.querySelector<HTMLElement>('[data-testid="activity-bell"]')?.focus()
                          }} />
         ) : null}
-        service={{ down: svcDown, ...(svcInfo ? { model: svcInfo.model, noKey: !svcInfo.api_key_configured } : {}) }}
+        service={{ down: svcDown, ...(svcInfo && user?.role === 'admin' && svcInfo.uid === user.id ? { model: svcInfo.info.model, noKey: !svcInfo.info.api_key_configured } : {}) }}
         viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
         sidebarHandlesCollapse={!!shown}
         sidebar={adminOpen && user.role === 'admin' ? null : shown ? (

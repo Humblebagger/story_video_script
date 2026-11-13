@@ -435,7 +435,7 @@ const router = createMemoryRouter(routes, { initialEntries: ['/'] })
 const { notifyUnauthorized } = await import('../src/auth')
 const { NovelPage } = await import('../src/components/NovelPage')
 const { I18nProvider } = await import('../src/i18n')
-const { setCurrentLocale } = await import('../src/i18n/core')
+const { setCurrentLocale, useI18n } = await import('../src/i18n/core')
 
 const doc = win.document as unknown as Document
 const container = doc.createElement('div')
@@ -486,7 +486,9 @@ const mouseDown = async (el: HTMLElement) => {
   await settle()
 }
 
-await act(async () => { root.render(<AppRoot router={router} />) })
+let setLoc: (l: 'zh' | 'en') => void = () => {}
+function Grab() { setLoc = useI18n().setLocale; return null }
+await act(async () => { root.render(<I18nProvider initial="zh"><Grab /><AppRoot router={router} /></I18nProvider>) })
 await settle()
 
 // 0. 未登录：只能看到登录页，看不到任何业务界面
@@ -713,6 +715,23 @@ must(has('这一版转换失败：服务器出了点问题') && has('参考编�
   const al = container.querySelector('p.alert')?.textContent ?? ''
   must(al.includes('这一版转换失败：批 1 重试 2 次后仍未通过校验') && !al.includes('FAIL: 引用了不存在的资产 C09'),
        `没有 error_msg 的旧失败版本：提示条只取原文第一行，实为 ${al}`)
+}
+// 带 job.failed_report：提示条只显示原因、不带报告；切英文后仍只有原因
+{
+  const v2 = shelf('alice')[0].chapters[0].versions.find((x) => x.id === 'job2')!
+  v2.error_msg = { code: 'job.failed_report', params: {
+    reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+    report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+  await click(findByText('button', 'v1'))
+  await click(findByText('button', 'v2'))
+  const al = () => container.querySelector('p.alert')?.textContent ?? ''
+  must(al().includes('这一版转换失败：批 2 重试 3 次后仍未通过校验') && !al().includes('FAIL: E01'), `failed_report 提示条只取原因（中文），实为 ${al()}`)
+  await act(async () => { setLoc('en') })
+  await settle(100)
+  must(!al().includes('批 2') && !al().includes('FAIL: E01') && al().length > 0, `failed_report 提示条只取原因（英文），实为 ${al()}`)
+  await act(async () => { setLoc('zh') })
+  await settle(100)
+  setCurrentLocale('zh')
 }
 must(!has('采用此版') || (findByText('button', '采用此版') as HTMLButtonElement).disabled,
      '失败版本不能采用')

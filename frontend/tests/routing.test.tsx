@@ -114,6 +114,8 @@ const vgate: Record<string, Promise<void>> = {}
 let meGate: Promise<void> | null = null
 let jobGate: Promise<void> | null = null
 let adminSvcCalls = 0
+/** 非空时 /admin/service 卡在它上面（模拟慢响应） */
+let svcGate: Promise<void> | null = null
 const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
@@ -125,6 +127,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (path === '/healthz') return json({ status: 'ok', first_run: false })
   if (path === '/admin/service' && method === 'GET') {
     adminSvcCalls += 1
+    if (svcGate) await svcGate
     if (!/tok-root/.test(init?.headers?.Authorization ?? '')) return err(403, '需要管理员')
     return json({ model: 'stub-model', review_model: null, api_key_configured: false })
   }
@@ -748,7 +751,29 @@ console.log('I6. 提交转换失败的提示按语言渲染并随切换更新 �
   await ad.done()
   setCurrentLocale('zh')
 }
-console.log('T9. 账号菜单的模型只给管理员 ✓')
+// 同一个应用实例换账号：旧管理员会话迟到的 /admin/service 响应不能落到新的普通用户身上
+{
+  let release!: () => void
+  svcGate = new Promise<void>((r) => { release = r })
+  const a = await boot('/', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+  await click(a.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
+  await settle(200)
+  await openLogin(a.container)
+  await loginAs('alice', 'pw')
+  await settle(400)
+  release(); svcGate = null
+  await settle(300)
+  await act(async () => {
+    a.q('[data-testid="account-menu"]')!.dispatchEvent(
+      new win.PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }) as unknown as Event)
+  })
+  await settle()
+  must(doc.body.textContent!.includes('正常') && !doc.body.textContent!.includes('当前模型') && !doc.body.textContent!.includes('stub-model'),
+       '旧管理员会话迟到的服务信息不显示在新的普通用户菜单里')
+  await a.done()
+}
+console.log('T9b. 换账号后旧响应被丢弃 ✓')
+
 
 console.log('\nALL PASS')
 process.exit(0)

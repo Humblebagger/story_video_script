@@ -41,6 +41,8 @@ let gateObj = false
 /** true 时验证门消息是已登记的代码 verify.gate.blocked；gateReadOk 时读取会话仍报通过（只让出片请求被拦） */
 let gateCode = false
 let gateReadOk = false
+/** 出片被拦时返回的状态码（422 / 409） */
+let gateHttp = 422
 /** 下一次花钱请求回这个错（模拟带代码的 422 / 409） */
 let nextFail: { status: number; detail: unknown } | null = null
 /** 下一次读取会话抛网络错误（只一次） */
@@ -142,7 +144,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
     film = makeSession()
     return ok(film)
   }
-  if (gateFail) return fail(422, gateCode ? { code: 'verify.gate.blocked', params: {}, message: GATE, verification: { ok: false } } : { message: GATE, verification: { ok: false } })
+  if (gateFail) return fail(gateHttp, gateCode ? { code: 'verify.gate.blocked', params: {}, message: GATE, verification: { ok: false } } : { message: GATE, verification: { ok: false } })
   const spend = (targets: FilmClip[], expected: number | undefined, batch: boolean) => {
     if (nextFail) {
       const f = nextFail
@@ -565,7 +567,19 @@ console.log('10c. 出错后轮询不断 ✓')
   must(has(zh.srv.verify.gate.blocked), '出片被拦（422 带 verification）提示中文')
   await lang('en')
   must(has(en.srv.verify.gate.blocked) && !has(zh.srv.verify.gate.blocked), '出片被拦的提示切英文跟着变')
-  gateFail = false; gateCode = false; gateReadOk = false
+  // 409 带 verification 与结构化门消息：同样随语言变
+  gateFail = false; gateReadOk = false
+  await lang('zh')
+  await refresh()
+  must(!has(zh.srv.verify.gate.blocked), '验证门通过后提示消失')
+  gateFail = true; gateReadOk = true; gateHttp = 409
+  await refresh()
+  await click(button('出剩余'))
+  await click(button('确认出片'))
+  must(has(zh.srv.verify.gate.blocked), '409 出片被拦提示中文')
+  await lang('en')
+  must(has(en.srv.verify.gate.blocked) && !has(zh.srv.verify.gate.blocked), '409 出片被拦的提示切英文跟着变')
+  gateFail = false; gateCode = false; gateReadOk = false; gateHttp = 422
   await lang('zh')
   await refresh()
   console.log('10h. 验证门提示随语言变化 ✓')
