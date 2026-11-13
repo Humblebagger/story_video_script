@@ -1,7 +1,7 @@
 # 后端对用户文字统一中英双语 设计
 
 日期：2026-11-13
-状态：已过设计审查（Opus），修订完毕，待写计划
+状态：已过设计审查（Opus），修订完毕；子计划 1 已交付；子计划 2 范围已补充（见文末）
 
 ## 1. 目标与已决事项
 
@@ -292,3 +292,100 @@
   - 验证报告用 rule_id 作代码，SCHEMA-001 的 jsonschema 原文作 vendor 参数原样显示。
 - **用户已决**：验证报告逐条做双语，排在最后；README 不带 lang 时继续中英并排。
 - **子计划调整**：由原来的 5 个重排为现在的 5 个。job 进度并入子计划 4，与助手一起做；验证报告逐条单独作为子计划 5。
+
+## 子计划 2 范围补充（2026-11-13，子计划 1 验收后用户确认）
+
+子计划 1 验收（Opus）留下两处缺口，用户同意并入子计划 2 一起做。§9 子计划 2 的原范围不变，另加下面两项。
+
+### A. 方舟（Seedance）错误码友好映射
+
+**现状**：
+- `seedance._reject` 和 `poll` 把方舟的 `error.code` + `error.message` 原样拼起来，作为 `film.provider.rejected` 的 vendor 参数。用户看到的是英文厂商原文。
+- `_call` 遇到 429 一律当瞬时错误重试。但方舟有一个 429 是不该重试的：`SetLimitExceeded`，即安全体验模式用量到顶、模型服务已暂停。现在遇到它会一直重试到放弃。
+
+**依据**：火山方舟官方错误码页 https://www.volcengine.com/docs/82379/1299023 （2026-11-13 用 curl 抓取核对）。参考页：
+- https://www.volcengine.com/docs/82379/1099476
+- BytePlus 版 https://docs.byteplus.com/docs/ModelArk/1299023
+
+**映射表**：先按 `error.code` 全名匹配，再按第一个「.」之前的族名匹配。都匹配不上时：
+- 有 code 或 message：照旧走 `film.provider.rejected`，带脱敏后的厂商原文；
+- 都没有：按 HTTP 状态回落（见表末）。
+
+| 方舟 code（HTTP） | 含义（官方） | 我们的代码 | 中文兜底 | 可否重试 |
+|---|---|---|---|---|
+| `AuthenticationError`（401）、`InvalidSubscription`（401） | API Key 无效 / 订阅无效 | `film.ark.auth` | 视频服务（方舟）鉴权失败，请联系管理员 | 否 |
+| `AccountOverdueError`（403） | 账号欠费 | `film.ark.overdue` | 视频服务（方舟）账户欠费，暂时无法出片，请联系管理员 | 否 |
+| `AccessDenied`（403）、`InvalidAccountStatus`（403） | 无权访问 / 账号异常 | `film.ark.access_denied` | 视频服务（方舟）拒绝访问，请联系管理员 | 否 |
+| `InvalidEndpointOrModel` 族（404，含 `.NotFound`、`.ModelIDAccessDisabled`）、`ModelNotOpen`（404） | 模型不存在、未开通或无权用 | `film.ark.model_unavailable` | 所选的视频档位暂时不可用（模型未开通），请换一个档位或联系管理员 | 否 |
+| `SetLimitExceeded`（**429**） | 达到设定用量上限，模型服务已暂停 | `film.ark.limit_paused` | 视频服务（方舟）已达到用量上限并暂停，请联系管理员 | **否**（429 里唯一不重试的） |
+| `QuotaExceeded`（403） | 额度耗尽 | `film.ark.quota` | 视频服务（方舟）额度已用尽，请联系管理员 | 否 |
+| `RateLimitExceeded` 族（429，含 `.EndpointRPMExceeded`、`.EndpointTPMExceeded`、`.EndpointFlexTPMExceeded`）、`ServerOverloaded`（429）、`RequestBurstTooFast`（429） | 限流、过载、突增 | `film.ark.throttled`（已有，改文案） | 视频服务（方舟）繁忙，稍后自动重试 | 是（瞬时） |
+| `SensitiveContentDetected` 族（400，含 `.SevereViolation`、`.Violence`、`.PrivacyInformation`、`.DeepFake`）、`InputTextSensitiveContentDetected` 族、`InputImageSensitiveContentDetected`、`InputTextRiskDetection` | 输入文本或图片可能违规 | `film.ark.input_moderated` | 这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试 | 否 |
+| `SensitiveContentDetected.PolicyViolation`、`InputTextSensitiveContentDetected.PolicyViolation` | 可能涉及版权限制 | `film.ark.copyright` | 这一段的描述可能涉及版权限制：改写后重试 | 否 |
+| `OutputVideoSensitiveContentDetected`、`OutputAudioSensitiveContentDetected`、`OutputImageSensitiveContentDetected` | 生成结果没过审核 | `film.ark.output_moderated` | 生成的视频没通过内容审核：调整这一段的描述后重试 | 否 |
+
+- **全名优先**：`.PolicyViolation` 要先按全名命中 `film.ark.copyright`，否则族名会把它归到 `input_moderated`。
+- **族名匹配**：
+  - `InputXxxSensitiveContentDetected`（Xxx 为 Text 或 Image）一律算输入审核；
+  - `OutputXxx…` 一律算输出审核。
+  - 实现时按前缀判断（`Input`/`Output` + `SensitiveContentDetected`），不必把每个变体都列出来。
+- **HTTP 回落**：没有 code 时用。
+  - 401 → `film.ark.auth`
+  - 403 → `film.ark.access_denied`
+  - 其它照旧：`film.provider.http_rejected`，带脱敏的响应体。
+- **InvalidParameter、MissingParameter 不映射**：仍走 `film.provider.rejected` 带厂商原文。参数错误多半是我们的 bug，原文最有用。
+- **作用范围**：
+  - `_reject`（提交、查询的 4xx）；
+  - `_call` 的 429 分支：先解析 code；`SetLimitExceeded` 抛 `ProviderError`，其余照旧 `TransientError`。提交时 429 照旧可重试，因为方舟没有受理。
+  - `poll` 里 `status=failed` 的 `error.code`：输出审核这类错误多在这里出现。
+- **原文去向**：命中映射时，界面只显示友好文案，不再带厂商原文。脱敏后的 `code: message` 写进后端日志，用 `logging.getLogger("render.providers.seedance").warning`，并带上 HTTP 状态。这样与 MiniMax 已知错误码不带原文的做法一致。
+- **中文兜底**：持久化的 `error` 字段改为映射后模板渲染出的中文，不再是厂商原文。未命中映射时保持原样。
+
+### B. 面向最终用户的文案
+
+产品要上架给别人用。最终用户不碰 `backend/.env`、不认识环境变量名、异常类名和内部档位 id。
+
+**原则**：
+- 界面文案只说发生了什么、用户能做什么（重试、换档位、改描述、联系管理员）。
+- 开发细节（环境变量名、异常类名、内部 id）写进后端日志（`logging.getLogger(<模块>).warning`）。日志里同样不得出现密钥。
+
+**受影响的代码与新文案**：
+- 中文兜底一律改，英文同步改。
+- 被拿掉的参数从模板里删除，登记表随之更新，`messages_codes.json` 重新生成。
+- 前端 `srv` 节点同步改。
+
+| 代码 | 现文案 | 新文案（中文兜底） | 拿掉的参数 → 去向 |
+|---|---|---|---|
+| `film.ark.no_key` | 没有配置方舟密钥：在 backend/.env 写 ARK_API_KEY=… | 视频服务（方舟）还没有配置，请联系管理员 | —（日志写明缺 `ARK_API_KEY`） |
+| `film.minimax.no_key` | 没有配置 MiniMax 密钥：在 backend/.env 写 MINIMAX_API_KEY=… | 视频服务（MiniMax）还没有配置，请联系管理员 | —（日志写明缺 `MINIMAX_API_KEY`） |
+| `film.minimax.invalid_key` | MiniMax 密钥无效（1004），检查 MINIMAX_API_KEY | 视频服务（MiniMax）鉴权失败，请联系管理员 | — |
+| `film.minimax.insufficient_balance` | MiniMax 账户余额不足（1008），充值后重新出这一段 | 视频服务（MiniMax）账户余额不足，暂时无法出片，请联系管理员 | — |
+| `film.minimax.moderated` | 内容被 MiniMax 审核拦下（1026）：… | 这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试 | —（去掉厂商码 1026） |
+| `film.ark.unknown_model`、`film.minimax.unknown_model`、`film.fake.unknown_model`、`film.settings.no_model` | 「未知的 X 档位：{model}」/「{provider} 没有档位 {model}」 | 所选的视频档位已不可用，请在出片设置里重新选择 | `model`、`provider` → 日志 |
+| `film.minimax.bad_resolution` | {model} 不支持 {resolution}，可选：{options} | 这个档位不支持 {resolution}，可选：{options} | `model` → 删（与 `film.settings.bad_resolution` 同文） |
+| `film.ark.connect_failed`、`film.minimax.connect_failed` | 连接 X 失败：{kind} | 连接视频服务（X）失败，稍后自动重试 | `kind` → 日志 |
+| `film.provider.submit_cut` | 提交时连接中断：{kind} | 提交时连接中断，结果不明 | `kind` → 日志 |
+| `film.provider.download_connect` | 下载连接失败：{kind} | 下载视频时连接失败 | `kind` → 日志 |
+| `film.submit.crashed` | 提交异常：{kind}: {cause} | 提交时出现意外错误，请重试；仍失败请联系管理员 | `kind`、`cause` → 日志（runner 已有 traceback 的保持） |
+| `film.ark.not_json`、`film.minimax.not_json` | X 返回的不是 JSON | 视频服务（X）返回了无法识别的响应 | — |
+| `film.ark.no_task_id`、`film.minimax.no_task_id` | X 受理了请求却没有返回任务 id | 视频服务（X）受理了请求却没有返回任务编号 | — |
+| `film.ark.throttled` | 方舟限流（HTTP 429） | 视频服务（方舟）繁忙，稍后自动重试 | — |
+| 子计划 2 新登记的 TTS 未配置（原 `tts_volc` 的「在 backend/.env 写 VOLC_TTS_API_KEY…」） | — | 配音服务还没有配置，请联系管理员 | 日志写明需要的环境变量 |
+| 合成 / 导出缺 ffmpeg（原 `app._NO_FFMPEG`「brew install ffmpeg…」、前端 `compose.ffmpegHint`） | — | 服务器缺少视频处理组件 ffmpeg，暂时无法合成，请联系管理员 | 安装命令留在 README，不进界面 |
+
+- **保留不改**：
+  - 文案里的 HTTP 状态码，如「暂时不可用（HTTP 503）」，作排查线索；
+  - 自由节点、段、镜头的 id，这些是用户在界面上看得到的编号；
+  - `rate.*` 费率依据。
+- **测试**：
+  - 断言新文案；
+  - 对 `no_key`、`unknown_model`、`connect_failed`、`submit.crashed` 断言日志里有原细节（`assertLogs` 或等价写法）；
+  - 断言日志和消息参数里都没有密钥。
+- **兼容**：
+  - 旧会话里存的是旧代码加旧参数。比如 `film.ark.connect_failed` 带 `kind`，现在模板里没有 `{kind}`，前端 `formatMsg` 照新模板渲染，多余参数忽略。这一点在 `server-msg.test.ts` 补用例。
+  - 旧会话只有中文字符串的照原样显示。
+
+### 修订记录
+
+- 用户 2026-11-13 确认把以上 A、B 两项并入子计划 2（「可以」）。
+- 子计划 1 的 Opus 验收结论为「有缺口可接受」，缺口即 A、B。
