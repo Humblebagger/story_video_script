@@ -91,13 +91,13 @@ def main() -> int:
     usage.record(user_id=U, purpose="convert", model="claude-sonnet-5", usage=tok, ok=True,
                  novel_id="other", chapter_id="x", version_id="y")
     s = summary.novel_summary(U, nid)
-    assert abs(s["cost"]["llm_usd"] - 2.0) < 1e-9 and s["unpriced"] == []
+    assert abs(s["cost"]["llm_usd"] - 2.0) < 1e-9 and s["unpriced"] is False
     assert abs(s["chapters"][0]["cost"]["llm_usd"] - 2.0) < 1e-9
     assert s["chapters"][1]["cost"]["llm_usd"] == 0
     usage.record(user_id=U, purpose="convert", model="mystery-model", usage=tok, ok=True,
                  novel_id=nid, chapter_id=c2, version_id="v9")
     s = summary.novel_summary(U, nid)
-    assert abs(s["cost"]["llm_usd"] - 2.0) < 1e-9 and s["unpriced"] == ["mystery-model"]
+    assert abs(s["cost"]["llm_usd"] - 2.0) < 1e-9 and s["unpriced"] is True and "mystery-model" not in json.dumps(s)
     print("汇总: 按小说与章节计大模型花费 / 未定价模型 ✓")
 
     # 4. 成片状态（会话不存「过期」标记，故无 stale）

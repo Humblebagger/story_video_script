@@ -93,6 +93,7 @@ def novel_summary(user_id: str, nid: str) -> dict:
         "cost": {"llm_usd": llm(rows),
                  "render_cny": _sum(c["cost"]["render_cny"] for c in chapters),
                  "budget_cny": _sum(c["cost"]["budget_cny"] for c in chapters)},
-        "unpriced": usage.unpriced_models(rows, table),
+        # 普通用户只需要知道有没有没定价的；模型名只在管理后台显示
+        "unpriced": bool(usage.unpriced_models(rows, table)),
         "chapters": chapters,
     }

@@ -477,6 +477,7 @@ register("job.event.memory_failed", "警告：写入长期记忆失败")
 # 用量
 register("usage.monthly_cap", "本月用量已达上限，请联系管理员")
 # 管理后台
+register("admin.job.not_found", "没有这次转换的调试日志：{id}")
 register("admin.one_field", "一次只能修改一项")
 register("admin.bad_disabled", "disabled 必须是 true 或 false")
 register("admin.self_disable", "不能停用自己")

@@ -1696,6 +1696,7 @@ export const en: Messages = {
         bad_price: 'The {key} price for model {name} must be a non-negative number',
       },
       error_ref: { not_found: 'No error with reference {ref}' },
+      job: { not_found: 'No debug log for this conversion: {id}' },
     },
     library: { empty_title: 'The work name can’t be empty' },
     voice: { narrator: 'Narrator', unlabeled: '(no speaker)' },

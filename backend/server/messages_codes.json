@@ -27,6 +27,12 @@
     ],
     "zh": "没有这个参考编号：{ref}"
   },
+  "admin.job.not_found": {
+    "params": [
+      "id"
+    ],
+    "zh": "没有这次转换的调试日志：{id}"
+  },
   "admin.last_admin": {
     "params": [],
     "zh": "至少保留一个管理员"

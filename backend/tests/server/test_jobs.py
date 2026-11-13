@@ -210,6 +210,70 @@ def part_views(nid, cid):
     print("2. 任务摘要 / 助手的 last_log ✓")
 
 
+def part_no_model(nid, cid):
+    """spec 子计划 4 E：普通用户接口里没有模型名；管理员能看到。"""
+    from fastapi.testclient import TestClient
+    c = TestClient(app_mod.app)
+    tok = auth.issue_token(U)
+    H = {"Authorization": f"Bearer {tok}"}
+    h = c.get("/healthz").json()
+    assert set(h) == {"status", "first_run"} and h["first_run"] is False, h
+    # 走一遍真实的提交路径（convert_text 打桩），等它结束
+    real = app_mod.convert_text
+    app_mod.convert_text = fake_ok()
+    try:
+        r = c.post(f"/novels/{nid}/chapters/{cid}/versions", headers=H, json={})
+        assert r.status_code == 200, r.text
+        vid = r.json()["job_id"]
+        for _ in range(200):
+            if c.get(f"/jobs/{vid}", headers=H).json()["status"] not in ("queued", "running"):
+                break
+            time.sleep(0.02)
+    finally:
+        app_mod.convert_text = real
+    stored = novels.get_version(U, nid, cid, vid)
+    assert stored["manifest"]["contracts"]["model"] == MODEL and stored["debug_log"], "存储不动"
+    from server import usage
+    usage.record(user_id=U, purpose="convert", model=MODEL, usage={"calls": 1, "input": 1, "output": 1},
+                 ok=True, novel_id=nid, chapter_id=cid)
+    urls = ["/healthz", "/auth/me", "/jobs", f"/jobs/{vid}", f"/novels/{nid}",
+            f"/novels/{nid}/chapters/{cid}", f"/novels/{nid}/chapters/{cid}/versions/{vid}",
+            f"/novels/{nid}/summary"]
+    for u in urls:
+        r = c.get(u, headers=H)
+        assert r.status_code == 200, (u, r.status_code)
+        assert MODEL not in r.text and "debug_log" not in r.json(), u
+    v = c.get(f"/novels/{nid}/chapters/{cid}/versions/{vid}", headers=H).json()
+    assert "model" not in v["manifest"]["contracts"] and v["manifest"]["contracts"]["temperature"] == 0.2
+    assert c.get("/admin/service", headers=H).status_code == 403, "普通用户看不到服务信息"
+    print("3. 普通用户接口不透出模型名、存储不动 ✓")
+    return vid
+
+
+def part_admin(nid, cid, vid):
+    from fastapi.testclient import TestClient
+    from server import audit
+    c = TestClient(app_mod.app)
+    admin = auth.register("jobadmin", "secret1")
+    auth.update_user(admin["id"], role="admin")
+    HA = {"Authorization": f"Bearer {auth.issue_token(admin['id'])}"}
+    s = c.get("/admin/service", headers=HA).json()
+    assert s["model"] == MODEL and s["api_key_configured"] is True and s["review_model"] is None, s
+    r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": U}, headers=HA)
+    assert r.status_code == 200 and r.json()["lines"], r.text
+    assert any(a["action"] == "view_job_debug" and a["after"] == {"version_id": vid} for a in audit.read(20))
+    r = c.get("/admin/jobs/nope/debug", params={"user_id": U}, headers=HA)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "admin.job.not_found"
+    r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": "../x"}, headers=HA)
+    assert r.status_code == 404, "非法用户 id 不得 500"
+    r = c.get(f"/admin/jobs/{vid}/debug", params={"user_id": "0123456789ab"}, headers=HA)
+    assert r.status_code == 404, "不存在的用户"
+    tokU = auth.issue_token(U)
+    assert c.get(f"/admin/jobs/{vid}/debug", params={"user_id": U},
+                 headers={"Authorization": f"Bearer {tokU}"}).status_code == 403
+    print("4. 管理员：服务信息带模型名 / 调试日志接口写审计 / 普通用户 403 ✓")
+
+
 def main() -> int:
     global U
     U = auth.register("jobuser", "secret1")["id"]
@@ -218,6 +282,8 @@ def main() -> int:
     part_execute(nid, cid)
     part_digest(nid, cid)
     part_views(nid, cid)
+    vid = part_no_model(nid, cid)
+    part_admin(nid, cid, vid)
     print("\nALL PASS")
     return 0
 

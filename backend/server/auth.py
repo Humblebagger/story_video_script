@@ -93,9 +93,13 @@ def _save_users(users: list) -> None:
         raise
 
 
+def valid_user_id(user_id: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{12}", user_id))
+
+
 def user_dir(user_id: str) -> Path:
     """每个用户一个数据目录——隔离的落点。"""
-    if not re.fullmatch(r"[0-9a-f]{12}", user_id):
+    if not valid_user_id(user_id):
         raise AuthError(f"非法的用户 ID：{user_id!r}")  # i18n: internal
     return DATA_DIR / "users" / user_id
 

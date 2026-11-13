@@ -1677,6 +1677,7 @@ export const zh = {
         bad_price: '模型 {name} 的 {key} 单价必须是非负数',
       },
       error_ref: { not_found: '没有这个参考编号：{ref}' },
+      job: { not_found: '没有这次转换的调试日志：{id}' },
     },
     library: { empty_title: '作品名不能为空' },
     voice: { narrator: '旁白', unlabeled: '（未标说话人）' },

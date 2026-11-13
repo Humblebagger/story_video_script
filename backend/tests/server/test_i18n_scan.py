@@ -64,7 +64,8 @@ MODULES: dict = {
                       "_render_gate", "_gate_status", "render_keyframes", "_run_digest", "chapters_digest",
                       "_execute", "_run_version_job", "list_jobs", "_jobs_view",
                       "_admin_call", "admin_usage", "admin_usage_csv", "admin_pricing_put",
-                      "admin_errors", "admin_error_get"},
+                      "admin_errors", "admin_error_get", "healthz", "admin_service",
+                      "versions_get", "admin_job_debug"},
 }
 
 

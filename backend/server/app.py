@@ -425,6 +425,27 @@ def _progress_view(job: dict) -> Optional[dict]:
     return p
 
 
+_MODEL_KEYS = ("model", "review_model")      # 普通用户看不到底层模型（spec 子计划 4 E）；管理后台照旧显示
+
+
+def _public_manifest(m):
+    """转换清单给普通用户的视图：contracts 去掉模型名，其余（哈希、参数、尝试记录）照旧。存储不动。"""
+    if not isinstance(m, dict):
+        return m
+    out = dict(m)
+    if isinstance(out.get("contracts"), dict):
+        out["contracts"] = {k: v for k, v in out["contracts"].items() if k not in _MODEL_KEYS}
+    return out
+
+
+def _version_view(v: dict) -> dict:
+    """版本记录给普通用户的视图：不给调试日志（只给管理员），清单去掉模型名。"""
+    out = {k: x for k, x in v.items() if k != "debug_log"}
+    if "manifest" in out:
+        out["manifest"] = _public_manifest(out["manifest"])
+    return out
+
+
 @app.get("/jobs")
 def list_jobs(user: dict = Depends(current_user)):
     """本人在跑/刚结束的任务摘要（不含分镜正文与日志）。
@@ -462,8 +483,9 @@ def get_job(job_id: str, user: dict = Depends(current_user)):
         job = _jobs.get(job_id)
     if job is None or job.get("user_id") != user["id"]:
         raise HTTPException(404, detail=msg("job.not_found"))
-    # 部分产物有几百 KB，轮询每 1.5 秒一次，只带批数；要看再走 /partial 取
-    out = {k: v for k, v in job.items() if k not in ("user_id", "partial")}
+    # 部分产物有几百 KB，轮询每 1.5 秒一次，只带批数；要看再走 /partial 取。调试日志只给管理员
+    out = {k: v for k, v in job.items() if k not in ("user_id", "partial", "debug_log")}
+    out["manifest"] = _public_manifest(job.get("manifest"))
     out["progress"] = _progress_view(job)
     out["partial_batches"] = (job.get("partial") or {}).get("batches_done", 0)
     return out
@@ -741,7 +763,7 @@ def versions_create(nid: str, cid: str, req: VersionRequest,
 
 @app.get("/novels/{nid}/chapters/{cid}/versions/{vid}")
 def versions_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)):
-    return _novel_call(novels.get_version, user["id"], nid, cid, vid)
+    return _version_view(_novel_call(novels.get_version, user["id"], nid, cid, vid))
 
 
 def _check_version_doc(user: dict, nid: str, cid: str, vid: str, doc: dict) -> dict:
@@ -1954,6 +1976,37 @@ def admin_jobs(user: dict = Depends(admin_user)):
     return admin_mod.jobs_view(_running_jobs())
 
 
+@app.get("/admin/service")
+def admin_service(user: dict = Depends(admin_user)):
+    """底层模型与密钥是否配置（账号菜单只给管理员显示）。"""
+    s = load_settings()
+    review = s.review_model if s.review_enabled and s.review_model and s.review_model != s.model else None
+    return {"model": s.model, "review_model": review, "api_key_configured": bool(s.api_key)}
+
+
+@app.get("/admin/jobs/{vid}/debug")
+def admin_job_debug(vid: str, user_id: str = Query(...), user: dict = Depends(admin_user)):
+    """一次转换的调试日志（原文、不翻译）：在跑或刚结束的从内存任务表取（全量），
+    重启后从版本记录取（最后 DEBUG_KEEP 行）。可能带用户原文片段与接口原文，每次查看写审计。"""
+    if not auth.valid_user_id(user_id) or auth.get_user_raw(user_id) is None:
+        # 先校验：auth.user_dir 对非法 id 抛的是 AuthError（不是 ValueError），不挡在前面会 500（设计审查 M1）
+        raise HTTPException(404, detail=msg("admin.job.not_found", id=vid))
+    with _lock:
+        job = _jobs.get(vid)
+    if job is not None and job.get("user_id") == user_id:
+        lines = list(job.get("debug_log") or [])
+    else:
+        try:
+            v = novels.find_version(user_id, vid)
+        except ValueError:          # 非法的版本 id（NovelError 是 ValueError 子类）
+            v = None
+        if v is None:
+            raise HTTPException(404, detail=msg("admin.job.not_found", id=vid))
+        lines = list(v.get("debug_log") or [])
+    audit.write(user, "view_job_debug", auth.get_user_raw(user_id), None, {"version_id": vid})
+    return {"id": vid, "user_id": user_id, "lines": lines}
+
+
 @app.get("/admin/audit")
 def admin_audit(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(admin_user)):
     return {"audit": audit.read(limit)}
@@ -2001,8 +2054,6 @@ def admin_pricing_put(table: dict = Body(...), user: dict = Depends(admin_user))
 
 @app.get("/healthz")
 def healthz():
-    s = load_settings()
-    return {"status": "ok", "model": s.model,
-            "api_key_configured": bool(s.api_key),
-            "users": auth.user_count()}
+    """免登录探针：只给首页要用的「全新部署、先注册」判断。模型名与密钥状态在 /admin/service（spec 子计划 4 E）。"""
+    return {"status": "ok", "first_run": auth.user_count() == 0}
 
