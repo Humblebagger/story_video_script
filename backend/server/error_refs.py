@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import secrets
+import sys
 import tempfile
 import threading
 import traceback
@@ -56,10 +57,20 @@ def user_of_root(root) -> Optional[str]:
     return uid if re.fullmatch(r"[0-9a-f]{12}", uid) else None
 
 
+_APP_ROOT = Path(__file__).resolve().parents[1]       # backend/
+
+
 def _rel(text: str) -> str:
-    """服务器上的数据目录换成 <data>：位置与堆栈里不留主机的绝对路径。"""
-    for d in {str(auth.DATA_DIR.resolve()), str(auth.DATA_DIR)}:
-        text = text.replace(d, "<data>")
+    """主机绝对路径换成占位：数据目录 → <data>，Python 环境 → <lib>，后端代码目录 → <app>。
+    先换更深的目录（数据目录、.venv 可能都在 backend/ 下），位置与堆栈里不留主机路径。"""
+    pairs = [(d, "<data>") for d in {str(auth.DATA_DIR.resolve()), str(auth.DATA_DIR)}]
+    pairs += [(d, "<lib>") for d in {sys.prefix, sys.base_prefix,
+                                      str(Path(sys.prefix).resolve()),
+                                      str(Path(sys.base_prefix).resolve())}]
+    pairs += [(d, "<app>") for d in {str(_APP_ROOT), str(Path(__file__).parents[1])}]
+    for d, mark in sorted(pairs, key=lambda x: -len(x[0])):
+        if d and d != "/":
+            text = text.replace(d, mark)
     return text
 
 

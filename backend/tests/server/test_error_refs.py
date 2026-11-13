@@ -79,6 +79,12 @@ def part_record():
     r2 = error_refs.find(ref)
     assert r2["where"] == "submit <data>/users/a1b2c3d4e5f6/novels/n1" and str(auth.DATA_DIR) not in r2["detail"], r2
     assert any(m["ref"] in x for x in grab.lines)
+    # 堆栈里的后端代码目录、Python 环境目录也换成占位，不留主机路径
+    app_root = str(Path(error_refs.__file__).resolve().parents[1])
+    assert app_root not in row["detail"] and "<app>/" in row["detail"], row["detail"]
+    ref = error_refs.record("common.internal", f'File "{sys.prefix}/lib/x.py", line 1 / {app_root}/server/app.py')
+    d3 = error_refs.find(ref)["detail"]
+    assert sys.prefix not in d3 and app_root not in d3 and "<lib>/lib/x.py" in d3 and "<app>/server/app.py" in d3, d3
     # 截断：保留头尾（链式异常的最后一行在末尾，最有用）
     ref = error_refs.record("common.internal", "HEAD" + "x" * (error_refs.DETAIL_MAX + 500) + "TAIL")
     d = error_refs.find(ref)["detail"]

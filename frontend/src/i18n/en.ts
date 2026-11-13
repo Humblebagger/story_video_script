@@ -1611,7 +1611,7 @@ export const en: Messages = {
       },
       digest: {
         off: 'Chapter digest isn’t enabled. Please contact the administrator',
-        failed: 'The chapter digest didn’t finish. Rerun it later; if it keeps failing, contact the administrator',
+        failed: 'Didn’t finish. Rerun it later; if it keeps failing, contact the administrator',
       },
       keyframe: {
         bad_type: 'Keyframes must be PNG, JPEG or WebP images', no_shot: 'This version has no shot {shot}',
