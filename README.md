@@ -72,9 +72,9 @@ docker run -e ANTHROPIC_API_KEY=sk-ant-xxx -p 8000:8000 storyboard
 
 **出片（视频生成，后端）**：两家厂商并存，在出片设置里切换。`backend/.env` 写密钥：
 - `MINIMAX_API_KEY=…`（MiniMax 海螺 H3，**缺省厂商**）；可选 `STORYBOARD_MINIMAX_BASE_URL`（缺省 `https://api.minimax.cn`，为国际站预留）、`STORYBOARD_MINIMAX_PRICE_SCALE`（按账单校准单价的系数）、`STORYBOARD_MINIMAX_NATIVE_AUDIO=1`（真跑确认成片带原声后再开，开前只给「全部配音」「静音」）。费率为 2026-11 刊例价（H3 768P 0.50、2K 0.80 元/秒；Highspeed、Lite 更便宜；每段前 5 张参考图免费，超出每张 0.20 元，Lite 0.13 元），未经账单核对。MiniMax 不返回尾帧，下载后用 ffmpeg 截取供下一段接力；参考图超出尺寸或比例限制时用 ffmpeg 补边缩放后再发。
-- `ARK_API_KEY=…`（火山方舟 Seedance）。没配 MiniMax 而配了方舟时，新建的出片会话缺省用 Seedance，出片设置里会提示。Seedance 首次真实出片后用 `.venv/bin/python -m render.smoke [--provider minimax|seedance]`（花钱，上限 5 元，缺省厂商同新建会话）的用量、成片宽高与是否带音轨与账单核对。
+- `ARK_API_KEY=…`（火山方舟 Seedance）。没配 MiniMax 而配了方舟时，新建的出片会话缺省用 Seedance，出片设置里会提示。想固定用某一家，写 `STORYBOARD_VIDEO_PROVIDER=minimax` 或 `seedance`（优先于上面的缺省规则；测试里用 `fake`）。首次真实出片后用 `cd backend && .venv/bin/python -m render.smoke [--provider minimax|seedance]`（花钱，上限 5 元，缺省厂商同新建会话）的用量、成片宽高与是否带音轨与账单核对。
 MiniMax 手动冒烟清单：
-1. `.env` 写 `MINIMAX_API_KEY`，跑 `render.smoke --provider minimax`（Lite 480P 约 ¥0.64），确认提交、查询、下载、可播放。
+1. `.env` 写 `MINIMAX_API_KEY`，跑 `cd backend && .venv/bin/python -m render.smoke --provider minimax`（Lite 480P 约 ¥0.64），确认提交、查询、下载、可播放。
 2. 看输出是否带音轨；带则再用 H3 768P 出一段有台词的，台词与口型都对再加 `STORYBOARD_MINIMAX_NATIVE_AUDIO=1`。
 3. 看实际宽高，480P、768P 各出一次（2K 选做），与设计文档 §5.1 短边表核对。
 4. 带 2 个以上角色参考图的一段，看「参考图N」是否对上人物。
