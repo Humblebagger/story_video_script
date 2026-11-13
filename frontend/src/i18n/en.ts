@@ -1392,10 +1392,11 @@ export const en: Messages = {
         access_denied: 'The video service (Volcengine Ark) denied access. Please contact the administrator.',
         model_unavailable: 'The selected video tier isn\'t available right now (model not activated). Pick another tier or contact the administrator.',
         limit_paused: 'The video service (Volcengine Ark) hit its usage limit and is paused. Please contact the administrator.',
-        quota: 'The video service (Volcengine Ark) has used up its quota. Please contact the administrator.',
+        quota: 'Quota is insufficient or the queue is full. If this keeps failing, contact the administrator.',
         input_moderated: 'This segment\'s description or reference images didn\'t pass content review. Rewrite the description or swap the references, then retry.',
         copyright: 'This segment\'s description may raise copyright concerns. Rewrite it and retry.',
         output_moderated: 'The generated video didn\'t pass content review. Adjust this segment\'s description and retry.',
+        output_copyright: 'The generated video may raise copyright concerns. Adjust this segment\'s description and retry.',
       },
       minimax: {
         insufficient_balance: 'MiniMax balance is too low (1008). Top up, then generate this clip again',

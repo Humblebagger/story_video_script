@@ -177,10 +177,11 @@ register("film.ark.overdue", "视频服务（方舟）账户欠费，暂时无�
 register("film.ark.access_denied", "视频服务（方舟）拒绝访问，请联系管理员")
 register("film.ark.model_unavailable", "所选的视频档位暂时不可用（模型未开通），请换一个档位或联系管理员")
 register("film.ark.limit_paused", "视频服务（方舟）已达到用量上限并暂停，请联系管理员")
-register("film.ark.quota", "视频服务（方舟）额度已用尽，请联系管理员")
+register("film.ark.quota", "额度不足或排队已满，持续失败请联系管理员")
 register("film.ark.input_moderated", "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试")
 register("film.ark.copyright", "这一段的描述可能涉及版权限制：改写后重试")
 register("film.ark.output_moderated", "生成的视频没通过内容审核：调整这一段的描述后重试")
+register("film.ark.output_copyright", "生成的视频可能涉及版权限制：调整这一段的描述后重试")
 # MiniMax
 register("film.minimax.insufficient_balance", "MiniMax 账户余额不足（1008），充值后重新出这一段")
 register("film.minimax.invalid_key", "MiniMax 密钥无效（1004），检查 MINIMAX_API_KEY")

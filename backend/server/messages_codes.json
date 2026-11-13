@@ -75,6 +75,10 @@
     "params": [],
     "zh": "方舟返回的不是 JSON"
   },
+  "film.ark.output_copyright": {
+    "params": [],
+    "zh": "生成的视频可能涉及版权限制：调整这一段的描述后重试"
+  },
   "film.ark.output_moderated": {
     "params": [],
     "zh": "生成的视频没通过内容审核：调整这一段的描述后重试"
@@ -85,7 +89,7 @@
   },
   "film.ark.quota": {
     "params": [],
-    "zh": "视频服务（方舟）额度已用尽，请联系管理员"
+    "zh": "额度不足或排队已满，持续失败请联系管理员"
   },
   "film.ark.task_expired": {
     "params": [],

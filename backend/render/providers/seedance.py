@@ -62,11 +62,14 @@ def _with_fallback(e: ProviderError, full: str) -> ProviderError:
 
 
 # 方舟错误码 → 我们的代码（官方错误码页 https://www.volcengine.com/docs/82379/1299023）。
-# 先全名、再族名（第一个「.」之前）；Input*/Output* + SensitiveContentDetected 按前缀归类。
+# 匹配顺序：全名 → 「.PolicyViolation」后缀 → 族名（第一个「.」之前）→ Input*/Output* 前缀 +
+# SensitiveContentDetected / RiskDetection 后缀。
 # 限流族（RateLimitExceeded、ServerOverloaded、RequestBurstTooFast）不登记：落到可重试的瞬时分支。
 _ARK_EXACT = {
-    "SensitiveContentDetected.PolicyViolation": "film.ark.copyright",
-    "InputTextSensitiveContentDetected.PolicyViolation": "film.ark.copyright",
+    "OperationDenied.ServiceNotOpen": "film.ark.model_unavailable",
+    "OperationDenied.ServiceOverdue": "film.ark.overdue",
+    "OperationDenied.PermissionDenied": "film.ark.access_denied",
+    "InvalidEndpoint.ClosedEndpoint": "film.ark.model_unavailable",
 }
 _ARK_FAMILY = {
     "AuthenticationError": "film.ark.auth", "InvalidSubscription": "film.ark.auth",
@@ -74,58 +77,60 @@ _ARK_FAMILY = {
     "AccessDenied": "film.ark.access_denied", "InvalidAccountStatus": "film.ark.access_denied",
     "InvalidEndpointOrModel": "film.ark.model_unavailable", "ModelNotOpen": "film.ark.model_unavailable",
     "SetLimitExceeded": "film.ark.limit_paused",
-    "QuotaExceeded": "film.ark.quota",
+    "QuotaExceeded": "film.ark.quota",                # 官方是 429：额度不足或排队已满，可重试
     "SensitiveContentDetected": "film.ark.input_moderated",
-    "InputTextRiskDetection": "film.ark.input_moderated",
 }
 _ARK_HTTP = {401: "film.ark.auth", 403: "film.ark.access_denied"}
+_ARK_TRANSIENT = {"film.ark.quota"}          # 映射后仍可重试的代码（不论 HTTP 状态）
 
 
 def _ark_code(code) -> Optional[str]:
     if not isinstance(code, str) or not code:
         return None
+    fam = code.split(".", 1)[0]
+    out = fam.startswith("Output")
     if code in _ARK_EXACT:
         return _ARK_EXACT[code]
-    fam = code.split(".", 1)[0]
+    if code.endswith(".PolicyViolation"):
+        return "film.ark.output_copyright" if out else "film.ark.copyright"
     if fam in _ARK_FAMILY:
         return _ARK_FAMILY[fam]
-    if fam.endswith("SensitiveContentDetected"):
+    if fam.endswith(("SensitiveContentDetected", "RiskDetection")):
         if fam.startswith("Input"):
             return "film.ark.input_moderated"
-        if fam.startswith("Output"):
+        if out:
             return "film.ark.output_moderated"
     return None
 
 
 def _err_body(r: httpx.Response) -> Optional[dict]:
-    """响应体里的 error 对象；不是 JSON 或没有为 None。"""
+    """响应体里的 error 对象。不是 JSON 为 None；是 JSON 但没有 error 对象为 {}。"""
     try:
         j = r.json()
     except ValueError:
         return None
     err = j.get("error") if isinstance(j, dict) else None
-    return err if isinstance(err, dict) else None
+    return err if isinstance(err, dict) else {}
 
 
-def _log_ark(status, err: dict, key: str) -> None:
-    """方舟原文脱敏后只进日志，不进界面。"""
+def _mapped(our: str, status, err: dict, key: str, *, request_id=None, task_id=None, model=None):
+    """命中映射：原文脱敏进日志（带定位信息），返回带代码的异常；额度类可重试。"""
     parts = [str(x) for x in (err.get("code"), err.get("message")) if x]
-    log.warning("方舟错误 HTTP %s：%s", status, scrub(": ".join(parts), key))  # i18n: internal
+    log.warning("方舟错误 HTTP %s request_id=%s task=%s model=%s：%s", status, request_id or "-",  # i18n: internal
+                task_id or "-", model or "-", scrub(": ".join(parts), key))
+    cls = TransientError if our in _ARK_TRANSIENT else ProviderError
+    return cls.of(our)
 
 
-def _mapped(our: str, status, err: dict, key: str) -> ProviderError:
-    _log_ark(status, err, key)
-    return ProviderError.of(our)
-
-
-def _reject(r: httpx.Response, key: str) -> ProviderError:
+def _reject(r: httpx.Response, key: str, *, model=None, task_id=None) -> ProviderError:
     """4xx：已知方舟错误码给友好文案（原文进日志）；其余把厂商原因脱敏（密钥、Bearer 凭据）后作原文参数。"""
     err = _err_body(r)
     our = _ark_code((err or {}).get("code"))
     if our is None and not (err and (err.get("code") or err.get("message"))):
         our = _ARK_HTTP.get(r.status_code)          # 没有任何错误信息时才按 HTTP 状态回落
     if our:
-        return _mapped(our, r.status_code, err or {}, key)
+        return _mapped(our, r.status_code, err or {}, key, request_id=r.headers.get("X-Request-Id"),
+                       task_id=task_id, model=model)
     if err is None:
         body = scrub(r.text, key)[:300]
         return _with_fallback(ProviderError.of("film.provider.http_rejected", status=r.status_code,
@@ -181,7 +186,7 @@ class Seedance:
     def rewrite_prompt(self, text: str) -> str:
         return rewrite_refs(text)
 
-    def _call(self, method: str, url: str, *, submit: bool = False, **kw) -> dict:
+    def _call(self, method: str, url: str, *, submit: bool = False, model=None, task_id=None, meta=None, **kw) -> dict:
         """submit=True（提交任务）时，请求可能已被受理的情况抛 AmbiguousSubmit 而不是瞬时错误：
         只有请求没发出去（连不上、连接超时、连接池超时）或 429 才允许重试。"""
         try:
@@ -195,15 +200,18 @@ class Seedance:
         if r.status_code == 429:
             err = _err_body(r)
             our = _ark_code((err or {}).get("code"))
-            if our:                                  # 如 SetLimitExceeded：重试没用，直接告诉用户
-                raise _mapped(our, 429, err, self._key)
+            if our:                                  # SetLimitExceeded 重试没用；QuotaExceeded 仍可重试
+                raise _mapped(our, 429, err, self._key, request_id=r.headers.get("X-Request-Id"),
+                              task_id=task_id, model=model)
             raise TransientError.of("film.ark.throttled")
         if r.status_code >= 500:
             if submit:
                 raise AmbiguousSubmit.of("film.ark.http_ambiguous", status=r.status_code)
             raise TransientError.of("film.ark.unavailable", status=r.status_code)
+        if meta is not None:
+            meta["request_id"] = r.headers.get("X-Request-Id")
         if r.status_code >= 400:
-            raise _reject(r, self._key)
+            raise _reject(r, self._key, model=model, task_id=task_id)
         try:
             return r.json()
         except ValueError:
@@ -223,14 +231,16 @@ class Seedance:
         body = {"model": m["id"], "content": content, "resolution": req.resolution,
                 "ratio": req.aspect, "duration": request_seconds(req.duration, self.caps(req.model)),
                 "generate_audio": req.audio, "watermark": False, "return_last_frame": True}
-        j = self._call("POST", "/contents/generations/tasks", submit=True, json=body)
+        j = self._call("POST", "/contents/generations/tasks", submit=True,
+                       model=m["id"], json=body)
         tid = j.get("id") if isinstance(j, dict) else None
         if not tid:
             raise AmbiguousSubmit.of("film.ark.no_task_id")
         return tid
 
     def poll(self, task_id: str) -> TaskState:
-        j = self._call("GET", f"/contents/generations/tasks/{task_id}")
+        meta = {}
+        j = self._call("GET", f"/contents/generations/tasks/{task_id}", task_id=task_id, meta=meta)
         raw = j.get("status")
         status = _STATUS.get(raw, "running")
         content = j.get("content") or {}
@@ -239,7 +249,7 @@ class Seedance:
             err = j.get("error") or {}
             our = _ark_code(err.get("code"))
             if our:
-                _log_ark("task", err, self._key)
+                _mapped(our, "task", err, self._key, request_id=meta.get("request_id"), task_id=task_id)
             parts = [x for x in (err.get("code"), err.get("message")) if x]
             text = scrub(": ".join(parts), self._key)
             zh = scrub("：".join(parts), self._key)              # 中文兜底保持原样

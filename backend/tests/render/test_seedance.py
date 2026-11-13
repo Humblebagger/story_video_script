@@ -200,14 +200,15 @@ def main() -> int:
         "film.ark.access_denied": "视频服务（方舟）拒绝访问，请联系管理员",
         "film.ark.model_unavailable": "所选的视频档位暂时不可用（模型未开通），请换一个档位或联系管理员",
         "film.ark.limit_paused": "视频服务（方舟）已达到用量上限并暂停，请联系管理员",
-        "film.ark.quota": "视频服务（方舟）额度已用尽，请联系管理员",
+        "film.ark.quota": "额度不足或排队已满，持续失败请联系管理员",
         "film.ark.input_moderated": "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试",
         "film.ark.copyright": "这一段的描述可能涉及版权限制：改写后重试",
         "film.ark.output_moderated": "生成的视频没通过内容审核：调整这一段的描述后重试",
+        "film.ark.output_copyright": "生成的视频可能涉及版权限制：调整这一段的描述后重试",
     }
 
     def body_of(code):
-        return {"error": {"code": code, "message": f"vendor text with {KEY} sk-test"}}
+        return {"error": {"code": code, "message": f"vendor text with {KEY} Bearer OTHER_TOKEN"}}
 
     cases = [
         (401, "AuthenticationError", "film.ark.auth"),
@@ -218,7 +219,14 @@ def main() -> int:
         (404, "InvalidEndpointOrModel.NotFound", "film.ark.model_unavailable"),
         (404, "InvalidEndpointOrModel.ModelIDAccessDisabled", "film.ark.model_unavailable"),
         (404, "ModelNotOpen", "film.ark.model_unavailable"),
-        (403, "QuotaExceeded", "film.ark.quota"),
+        (403, "OperationDenied.ServiceNotOpen", "film.ark.model_unavailable"),
+        (403, "OperationDenied.ServiceOverdue", "film.ark.overdue"),
+        (403, "OperationDenied.PermissionDenied", "film.ark.access_denied"),
+        (404, "InvalidEndpoint.ClosedEndpoint", "film.ark.model_unavailable"),
+        (400, "InputImageRiskDetection", "film.ark.input_moderated"),
+        (400, "InputVideoSensitiveContentDetected", "film.ark.input_moderated"),
+        (400, "InputTextRiskDetection.Foo", "film.ark.input_moderated"),
+        (400, "InputImageSensitiveContentDetected.PolicyViolation", "film.ark.copyright"),
         (400, "SensitiveContentDetected.Violence", "film.ark.input_moderated"),
         (400, "InputTextSensitiveContentDetected", "film.ark.input_moderated"),
         (400, "InputImageSensitiveContentDetected", "film.ark.input_moderated"),
@@ -237,6 +245,14 @@ def main() -> int:
         assert type(e) is base.ProviderError and e.code == "film.ark.limit_paused" and str(e) == ZH[e.code]
         assert not isinstance(e, (base.TransientError, base.AmbiguousSubmit))
 
+    # QuotaExceeded 是 429：免费额度用尽或排队已满，可重试，用自己的代码
+    e = must_raise(base.TransientError, status(429, body_of("QuotaExceeded")).submit, req)
+    assert e.code == "film.ark.quota" and str(e) == ZH[e.code] and KEY not in flat([str(e), e.params])
+    e = must_raise(base.TransientError, status(429, body_of("QuotaExceeded")).poll, "x")
+    assert e.code == "film.ark.quota"
+    e = must_raise(base.TransientError, status(403, body_of("QuotaExceeded")).submit, req)     # 非 429 同样可重试
+    assert e.code == "film.ark.quota"
+
     # 真正的限流仍可重试
     for vcode in ("RateLimitExceeded.EndpointRPMExceeded", "ServerOverloaded", "RequestBurstTooFast"):
         e = must_raise(base.TransientError, status(429, body_of(vcode)).submit, req)
@@ -246,7 +262,10 @@ def main() -> int:
 
     # 轮询里的失败
     for vcode, ours in (("OutputVideoSensitiveContentDetected", "film.ark.output_moderated"),
-                        ("OutputAudioSensitiveContentDetected", "film.ark.output_moderated")):
+                        ("OutputAudioSensitiveContentDetected", "film.ark.output_moderated"),
+                        ("OutputImageSensitiveContentDetected", "film.ark.output_moderated"),
+                        ("OutputImageRiskDetection", "film.ark.output_moderated"),
+                        ("OutputVideoSensitiveContentDetected.PolicyViolation", "film.ark.output_copyright")):
         st = task({"id": "x", "status": "failed", "error": body_of(vcode)["error"]}).poll("x")
         assert st.error_msg["code"] == ours and st.error == ZH[ours]
         assert KEY not in flat([st.error, st.error_msg])
@@ -255,14 +274,18 @@ def main() -> int:
     e = must_raise(base.ProviderError, status(400, {"error": {"code": "InvalidParameter",
                                                               "message": "duration 不合法"}}).submit, req)
     assert e.code == "film.provider.rejected" and "duration 不合法" in e.params["detail"]["text"]
-    e = must_raise(base.ProviderError, status(400, {"error": {}}).submit, req)
-    assert e.code == "film.provider.rejected" and str(e) == "HTTP 400"
+    for payload in ({"error": {}}, {}, {"error": None}, []):
+        e = must_raise(base.ProviderError, ark(lambda r, p=payload: httpx.Response(400, json=p)).submit, req)
+        assert e.code == "film.provider.rejected" and str(e) == "HTTP 400", (payload, e.code, str(e))
+        assert e.params["detail"]["text"] == "HTTP 400"
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(401, text="nope")).submit, req)
     assert e.code == "film.ark.auth"
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(403, text="nope")).submit, req)
     assert e.code == "film.ark.access_denied"
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(418, text="teapot")).submit, req)
     assert e.code == "film.provider.http_rejected"
+    e = must_raise(base.ProviderError, status(403, body_of("OperationDenied.InvalidState")).submit, req)
+    assert e.code == "film.provider.rejected"
     # 有 code 但没命中时不做 HTTP 回落
     e = must_raise(base.ProviderError, status(403, body_of("SomethingNew")).submit, req)
     assert e.code == "film.provider.rejected"
@@ -280,15 +303,18 @@ def main() -> int:
     lg = logging.getLogger("render.providers.seedance")
     lg.addHandler(grab)
     try:
-        must_raise(base.ProviderError, status(401, body_of("AuthenticationError")).submit, req)
+        must_raise(base.ProviderError, ark(lambda r: httpx.Response(
+            401, json=body_of("AuthenticationError"), headers={"x-request-id": "rid-123"})).submit, req)
         must_raise(base.ProviderError, status(429, body_of("SetLimitExceeded")).submit, req)
-        task({"id": "x", "status": "failed", "error": body_of("OutputVideoSensitiveContentDetected")["error"]}).poll("x")
+        task({"id": "x", "status": "failed", "error": body_of("OutputVideoSensitiveContentDetected")["error"]}).poll("task-77")
     finally:
         lg.removeHandler(grab)
     assert any("AuthenticationError" in x and "401" in x for x in grab.lines), grab.lines
     assert any("SetLimitExceeded" in x and "429" in x for x in grab.lines), grab.lines
     assert any("OutputVideoSensitiveContentDetected" in x for x in grab.lines), grab.lines
-    assert not any(KEY in x for x in grab.lines), grab.lines
+    assert any("AuthenticationError" in x and "rid-123" in x and MODELS[req.model]["id"] in x for x in grab.lines), grab.lines
+    assert any("OutputVideoSensitiveContentDetected" in x and "task-77" in x for x in grab.lines), grab.lines
+    assert not any(KEY in x or "OTHER_TOKEN" in x for x in grab.lines), grab.lines
     print("9. 方舟错误码映射 ✓")
 
     print("\nALL PASS")
