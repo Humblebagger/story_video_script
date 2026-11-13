@@ -211,7 +211,7 @@ def llm_error(e: BaseException) -> Optional["LLMError"]:
         e = e.original
     import anthropic
     import httpx2
-    from langchain_core.exceptions import (ContextOverflowError, ModelAuthenticationError,
+    from langchain_core.exceptions import (ContextOverflowError, ModelAPIError, ModelAuthenticationError,
                                            ModelConnectionError, ModelNotFoundError,
                                            ModelPermissionDeniedError, ModelRateLimitError,
                                            ModelTimeoutError)
@@ -240,14 +240,15 @@ def llm_error(e: BaseException) -> Optional["LLMError"]:
         # ModelInvalidRequestError（400 的余额、审核、内容太长要看原文）与 ModelAPIError（529 与 5xx 要分开）
         # 都需要细分，交给状态与原文判定
         code = _status_code(status, etype, raw)
+    elif isinstance(e, ModelAPIError):
+        code = "llm.unavailable"     # 厂商无关的 5xx 类错误（没有 SDK 状态可细分）
     else:
         return None
-    clean = scrub_secrets(raw)[:500]
-    log.warning("模型服务错误 code=%s status=%s type=%s request_id=%s：%s",  # i18n: internal
-                code, status or "-", etype or "-", rid or "-", clean)
+    # 状态、类型、请求 id、原文先拼成完整文本再整体脱敏、再截断：类型与请求 id 也来自对端，不能漏过脱敏
+    detail = scrub_secrets(f"status={status or '-'} type={etype or '-'} request_id={rid or '-'}：{raw}")
+    log.warning("模型服务错误 code=%s %s", code, detail[:600])  # i18n: internal
     return LLMError.coded(code, needs_ref=(code == "llm.bad_request"),
-                          hint=f"{type(e).__name__} status={status or '-'} type={etype or '-'} "
-                               f"request_id={rid or '-'}：{clean[:300]}")
+                          hint=f"{type(e).__name__} {detail[:400]}")
 
 
 class ChatInvoker:
@@ -340,7 +341,8 @@ class ChatInvoker:
             return self._runnable(model, tools, max_tokens).invoke(messages,
                                                                    config=config)
         except _transient_errors() as e:
-            inner = llm_error(e)        # _StreamInterrupted 在 llm_error 里取 original 再映射
+            inner = llm_error(e) or LLMError.coded("llm.unavailable", hint=type(e).__name__)
+            # _StreamInterrupted 在 llm_error 里取 original 再映射
             raise LLMError.coded("llm.gave_up", hint=inner.hint, retries=self._settings.transport_retries,
                                  cause=compact(inner.as_msg())) from e
 

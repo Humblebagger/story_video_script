@@ -464,6 +464,37 @@ def main() -> int:
     assert "deepseek" not in rep and "401" not in rep, rep
     print("chat: 评审失败的报告不带原文 ✓")
 
+    # 22. 修复第 1 轮：类型与请求 id 里的密钥也要脱敏；厂商无关的 ModelAPIError 有兜底映射
+    from render.providers.base import SECRET_ENVS
+    key22 = "sk-test-type-leak-9876543210"
+    os.environ[SECRET_ENVS[0]] = key22
+    try:
+        body22 = {"type": "error", "error": {"type": f"t_{key22}", "message": "boom"}}
+        e22 = anthropic.APIStatusError(
+            "x", body=body22,
+            response=httpx2.Response(500, request=req, headers={"request-id": f"rid_{key22}"}))
+        grab22 = _Grab()
+        logging.getLogger("pipeline.chat").addHandler(grab22)
+        try:
+            m22 = llm_error(e22)
+        finally:
+            logging.getLogger("pipeline.chat").removeHandler(grab22)
+        assert m22 is not None and key22 not in m22.hint and key22 not in "\n".join(grab22.lines), "类型与请求 id 要脱敏"
+    finally:
+        os.environ.pop(SECRET_ENVS[0], None)
+    from langchain_core.exceptions import ModelAPIError
+
+    def plain_api(messages):
+        raise ModelAPIError("vendor-agnostic")
+
+    try:
+        ChatInvoker(Settings(api_key="k", transport_retries=0),
+                    chat=FakeChat(responses=[plain_api])).invoke([HumanMessage("x")])
+        raise AssertionError("应抛 LLMError")
+    except LLMError as e:
+        assert e.code == "llm.gave_up" and e.params["cause"]["code"] == "llm.unavailable", e.code
+    print("chat: 类型与请求 id 脱敏 / 通用 ModelAPIError 兜底 ✓")
+
     print("\nALL PASS")
     return 0
 
