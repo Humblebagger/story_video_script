@@ -430,20 +430,86 @@ def main() -> int:
     print("风格图写回尝试（含建会话后换图 / 删图）✓")
 
     # 16. 提交时算出实际张数写进尝试；计费时 _stub 把它带给 cost
-    costs = []
+    # 用真正会发图的段：首帧与参考位并用（frame_with_refs=True）、有风格图占一个参考位，接力段首帧 + 风格图 = 2 张
+    import dataclasses
+    real_caps = fake._caps
+    fake._caps = dataclasses.replace(real_caps, frame_with_refs=True)
+    current["style"] = {"source": "data:image/png;base64,AAAA", "hash": "h1"}
+    rootI = data / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "img"
+    sI = sess.build(rootI, doc, owner=dict(OWNER, vid="img"), patch={"budget_cny": 100000}, keyframes={},
+                    style=current["style"])
+    by_id = {c["id"]: c for c in sI["clips"]}
+    pairs = [(by_id[c["first_frame"][6:]], c) for c in sI["clips"]
+             if (c["first_frame"] or "").startswith("relay:") and c["style"] == "used"]
+    assert len(pairs) >= 3, pairs
+    costs, by_tid = [], {}
     real_cost = fake.cost
-    fake.cost = lambda st, req: (costs.append(req.images), real_cost(st, req))[1]
-    r16, i16 = fresh("images")
-    sess.queue_run(r16, [i16[0]])
+    fake.cost = lambda st, req: (costs.append((st.status, req.images)), by_tid.__setitem__(st.task_id, (st.status, req.images)), real_cost(st, req))[2]
+    (prev1, nxt1), (_, nxt2), (_, nxt3) = pairs[0], pairs[2], pairs[4] if len(pairs) > 4 else pairs[3]
+    nxt3_prev = [p for p, n in pairs if n["id"] == nxt3["id"]][0]
+
+    # 16a. 前一段出完、尾帧在：后一段首帧 + 风格图都发出，张数 = 参考位 + 1 且不为 0
+    sess.queue_run(rootI, [prev1["id"], nxt1["id"]])
     rn = quick()
-    rn.watch(r16)
-    for _ in range(5):
-        rn.tick()
-    a = clip(r16, i16[0])["attempts"][-1]
+    rn.watch(rootI)
+    drain_runner(rn)
+    a = clip(rootI, nxt1["id"])["attempts"][-1]
     sent = fake.submitted[-1]
-    assert a["images"] == len(sent.refs) + (1 if sent.first_frame else 0)
-    assert costs and costs[-1] == a["images"]
+    assert sent.first_frame and len(sent.refs) == 1, (sent.first_frame is None, len(sent.refs))
+    assert a["images"] == len(sent.refs) + 1 == 2
+    assert ("succeeded", 2) in costs, costs
+    assert a["images"] == compose.image_count(by_id[nxt1["id"]]), "尾帧在时与预估一致"
+
+    # 16b. 接力段的上一段没出过（没有尾帧）：不发首帧，只算风格图那一张，比预估少一张
+    before = len(fake.submitted)
+    sess.queue_run(rootI, [nxt2["id"]])
+    rn = quick()
+    rn.watch(rootI)
+    drain_runner(rn)
+    assert len(fake.submitted) == before + 1
+    sent = fake.submitted[-1]
+    assert sent.first_frame is None and len(sent.refs) == 1
+    a = clip(rootI, nxt2["id"])["attempts"][-1]
+    assert a["images"] == 1 < compose.image_count(by_id[nxt2["id"]]) == 2, a
+    assert ("succeeded", 1) in costs, costs
+
+    # 16c. 失败结算 + 重出：每次尝试各记各的张数，计费桩取最后一次尝试的；重启后张数仍在、仍带给 cost
+    fake.fail_with = "OutputVideoSensitiveContentDetected: 审核未通过"
+    sess.queue_run(rootI, [nxt3["id"]])
+    rn = quick()
+    rn.watch(rootI)
+    drain_runner(rn)
+    c3 = clip(rootI, nxt3["id"])
+    assert c3["state"] == "failed" and c3["attempts"][-1]["images"] == 1   # 上一段没出过，没有首帧
+    assert by_tid[c3["attempts"][-1]["task_id"]] == ("failed", 1), by_tid
+    fake.fail_with = None
+    # 先让上一段出完，再重出：新一次尝试带首帧 + 风格图 = 2 张；提交后“重启”，新 Runner 接着查并下载
+    sess.queue_run(rootI, [nxt3_prev["id"]])
+    rn = quick()
+    rn.watch(rootI)
+    drain_runner(rn)
+    sess.queue_run(rootI, [nxt3["id"]])
+    rn = quick()
+    rn.watch(rootI)
+    rn.tick()                                  # 只提交
+    c3 = clip(rootI, nxt3["id"])
+    assert c3["state"] == "running" and len(c3["attempts"]) == 2
+    assert [x.get("images") for x in c3["attempts"]] == [1, 2]
+    again = quick()
+    assert again.recover(data) >= 1
+    drain_runner(again)
+    c3 = clip(rootI, nxt3["id"])
+    assert c3["state"] == "done" and c3["attempts"][-1]["images"] == 2
+    tid3 = c3["attempts"][-1]["task_id"]
+    assert by_tid[tid3] == ("succeeded", 2), by_tid       # recover 还会接手别的残留会话，只看这一段的任务
+    # 旧会话的尝试没有 images：桩里是 None
+    raw = sess.load(rootI)
+    old = next(c for c in raw["clips"] if c["id"] == nxt3["id"])
+    old["attempts"][-1].pop("images")
+    assert Runner._stub(raw, old).images is None
     fake.cost = real_cost
+    fake._caps = real_caps
+    current["style"] = None
     print("16. 尝试记张数、计费桩带张数 ✓")
 
     print("\nALL PASS")
