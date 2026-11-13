@@ -462,13 +462,13 @@ console.log('10c. 出错后轮询不断 ✓')
 
 // 10f. 缺省回落提示：options.default_note 为代码时出片设置区显示对应文案，为 null 时不显示
 {
-  const NOTE = '没有配置 MINIMAX_API_KEY，新会话先用 Seedance'
+  const NOTE = 'MiniMax 还没有开通，新会话先用 Seedance'
   film = { ...film!, options: { ...film!.options, default_note: 'minimax_key_missing' } }
   await refresh()
   must((container.textContent ?? '').includes(NOTE), '有 default_note 时显示提示')
   film = { ...film!, options: { ...film!.options, default_note: null } }
   await refresh()
-  must(!(container.textContent ?? '').includes('MINIMAX_API_KEY'), '为 null 时不显示')
+  must(!(container.textContent ?? '').includes('MiniMax 还没有开通'), '为 null 时不显示')
   console.log('10f. 缺省回落提示 ✓')
 }
 
