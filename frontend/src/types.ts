@@ -300,7 +300,10 @@ export interface Job {
   log: (JobEvent | string)[]
   result: Storyboard | null
   quality_report: string | null
+  /** 质量报告的消息对象（逐条）；旧任务没有，退回 quality_report */
+  quality_msg?: ServerMsg[] | null
   error: string | null
+  error_msg?: ServerMsg | null
   /** 服务端对本次产物的验证报告（失败时带上不通过的逐条原因） */
   verification?: VerificationReport | null
   created_at?: string
@@ -340,11 +343,15 @@ export interface JobSummary {
 
 export interface Health {
   status: string
-  model: string
-  api_key_configured: boolean
-  users?: number
-  /** 首次注册标记；兼容：旧后端只给 users */
+  /** 首次注册标记（免登录探针只给这一项） */
   first_run?: boolean
+}
+
+/** 管理员的服务信息（GET /admin/service）：普通用户不可见 */
+export interface AdminService {
+  model: string
+  review_model: string | null
+  api_key_configured: boolean
 }
 
 /* ---------- 小说级会话（backend/server/novels.py） ---------- */
@@ -657,10 +664,10 @@ export interface UsageReport {
 }
 
 export interface AdminJobs {
-  running: { id: string; username: string | null; status: string; work_title: string | null;
+  running: { id: string; user_id: string; username: string | null; status: string; work_title: string | null;
              chapter: string | null; chars: number | null; created_at: string | null;
              elapsed_sec: number | null }[]
-  failed: { id: string; username: string | null; novel_title: string | null;
+  failed: { id: string; user_id: string; username: string | null; novel_title: string | null;
             chapter_title: string | null; created_at: string; chars: number;
             attempts: number; error: string; error_msg?: ServerMsg | null }[]
 }
@@ -942,8 +949,7 @@ export interface ChapterSum {
 
 export interface NovelSummaryData {
   cost: CostSum
-  /** 兼容：后端子计划 4 之前是 string[] */
-  unpriced: boolean | string[]
+  unpriced: boolean
   chapters: ChapterSum[]
 }
 

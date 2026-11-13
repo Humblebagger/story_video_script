@@ -43,9 +43,6 @@ win.localStorage.clear()
 
 /* ---------- 桩后端：小说 → 章节 → 版本 + 可手动结束的转换任务 ---------- */
 
-/** true 时 /healthz 只给旧字段 users（兼容旧后端），false 给 first_run */
-let legacyHealth = false
-
 interface StubJob {
   id: string; status: string; log: string[]; result: unknown
   quality_report: string | null; error: string | null; verification?: unknown
@@ -215,10 +212,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     json: async () => ({ detail }) })
   const body = () => JSON.parse(init!.body!)
 
-  if (path === '/healthz') {
-    if (legacyHealth) return json({ status: 'ok', users: 0 })   // 旧后端：只有 users
-    return json({ status: 'ok', model: 'stub', api_key_configured: true, first_run: users.size === 0 })
-  }
+  if (path === '/healthz') return json({ status: 'ok', first_run: users.size === 0 })
 
   // 认证：注册/登录发 token，其余接口一律要带 token
   if (path === '/auth/register' && method === 'POST') {
@@ -1318,19 +1312,4 @@ console.log('18. 分批先看 → 跑完自动换完整产物 / 失败后已通�
 await settle(300)
 await act(async () => { root.unmount() })
 
-// 19. 旧后端的 /healthz 只有 {status, users: 0}：全新挂载、未登录，仍应自动弹出首次注册
-{
-  legacyHealth = true
-  ;(await import('../src/auth')).clearSession()
-  const router2 = createMemoryRouter(routes, { initialEntries: ['/'] })
-  const box = doc.createElement('div')
-  doc.body.appendChild(box)
-  const root2 = createRoot(box)
-  await act(async () => { root2.render(<AppRoot router={router2} />) })
-  await settle(400)
-  must(box.innerHTML.includes('第一个注册的账号'), '旧后端 users:0 仍进首次注册引导')
-  await act(async () => { root2.unmount() })
-  legacyHealth = false
-  console.log('19. 旧 healthz 形状进首次注册 ✓')
-}
 console.log('\nALL PASS')

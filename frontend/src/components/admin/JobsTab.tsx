@@ -1,10 +1,12 @@
 import { Inbox, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
-import { itemError } from '@/i18n/serverMsg'
-import { adminJobs } from '../../api'
+import { errValue, failHead, formatMsg, itemError } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
+import { adminJobDebug, adminJobs } from '../../api'
 import { int, when } from './format'
 import { ErrorBar, TableSkeleton } from './LoadState'
 import { useLoad } from './useLoad'
@@ -12,10 +14,33 @@ import { useLoad } from './useLoad'
 const clock = (s: number | null) =>
   (s == null ? '—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
 
+type DebugState = Record<string, { lines?: string[]; err?: MsgLike }>
+
 /** 任务：运行中（内存任务表）与近 7 天失败（磁盘上的版本）。 */
 export function JobsTab() {
   const { t, locale } = useI18n()
   const { data, error, reload } = useLoad(adminJobs, [])
+  /** 点开的调试日志：按任务 id 存结果或错误（错误存原始值，切语言跟着变） */
+  const [debug, setDebug] = useState<DebugState>({})
+  const toggleDebug = async (id: string, userId: string) => {
+    if (debug[id]) { setDebug(({ [id]: _, ...rest }) => rest); return }
+    try {
+      const r = await adminJobDebug(id, userId)
+      setDebug((d) => ({ ...d, [id]: { lines: r.lines } }))
+    } catch (e) {
+      setDebug((d) => ({ ...d, [id]: { err: errValue(e) } }))
+    }
+  }
+  const debugBtn = (j: { id: string; user_id: string }) => (
+    <Button size="sm" variant="outline" onClick={() => void toggleDebug(j.id, j.user_id)}>{t('admin.jobs.debug')}</Button>
+  )
+  const debugBody = (id: string) => {
+    const d = debug[id]
+    if (!d) return null
+    return d.lines
+      ? <pre>{d.lines.length ? d.lines.join('\n') : t('admin.jobs.debugEmpty')}</pre>
+      : <pre>{formatMsg(d.err, locale)}</pre>
+  }
   if (error) return <ErrorBar error={error} onRetry={reload} />
   if (!data) return <section className="adm__sec"><TableSkeleton /></section>
   const rc = (k: string) => t(`admin.jobs.runningCols.${k}` as 'admin.jobs.runningCols.user')
@@ -35,7 +60,7 @@ export function JobsTab() {
           <thead>
             <tr>
               <th>{rc('user')}</th><th>{rc('novelChapter')}</th><th>{rc('status')}</th>
-              <th>{rc('start')}</th><th className="is-num">{rc('elapsed')}</th><th className="is-num">{rc('chars')}</th>
+              <th>{rc('start')}</th><th className="is-num">{rc('elapsed')}</th><th className="is-num">{rc('chars')}</th><th />
             </tr>
           </thead>
           <tbody>
@@ -45,6 +70,7 @@ export function JobsTab() {
                 <td><Badge variant="secondary">{j.status}</Badge></td>
                 <td>{when(j.created_at)}</td><td className="is-num">{clock(j.elapsed_sec)}</td>
                 <td className="is-num">{int(j.chars)}</td>
+                <td>{debugBtn(j)}{debugBody(j.id)}</td>
               </tr>
             ))}
           </tbody>
@@ -63,6 +89,7 @@ export function JobsTab() {
           </thead>
           <tbody>
             {data.failed.map((j) => {
+              const head = formatMsg(failHead(j.error_msg ?? j.error), locale)
               const text = itemError(j, locale)
               return (
               <tr key={j.id}>
@@ -72,9 +99,10 @@ export function JobsTab() {
                 <td className="is-num">{j.attempts}</td>
                 <td>
                   <details className="adm__err-detail">
-                    <summary>{text.slice(0, 40)}{text.length > 40 ? '…' : ''}</summary>
+                    <summary>{head.slice(0, 40)}{head.length > 40 ? '…' : ''}</summary>
                     <pre>{text}</pre>
                   </details>
+                  {debugBtn(j)}{debugBody(j.id)}
                 </td>
               </tr>
               )

@@ -1329,6 +1329,7 @@ export const zh = {
     jobs: {
       running: '运行中', failed: '近 7 天失败', refresh: '刷新',
       noRunning: '没有在跑的任务', noFailed: '没有失败的任务',
+      debug: '调试日志', debugEmpty: '（没有调试日志）',
       runningCols: { user: '用户', novelChapter: '小说 / 章节', status: '状态', start: '开始', elapsed: '已运行', chars: '字数' },
       failedCols: { user: '用户', novelChapter: '小说 / 章节', start: '开始', chars: '字数', attempts: '尝试', error: '报错' },
     },
@@ -1346,7 +1347,7 @@ export const zh = {
     purpose: { convert: '转换', digest: '章后整理' },
     action: {
       disable: '停用', enable: '启用', set_cap: '设月上限', reset_password: '重置密码',
-      grant_admin: '设为管理员', revoke_admin: '取消管理员', update_pricing: '修改价格表', view_error_ref: '查看错误详情',
+      grant_admin: '设为管理员', revoke_admin: '取消管理员', update_pricing: '修改价格表', view_error_ref: '查看错误详情', view_job_debug: '查看调试日志',
     },
   },
   resolve: {

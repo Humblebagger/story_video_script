@@ -49,7 +49,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
 
   /** 验证门拦截记到 gate（按钮据此禁用），其余显示原因 */
   const fail = useCallback((e: unknown) => {
-    if (e instanceof ApiError && e.verification) setGate(e.message)
+    if (e instanceof ApiError && e.verification) setGate(errValue(e))
     else setError(errValue(e))
   }, [])
 

@@ -46,6 +46,7 @@ export interface AppShellProps {
   /** 右侧动态面板（ActivityPanel）；null 为收起 */
   activity?: ReactNode
   /** 服务状态：down 为连不上；model 为当前模型；noKey 为没配密钥 */
+  /** model 与 noKey 只有管理员才有（spec 子计划 4 E） */
   service: { down: boolean; model?: string; noKey?: boolean }
   /** 侧边栏中部（小说列表或项目导航） */
   sidebar: ReactNode
@@ -212,12 +213,14 @@ export function AppShell(p: AppShellProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel>{t('shell.signedInAs', { name: p.username })}</DropdownMenuLabel>
-                <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
-                  <span className="text-muted-foreground">{t('shell.model')}</span>
-                  <span className="min-w-0 truncate font-mono text-xs">
-                    {p.service.model ?? '—'}{p.service.noKey && <span className="ml-1 text-destructive">· {t('shell.noKey')}</span>}
-                  </span>
-                </div>
+                {p.service.model !== undefined && (
+                  <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+                    <span className="text-muted-foreground">{t('shell.model')}</span>
+                    <span className="min-w-0 truncate font-mono text-xs">
+                      {p.service.model}{p.service.noKey && <span className="ml-1 text-destructive">· {t('shell.noKey')}</span>}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
                   <span className="text-muted-foreground">{t('shell.service')}</span>
                   <StatusPill tone={p.service.down ? 'err' : 'ok'}>

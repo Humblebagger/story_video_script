@@ -12,7 +12,7 @@ import type {
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
   FilmSession, FilmSettings, FreePatch, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
-  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
+  AdminJobs, AdminOverview, AdminService, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
   AssistantEvent, AssistantMsg, AssistantTask, AssistantWhere,
 } from './types'
 
@@ -530,6 +530,13 @@ export function adminUsage(group: 'user' | 'day' | 'model', days: number) {
 export async function adminUsageCsv(days: number): Promise<string> {
   return (await send(`/admin/usage.csv?days=${days}`)).text()
 }
+
+export const adminService = () => req<AdminService>('/admin/service')
+
+/** 一次转换的调试日志（管理员；每次查看写审计） */
+export const adminJobDebug = (vid: string, userId: string) =>
+  req<{ id: string; user_id: string; lines: string[] }>(
+    `/admin/jobs/${encodeURIComponent(vid)}/debug?user_id=${encodeURIComponent(userId)}`)
 
 export function adminJobs() {
   return req<AdminJobs>('/admin/jobs')

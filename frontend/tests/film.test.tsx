@@ -38,6 +38,9 @@ const calls: string[] = []
 let nextConflict: number | null = null
 let gateFail = false
 let gateObj = false
+/** true 时验证门消息是已登记的代码 verify.gate.blocked；gateReadOk 时读取会话仍报通过（只让出片请求被拦） */
+let gateCode = false
+let gateReadOk = false
 /** 下一次花钱请求回这个错（模拟带代码的 422 / 409） */
 let nextFail: { status: number; detail: unknown } | null = null
 /** 下一次读取会话抛网络错误（只一次） */
@@ -132,14 +135,14 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
   }
   if (sub === '/session' && method === 'GET') {
     if (failNextGet) { failNextGet = false; throw new Error('网络断了') }
-    return film ? ok({ ...film, gate: gateFail ? { ok: false, message: gateObj ? { code: 'test.gate.unregistered', params: {}, message: GATE } : GATE } : { ok: true, message: null } })
+    return film ? ok({ ...film, gate: gateFail && !gateReadOk ? { ok: false, message: gateCode ? { code: 'verify.gate.blocked', params: {} } : gateObj ? { code: 'test.gate.unregistered', params: {}, message: GATE } : GATE } : { ok: true, message: null } })
       : fail(404, '还没有出片会话')
   }
   if (sub === '/session' && method === 'POST') {
     film = makeSession()
     return ok(film)
   }
-  if (gateFail) return fail(422, { message: GATE, verification: { ok: false } })
+  if (gateFail) return fail(422, gateCode ? { code: 'verify.gate.blocked', params: {}, message: GATE, verification: { ok: false } } : { message: GATE, verification: { ok: false } })
   const spend = (targets: FilmClip[], expected: number | undefined, batch: boolean) => {
     if (nextFail) {
       const f = nextFail
@@ -525,6 +528,47 @@ console.log('10c. 出错后轮询不断 ✓')
   await lang('en')
   must(has(en.srv.film.run.nothing) && !has(zh.srv.film.run.nothing), '切英文后已显示的错误条跟着变')
   console.log('10g. 后端错误按界面语言渲染 ✓')
+  await act(async () => { root.render(<Host key="v1" withVersion />) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
+}
+
+// 10h. 验证门提示随语言变化（消息对象）
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { useI18n } = await import('../src/i18n/core')
+  const { en } = await import('../src/i18n/en')
+  const { zh } = await import('../src/i18n/zh')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  function Cap() { setLoc = useI18n().setLocale; return null }
+  const lang = async (l: 'zh' | 'en') => { await act(async () => { setLoc(l) }); await settle() }
+  await act(async () => { root.render(<I18nProvider initial="zh"><Cap /><Host key="h1" withVersion /></I18nProvider>) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
+  // 验证门消息是代码：读取会话的提示与出片被拦的提示都随语言变
+  gateFail = true; gateCode = true
+  await refresh()
+  must(has(zh.srv.verify.gate.blocked), '读取会话的验证门提示（中文）')
+  await lang('en')
+  must(has(en.srv.verify.gate.blocked) && !has(zh.srv.verify.gate.blocked), '切英文后验证门提示变英文')
+  gateFail = false
+  await lang('zh')
+  await refresh()
+  must(!has(zh.srv.verify.gate.blocked), '验证门通过后提示消失')
+  gateFail = true; gateReadOk = true
+  await lang('zh')
+  await refresh()
+  await click(button('出剩余'))
+  await click(button('确认出片'))
+  must(has(zh.srv.verify.gate.blocked), '出片被拦（422 带 verification）提示中文')
+  await lang('en')
+  must(has(en.srv.verify.gate.blocked) && !has(zh.srv.verify.gate.blocked), '出片被拦的提示切英文跟着变')
+  gateFail = false; gateCode = false; gateReadOk = false
+  await lang('zh')
+  await refresh()
+  console.log('10h. 验证门提示随语言变化 ✓')
   await act(async () => { root.render(<Host key="v1" withVersion />) })
   await click(button('时间轴画布'))
   await click(tab('出片')!)

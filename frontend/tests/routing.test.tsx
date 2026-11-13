@@ -113,6 +113,7 @@ let gate: Promise<void> | null = null
 const vgate: Record<string, Promise<void>> = {}
 let meGate: Promise<void> | null = null
 let jobGate: Promise<void> | null = null
+let adminSvcCalls = 0
 const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
@@ -121,7 +122,12 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   const json = (data: unknown) => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(data)) })
   const err = (status: number, detail: unknown) => ({ ok: false, status, statusText: '',
     text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) })
-  if (path === '/healthz') return json({ status: 'ok', model: 'stub', api_key_configured: true, users: 2 })
+  if (path === '/healthz') return json({ status: 'ok', first_run: false })
+  if (path === '/admin/service' && method === 'GET') {
+    adminSvcCalls += 1
+    if (!/tok-root/.test(init?.headers?.Authorization ?? '')) return err(403, '需要管理员')
+    return json({ model: 'stub-model', review_model: null, api_key_configured: false })
+  }
   if (path === '/auth/login' && method === 'POST') {
     const b = JSON.parse(init!.body!)
     return users[b.username] ? json({ token: `tok-${b.username}`, user: userOf(b.username) }) : err(401, '用户名或密码不正确')
@@ -715,6 +721,34 @@ console.log('I5b. 已打开章节再读取返回结构化 404 → 提示条按�
   setCurrentLocale('zh')
 }
 console.log('I6. 提交转换失败的提示按语言渲染并随切换更新 ✓')
+
+// 账号菜单的模型信息只给管理员（数据来自 /admin/service）；普通用户没有这一行、也不请求
+{
+  const openMenu = async (a: Awaited<ReturnType<typeof boot>>) => {
+    await act(async () => {
+      a.q('[data-testid="account-menu"]')!.dispatchEvent(
+        new win.PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }) as unknown as Event)
+    })
+    await settle()
+  }
+  adminSvcCalls = 0
+  const u = await boot('/', 'alice')
+  await openMenu(u)
+  must(!doc.body.textContent!.includes('当前模型') && !doc.body.textContent!.includes('stub-model'), '普通用户的账号菜单没有模型')
+  must(adminSvcCalls === 0, '普通用户不请求 /admin/service')
+  await u.done()
+  const ad = await boot('/', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+  await settle(150)
+  await openMenu(ad)
+  must(doc.body.textContent!.includes('stub-model') && doc.body.textContent!.includes('未配置密钥'), '管理员能看到模型与未配置密钥')
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(doc.body.textContent!.includes('stub-model') && doc.body.textContent!.includes('API key not set'), '切英文后仍是管理员视图且文字变英文')
+  await act(async () => { setLoc('zh') })
+  await ad.done()
+  setCurrentLocale('zh')
+}
+console.log('T9. 账号菜单的模型只给管理员 ✓')
 
 console.log('\nALL PASS')
 process.exit(0)

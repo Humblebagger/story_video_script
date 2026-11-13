@@ -1336,6 +1336,7 @@ export const en: Messages = {
       running: 'Running', failed: 'Failed in the last 7 days', refresh: 'Refresh',
       noRunning: 'No jobs running', noFailed: 'No failed jobs',
       runningCols: { user: 'User', novelChapter: 'Novel / chapter', status: 'Status', start: 'Started', elapsed: 'Elapsed', chars: 'Chars' },
+      debug: 'Debug log', debugEmpty: '(no debug log)',
       failedCols: { user: 'User', novelChapter: 'Novel / chapter', start: 'Started', chars: 'Chars', attempts: 'Attempts', error: 'Error' },
     },
     audit: {
@@ -1352,7 +1353,7 @@ export const en: Messages = {
     purpose: { convert: 'Generate', digest: 'Post-chapter digest' },
     action: {
       disable: 'Disable', enable: 'Enable', set_cap: 'Set monthly cap', reset_password: 'Reset password',
-      grant_admin: 'Make admin', revoke_admin: 'Remove admin', update_pricing: 'Edit price table', view_error_ref: 'View error details',
+      grant_admin: 'Make admin', revoke_admin: 'Remove admin', update_pricing: 'Edit price table', view_error_ref: 'View error details', view_job_debug: 'Viewed debug log',
     },
   },
   resolve: {

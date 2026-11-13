@@ -1,7 +1,7 @@
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
+  adminService, adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
   getChapter, getJobPartial, getNovel, getVersion, health, listJobs, listNovels, me,
   rerunDigest, saveVersion, updateChapter,
 } from './api'
@@ -18,7 +18,7 @@ import { AuthDialog } from './components/auth/AuthDialog'
 import type { AuthMode } from './components/auth/AuthDialog'
 import { Landing } from './components/landing/Landing'
 import { useI18n } from './i18n/core'
-import { errText, errValue, formatMsg } from './i18n/serverMsg'
+import { errText, errValue, failHead, formatMsg } from './i18n/serverMsg'
 import type { MsgLike } from './i18n/serverMsg'
 import type { MsgKey } from './i18n/core'
 import { BRAND } from './brand'
@@ -51,7 +51,7 @@ import { notice } from './lib/notice'
 import { UnsavedBar } from './components/workflow/UnsavedBar'
 import { notify, primeNotifications } from './notify'
 import type {
-  Chapter, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
+  AdminService, Chapter, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
   VerificationReport,
 } from './types'
 import { useChapterFlow } from './useChapterFlow'
@@ -101,6 +101,8 @@ export default function App() {
     { open: false, mode: 'login', expired: false })
   const [svc, setSvc] = useState<Health | null>(null)
   const [svcDown, setSvcDown] = useState(false)
+  /** 管理员才有的服务信息（模型、密钥状态）；普通用户永远是 null */
+  const [svcInfo, setSvcInfo] = useState<AdminService | null>(null)
 
   const [novels, setNovels] = useState<NovelSummary[]>([])
   const [novelsLoading, setNovelsLoading] = useState(true)
@@ -342,7 +344,7 @@ export default function App() {
   }), [])
 
   // 全新部署（服务端还没有任何账号）：首页直接打开注册
-  const firstRun = !!svc && (svc.first_run ?? (svc.users ?? 0) === 0)
+  const firstRun = !!svc && !!svc.first_run
   useEffect(() => {
     if (!user && firstRun) setAuth((a) => (a.open ? a : { open: true, mode: 'register', expired: false }))
   }, [user, firstRun])
@@ -439,6 +441,12 @@ export default function App() {
     setAuth((a) => (a.open ? a : { open: true, mode: firstRun ? 'register' : 'login', expired: false }))
   }, [user, entering, loc.kind, location.pathname, firstRun])
 
+  // 账号菜单的模型信息只有管理员取得到
+  useEffect(() => {
+    if (user?.role === 'admin') adminService().then(setSvcInfo).catch(() => setSvcInfo(null))
+    else setSvcInfo(null)
+  }, [user?.id, user?.role])
+
   // 随登录态重取：否则注册后再退出，登录页仍显示「服务端还没有任何账号」
   useEffect(() => {
     health().then((h) => { setSvc(h); setSvcDown(false) }).catch(() => setSvcDown(true))
@@ -507,7 +515,7 @@ export default function App() {
       if (!v.result) {
         setVerification(v.verification ?? null)
         setAlert(v.status === 'failed'
-          ? { key: 'app.versionFailed', err: v.error_msg ?? (v.error ?? '').split('\n')[0] }
+          ? { key: 'app.versionFailed', err: failHead(v.error_msg ?? v.error ?? '') }
           : { key: 'app.versionEmpty' })
       }
     } catch (e) {
@@ -1042,7 +1050,7 @@ export default function App() {
                            document.querySelector<HTMLElement>('[data-testid="activity-bell"]')?.focus()
                          }} />
         ) : null}
-        service={{ down: svcDown, model: svc?.model, noKey: !!svc && !svc.api_key_configured }}
+        service={{ down: svcDown, ...(svcInfo ? { model: svcInfo.model, noKey: !svcInfo.api_key_configured } : {}) }}
         viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
         sidebarHandlesCollapse={!!shown}
         sidebar={adminOpen && user.role === 'admin' ? null : shown ? (

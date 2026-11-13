@@ -27,6 +27,7 @@ let slowMs = 0
 let failOverview = false
 let failPatch = false
 let failDetailOnce = false
+let failDebug = false
 const REF = { ref: 'K7Q2M9XD', at: '2026-10-30T09:00:00+00:00', user_id: 'u-bob', username: 'bob',
   code: 'common.internal', params: {}, where: 'GET /novels' }
 const daily = Array.from({ length: 30 }, (_, i) => ({
@@ -99,14 +100,23 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                cost_usd: 0, unpriced: 0, records: 1 }] })
   }
   if (path === '/admin/jobs') return json({
-    running: [{ id: 'j1', username: 'bob', status: 'running', work_title: '药', chapter: '第一章',
+    running: [{ id: 'j1', user_id: 'u-bob', username: 'bob', status: 'running', work_title: '药', chapter: '第一章',
                 chars: 4000, created_at: '2026-10-30T08:00:00+00:00', elapsed_sec: 75 }],
-    failed: [{ id: 'v9', username: 'amy', novel_title: '孔乙己', chapter_title: '一',
+    failed: [{ id: 'v9', user_id: 'u-amy', username: 'amy', novel_title: '孔乙己', chapter_title: '一',
                created_at: '2026-10-29T08:00:00+00:00', chars: 900, attempts: 3,
                error: 'schema 校验失败：缺少 episodes' },
-              { id: 'v10', username: 'amy', novel_title: '孔乙己', chapter_title: '二',
+              { id: 'v10', user_id: 'u-amy', username: 'amy', novel_title: '孔乙己', chapter_title: '二',
                 created_at: '2026-10-28T08:00:00+00:00', chars: 10, attempts: 1,
-                error: '没有可用的模型', error_msg: { code: 'usage.monthly_cap', params: {}, message: '本月用量已达上限，请联系管理员' } }] })
+                error: '没有可用的模型', error_msg: { code: 'usage.monthly_cap', params: {}, message: '本月用量已达上限，请联系管理员' } },
+              { id: 'v11', user_id: 'u-amy', username: 'amy', novel_title: '孔乙己', chapter_title: '三',
+                created_at: '2026-10-27T08:00:00+00:00', chars: 20, attempts: 3,
+                error: '旧中文原因\nFAIL: E01 缺资产 C09',
+                error_msg: { code: 'job.failed_report', params: {
+                  reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+                  report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } } }] })
+  const dm = path.match(/^\/admin\/jobs\/([^/?]+)\/debug\?user_id=(.+)$/)
+  if (dm) return failDebug ? err(404, { code: 'admin.job.not_found', params: { id: dm[1] }, message: `没有这次转换的调试日志：${dm[1]}` })
+    : json({ id: dm[1], user_id: dm[2], lines: ['输入 4 字符 → 1 批', '  原因如下：'] })
   if (path.startsWith('/admin/audit')) return json({ audit: [
     { at: '2026-10-30T09:00:00+00:00', admin: 'root', action: 'disable', target: 'bob',
       before: { disabled: false }, after: { disabled: true } },
@@ -375,6 +385,47 @@ await remount(<I18nProvider initial="en"><JobsTab /></I18nProvider>)
 must(text().includes('You’ve reached this month’s usage limit') && !text().includes('没有可用的模型'), '失败条英文 error_msg')
 must(text().includes('schema 校验失败'), '只有 error 的原样显示')
 console.log('12. 任务页失败原因 ✓')
+
+// 12b. 任务页：摘要只取原因、展开整段，随语言变；调试日志按钮取 /admin/jobs/{id}/debug
+{
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
+  let setL: (l: 'zh' | 'en') => void = () => {}
+  const Cp = () => { setL = useI18n().setLocale; return null }
+  setCurrentLocale('zh')
+  await remount(<I18nProvider initial="zh"><Cp /><JobsTab /></I18nProvider>)
+  const row = () => [...container.querySelectorAll('tbody tr')].find((tr) => (tr.textContent ?? '').includes('三'))!
+  const sum = () => row().querySelector('summary')!.textContent
+  const pre = () => row().querySelector('pre')!.textContent
+  must(sum() === '批 2 重试 3 次后仍未通过校验', `摘要只显示原因，实为 ${sum()}`)
+  must(pre() === '批 2 重试 3 次后仍未通过校验\nFAIL: E01 缺资产 C09', `展开显示整段，实为 ${pre()}`)
+  await act(async () => { setL('en') })
+  await settle()
+  must(!sum()!.includes('批') && sum()!.length > 5 && !pre()!.includes('批 2') && pre()!.endsWith('\nFAIL: E01 缺资产 C09'), `切英文后摘要与整段变英文，实为 ${pre()}`)
+  await act(async () => { setL('zh') })
+  await settle()
+  // 调试日志：运行中与失败行都有按钮
+  const dbtn = (tr: Element) => [...tr.querySelectorAll('button')].find((b) => (b.textContent ?? '').includes(zh.admin.jobs.debug))!
+  calls.length = 0
+  const runRow = [...container.querySelectorAll('tbody tr')].find((tr) => (tr.textContent ?? '').includes('bob'))!
+  await click(dbtn(runRow))
+  must(calls.includes('GET /admin/jobs/j1/debug?user_id=u-bob'), `请求调试日志，实为 ${calls}`)
+  must(text().includes('输入 4 字符 → 1 批') && text().includes('  原因如下：'), '显示调试日志两行')
+  await click(dbtn(runRow))
+  must(!text().includes('原因如下：'), '再点收起')
+  failDebug = true
+  await click(dbtn(row()))
+  must(text().includes('没有这次转换的调试日志：v11') || text().includes(zh.srv.admin.job.not_found.replace('{id}', 'v11')), `请求失败显示错误文字，实为 ${text().slice(-200)}`)
+  must(calls.includes('GET /admin/jobs/v11/debug?user_id=u-amy'), '失败行带自己的 user_id')
+  await act(async () => { setL('en') })
+  await settle()
+  must(text().includes(en.srv.admin.job.not_found.replace('{id}', 'v11')) && !text().includes('没有这次转换的调试日志'), '错误文字切英文跟着变')
+  failDebug = false
+  await act(async () => { setL('zh') })
+  await settle()
+  must(zh.admin.action.view_job_debug === '查看调试日志' && en.admin.action.view_job_debug === 'Viewed debug log', '审计动作名登记')
+  console.log('12b. 任务页调试日志 ✓')
+}
 
 // 13. 错误记录页签：列表无详情请求；展开才取；按编号查找；查不到；审计动作名
 setCurrentLocale('zh')

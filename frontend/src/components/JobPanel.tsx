@@ -22,6 +22,11 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
   const logRef = useRef<HTMLPreElement>(null)
   const running = job.status === 'queued' || job.status === 'running'
 
+  /** 质量报告：有消息对象按代码渲染（随语言变），没有（旧任务）显示原文 */
+  const quality = job.quality_msg?.length
+    ? job.quality_msg.map((m) => formatMsg(m, locale)).join('\n\n')
+    : job.quality_report
+
   useEffect(() => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
@@ -59,10 +64,10 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
         </div>
       )}
 
-      {job.status === 'failed' && job.error && (
+      {job.status === 'failed' && (job.error_msg || job.error) && (
         <div className="job__warn job__warn--err">
           <b>{t('job.failedTitle')}</b>
-          <pre className="job__err">{job.error}</pre>
+          <pre className="job__err">{formatMsg(job.error_msg ?? job.error, locale)}</pre>
         </div>
       )}
 
@@ -72,10 +77,10 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
         <VerificationPanel report={job.verification} doc={job.result} />
       )}
 
-      {job.quality_report && (
+      {quality && (
         <div className="job__warn">
           <b>{t('job.qualityTitle')}</b>
-          <pre>{job.quality_report}</pre>
+          <pre>{quality}</pre>
         </div>
       )}
 

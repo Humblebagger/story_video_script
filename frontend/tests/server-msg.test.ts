@@ -101,4 +101,14 @@ must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
   must(formatMsg(failHead({ code: 'llm.busy', params: {} }), 'en') === formatMsg({ code: 'llm.busy', params: {} }, 'en'), '没有报告的原样返回')
 }
 
+// 10. 转换失败带报告的具体文字（代码已登记，可以断言具体文字）
+{
+  const failed = { code: 'job.failed_report', params: {
+    reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+    report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+  must(formatMsg(failed, 'zh') === '批 2 重试 3 次后仍未通过校验\nFAIL: E01 缺资产 C09', '中文整段')
+  must(formatMsg(failed, 'en').endsWith('\nFAIL: E01 缺资产 C09') && !formatMsg(failed, 'en').startsWith('批'), '英文原因 + 报告原文')
+  must(formatMsg(failHead(failed), 'zh') === '批 2 重试 3 次后仍未通过校验', '一行只取原因')
+}
+
 console.log('\nALL PASS')

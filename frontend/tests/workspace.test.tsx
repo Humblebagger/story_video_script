@@ -167,6 +167,15 @@ const novels: NS[] = [
   must((doc.body.textContent ?? '').includes('claude-x'), '账号菜单里有当前模型')
   await click(qa('[role="menuitem"]').find((x) => (x.textContent ?? '').includes('退出')) ?? null)
   must(calls.join() === 'bell,logout', '菜单里的退出')
+  // 普通用户：service 里没有 model，账号菜单不出现「当前模型」那一行
+  await render(wrap(h(AppShell, {
+    username: 'bob', isAdmin: false, adminOpen: false, onToggleAdmin: () => {},
+    onLogout: () => {}, onNewNovel: () => {}, onOpenLocal: () => {},
+    service: { down: false }, sidebar: null, viewKey: 'a',
+    runningCount: 0, onToggleActivity: () => {},
+  }, h(Consumer))))
+  await open(q('[data-testid="account-menu"]'))
+  must(!(doc.body.textContent ?? '').includes('当前模型') && (doc.body.textContent ?? '').includes('正常'), '普通用户的账号菜单没有当前模型一行')
   await render(null)
   console.log('3. AppShell 顶栏 ✓')
 }
@@ -429,14 +438,46 @@ const novels: NS[] = [
   const lg = qa('[data-testid="activity-running"]').map((x) => x.textContent ?? '')
   must(lg[0].includes('输入 4 字符 → 1 批') && !lg[0].includes('[object'), '最近一行是事件对象：' + lg[0])
   must(lg[1].includes('旧的一行'), '最近一行是字符串')
-  // 转换面板进度：事件对象与旧字符串都能渲染
+  // 转换面板：进度、失败区、质量报告按代码渲染，切语言跟着变；旧数据原样显示
   const { JobPanel } = await import('../src/components/JobPanel')
-  const jobOf = (log: unknown[]) => ({ id: 'j1', status: 'running', log, result: null, quality_report: null, error: null }) as never
-  await render(wrap(h(JobPanel, { job: jobOf([{ code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }]),
-    onReset: () => {}, onBackground: () => {} })))
-  must((q('.job__log')?.textContent ?? doc.body.textContent ?? '').includes('输入 4 字符 → 1 批'), '进度行是事件对象')
-  await render(wrap(h(JobPanel, { job: jobOf(['旧行']), onReset: () => {}, onBackground: () => {} })))
+  const { useI18n } = await import('../src/i18n/core')
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  const Grab = () => { setLoc = useI18n().setLocale; return null }
+  const jwrap = (node: unknown) => h(I18nProvider, { initial: 'zh' }, h(Grab), node as never)
+  const lang = async (l: 'zh' | 'en') => { await act(async () => { setLoc(l) }); await settle() }
+  const base = { id: 'j1', status: 'running', result: null, quality_report: null, error: null }
+  const jobOf = (log: unknown[], o: object = {}) => ({ ...base, log, ...o }) as never
+  const ev = { code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }
+  const props = { onReset: () => {}, onBackground: () => {} }
+  await render(jwrap(h(JobPanel, { job: jobOf([ev]), ...props })))
+  must((q('.job__log')?.textContent ?? '').includes('输入 4 字符 → 1 批'), '进度行是事件对象')
+  await render(jwrap(h(JobPanel, { job: jobOf(['旧行']), ...props })))
   must((doc.body.textContent ?? '').includes('旧行'), '进度行是字符串')
+  const failed = { code: 'job.failed_report', params: {
+    reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+    report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+  const fj = jobOf([ev], { status: 'failed', error: '旧中文', error_msg: failed, quality_msg: null })
+  await render(jwrap(h(JobPanel, { job: fj, ...props })))
+  must((q('.job__log')?.textContent ?? '') === '输入 4 字符 → 1 批', '中文进度行')
+  must(q('.job__err')?.textContent === '批 2 重试 3 次后仍未通过校验\nFAIL: E01 缺资产 C09', '失败区是整段：' + q('.job__err')?.textContent)
+  await lang('en')
+  must(q('.job__log')?.textContent === en.srv.job.event.split.replace('{chars}', '4').replace('{batches}', '1'), '切英文：进度行变英文')
+  must(!(q('.job__err')?.textContent ?? '').includes('批 2') && (q('.job__err')?.textContent ?? '').endsWith('\nFAIL: E01 缺资产 C09'), '切英文：失败区变英文、报告原文保留')
+  await lang('zh')
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'failed', error: '只有旧的报错', error_msg: null }), ...props })))
+  must(q('.job__err')?.textContent === '只有旧的报错', '没有 error_msg 时显示旧 error')
+  // 质量报告：quality_msg 有值按代码渲染，没有显示 quality_report
+  const qm = [{ code: 'job.batch_failed', params: { batch: 1, retries: 2 } }, { code: 'llm.busy', params: {} }]
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'succeeded', quality_report: '旧质量报告', quality_msg: qm }), ...props })))
+  const qtxt = () => [...doc.querySelectorAll('.job__warn pre')].map((x) => x.textContent ?? '').join('|')
+  must(qtxt() === '批 1 重试 2 次后仍未通过校验\n\n' + zh.srv.llm.busy, '质量报告按代码渲染：' + qtxt())
+  await lang('en')
+  must(qtxt().includes(en.srv.llm.busy) && !qtxt().includes('旧质量报告') && !qtxt().includes('批 1'), '切英文：质量报告变英文')
+  await lang('zh')
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'succeeded', quality_report: '旧质量报告', quality_msg: null }), ...props })))
+  must(qtxt() === '旧质量报告', '没有 quality_msg 时显示 quality_report')
   await render(null)
   console.log('7. 动态面板 ✓')
 }
