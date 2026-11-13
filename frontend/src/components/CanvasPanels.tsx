@@ -79,7 +79,7 @@ export function NovelPanel({ bench }: { bench: Workbench }) {
 
 export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }) {
   const { novel, chapter, versionId, job, converting } = bench
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [ask, confirmUi] = useConfirm()
   const [mode, setMode] = useState<NarrationMode | ''>('')
   const [strict, setStrict] = useState(false)
@@ -98,7 +98,7 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
           <div className="tlc__job">
             <b>{label(JOB_STATUS, live.status)}</b>
             {live.progress && <JobProgress progress={live.progress} />}
-            {!!live.log.length && <code className="tlc__jobline">{live.log[live.log.length - 1]}</code>}
+            {!!live.log.length && <code className="tlc__jobline">{formatMsg(live.log[live.log.length - 1], locale)}</code>}
             <p className="tlc__kfnote">{t('canvas.panel.liveNote')}</p>
           </div>
         ) : converting ? (

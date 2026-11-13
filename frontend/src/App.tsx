@@ -342,7 +342,7 @@ export default function App() {
   }), [])
 
   // 全新部署（服务端还没有任何账号）：首页直接打开注册
-  const firstRun = !!svc && (svc.users ?? 0) === 0
+  const firstRun = !!svc && (svc.first_run ?? (svc.users ?? 0) === 0)
   useEffect(() => {
     if (!user && firstRun) setAuth((a) => (a.open ? a : { open: true, mode: 'register', expired: false }))
   }, [user, firstRun])

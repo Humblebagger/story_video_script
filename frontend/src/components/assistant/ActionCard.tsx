@@ -3,6 +3,7 @@
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import type { AssistantCard, AssistantGoto } from '@/types'
 import { TaskCard } from './TaskCard'
@@ -18,7 +19,7 @@ export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
   onUndo: () => void
   onGoto: (g: AssistantGoto) => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const info = c.card
   const edit = EDITS.includes(c.action)
   const title = t(`assistant.action.${c.action}` as MsgKey) + (info?.chapter ? ` · ${info.chapter}` : '')
@@ -57,7 +58,7 @@ export function ActionCard({ novelId, c, busy, onDecide, onUndo, onGoto }: {
       {!!info?.warnings?.length && (
         <div className="assistant__warn" data-testid="assistant-card-warnings">
           <p>{t('assistant.card.warnings')}</p>
-          <ul className="list-disc pl-4">{info.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+          <ul className="list-disc pl-4">{info.warnings.map((w, i) => <li key={i}>{formatMsg(w, locale)}</li>)}</ul>
         </div>
       )}
       {c.outcome === 'pending' && (

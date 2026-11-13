@@ -37,6 +37,7 @@ const calls: string[] = []
 /** 下一次花钱请求先回 409（模拟服务端重算的金额变了） */
 let nextConflict: number | null = null
 let gateFail = false
+let gateObj = false
 /** 下一次花钱请求回这个错（模拟带代码的 422 / 409） */
 let nextFail: { status: number; detail: unknown } | null = null
 /** 下一次读取会话抛网络错误（只一次） */
@@ -131,7 +132,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
   }
   if (sub === '/session' && method === 'GET') {
     if (failNextGet) { failNextGet = false; throw new Error('网络断了') }
-    return film ? ok({ ...film, gate: gateFail ? { ok: false, message: GATE } : { ok: true, message: null } })
+    return film ? ok({ ...film, gate: gateFail ? { ok: false, message: gateObj ? { code: 'verify.gate.blocked', params: {}, message: GATE } : GATE } : { ok: true, message: null } })
       : fail(404, '还没有出片会话')
   }
   if (sub === '/session' && method === 'POST') {
@@ -348,6 +349,12 @@ must(has(GATE) && button('出这一段').disabled, '验证门没过时不能出�
 gateFail = false
 await refresh()
 must(!has(GATE) && !button('出这一段').disabled, '验证门通过后恢复')
+gateFail = true; gateObj = true
+await refresh()
+must(has(GATE) && !has('[object') && button('出这一段').disabled, '验证门 message 是消息对象时也显示')
+gateFail = false; gateObj = false
+await refresh()
+must(!has(GATE) && !button('出这一段').disabled, '消息对象的验证门通过后恢复')
 console.log('10. 验证门拦截 ✓')
 
 // 9b. 保存完（未保存 → 已保存）重读出片会话

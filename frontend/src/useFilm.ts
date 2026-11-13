@@ -26,7 +26,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const [status, setStatus] = useState<'off' | 'loading' | 'none' | 'ready'>(enabled ? 'loading' : 'off')
   const [error, setError] = useState<MsgLike>(null)
   /** 验证门没过的原因（读取时报告的，或出片被 422 拦下的） */
-  const [gate, setGate] = useState<string | null>(null)
+  const [gate, setGate] = useState<MsgLike>(null)
   const [busy, setBusy] = useState(false)
   /** 每次读取结束加一：让轮询定时器在成功或失败后都重新排上 */
   const [tick, setTick] = useState(0)

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import { JOB_STATUS, label } from '../labels'
 import type { JobSummary, Novel, NovelSummary } from '../types'
 import { JobProgress } from './JobProgress'
@@ -31,7 +32,7 @@ export function NovelSidebar({
   novels, novel, chapterId, running, activeJobId, loading,
   onOpenNovel, onOpenChapter, onOpenJob, onNewChapter, onNewNovel,
 }: Props) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const shown = q ? novels.filter((n) => n.title.toLowerCase().includes(q)) : novels
@@ -58,7 +59,7 @@ export function NovelSidebar({
               {j.chapter && <p className="hrun__chapter">{j.chapter}</p>}
               {j.progress
                 ? <JobProgress progress={j.progress} compact />
-                : <p className="hrun__last">{j.last_log ?? t('shell.shelf.queued')}</p>}
+                : <p className="hrun__last">{(j.last_log && formatMsg(j.last_log, locale)) || t('shell.shelf.queued')}</p>}
             </li>
           ))}
         </ul>

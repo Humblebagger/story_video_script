@@ -3,6 +3,7 @@
 import { inFlight } from './film'
 import { tr } from './i18n/core'
 import { formatMsg, itemError } from './i18n/serverMsg'
+import type { MsgLike } from './i18n/serverMsg'
 import { INTENSITY, label, MOOD } from './labels'
 import type { ComposePreview, FilmSession, FinalState, MixNote, MusicSegment, VoicesInfo } from './types'
 
@@ -31,10 +32,10 @@ export const speakerName = (v: VoicesInfo | null, key: string) =>
 
 /** 不能合成的原因（按要先处理的顺序）；空数组为可以合成 */
 export function composeBlockers(p: ComposePreview, s: FilmSession, v: VoicesInfo | null,
-                                o: { dirty: boolean; gate: string | null; draft: boolean }): string[] {
+                                o: { dirty: boolean; gate: MsgLike; draft: boolean }): string[] {
   const out: string[] = []
   if (o.dirty) out.push(tr('compose.blockDirty'))
-  if (o.gate) out.push(tr('compose.blockGate', { gate: o.gate }))
+  if (o.gate) out.push(tr('compose.blockGate', { gate: formatMsg(o.gate) }))
   if (!p.tools) out.push(ffmpegHint())
   if (composing(p)) out.push(tr('compose.blockComposing'))
   if (s.clips.some(inFlight)) out.push(tr('compose.blockInFlight'))

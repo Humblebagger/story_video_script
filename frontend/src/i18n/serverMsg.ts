@@ -60,6 +60,13 @@ export function errValue(e: unknown): MsgLike {
 /** toast 等即时显示：弹出时按当前语言格式化 */
 export const errText = (e: unknown, locale?: Locale): string => formatMsg(errValue(e), locale)
 
+/** 一行显示的失败原因：转换失败带报告（job.failed_report）时只取原因；旧数据的字符串取第一行（spec 子计划 4 B） */
+export function failHead(m: MsgLike): MsgLike {
+  if (typeof m === 'string') return m.split('\n')[0]
+  if (isServerMsg(m) && m.code === 'job.failed_report' && isServerMsg(m.params?.reason)) return m.params!.reason as ServerMsg
+  return m
+}
+
 /** 会话里的段、尝试、自由节点：有 error_msg 按代码，没有（旧数据、未改造的模块）原样显示 error */
 export function itemError(x: { error?: string | null; error_msg?: ServerMsg | null }, locale?: Locale): string {
   return x.error_msg ? formatMsg(x.error_msg, locale) : (x.error ?? '')

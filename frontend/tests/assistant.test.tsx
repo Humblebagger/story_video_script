@@ -413,7 +413,8 @@ const enter = async (composing = false, keyCode = 13) => {
                      amount: null, currency: null, detail: { edits: 2 },
                      diff: [{ target: 'E01-SH001', field: 'action', before: '旧画面', after: '新画面' },
                             { target: 'E01-SH001', field: 'camera.movement', before: 'static', after: 'push_in' }],
-                     warnings: ['episodes[0]: 时长对不上'] }
+                     warnings: [{ code: 'verify.finding', params: { path: 'episodes[0]', detail: { t: 'vendor', text: '时长对不上' } },
+                                 message: 'episodes[0]：时长对不上' }, '旧字符串警告'] }
   history = []
   let root = await mount('n-edit')
   script = [{ event: 'confirm', data: diffCard }]
@@ -426,6 +427,7 @@ const enter = async (composing = false, keyCode = 13) => {
   must(rows[1].textContent!.includes('Camera movement') && !rows[1].textContent!.includes('camera.movement'),
        '运镜字段名 ' + rows[1].textContent)
   must(!!$('assistant-card-warnings') && $('assistant-card-warnings')!.textContent!.includes('时长'), '复验警告')
+  must($('assistant-card-warnings')!.textContent!.includes('旧字符串警告') && !$('assistant-card-warnings')!.textContent!.includes('[object'), '复验警告：对象与旧字符串都显示')
   must(!$('assistant-card-cost'), '改内容没有金额行')
   must(($('assistant-card-approve')!.textContent ?? '').length > 0 && !$('assistant-card-undo'), '待确认时没有撤销')
   script = [{ event: 'action', data: { tool_call_id: 'e1', action: 'shots_edit', outcome: 'approved', card: diffCard,

@@ -296,7 +296,8 @@ export interface JobProgress {
 export interface Job {
   id: string
   status: JobStatus
-  log: string[]
+  /** 兼容：后端子计划 4 之前是字符串 */
+  log: (JobEvent | string)[]
   result: Storyboard | null
   quality_report: string | null
   error: string | null
@@ -318,6 +319,9 @@ export interface JobPartial {
   batches: number
 }
 
+/** 转换进度事件（后端 job.log 的一条）：消息对象 + 时间；旧任务是字符串 */
+export type JobEvent = ServerMsg & { at?: string }
+
 /** 任务摘要：用于关掉页面后重新接上仍在后台跑的转换 */
 export interface JobSummary {
   id: string
@@ -327,7 +331,8 @@ export interface JobSummary {
   chapter: string | null
   chars: number | null
   log_lines: number
-  last_log: string | null
+  /** 兼容：后端子计划 4 之前是字符串 */
+  last_log: JobEvent | string | null
   progress?: JobProgress | null
   novel_id?: string | null
   chapter_id?: string | null
@@ -338,6 +343,8 @@ export interface Health {
   model: string
   api_key_configured: boolean
   users?: number
+  /** 首次注册标记；兼容：旧后端只给 users */
+  first_run?: boolean
 }
 
 /* ---------- 小说级会话（backend/server/novels.py） ---------- */
@@ -814,7 +821,8 @@ export interface FilmSession {
   /** 可按新风格图重出的段数 */
   style_outdated_count?: number
   /** 验证门：只有读取时带；没有就当已通过（建会话、出片这几个接口本身过门） */
-  gate?: { ok: boolean; message: string | null }
+  /** 兼容：message 在后端子计划 4 之前是字符串 */
+  gate?: { ok: boolean; message: MsgLike }
   options: {
     providers: string[]
     models: Record<string, { label: string }>
@@ -934,7 +942,8 @@ export interface ChapterSum {
 
 export interface NovelSummaryData {
   cost: CostSum
-  unpriced: string[]
+  /** 兼容：后端子计划 4 之前是 string[] */
+  unpriced: boolean | string[]
   chapters: ChapterSum[]
 }
 
@@ -975,7 +984,8 @@ export interface AssistantCardInfo {
   /** 改内容：逐条「原 → 新」（值都是显示用的文字） */
   diff?: { target: string; field: string; before: string; after: string }[]
   /** 改镜头：复验不过的原因（应用后版本会标草稿） */
-  warnings?: string[]
+  /** 兼容：后端子计划 4 之前是字符串 */
+  warnings?: (string | ServerMsg)[]
 }
 export interface AssistantCard {
   tool_call_id: string

@@ -423,6 +423,20 @@ const novels: NS[] = [
   must(closed === 2, 'Esc 关闭')
   await render(panel([], []))
   must((q('[data-testid="empty-state"]')?.textContent ?? '').includes('没有在跑的任务'), '空状态')
+  // 最近一行：事件对象显示 message（代码未登记时回落），旧字符串原样
+  await render(panel([rj('1', { last_log: { code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' } }),
+                      rj('2', { last_log: '旧的一行' })], []))
+  const lg = qa('[data-testid="activity-running"]').map((x) => x.textContent ?? '')
+  must(lg[0].includes('输入 4 字符 → 1 批') && !lg[0].includes('[object'), '最近一行是事件对象：' + lg[0])
+  must(lg[1].includes('旧的一行'), '最近一行是字符串')
+  // 转换面板进度：事件对象与旧字符串都能渲染
+  const { JobPanel } = await import('../src/components/JobPanel')
+  const jobOf = (log: unknown[]) => ({ id: 'j1', status: 'running', log, result: null, quality_report: null, error: null }) as never
+  await render(wrap(h(JobPanel, { job: jobOf([{ code: 'job.event.split', params: { chars: 4, batches: 1 }, message: '输入 4 字符 → 1 批', at: 't' }]),
+    onReset: () => {}, onBackground: () => {} })))
+  must((q('.job__log')?.textContent ?? doc.body.textContent ?? '').includes('输入 4 字符 → 1 批'), '进度行是事件对象')
+  await render(wrap(h(JobPanel, { job: jobOf(['旧行']), onReset: () => {}, onBackground: () => {} })))
+  must((doc.body.textContent ?? '').includes('旧行'), '进度行是字符串')
   await render(null)
   console.log('7. 动态面板 ✓')
 }

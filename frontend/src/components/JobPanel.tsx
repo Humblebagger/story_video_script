@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import { JOB_STATUS, label } from '../labels'
 import type { Job } from '../types'
 import { JobProgress } from './JobProgress'
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: Props) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const logRef = useRef<HTMLPreElement>(null)
   const running = job.status === 'queued' || job.status === 'running'
 
@@ -82,7 +83,7 @@ export function JobPanel({ job, onReset, onBackground, previewing, onPreview }: 
         <pre className="job__log" ref={logRef}>
           {job.log.map((line, i) => (
             <span key={i} className={i === job.log.length - 1 ? 'job__logline--last' : undefined}>
-              {line}{i < job.log.length - 1 ? '\n' : ''}
+              {formatMsg(line, locale)}{i < job.log.length - 1 ? '\n' : ''}
             </span>
           ))}
         </pre>

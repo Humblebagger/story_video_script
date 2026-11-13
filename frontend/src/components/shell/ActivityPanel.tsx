@@ -10,6 +10,7 @@ import type { Tone } from '@/components/common/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import { DUR, EASE_OUT } from '@/motion'
 import { useReducedMotion } from 'motion/react'
 import { fmtEta, JOB_STATUS, label } from '@/labels'
@@ -41,7 +42,7 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
   /** 助手页签的内容（进了小说才有） */
   assistant?: ReactNode
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const reduced = !!useReducedMotion()
   const ref = useRef<HTMLElement>(null)
   useEffect(() => { ref.current?.focus({ preventScroll: true }) }, [])
@@ -93,7 +94,7 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
                       </span>
                       <Button variant="outline" size="sm" onClick={() => onOpen(j)}>{t('activity.view')}</Button>
                     </div>
-                    {j.last_log && <p className="activity__log">{j.last_log}</p>}
+                    {j.last_log && <p className="activity__log">{formatMsg(j.last_log, locale)}</p>}
                   </li>
                 )
               })}

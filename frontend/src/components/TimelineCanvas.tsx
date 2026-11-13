@@ -926,7 +926,7 @@ export function TimelineCanvas({
       {view === 'graph' && film.enabled && (
         <NodeGraph film={film} doc={doc} styleUrl={styleUrl} kfUrls={kf.urls} selected={clipSel}
                    blocked={dirty ? tt('film.panel.blockedDirty')
-                     : film.gate ? tt('film.panel.blockedGate', { gate: film.gate }) : null}
+                     : film.gate ? tt('film.panel.blockedGate', { gate: formatMsg(film.gate, locale) }) : null}
                    onSelect={(id) => { setClipSel(id); setPanel('film') }}
                    onOpenAssets={() => setPanel('assets')} onOpenFilm={() => setPanel('film')} />
       )}

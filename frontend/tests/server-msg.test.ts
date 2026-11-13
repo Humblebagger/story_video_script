@@ -1,5 +1,5 @@
 /** 后端消息对象的渲染：字符串原样、代码按语言、带类型参数、嵌套原因、缺译回落。跑法：npm test */
-import { formatMsg, itemError, errValue } from '../src/i18n/serverMsg'
+import { formatMsg, itemError, errValue, failHead } from '../src/i18n/serverMsg'
 import { ApiError, conflictCny } from '../src/api'
 import { zh } from '../src/i18n/zh'
 import { en } from '../src/i18n/en'
@@ -89,6 +89,16 @@ must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
   must(formatMsg(unreg, 'en') === '兜底（参考编号 AB12CD34）', '缺译回落的 message 已带编号，不重复')
   must(itemError({ error: 'x', error_msg: { code: 'common.internal', params: {}, ref: 'K7Q2M9XD' } }, 'en').includes('K7Q2M9XD'), '持久化的 error_msg 也附编号')
   must(errValue(new ApiError('m', 500, internal)) === internal, 'errValue 保留带编号的 detail')
+}
+
+// 9. 转换失败带报告：整段渲染原因 + 换行 + 报告原文；一行显示只取原因
+{
+  const failed = { code: 'job.failed_report', params: {
+    reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+    report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } }
+  must(formatMsg(failHead(failed), 'zh') === formatMsg({ code: 'job.batch_failed', params: { batch: 2, retries: 3 } }, 'zh'), '一行只取原因')
+  must(failHead('第一行\n第二行') === '第一行', '旧数据取第一行')
+  must(formatMsg(failHead({ code: 'llm.busy', params: {} }), 'en') === formatMsg({ code: 'llm.busy', params: {} }, 'en'), '没有报告的原样返回')
 }
 
 console.log('\nALL PASS')

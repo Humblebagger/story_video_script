@@ -38,7 +38,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
   const s = film.session
   if (film.status === 'loading') return <p className="tlc__kfnote">{t('film.panel.loading')}</p>
   const blocked = dirty ? t('film.panel.blockedDirty')
-    : film.gate ? t('film.panel.blockedGate', { gate: film.gate }) : null
+    : film.gate ? t('film.panel.blockedGate', { gate: formatMsg(film.gate, locale) }) : null
   const clip = s?.clips.find((c) => c.id === selected)
   const freeSel = s?.free?.find((n) => n.id === selected)
   return (

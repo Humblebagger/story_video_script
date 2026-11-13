@@ -65,6 +65,8 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   must(all.length === 5 && all[0].includes('先保存再合成') && all[1].includes('分镜没通过完整性检查')
     && all[2].includes('ffmpeg') && !all[2].includes('brew') && all[3].includes('排队或生成中') && all[4].includes('超过上限'),
     `各种拦截按顺序列出：${all.join(' / ')}`)
+  const og = composeBlockers(P, S, V, { ...base, gate: { code: 'verify.gate.blocked', params: {}, message: '分镜未通过独立验证' } })
+  must(og.some((x) => x.includes('分镜未通过独立验证')) && !og.join().includes('[object'), '拦截原因：gate 是消息对象')
   const busy: FinalState = { state: 'running', step: '混音 E01', files: [], report: null, error: null, detail: null }
   must(composing({ ...P, final: busy }) && !composing(P), '合成中')
   must(composeBlockers({ ...P, missing_voices: [], final: busy }, S, V, base)[0] === '正在合成，等它结束再合成',

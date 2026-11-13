@@ -43,6 +43,9 @@ win.localStorage.clear()
 
 /* ---------- 桩后端：小说 → 章节 → 版本 + 可手动结束的转换任务 ---------- */
 
+/** true 时 /healthz 只给旧字段 users（兼容旧后端），false 给 first_run */
+let legacyHealth = false
+
 interface StubJob {
   id: string; status: string; log: string[]; result: unknown
   quality_report: string | null; error: string | null; verification?: unknown
@@ -213,7 +216,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   const body = () => JSON.parse(init!.body!)
 
   if (path === '/healthz') return json({ status: 'ok', model: 'stub',
-                                         api_key_configured: true, users: users.size })
+                                         api_key_configured: true,
+                                         ...(legacyHealth ? { users: users.size } : { first_run: users.size === 0 }) })
 
   // 认证：注册/登录发 token，其余接口一律要带 token
   if (path === '/auth/register' && method === 'POST') {
