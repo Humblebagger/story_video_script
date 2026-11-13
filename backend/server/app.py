@@ -104,7 +104,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, library, novels, pricing, store, summary, usage
-from server.messages import msg, to_detail
+from server.messages import compact, msg, to_detail
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -1150,9 +1150,9 @@ def _tts():
     try:
         return render_providers.get_tts()
     except KeyError as e:
-        raise HTTPException(422, e.args[0])
+        raise HTTPException(422, detail=to_detail(e))
     except render_video_base.ProviderError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, detail=to_detail(e))
 
 
 def _bgm_files(root) -> dict:
@@ -1164,7 +1164,7 @@ def _bgm_files(root) -> dict:
 def _session_or_404(root) -> dict:
     s = render_session.load(root)
     if s is None:
-        raise HTTPException(404, "还没有出片会话")
+        raise HTTPException(404, detail=msg("film.session.none"))
     return s
 
 
@@ -1182,7 +1182,7 @@ def render_voices(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)
     chosen = s.get("voices") or {}
     return {"provider": tts.name, "rate_note": tts.rate_note,
             "voices": [{"id": x.id, "name": x.name, "gender": x.gender} for x in tts.caps.voices],
-            "speakers": [{"key": k, "name": (info.get(k) or {}).get("name") or k or "（未标说话人）",
+            "speakers": [{"key": k, "name": (info.get(k) or {}).get("name") or k or compact(msg("voice.unlabeled")),
                           "hint": (info.get(k) or {}).get("hint"), "voice": voices.get(k), "chosen": chosen.get(k)}
                          for k in dict.fromkeys(x["speaker"] for x in lines)],
             "missing": missing}
@@ -1195,8 +1195,8 @@ def render_voices_put(nid: str, cid: str, vid: str, body: RenderVoicesBody,
     ids = {x.id for x in _tts().caps.voices}
     bad = [v for v in body.voices.values() if v and v not in ids]
     if bad:
-        raise HTTPException(422, f"没有这个音色：{'、'.join(bad)}")
-    _legacy_render_call(render_session.set_voices, root, body.voices)
+        raise HTTPException(422, detail=msg("tts.unknown_voice_list", voices=bad))
+    _render_call(render_session.set_voices, root, body.voices)
     return render_voices(nid, cid, vid, user)
 
 

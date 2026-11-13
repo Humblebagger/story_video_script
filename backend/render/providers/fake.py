@@ -86,7 +86,7 @@ class FakeVideo:
 class FakeTts:
     """假 TTS：不联网、不花钱，按字数出静音 WAV（每字 1/4.5 秒）；可指定前几次限流、一律失败或收下后失败（已计费）。"""
     name = "fake"
-    rate_note = "假配音：不联网、不花钱，金额只用于演示"  # i18n: todo(2)
+    rate_note = {"code": "rate.fake_tts", "params": {}}
     RATE = 24000
 
     def __init__(self, *, fail_times: int = 0, fail_with: Optional[str] = None,
@@ -101,14 +101,14 @@ class FakeTts:
     def synthesize(self, text, voice, emotion, speed, dest):
         self.calls.append((text, voice))
         if self.fail_with:
-            raise ProviderError(self.fail_with)  # i18n: todo(2)
+            raise ProviderError.of("tts.fake.failed", detail=vendor(self.fail_with))
         if self.fail_billed:
             raise BilledError(self.fail_billed, tts_cost(len(text), self.caps))
         if self.fail_times > 0:
             self.fail_times -= 1
-            raise TransientError("假的限流")  # i18n: todo(2)
+            raise TransientError.of("tts.fake.throttled")
         if voice not in {v.id for v in self.caps.voices}:
-            raise ProviderError(f"未知的音色：{voice}")  # i18n: todo(2)
+            raise ProviderError.of("tts.unknown_voice", voice=voice)
         frames = int(round(len(text) / 4.5 / speed * self.RATE))
         duration = write_wav(Path(dest), b"\x00\x00" * frames, self.RATE)
         return TtsResult(Path(dest), duration, tts_cost(len(text), self.caps), len(text))

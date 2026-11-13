@@ -36,9 +36,38 @@ def main() -> int:
         try:
             tts.synthesize("x", "nope", None, 1.0, Path(d) / "c.wav")
             raise AssertionError("未知音色应抛 ProviderError")
-        except tts_base.ProviderError:
-            pass
+        except tts_base.ProviderError as e:
+            assert e.code == "tts.unknown_voice" and e.params == {"voice": "nope"}, (e.code, e.params)
+            assert str(e) == "未知的音色：nope"
         assert not (Path(d) / "c.wav").exists()
+        for kw, code in (({"fail_with": "x"}, "tts.fake.failed"),):
+            try:
+                FakeTts(**kw).synthesize("x", "fake-male", None, 1.0, Path(d) / "c.wav")
+                raise AssertionError("应失败")
+            except tts_base.ProviderError as e:
+                assert e.code == code and e.params == {"detail": {"t": "vendor", "text": "x"}}, e.params
+                assert str(e) == "x"
+        try:
+            FakeTts(fail_times=1).synthesize("x", "fake-male", None, 1.0, Path(d) / "c.wav")
+            raise AssertionError("应限流")
+        except tts_base.TransientError as e:
+            assert e.code == "tts.fake.throttled" and "限流" in str(e)
+        try:
+            FakeTts(fail_billed="断").synthesize("x", "fake-male", None, 1.0, Path(d) / "c.wav")
+        except tts_base.BilledError as e:
+            assert e.billed_cny > 0 and str(e) == "断"
+        import wave
+        with wave.open(str(Path(d) / "odd.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * 10)
+        try:
+            tts_base.concat_wavs([r.file, Path(d) / "odd.wav"], Path(d) / "x.wav")
+            raise AssertionError("参数不一致应抛")
+        except tts_base.ProviderError as e:
+            assert e.code == "tts.concat_mismatch" and str(e) == "拼接的语音片段参数不一致"
+        assert FakeTts.rate_note == {"code": "rate.fake_tts", "params": {}}
     print("2. 假 TTS 出 WAV、时长按字数、拼接 ✓")
 
     os.environ["STORYBOARD_TTS_PROVIDER"] = "fake"
@@ -47,8 +76,9 @@ def main() -> int:
     try:
         providers.get_tts("nope")
         raise AssertionError("未注册的厂商应抛 KeyError")
-    except KeyError:
-        pass
+    except KeyError as e:
+        assert e.code == "tts.unknown_provider" and e.params == {"name": "nope"}, (e.code, e.params)
+        assert e.as_msg()["message"] == "未知的配音厂商：nope"
     os.environ.pop("STORYBOARD_TTS_PROVIDER")
     assert "fake" not in providers.tts_names(), "假 TTS 不是默认时不出现在可选里"
     print("3. 注册表 ✓")

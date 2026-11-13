@@ -18,7 +18,7 @@ class BilledError(ProviderError):
 
     def __init__(self, message: str, billed_cny: float):
         super().__init__(message)
-        self.billed_cny = billed_cny
+        self.billed_cny = billed_cny      # 构造写 BilledError.of(code, billed_cny, **params)
 
 
 @dataclass
@@ -48,7 +48,7 @@ class TtsResult:
 class TtsProvider(Protocol):
     name: str
     caps: TtsCaps
-    rate_note: str      # 费率依据：如实写出处、是否经账单核对
+    rate_note: dict     # 费率依据（消息对象 {code, params}）：如实写出处、是否经账单核对
 
     def synthesize(self, text: str, voice: str, emotion: Optional[str], speed: float,
                    dest: Path) -> TtsResult: ...
@@ -93,6 +93,6 @@ def concat_wavs(parts: list, dest: Path) -> float:
             if rate is None:
                 rate = w.getframerate()
             if w.getframerate() != rate or w.getnchannels() != 1 or w.getsampwidth() != 2:
-                raise ProviderError("拼接的语音片段参数不一致")
+                raise ProviderError.of("tts.concat_mismatch")
             frames += w.readframes(w.getnframes())
     return write_wav(dest, frames, rate or 24000)

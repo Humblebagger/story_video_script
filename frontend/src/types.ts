@@ -831,7 +831,7 @@ export interface TtsVoice { id: string; name: string; gender: 'male' | 'female' 
 export interface VoiceSpeaker {
   /** narration 为旁白，其余为角色 id */
   key: string
-  name: string
+  name: MsgLike
   /** 分镜里的抽象音色提示（male_elder…） */
   hint: string | null
   /** 现在用的音色（选的或按提示默认）；null 为缺音色 */
@@ -843,7 +843,7 @@ export interface VoiceSpeaker {
 export interface VoicesInfo {
   /** 这个声音模式不配音时为 null（音色表为空） */
   provider: string | null
-  rate_note: string
+  rate_note: MsgLike
   voices: TtsVoice[]
   speakers: VoiceSpeaker[]
   missing: string[]

@@ -9,12 +9,12 @@
  *  免得操作失败后紧跟的重读把原因清掉。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { tr } from './i18n/core'
+import { errValue, formatMsg } from './i18n/serverMsg'
+import type { MsgLike } from './i18n/serverMsg'
 import { conflictCny, deleteBgm, filmFileUrl, getCompose, getVoices, putBgm, putVoices, startCompose } from './api'
 import { COMPOSE_POLL_MS, bgmType, composeKey, composing } from './compose'
 import type { ComposePreview, VoicesInfo } from './types'
 import type { Film } from './useFilm'
-
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export function useCompose(film: Film, dirty: boolean) {
   const { nid, cid, vid } = film.ids
@@ -23,10 +23,10 @@ export function useCompose(film: Film, dirty: boolean) {
   const [preview, setPreview] = useState<ComposePreview | null>(null)
   const [voices, setVoices] = useState<VoicesInfo | null>(null)
   const [draft, setDraft] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<MsgLike>(null)
+  const [actionError, setActionError] = useState<MsgLike>(null)
   /** 音色表读取失败：只挡音色那一块，预览照常显示 */
-  const [voicesError, setVoicesError] = useState<string | null>(null)
+  const [voicesError, setVoicesError] = useState<MsgLike>(null)
   const [busy, setBusy] = useState(false)
   /** 每次读取结束加一：合成中的轮询定时器据此重排 */
   const [tick, setTick] = useState(0)
@@ -49,9 +49,9 @@ export function useCompose(film: Film, dirty: boolean) {
       const p = await getCompose(nid, cid, vid, draft)
       if (!current()) return
       let v: VoicesInfo | null = null
-      let ve: string | null = null
+      let ve: MsgLike = null
       if (p.lines) {
-        try { v = await getVoices(nid, cid, vid) } catch (e) { ve = msg(e) }
+        try { v = await getVoices(nid, cid, vid) } catch (e) { ve = errValue(e) }
         if (!current()) return
       }
       setPreview(p)
@@ -61,7 +61,7 @@ export function useCompose(film: Film, dirty: boolean) {
       // 确认框开着时金额变了：换成新金额再确认
       setConfirm((c) => (c && c.cny !== p.tts_cny ? { cny: p.tts_cny, changed: true } : c))
     } catch (e) {
-      if (current()) setLoadError(msg(e))
+      if (current()) setLoadError(errValue(e))
     } finally {
       if (current()) setTick((x) => x + 1)
     }
@@ -104,7 +104,7 @@ export function useCompose(film: Film, dirty: boolean) {
         live.current[k] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setActionError(tr('compose.readFinalFailed', { error: msg(e) })) })
+      .catch((e) => { if (gen.current === mine) setActionError(tr('compose.readFinalFailed', { error: formatMsg(errValue(e)) })) })
       .finally(() => asking.current.delete(k))
   }, [nid, cid, vid, stamp])
   const url = (path?: string | null) => (path ? files[`${stamp}|${path}`] : undefined)
@@ -135,7 +135,7 @@ export function useCompose(film: Film, dirty: boolean) {
       await fn()
       if (gen.current === mine) await load()
     } catch (e) {
-      if (gen.current === mine) setActionError(msg(e))
+      if (gen.current === mine) setActionError(errValue(e))
     } finally {
       if (gen.current === mine) setBusy(false)
     }
@@ -157,7 +157,7 @@ export function useCompose(film: Film, dirty: boolean) {
       if (fresh !== null) setConfirm({ cny: fresh, changed: true })
       else {
         setConfirm(null)
-        setActionError(msg(e))
+        setActionError(errValue(e))
       }
       void load()
     } finally {

@@ -24,7 +24,7 @@ g.requestAnimationFrame = (cb: (t: number) => void) =>
 g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 
 import {
-  bgmType, composeBlockers, composeKey, composeLabel, composing, curveText, finalEpisodes, finalText, noteText,
+  bgmType, composeBlockers, speakerName, composeKey, composeLabel, composing, curveText, finalEpisodes, finalText, noteText,
 } from '../src/compose'
 import type {
   ComposePreview, FilmClip, FilmSession, FinalState, MixReport, Storyboard, VoicesInfo,
@@ -50,6 +50,12 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
   const base = { dirty: false, gate: null, draft: true }
 
   must(composeBlockers(P, S, V, base).join('|') === '还有 1 个说话人没选音色：路人', '缺音色写说话人名字')
+  const VM: VoicesInfo = { ...V, speakers: [
+    { key: 'narration', name: { code: 'voice.narrator', params: {} }, hint: null, voice: null, chosen: null },
+    { key: '', name: { code: 'voice.unlabeled', params: {} }, hint: null, voice: null, chosen: null }] }
+  must(speakerName(VM, 'narration') === '旁白' && speakerName(VM, '') === '（未标说话人）', 'speakerName 渲染消息对象')
+  must(speakerName(V, 'C09') === '路人' && speakerName(null, 'x') === 'x', 'speakerName 字符串原样')
+  must(composeBlockers({ ...P, missing_voices: ['narration'] }, S, VM, base)[0].includes('旁白'), '拦截原因里写旁白')
   must(composeBlockers({ ...P, missing_voices: [] }, S, V, base).length === 0, '没出好的段先用图片代替时缺段不拦')
   must(composeBlockers({ ...P, missing_voices: [] }, S, V, { ...base, draft: false })[0]
     .startsWith('1 段还没有可用的视频'), '关掉「先用图片代替」时缺段要拦')
@@ -142,10 +148,10 @@ let film = makeSession()
 const lastClip = film.clips[film.clips.length - 1].id
 
 const voicesInfo: VoicesInfo = {
-  provider: 'fake', rate_note: '假配音：不联网、不花钱',
+  provider: 'fake', rate_note: { code: 'rate.fake_tts', params: {} },
   voices: [{ id: 'fake-male', name: '假男声', gender: 'male' }, { id: 'fake-female', name: '假女声', gender: 'female' }],
   speakers: [
-    { key: 'narration', name: '旁白', hint: 'male_mature', voice: 'fake-male', chosen: null },
+    { key: 'narration', name: { code: 'voice.narrator', params: {} }, hint: 'male_mature', voice: 'fake-male', chosen: null },
     { key: 'C01', name: '老栓', hint: 'male_elder', voice: 'fake-male', chosen: null },
     { key: 'C09', name: '路人', hint: null, voice: null, chosen: null },
   ],
@@ -454,6 +460,35 @@ composeDown = false
 await click(button('重试'))
 must(has('配音 40 条') && !has('合成预览读不出来'), '重试后显示预览')
 console.log('18. 预览读取失败可重试 ✓')
+
+// 19. 费率说明、旁白名、音色错误按界面语言渲染（对象不会直接放进 JSX），切语言后已显示的错误跟着变
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { useI18n } = await import('../src/i18n/core')
+  const { en } = await import('../src/i18n/en')
+  const { zh } = await import('../src/i18n/zh')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  function Cap() { setLoc = useI18n().setLocale; return null }
+  const lang = async (l: 'zh' | 'en') => { await act(async () => { setLoc(l) }); await settle() }
+  await act(async () => { root.render(<I18nProvider initial="zh"><Cap /><Host key="i18n" /></I18nProvider>) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
+  must(has(zh.srv.rate.fake_tts) && has(zh.srv.voice.narrator), '中文界面：费率说明与旁白名')
+  await lang('en')
+  must(has(en.srv.rate.fake_tts) && !has(zh.srv.rate.fake_tts), '英文界面：费率说明')
+  must(has(en.srv.voice.narrator) && !!container.querySelector('select[aria-label="Voice for Narrator"]'),
+    '英文界面：旁白名与音色选择框的无障碍名')
+  must(has('假男声'), '音色名是专有名，不翻译')
+  await lang('zh')
+  nextPostFail = { status: 422, detail: { code: 'tts.volc.no_key', params: {}, message: zh.srv.tts.volc.no_key } }
+  await click(composeBtn())
+  await click(button('确认合成'))
+  must(has(zh.srv.tts.volc.no_key) && !has(en.srv.tts.volc.no_key), '操作报错（中文）')
+  await lang('en')
+  must(has(en.srv.tts.volc.no_key) && !has(zh.srv.tts.volc.no_key), '切英文：已显示的错误跟着变')
+  console.log('19. 费率说明、旁白名、音色错误按界面语言渲染 ✓')
+}
 
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

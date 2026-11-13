@@ -57,6 +57,7 @@ def main() -> int:
     voices, missing = voice.resolve_voices(SMALL, lines, {"C3": "fake-female", "C1": "nope"}, tts.caps)
     assert voices["C3"] == "fake-female" and voices["C1"] == "fake-male" and missing == [], "无效的选择退回默认"
     assert voice.speakers(SMALL)["C1"] == {"name": "老栓", "hint": "male_elder"}
+    assert voice.speakers(SMALL)[voice.NARRATION]["name"] == {"code": "voice.narrator", "params": {}}
     print("3. 说话人与音色：用户选的优先、按提示性别默认、缺音色列出 ✓")
 
     with tempfile.TemporaryDirectory() as d:
@@ -95,11 +96,14 @@ def main() -> int:
         two = lines[:2]
         done, failed = voice.synthesize(two, voices, flaky, Path(d), retries=3, sleep=sleeps.append)
         assert [x["id"] for x in failed] == ["S1-L1"] and "限流" in failed[0]["error"]
+        assert failed[0]["error_msg"] == {"code": "tts.fake.throttled", "params": {}}, failed[0]
         assert [x["id"] for x in done] == ["S1-L2"] and len(sleeps) == 4
     with tempfile.TemporaryDirectory() as d:
         bad = FakeTts(fail_with="音色无权限")
         done, failed = voice.synthesize(two, voices, bad, Path(d), sleep=lambda s: None)
         assert not done and [x["error"] for x in failed] == ["音色无权限", "音色无权限"] and len(bad.calls) == 2
+        assert failed[0]["error_msg"] == {"code": "tts.fake.failed",
+                                          "params": {"detail": {"t": "vendor", "text": "音色无权限"}}}, failed[0]
     with tempfile.TemporaryDirectory() as d:
         billed = FakeTts(fail_billed="中途断开")
         spent = []
@@ -113,8 +117,8 @@ def main() -> int:
     try:
         voice.synthesize(lines, voices, tts, Path("/nonexistent/render/v1"), sleep=lambda s: None)
         raise AssertionError("会话目录不存在应抛 VoiceError")
-    except voice.VoiceError:
-        pass
+    except voice.VoiceError as e:
+        assert e.code == "film.session.dir_gone" and str(e) == "出片会话目录已不存在（版本可能已删除）"
     print("7. 会话目录已删不重建 ✓")
 
     print("\nALL PASS")

@@ -70,7 +70,7 @@ def render_zh(code: str, params: dict) -> str:
     return _PH.sub(lambda m: _zh_value(params[m.group(1)]) if m.group(1) in params else m.group(0), tpl)
 
 
-def msg(code: str, **params) -> dict:
+def msg(code: str, /, **params) -> dict:
     if code not in _REG:
         raise KeyError(code)
     want = set(_REG[code][0])
@@ -93,7 +93,7 @@ class UserError:
         self.__dict__["_params"] = value
 
     @classmethod
-    def of(cls, code: str, *args, **params):
+    def of(cls, code: str, /, *args, **params):  # code 仅位置参数：参数里可以有名叫 code 的值
         m = msg(code, **params)
         e = cls(m["message"], *args)
         e.code, e.params = code, m["params"]
@@ -272,6 +272,30 @@ register("film.free_invalid.style_gone", "风格图已删除，请从参考里�
 register("film.free_invalid.no_ref_image", "{id} 没有可用的参考图了")
 register("film.free_invalid.keyframe_gone", "首帧用的关键帧没了：{shot}")
 register("film.free_invalid.tail_gone", "首帧用的尾帧找不到了：{id}")
+
+# 配音厂商与音色
+register("rate.volc_tts", "2026-10 火山引擎豆包语音合成 2.0 后付费刊例价（3 元/万字符），未经账单核对")
+register("rate.fake_tts", "假配音：不联网、不花钱，金额只用于演示")
+register("tts.unknown_provider", "未知的配音厂商：{name}")
+register("tts.unknown_voice", "未知的音色：{voice}")
+register("tts.unknown_voice_list", "没有这个音色：{voices}")
+register("tts.concat_mismatch", "拼接的语音片段参数不一致")
+register("tts.fake.failed", "{detail}")
+register("tts.fake.throttled", "假的限流")
+register("tts.volc.no_key", "配音服务还没有配置，请联系管理员")
+register("tts.volc.unavailable", "豆包语音暂时不可用（HTTP {status}）")
+register("tts.volc.rejected", "豆包语音拒绝了请求（{code}）：{detail}")
+register("tts.volc.rejected_http", "豆包语音拒绝了请求（HTTP {status}）")
+register("tts.volc.not_json", "豆包语音返回的不是 JSON")
+register("tts.volc.not_object", "豆包语音返回的不是 JSON 对象")
+register("tts.volc.failed", "豆包语音合成失败（{code}）")
+register("tts.volc.failed_detail", "豆包语音合成失败（{code}）：{detail}")
+register("tts.volc.bad_audio", "豆包语音返回的音频无法解码")
+register("tts.volc.cut", "豆包语音中途断开")
+register("tts.volc.connect_failed", "连接豆包语音失败，稍后自动重试")
+register("tts.volc.incomplete", "豆包语音没有返回完整的音频")
+register("voice.narrator", "旁白")
+register("voice.unlabeled", "（未标说话人）")
 
 
 if __name__ == "__main__":

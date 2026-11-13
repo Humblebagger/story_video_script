@@ -113,6 +113,9 @@ def main() -> int:
     assert M.render_zh("film.provider.submit_cut", {}) == "网络中断"
     assert M.render_zh("film.submit.crashed", {}) == "提交时出现意外错误，请重试；仍失败请联系管理员"
 
+    from render.providers.base import ProviderError
+    e = ProviderError.of("tts.volc.rejected", code="401", detail=M.vendor("x"))
+    assert e.params["code"] == "401" and str(e) == "豆包语音拒绝了请求（401）：x", "参数可以叫 code"
     print("\nALL PASS")
     return 0
 

@@ -57,7 +57,8 @@ def main() -> int:
     root = novels.render_dir(uid, nid, cid, "v1")
 
     # 1. 没会话：音色与合成都 404
-    assert c.get(R + "/voices", headers=H).status_code == 404
+    r = c.get(R + "/voices", headers=H)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "film.session.none", r.text
     assert c.get(R + "/compose", headers=H).status_code == 404
     assert c.post(R + "/session", headers=H, json={}).status_code == 200
     print("1. 没会话时 404 ✓")
@@ -70,7 +71,27 @@ def main() -> int:
     narr = next(x for x in v["speakers"] if x["key"] == "narration")
     assert narr["voice"] == "fake-male" and narr["chosen"] is None, "旁白提示 male_mature → 男声"
     assert set(v["missing"]) == {x["key"] for x in v["speakers"] if x["voice"] is None}
-    assert c.put(R + "/voices", headers=H, json={"voices": {"narration": "nope"}}).status_code == 422
+    r = c.put(R + "/voices", headers=H, json={"voices": {"narration": "nope", "C1": "nah"}})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.unknown_voice_list", r.text
+    assert r.json()["detail"]["params"] == {"voices": ["nope", "nah"]} \
+        and r.json()["detail"]["message"] == "没有这个音色：nope、nah", r.text
+    assert next(x for x in v["speakers"] if x["key"] == "narration")["name"] == \
+        {"code": "voice.narrator", "params": {}}
+    assert v["rate_note"] == {"code": "rate.fake_tts", "params": {}}
+    assert all(isinstance(x["name"], str) for x in v["speakers"] if x["key"] != "narration" and x["key"])
+    from render.providers.base import ProviderError as _PE
+
+    def _no_key():
+        raise _PE.of("tts.volc.no_key")
+    providers.register_tts("fake", _no_key)
+    r = c.get(R + "/voices", headers=H)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.volc.no_key", r.text
+    assert r.json()["detail"]["message"] == "配音服务还没有配置，请联系管理员"
+    os.environ["STORYBOARD_TTS_PROVIDER"] = "nope"
+    r = c.get(R + "/voices", headers=H)
+    os.environ["STORYBOARD_TTS_PROVIDER"] = "fake"
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.unknown_provider", r.text
+    providers.register_tts("fake", lambda: TTS)
     v = c.put(R + "/voices", headers=H, json={"voices": {"narration": "fake-female"}}).json()
     narr = next(x for x in v["speakers"] if x["key"] == "narration")
     assert narr["voice"] == "fake-female" and narr["chosen"] == "fake-female"

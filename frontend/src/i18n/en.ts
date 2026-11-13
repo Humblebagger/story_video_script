@@ -1359,6 +1359,8 @@ export const en: Messages = {
       fake: 'Fake provider: offline and free; amounts are for demo only',
       ark: 'Volcengine Ark list price, 2026-10 (2.0: 46, fast: 37, mini: 23 CNY per million tokens; tokens ≈ seconds × width × height × 24 / 1024), not yet checked against a bill',
       minimax: 'MiniMax list price, 2026-11 (H3 768P 0.50, 2K 0.80 CNY/s; Highspeed and Lite per tier; first 5 reference images per clip free, extra ones billed), not yet checked against a bill',
+      volc_tts: 'Volcengine Doubao TTS 2.0 pay-as-you-go list price, 2026-10 (3 CNY per 10,000 characters), not yet checked against a bill',
+      fake_tts: 'Fake voice-over: offline and free; amounts are for demo only',
     },
     film: {
       provider: {
@@ -1512,5 +1514,27 @@ export const en: Messages = {
         tail_gone: 'The last frame used as first frame cannot be found: {id}',
       },
     },
+    tts: {
+      unknown_provider: 'Unknown voice provider: {name}',
+      unknown_voice: 'Unknown voice: {voice}',
+      unknown_voice_list: 'No such voice: {voices}',
+      concat_mismatch: 'The voice clips to join have different audio settings',
+      fake: { failed: '{detail}', throttled: 'Fake rate limit' },
+      volc: {
+        no_key: 'The voice service isn\'t set up yet. Please contact the administrator.',
+        unavailable: 'Doubao TTS is temporarily unavailable (HTTP {status})',
+        rejected: 'Doubao TTS rejected the request ({code}): {detail}',
+        rejected_http: 'Doubao TTS rejected the request (HTTP {status})',
+        not_json: 'Doubao TTS returned something that isn\'t JSON',
+        not_object: 'Doubao TTS returned something that isn\'t a JSON object',
+        failed: 'Doubao TTS synthesis failed ({code})',
+        failed_detail: 'Doubao TTS synthesis failed ({code}): {detail}',
+        bad_audio: 'Doubao TTS returned audio that could not be decoded',
+        cut: 'Doubao TTS disconnected midway',
+        connect_failed: 'Couldn\'t connect to Doubao TTS; retrying shortly',
+        incomplete: 'Doubao TTS did not return the complete audio',
+      },
+    },
+    voice: { narrator: 'Narrator', unlabeled: '(no speaker)' },
   },
 }

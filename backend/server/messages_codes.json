@@ -623,8 +623,116 @@
     "params": [],
     "zh": "假厂商：不联网、不花钱，金额只用于演示"
   },
+  "rate.fake_tts": {
+    "params": [],
+    "zh": "假配音：不联网、不花钱，金额只用于演示"
+  },
   "rate.minimax": {
     "params": [],
     "zh": "2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；每段前 5 张参考图免费，超出另计），未经账单核对"
+  },
+  "rate.volc_tts": {
+    "params": [],
+    "zh": "2026-10 火山引擎豆包语音合成 2.0 后付费刊例价（3 元/万字符），未经账单核对"
+  },
+  "tts.concat_mismatch": {
+    "params": [],
+    "zh": "拼接的语音片段参数不一致"
+  },
+  "tts.fake.failed": {
+    "params": [
+      "detail"
+    ],
+    "zh": "{detail}"
+  },
+  "tts.fake.throttled": {
+    "params": [],
+    "zh": "假的限流"
+  },
+  "tts.unknown_provider": {
+    "params": [
+      "name"
+    ],
+    "zh": "未知的配音厂商：{name}"
+  },
+  "tts.unknown_voice": {
+    "params": [
+      "voice"
+    ],
+    "zh": "未知的音色：{voice}"
+  },
+  "tts.unknown_voice_list": {
+    "params": [
+      "voices"
+    ],
+    "zh": "没有这个音色：{voices}"
+  },
+  "tts.volc.bad_audio": {
+    "params": [],
+    "zh": "豆包语音返回的音频无法解码"
+  },
+  "tts.volc.connect_failed": {
+    "params": [],
+    "zh": "连接豆包语音失败，稍后自动重试"
+  },
+  "tts.volc.cut": {
+    "params": [],
+    "zh": "豆包语音中途断开"
+  },
+  "tts.volc.failed": {
+    "params": [
+      "code"
+    ],
+    "zh": "豆包语音合成失败（{code}）"
+  },
+  "tts.volc.failed_detail": {
+    "params": [
+      "code",
+      "detail"
+    ],
+    "zh": "豆包语音合成失败（{code}）：{detail}"
+  },
+  "tts.volc.incomplete": {
+    "params": [],
+    "zh": "豆包语音没有返回完整的音频"
+  },
+  "tts.volc.no_key": {
+    "params": [],
+    "zh": "配音服务还没有配置，请联系管理员"
+  },
+  "tts.volc.not_json": {
+    "params": [],
+    "zh": "豆包语音返回的不是 JSON"
+  },
+  "tts.volc.not_object": {
+    "params": [],
+    "zh": "豆包语音返回的不是 JSON 对象"
+  },
+  "tts.volc.rejected": {
+    "params": [
+      "code",
+      "detail"
+    ],
+    "zh": "豆包语音拒绝了请求（{code}）：{detail}"
+  },
+  "tts.volc.rejected_http": {
+    "params": [
+      "status"
+    ],
+    "zh": "豆包语音拒绝了请求（HTTP {status}）"
+  },
+  "tts.volc.unavailable": {
+    "params": [
+      "status"
+    ],
+    "zh": "豆包语音暂时不可用（HTTP {status}）"
+  },
+  "voice.narrator": {
+    "params": [],
+    "zh": "旁白"
+  },
+  "voice.unlabeled": {
+    "params": [],
+    "zh": "（未标说话人）"
   }
 }

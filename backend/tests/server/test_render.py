@@ -276,7 +276,7 @@ def main() -> int:
     assert s["options"]["rate_note"] == {"code": "rate.fake", "params": {}}
     print("14. 出片接口错误带代码 ✓")
 
-    # 14b. 边界：合成与音色接口还没改造（子计划 2），错误仍是字符串
+    # 14b. 边界：合成接口仍返回字符串（Task 5 改）；音色接口已返回消息对象
     R2 = f"/novels/{nid}/chapters/{cid}/versions/v2/render"      # v2 没有分镜产物
     r = c.post(R2 + "/compose", headers=H, json={})
     assert r.status_code == 422 and r.json()["detail"] == "这个版本还没有分镜产物", r.text
@@ -287,7 +287,7 @@ def main() -> int:
         assert e.status_code == 422 and e.detail == "这个版本还没有分镜产物", e.detail
     real_tts, app_mod._tts = app_mod._tts, lambda: type("T", (), {"caps": type("C", (), {"voices": []})()})()
     r = c.put(R2 + "/voices", headers=H, json={"voices": {}})
-    assert r.status_code == 404 and r.json()["detail"] == "还没有出片会话", r.text
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "film.session.none", r.text
     novels.create_version(uid, nid, cid, "v15", {}, "原文")
     R15 = f"/novels/{nid}/chapters/{cid}/versions/v15/render"
     sp15 = novels.render_dir(uid, nid, cid, "v15") / "session.json"
@@ -295,8 +295,8 @@ def main() -> int:
     sp15.write_text("{坏的", encoding="utf-8")
     r = c.put(R15 + "/voices", headers=H, json={"voices": {}})
     app_mod._tts = real_tts
-    assert r.status_code == 500 and r.json()["detail"] == "出片记录文件已损坏，原文件已备份，请联系管理员处理", r.text
-    print("14b. 合成与音色接口仍返回字符串 ✓")
+    assert r.status_code == 500 and r.json()["detail"]["code"] == "film.session.corrupt_admin", r.text
+    print("14b. 合成接口仍返回字符串；音色接口已返回消息对象 ✓")
 
     print("\nALL PASS")
     return 0

@@ -5,6 +5,7 @@
 """
 import base64
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -21,6 +22,23 @@ from render.providers.tts_base import BilledError, ProviderError, TransientError
 from render.providers.tts_volc import RESOURCE_ID, VOICES, VolcTts  # noqa: E402
 
 VOICE = "zh_male_m191_uranus_bigtts"
+
+
+class _Grab(logging.Handler):
+    def __init__(self, name):
+        super().__init__(logging.DEBUG)
+        self.lines = []
+        self._lg = logging.getLogger(name)
+
+    def emit(self, rec):
+        self.lines.append(rec.getMessage())
+
+    def __enter__(self):
+        self._lg.addHandler(self)
+        return self
+
+    def __exit__(self, *a):
+        self._lg.removeHandler(self)
 
 
 def must_raise(exc, fn, *a, **kw):
@@ -83,10 +101,23 @@ def main() -> int:
         e = must_raise(ProviderError, status(401, {"message": "invalid key"}).synthesize,
                        "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert "invalid key" in str(e) and "k-secret" not in str(e)
+        assert e.code == "tts.volc.rejected" and e.params["code"] == "401", (e.code, e.params)
+        assert e.params["detail"] == {"t": "vendor", "text": "invalid key"}
+        e = must_raise(TransientError, status(503).synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert e.code == "tts.volc.unavailable" and e.params == {"status": 503}, (e.code, e.params)
+        e = must_raise(ProviderError, status(400).synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert e.code == "tts.volc.rejected_http" and e.params == {"status": 400}, (e.code, e.params)
+        leaky = status(401, {"message": "bad Bearer sk-abc123xyz", "code": 7})
+        e = must_raise(ProviderError, leaky.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert "sk-abc123xyz" not in json.dumps(e.params), e.params
         bad = volc(lambda r: httpx.Response(200, content=(json.dumps(
             {"code": 45000000, "message": "speaker permission denied"}) + "\n").encode()))
         e = must_raise(BilledError, bad.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert "45000000" in str(e) and "permission" in str(e) and e.billed_cny == tts_cost(1, bad.caps)
+        assert e.code == "tts.volc.failed_detail" and e.params["code"] == 45000000, (e.code, e.params)
+        bad0 = volc(lambda r: httpx.Response(200, content=(json.dumps({"code": 45000001}) + "\n").encode()))
+        e = must_raise(BilledError, bad0.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert e.code == "tts.volc.failed" and e.params == {"code": 45000001}
         cut = volc(lambda r: httpx.Response(200, content=stream(b"\x00\x00" * 10, end=False)))
         must_raise(BilledError, cut.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
 
@@ -94,7 +125,12 @@ def main() -> int:
             raise httpx.ConnectError("refused", request=request)
         e = must_raise(TransientError, volc(refused).synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert "k-secret" not in str(e)
+        assert e.code == "tts.volc.connect_failed" and e.params == {} and "ConnectError" not in str(e)
         assert not (Path(d) / "e.wav").exists(), "失败时不留文件"
+        with _Grab("render.providers.tts_volc") as g:
+            must_raise(TransientError, volc(refused).synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+        assert any("ConnectError" in x for x in g.lines) and not any("k-secret" in x for x in g.lines), g.lines
+        assert e.code and "豆包语音" in str(e)
         print("3. 错误分级：限流/5xx/连不上为瞬时，4xx 为明确失败，密钥不进报错 ✓")
 
         class Broken(httpx.SyncByteStream):
@@ -104,6 +140,8 @@ def main() -> int:
                 raise httpx.ReadError("reset")
 
         text = "收到之后才失败"
+        want = {"中途断开": "tts.volc.cut", "不是 JSON 对象": "tts.volc.not_object", "不是 JSON": "tts.volc.not_json",
+                "音频无法解码": "tts.volc.bad_audio"}
         cases = {
             "中途断开": lambda r: httpx.Response(200, stream=Broken()),
             "不是 JSON 对象": lambda r: httpx.Response(200, content=b"[1, 2]\n"),
@@ -117,17 +155,26 @@ def main() -> int:
             assert isinstance(e, ProviderError), "BilledError 属明确失败，调用方不重试"
             assert e.billed_cny == tts_cost(len(text), t.caps) > 0, (what, e.billed_cny)
             assert "k-secret" not in str(e) and e.__cause__ is None, what
+            assert e.code == want[what] and "ReadError" not in str(e), (what, e.code)
             assert not (Path(d) / "f.wav").exists(), what
         assert "无法解码" in str(must_raise(BilledError, volc(cases["音频无法解码"]).synthesize,
                                            text, VOICE, None, 1.0, Path(d) / "f.wav"))
-        print("4. 收到 200 后的失败（中途断开、坏行、坏音频、流内错误码、没有结束块）按已计费报 ✓")
+        inc = volc(lambda r: httpx.Response(200, content=stream(b"\x00\x00" * 10, end=False)))
+    with tempfile.TemporaryDirectory() as d:
+        e = must_raise(BilledError, inc.synthesize, "一", VOICE, None, 1.0, Path(d) / "g.wav")
+    assert e.code == "tts.volc.incomplete" and e.params == {}
+    print("4. 收到 200 后的失败（中途断开、坏行、坏音频、流内错误码、没有结束块）按已计费报 ✓")
 
     real_load = tts_volc._load_dotenv
     saved = {k: os.environ.pop(k, None) for k in ("VOLC_TTS_API_KEY", "VOLC_TTS_APP_ID", "VOLC_TTS_ACCESS_KEY")}
     tts_volc._load_dotenv = lambda path: None
     try:
-        e = must_raise(ProviderError, VolcTts.from_env)
-        assert "VOLC_TTS_API_KEY" in str(e)
+        with _Grab("render.providers.tts_volc") as g:
+            e = must_raise(ProviderError, VolcTts.from_env)
+        assert e.code == "tts.volc.no_key" and str(e) == "配音服务还没有配置，请联系管理员"
+        assert "VOLC_TTS_API_KEY" not in str(e) and ".env" not in str(e)
+        assert any("VOLC_TTS_API_KEY" in x for x in g.lines), g.lines
+        assert VolcTts.rate_note == {"code": "rate.volc_tts", "params": {}}
         os.environ["VOLC_TTS_API_KEY"] = "env-key"
         assert VolcTts.from_env()._auth == {"X-Api-Key": "env-key"}
         providers._TTS_INSTANCES.pop("volc", None)

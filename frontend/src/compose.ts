@@ -2,6 +2,7 @@
  *  BGM 上传类型、按钮文字、什么时候重读预览。useCompose 与 ComposePanel 只吃这里的结果；单测见 tests/compose.test.tsx。 */
 import { inFlight } from './film'
 import { tr } from './i18n/core'
+import { formatMsg } from './i18n/serverMsg'
 import { INTENSITY, label, MOOD } from './labels'
 import type { ComposePreview, FilmSession, FinalState, MixNote, MusicSegment, VoicesInfo } from './types'
 
@@ -26,7 +27,7 @@ export function composeKey(s: FilmSession): string {
 }
 
 export const speakerName = (v: VoicesInfo | null, key: string) =>
-  v?.speakers.find((x) => x.key === key)?.name ?? (key || tr('compose.noSpeaker'))
+  formatMsg(v?.speakers.find((x) => x.key === key)?.name) || key || tr('compose.noSpeaker')
 
 /** 不能合成的原因（按要先处理的顺序）；空数组为可以合成 */
 export function composeBlockers(p: ComposePreview, s: FilmSession, v: VoicesInfo | null,

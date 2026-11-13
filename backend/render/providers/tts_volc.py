@@ -13,6 +13,7 @@
 import base64
 import binascii
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -21,8 +22,11 @@ import httpx
 
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
-from render.providers.base import ProviderError, TransientError
+from render.providers.base import ProviderError, TransientError, scrub
 from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
+from server.messages import vendor
+
+log = logging.getLogger("render.providers.tts_volc")
 
 URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 RESOURCE_ID = "seed-tts-2.0"
@@ -50,26 +54,35 @@ def _per_k() -> float:
     return v if v > 0 else DEFAULT_CNY_PER_K
 
 
-def _error_text(r: httpx.Response) -> str:
+def _reject(r: httpx.Response, secrets: list) -> ProviderError:
+    """4xx：厂商给了 message 就带上（先抹掉密钥与 Bearer 凭据），否则只报 HTTP 状态。"""
     try:
         d = r.json()
+        if not isinstance(d, dict):
+            d = {}
         head = d.get("header") or {}
         msg = d.get("message") or head.get("message") or ""
         code = d.get("code") or head.get("code") or r.status_code
     except ValueError:
         msg, code = r.text[:200], r.status_code
-    return f"豆包语音拒绝了请求（{code}）：{msg}" if msg else f"豆包语音拒绝了请求（HTTP {r.status_code}）"
+    for s in secrets:
+        msg = scrub(msg, s)
+    msg = scrub(msg)
+    if msg:
+        return ProviderError.of("tts.volc.rejected", code=str(code), detail=vendor(msg))
+    return ProviderError.of("tts.volc.rejected_http", status=r.status_code)
 
 
 class VolcTts:
     name = "volc"
-    rate_note = "2026-10 火山引擎豆包语音合成 2.0 后付费刊例价（3 元/万字符），未经账单核对"
+    rate_note = {"code": "rate.volc_tts", "params": {}}
 
     def __init__(self, *, api_key: str = "", app_id: str = "", access_key: str = "",
                  client=None, url: str = URL, timeout: float = 60.0):
         if not api_key and not (app_id and access_key):
-            raise ProviderError("没有配置豆包语音密钥：在 backend/.env 写 VOLC_TTS_API_KEY=…（新版控制台），"
-                                "或 VOLC_TTS_APP_ID 与 VOLC_TTS_ACCESS_KEY（旧版控制台）")
+            log.warning("未配置豆包语音密钥：在 backend/.env 写 VOLC_TTS_API_KEY（新版控制台），"
+                        "或 VOLC_TTS_APP_ID 与 VOLC_TTS_ACCESS_KEY（旧版控制台）")  # i18n: internal
+            raise ProviderError.of("tts.volc.no_key")
         self._auth = ({"X-Api-Key": api_key} if api_key
                       else {"X-Api-App-Id": app_id, "X-Api-Access-Key": access_key})
         self._http = client or httpx.Client(timeout=timeout)
@@ -84,8 +97,13 @@ class VolcTts:
                    app_id=os.environ.get("VOLC_TTS_APP_ID", "").strip(),
                    access_key=os.environ.get("VOLC_TTS_ACCESS_KEY", "").strip())
 
-    def _billed(self, message: str, text: str) -> BilledError:
-        return BilledError(message, tts_cost(len(text), self.caps))
+    def _billed(self, code: str, text: str, /, **params) -> BilledError:
+        return BilledError.of(code, tts_cost(len(text), self.caps), **params)
+
+    def _scrub(self, text) -> str:
+        for s in self._auth.values():
+            text = scrub(text, s)
+        return scrub(text)
 
     def synthesize(self, text, voice, emotion, speed, dest):
         params = {"format": "pcm", "sample_rate": SAMPLE_RATE,
@@ -100,10 +118,10 @@ class VolcTts:
         try:
             with self._http.stream("POST", self._url, headers=headers, json=body) as r:
                 if r.status_code == 429 or r.status_code >= 500:
-                    raise TransientError(f"豆包语音暂时不可用（HTTP {r.status_code}）")
+                    raise TransientError.of("tts.volc.unavailable", status=r.status_code)
                 if r.status_code >= 400:
                     r.read()
-                    raise ProviderError(_error_text(r))
+                    raise _reject(r, list(self._auth.values()))
                 seen = True         # 已收下请求：此后的失败可能已计费，按已计费报、不重试
                 for raw in r.iter_lines():
                     line = raw.strip()
@@ -114,26 +132,30 @@ class VolcTts:
                     try:
                         msg = json.loads(line)
                     except ValueError:
-                        raise self._billed("豆包语音返回的不是 JSON", text) from None
+                        raise self._billed("tts.volc.not_json", text) from None
                     if not isinstance(msg, dict):
-                        raise self._billed("豆包语音返回的不是 JSON 对象", text)
+                        raise self._billed("tts.volc.not_object", text)
                     code = msg.get("code", 0)
                     if code == DONE:
                         done = True
                         break
                     if code != 0:
                         detail = msg.get("message") or ""
-                        raise self._billed(f"豆包语音合成失败（{code}）" + (f"：{detail}" if detail else ""), text)
+                        if detail:
+                            raise self._billed("tts.volc.failed_detail", text, code=code,
+                                               detail=vendor(self._scrub(detail)))
+                        raise self._billed("tts.volc.failed", text, code=code)
                     if msg.get("data"):
                         try:
                             pcm += base64.b64decode(msg["data"], validate=True)
                         except (binascii.Error, ValueError, TypeError):
-                            raise self._billed("豆包语音返回的音频无法解码", text) from None
+                            raise self._billed("tts.volc.bad_audio", text) from None
         except httpx.TransportError as e:
+            log.warning("豆包语音连接异常：%s seen=%s", type(e).__name__, seen)  # i18n: internal
             if seen:
-                raise self._billed(f"豆包语音中途断开：{type(e).__name__}", text) from None
-            raise TransientError(f"连接豆包语音失败：{type(e).__name__}") from None
+                raise self._billed("tts.volc.cut", text) from None
+            raise TransientError.of("tts.volc.connect_failed") from None
         if not done or not pcm:
-            raise self._billed("豆包语音没有返回完整的音频", text)
+            raise self._billed("tts.volc.incomplete", text)
         duration = write_wav(Path(dest), bytes(pcm), SAMPLE_RATE)
         return TtsResult(Path(dest), duration, tts_cost(len(text), self.caps), len(text))

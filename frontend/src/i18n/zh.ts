@@ -1353,6 +1353,8 @@ export const zh = {
       fake: '假厂商：不联网、不花钱，金额只用于演示',
       ark: '2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对',
       minimax: '2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；每段前 5 张参考图免费，超出另计），未经账单核对',
+      volc_tts: '2026-10 火山引擎豆包语音合成 2.0 后付费刊例价（3 元/万字符），未经账单核对',
+      fake_tts: '假配音：不联网、不花钱，金额只用于演示',
     },
     film: {
       provider: {
@@ -1506,5 +1508,27 @@ export const zh = {
         tail_gone: '首帧用的尾帧找不到了：{id}',
       },
     },
+    tts: {
+      unknown_provider: '未知的配音厂商：{name}',
+      unknown_voice: '未知的音色：{voice}',
+      unknown_voice_list: '没有这个音色：{voices}',
+      concat_mismatch: '拼接的语音片段参数不一致',
+      fake: { failed: '{detail}', throttled: '假的限流' },
+      volc: {
+        no_key: '配音服务还没有配置，请联系管理员',
+        unavailable: '豆包语音暂时不可用（HTTP {status}）',
+        rejected: '豆包语音拒绝了请求（{code}）：{detail}',
+        rejected_http: '豆包语音拒绝了请求（HTTP {status}）',
+        not_json: '豆包语音返回的不是 JSON',
+        not_object: '豆包语音返回的不是 JSON 对象',
+        failed: '豆包语音合成失败（{code}）',
+        failed_detail: '豆包语音合成失败（{code}）：{detail}',
+        bad_audio: '豆包语音返回的音频无法解码',
+        cut: '豆包语音中途断开',
+        connect_failed: '连接豆包语音失败，稍后自动重试',
+        incomplete: '豆包语音没有返回完整的音频',
+      },
+    },
+    voice: { narrator: '旁白', unlabeled: '（未标说话人）' },
   },
 }

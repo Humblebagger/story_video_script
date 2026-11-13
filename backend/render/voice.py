@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from render.providers.base import ProviderError, TransientError
+from server.messages import UserError, cause_of, compact, msg
 from render.providers.tts_base import BilledError, concat_wavs, default_voice, tts_cost, wav_seconds
 
 NARRATION = "narration"
@@ -28,7 +29,7 @@ CACHE_DIR = "audio/cache"
 _SPLIT = re.compile(r"(?<=[。！？!?；;…，,、])")
 
 
-class VoiceError(Exception):
+class VoiceError(UserError, Exception):
     """配音没法进行：message 给用户看。"""
 
 
@@ -58,7 +59,7 @@ def tts_lines(lines: list, audio_mode: str) -> list:
 def speakers(doc: dict) -> dict:
     """说话人 → {"name", "hint"}：旁白取 meta.narration.tts_voice，角色取资产卡 voice.tts_voice。"""
     hint = ((doc.get("meta") or {}).get("narration") or {}).get("tts_voice")
-    out = {NARRATION: {"name": "旁白", "hint": hint}}
+    out = {NARRATION: {"name": compact(msg("voice.narrator")), "hint": hint}}
     assets = doc.get("assets") or {}
     for c in (assets.get("characters") or []) + (assets.get("creatures") or []):
         out[c["id"]] = {"name": c.get("name") or c["id"], "hint": (c.get("voice") or {}).get("tts_voice")}
@@ -110,7 +111,7 @@ def split_text(text: str, max_chars: int) -> list:
 def _cache(root) -> Path:
     root = Path(root)
     if not root.is_dir():
-        raise VoiceError("出片会话目录已不存在（版本可能已删除）")
+        raise VoiceError.of("film.session.dir_gone")
     cache = root / CACHE_DIR
     cache.mkdir(parents=True, exist_ok=True)
     return cache
@@ -146,7 +147,7 @@ def synthesize(lines: list, voices: dict, provider, root, *, retries: int = 3, s
                on_cost=None) -> tuple:
     """逐条合成（缓存命中直接用），返回 (结果, 失败)。
 
-    结果每条 = 语音条 + file、duration、cost_cny、cached；失败每条 = 语音条 + error（原因原样）。
+    结果每条 = 语音条 + file、duration、cost_cny、cached；失败每条 = 语音条 + error（中文兜底）+ error_msg（原因，可嵌进别的消息）。
     瞬时错误重试 retries 次；厂商明确失败与重试用尽都记进失败，不中断其余各条。
     on_cost(cny) 在每次真实合成后调用（计入出片会话的已花金额）；厂商收下后才失败（BilledError）也按其金额调用。
     """
@@ -179,7 +180,7 @@ def synthesize(lines: list, voices: dict, provider, root, *, retries: int = 3, s
         except BilledError as e:         # 厂商收下后才失败：可能已计费，照记花费，不重试
             if on_cost:
                 on_cost(e.billed_cny)
-            failed.append({**line, "error": str(e)})
+            failed.append({**line, "error": str(e), "error_msg": cause_of(e)})
         except (ProviderError, TransientError) as e:
-            failed.append({**line, "error": str(e)})
+            failed.append({**line, "error": str(e), "error_msg": cause_of(e)})
     return done, failed

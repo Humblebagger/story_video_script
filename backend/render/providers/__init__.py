@@ -14,6 +14,10 @@ class UnknownProvider(UserError, KeyError):
     """未注册的厂商名（继承 KeyError：原有 except KeyError 不变）。"""
 
 
+class UnknownTts(UserError, KeyError):
+    """未注册的配音厂商名（继承 KeyError：原有 except KeyError 不变）。"""
+
+
 _FACTORIES: dict = {}
 _INSTANCES: dict = {}
 
@@ -118,7 +122,7 @@ def get_tts(name=None):
     if name not in _TTS_INSTANCES:
         factory = _TTS_FACTORIES.get(name)
         if factory is None:
-            raise KeyError(f"未知的配音厂商：{name}")  # i18n: todo(2)
+            raise UnknownTts.of("tts.unknown_provider", name=name)
         _TTS_INSTANCES[name] = factory()
     return _TTS_INSTANCES[name]
 

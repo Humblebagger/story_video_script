@@ -28,11 +28,14 @@ MODULES: dict = {
     "render/free.py": None,
     "render/compose.py": None,
     "render/runner.py": None,
+    "render/providers/tts_base.py": None,
+    "render/providers/tts_volc.py": None,
+    "render/voice.py": None,
     "server/app.py": {"_render_ctx", "_render_call", "render_session_post", "render_session_get",
                       "render_session_patch", "_film_quote", "_film_run", "render_clip_run", "render_run_all",
                       "render_clip_chosen", "render_clip_patch", "_free_ctx", "render_free_create",
                       "render_free_patch", "render_free_delete", "render_free_run", "render_free_chosen",
-                      "render_file"},
+                      "render_file", "_tts", "_session_or_404", "render_voices", "render_voices_put"},
 }
 
 

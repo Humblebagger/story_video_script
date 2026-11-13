@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
+import { formatMsg } from '@/i18n/serverMsg'
 import { AUDIO_MODE, MOOD, label } from '../labels'
 import {
   BGM_ACCEPT, composeBlockers, composeLabel, curveText, finalEpisodes, finalText, noteText,
@@ -23,7 +24,7 @@ const yuan = (n: number) => `¥${n.toFixed(2)}`
 const locked = (c: Compose) => c.busy || !!c.confirm
 
 export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const c = useCompose(film, dirty)
   const s = film.session!
   const p = c.preview
@@ -34,7 +35,7 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
         {c.error
           ? (
             <>
-              <p className="tlc__kferr">{c.error}</p>
+              <p className="tlc__kferr">{formatMsg(c.error, locale)}</p>
               <Button size="sm" variant="outline" className="self-start" onClick={() => void c.load()}>{t('common.retry')}</Button>
             </>
           )
@@ -49,7 +50,7 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
         <h4>{t('compose.panel.title')}</h4>
         <button className="tlc__linkbtn" onClick={() => void c.load()}>{t('compose.panel.refresh')}</button>
       </div>
-      {c.error && <p className="tlc__kferr">{c.error}</p>}
+      {c.error && <p className="tlc__kferr">{formatMsg(c.error, locale)}</p>}
       <Voices c={c} />
       <Music c={c} />
       <ComposeConfirm s={s} c={c} blockers={blockers} />
@@ -75,12 +76,12 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
 
 /** 各说话人的音色：缺音色的展开并标红；选「按提示默认」恢复默认 */
 function Voices({ c }: { c: Compose }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const v = c.voices
   if (!c.preview!.lines) return <p className="tlc__kfnote">{t('compose.panel.noLines')}</p>
   if (!v) {
     return c.voicesError
-      ? <p className="tlc__kferr">{t('compose.panel.voicesFailed', { error: c.voicesError ?? '' })}</p>
+      ? <p className="tlc__kferr">{t('compose.panel.voicesFailed', { error: formatMsg(c.voicesError, locale) })}</p>
       : <p className="tlc__kfnote">{t('compose.panel.voicesLoading')}</p>
   }
   const name = (id: string | null) => v.voices.find((x) => x.id === id)?.name ?? id ?? ''
@@ -91,9 +92,9 @@ function Voices({ c }: { c: Compose }) {
         <tbody>
           {v.speakers.map((sp) => (
             <tr key={sp.key} className={sp.voice ? '' : 'is-missing'}>
-              <td>{sp.name}{sp.hint && <span className="film__dim">{t('common.paren', { text: sp.hint })}</span>}</td>
+              <td>{formatMsg(sp.name, locale)}{sp.hint && <span className="film__dim">{t('common.paren', { text: sp.hint })}</span>}</td>
               <td>
-                <select aria-label={t('compose.panel.voiceAria', { name: sp.name })} value={sp.chosen ?? ''} disabled={locked(c)}
+                <select aria-label={t('compose.panel.voiceAria', { name: formatMsg(sp.name, locale) })} value={sp.chosen ?? ''} disabled={locked(c)}
                         onChange={(e) => void c.setVoice(sp.key, e.target.value)}>
                   <option value="">
                     {sp.chosen ? t('compose.panel.hintDefault')
@@ -108,7 +109,7 @@ function Voices({ c }: { c: Compose }) {
           ))}
         </tbody>
       </table>
-      <p className="tlc__kfnote">{t('compose.panel.voicesNote', { note: v.rate_note || t('money.rateUnknown') })}</p>
+      <p className="tlc__kfnote">{t('compose.panel.voicesNote', { note: formatMsg(v.rate_note, locale) || t('money.rateUnknown') })}</p>
     </details>
   )
 }
