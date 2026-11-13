@@ -18,10 +18,11 @@ class FakeVideo:
     rate_note = "假厂商：不联网、不花钱，金额只用于演示"
 
     def __init__(self, *, polls_to_finish: int = 1, fail_with: Optional[str] = None,
-                 transient_submits: int = 0, max_refs: int = 3, frame_with_refs: bool = False):
+                 transient_submits: int = 0, max_refs: int = 3, frame_with_refs: bool = False,
+                 native_audio: bool = True):
         self.models = {"fake-1": {"label": "假厂商"}}
         self._caps = Caps(max_clip_sec=10, min_clip_sec=2, max_refs=max_refs, first_frame=True,
-                          last_frame=False, returns_last_frame=True, native_audio=True,
+                          last_frame=False, returns_last_frame=True, native_audio=native_audio,
                           frame_with_refs=frame_with_refs, resolutions=["480p", "720p"],
                           cny_per_sec={"480p": 0.5, "720p": 1.0})
         self.polls_to_finish = polls_to_finish

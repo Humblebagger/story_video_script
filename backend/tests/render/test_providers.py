@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """出片：厂商统一接口的公共函数、假厂商、注册表。用法: python3 tests/render/test_providers.py"""
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -82,6 +83,9 @@ def main() -> int:
     providers.register("fake", lambda: mine)
     assert providers.get_video("fake") is mine and providers.get_video("fake") is mine
     must_raise(KeyError, providers.get_video, "nope")
+    os.environ["MINIMAX_API_KEY"] = ""          # 先置空串：.env 不会覆盖已有变量
+    e = must_raise(base.ProviderError, providers.get_video, "minimax")
+    assert "MINIMAX_API_KEY" in str(e)
     print("4. 注册表 ✓")
 
     print("\nALL PASS")

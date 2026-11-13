@@ -49,6 +49,14 @@ def _seedance():
 register("seedance", _seedance)
 
 
+def _minimax():
+    from render.providers.minimax import MiniMax
+    return MiniMax.from_env()
+
+
+register("minimax", _minimax)
+
+
 # ---------- TTS 厂商：STORYBOARD_TTS_PROVIDER 选默认（缺省 volc） ----------
 
 _TTS_FACTORIES: dict = {}
