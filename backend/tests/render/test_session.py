@@ -483,6 +483,21 @@ def main() -> int:
     c = clip(sess.load(root11), k)
     assert c["state"] == "done" and c["error"] is None and c["error_msg"] is None
 
+    # 23.5b 采用成功的那次：段上遗留的 error / error_msg 清空，失败尝试自己的记录保留
+    root13 = Path(tmp.name) / "render" / "ev13"
+    s13 = sess.build(root13, doc, owner=OWNER, patch={}, keyframes={})
+    k = s13["clips"][0]["id"]
+    sess.queue_run(root13, [k])
+    finish(root13, fake, k)
+    sess.queue_run(root13, [k])
+    sess.begin_submit(root13, k)
+    sess.submit_failed(root13, k, msg("film.submit.build_failed", cause=vendor("boom")))
+    c = clip(sess.load(root13), k)
+    assert c["state"] == "failed" and c["error_msg"]
+    c = clip(sess.set_chosen(root13, k, 0), k)
+    assert c["state"] == "done" and c["error"] is None and c["error_msg"] is None
+    assert c["attempts"][-1]["error_msg"]["code"] == "film.submit.build_failed"
+
     # 23.6 queue_run 超确认线
     root12 = Path(tmp.name) / "render" / "ev12"
     s12 = sess.build(root12, doc, owner=OWNER, patch={}, keyframes={})

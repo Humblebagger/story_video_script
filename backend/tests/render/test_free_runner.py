@@ -104,6 +104,8 @@ def main() -> int:
     f = node()
     assert f["state"] == "failed" and "参考图" in f["error"] and len(fake.submitted) == n0
     assert not f["error"].startswith("组装请求失败"), f["error"]
+    assert f["error_msg"]["code"].startswith("film.free_invalid."), f["error_msg"]
+    assert f["attempts"][-1]["error_msg"] == f["error_msg"]
     current["doc"] = doc
     print("3. 复查不过不提交 ✓")
 
@@ -125,6 +127,8 @@ def main() -> int:
     drain(runner)
     f = node()
     assert f["state"] == "failed" and "内容审核未通过" in (f["error"] or ""), f
+    assert f["error_msg"]["code"] == "film.provider.rejected", f["error_msg"]
+    assert f["attempts"][-1]["error_msg"] == f["error_msg"]
     fake.fail_with = None
     print("5. 厂商失败记错误 ✓")
 

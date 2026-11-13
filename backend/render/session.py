@@ -441,6 +441,7 @@ def set_chosen(root, clip_id: str, index: int) -> dict:
             raise SessionError.of("film.choose.not_success")
         c["chosen"] = index
         c["state"] = "done" if c["attempts"][index].get("fingerprint") == c["fingerprint"] else "stale"
+        set_error(c, None)      # 采用成功的那次：段上遗留的失败原因不再成立（失败尝试自己的记录保留）
         return s
 
 
@@ -692,7 +693,7 @@ def begin_compose(root, *, fingerprint: str, tts_cny: float, draft: bool, voices
         if s["spent_cny"] + tts_cny > s["budget_cny"] + 1e-9:
             raise BudgetExceeded(f"超出上限 ¥{s['budget_cny']:g}：已花 ¥{s['spent_cny']:.2f}，"  # i18n: todo(2)
                                  f"本次配音约 ¥{tts_cny:.2f}")  # i18n: todo(2)
-        s["final"] = {"state": "running", "fingerprint": fingerprint, "draft": draft, "step": "开始",
+        s["final"] = {"state": "running", "fingerprint": fingerprint, "draft": draft, "step": "开始",  # i18n: todo(2)
                       "started_at": _now(), "files": f.get("files") or [], "report": f.get("report"),
                       "files_fingerprint": f.get("files_fingerprint", f.get("fingerprint")),
                       "files_draft": f.get("files_draft", f.get("draft")),

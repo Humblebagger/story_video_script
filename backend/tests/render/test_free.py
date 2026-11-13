@@ -319,10 +319,10 @@ def part_crud():
     with sess.mutate(root) as raw:
         n = item(raw, fid)
         n["attempts"].append({"state": "failed"})
-        n.update(state="failed", error="boom")
+        n.update(state="failed", error="boom", error_msg={"code": "film.submit.crashed", "params": {}})
     assert item(sess.load(root), fid)["state"] == "failed"
     n = item(free.set_chosen(root, fid, 0), fid)
-    assert n["state"] == "done" and n["error"] is None and n["chosen"] == 0
+    assert n["state"] == "done" and n["error"] is None and n["error_msg"] is None and n["chosen"] == 0
     print("16. 采用后回到 done ✓")
 
     # 17. 删除：副本只共用尾帧时，尾帧也要保留

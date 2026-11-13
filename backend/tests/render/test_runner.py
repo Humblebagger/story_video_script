@@ -90,6 +90,8 @@ def main() -> int:
     runner.tick()
     c = clip(root, firsts[2])
     assert c["state"] == "failed" and "已重试 3 次" in c["error"]
+    assert c["error_msg"]["code"] == "film.submit.unavailable" and c["error_msg"]["params"]["retries"] == 3
+    assert c["error_msg"]["params"]["cause"]["code"], c["error_msg"]
     fake.transient_submits = 0
     print("2. 瞬时错误重试 ✓")
 
@@ -584,6 +586,97 @@ def main() -> int:
     assert c["attempts"][-1]["error_msg"] == c["error_msg"]
     fake.fail_with = None
     print("17. 错误带代码与嵌套原因 ✓")
+
+    # 18. 控制台代码缺失 / 为空 / 未登记 / 旧中文名：提交不明照常落盘，只提交一次，回落通用说法
+    real_submit18 = fake.submit
+    saved_console = fake.__dict__.get("console_name", "__unset__")
+    for label, setup in (("missing", "del"), ("empty", ""), ("unknown", "console.nope"), ("zh", "某某控制台")):
+        r20, i20 = fresh("console_" + label)
+        sess.queue_run(r20, [i20[0]])
+        calls18 = []
+
+        def submit_amb18(req, calls18=calls18):
+            calls18.append(1)
+            raise base.AmbiguousSubmit("提交时连接中断：ReadTimeout")
+
+        fake.submit = submit_amb18
+        if setup == "del":
+            type(fake).console_name_backup = type(fake).console_name
+            del type(fake).console_name
+        else:
+            fake.console_name = setup
+        try:
+            rn = quick()
+            rn.watch(r20)
+            rn.tick()
+            rn.tick()
+        finally:
+            if setup == "del":
+                type(fake).console_name = type(fake).console_name_backup
+            else:
+                del fake.console_name
+            fake.submit = real_submit18
+        c = clip(r20, i20[0])
+        assert len(calls18) == 1, label
+        assert c["state"] == "failed" and c["uncertain"] is True, (label, c)
+        assert c["error_msg"]["code"] == "film.submit.ambiguous", label
+        assert c["error_msg"]["params"]["console"] == {"t": "ref", "code": "console.generic"}, label
+        assert "请到厂商控制台核对" in c["error"], c["error"]
+
+    # 19. 外层中文兜底与改造前一致：不被参数截断、KeyError 的引号保留、轮询放弃保留完整原文
+    r21, i21 = fresh("fallback")
+    sess.queue_run(r21, [i21[0]])
+    long_raw = "长" * 500
+
+    def submit_long(req):
+        raise ValueError(long_raw)
+
+    fake.submit = submit_long
+    rn = quick()
+    rn.watch(r21)
+    rn.tick()
+    fake.submit = real_submit18
+    c = clip(r21, i21[0])
+    assert c["error"] == f"提交异常：ValueError: {long_raw}", len(c["error"])
+    cause = c["error_msg"]["params"]["cause"]
+    assert cause["t"] == "vendor" and len(cause["text"]) == 300
+
+    r22, i22 = fresh("fallback2")
+    sess.queue_run(r22, [i22[0]])
+
+    def request_keyerror(r, s_, c_):
+        raise KeyError("缺字段")
+
+    rn = Runner(request_keyerror, sleep=lambda s: None, max_parallel=4)
+    rn.watch(r22)
+    rn.tick()
+    c = clip(r22, i22[0])
+    assert c["error"] == "组装请求失败：'缺字段'", c["error"]
+    assert c["error_msg"]["params"]["cause"]["text"] == "缺字段"
+
+    now19 = [0.0]
+    r23, i23 = fresh("fallback3")
+    sess.queue_run(r23, [i23[0]])
+    rn = Runner(builder, sleep=lambda s: None, clock=lambda: now19[0],
+                poll_give_up_sec=100, download_give_up_sec=100)
+    rn.watch(r23)
+    rn.tick()
+    real_poll19 = fake.poll
+
+    def poll_long(tid):
+        raise base.ProviderError(long_raw)
+
+    fake.poll = poll_long
+    now19[0] = 1
+    rn.tick()
+    assert clip(r23, i23[0])["error"] == "厂商暂时不可达，正在重试：" + long_raw
+    now19[0] = 101
+    rn.tick()
+    c = clip(r23, i23[0])
+    assert c["error"] == "多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + long_raw
+    assert len(c["error_msg"]["params"]["cause"]["text"]) == 300
+    fake.poll = real_poll19
+    print("18. 控制台回落与中文兜底原样 ✓")
 
     print("\nALL PASS")
     return 0
