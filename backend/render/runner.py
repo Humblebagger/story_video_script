@@ -28,12 +28,7 @@ def _coded(zh: str, code: str, **params) -> dict:
 
 def _scrub_secrets(text: str, provider) -> str:
     """日志文字脱敏：抹掉 Bearer 凭据、厂商对象持有的密钥与环境里配置的厂商密钥。"""
-    out = base.scrub(text)
-    keys = [getattr(provider, "_key", "")] + [os.environ.get(k, "") for k in ("ARK_API_KEY", "MINIMAX_API_KEY")]
-    for k in keys:
-        if isinstance(k, str) and k.strip():
-            out = out.replace(k.strip(), "***")
-    return out
+    return base.scrub_secrets(text, [getattr(provider, "_key", "")])
 
 
 def _console_ref(provider) -> dict:

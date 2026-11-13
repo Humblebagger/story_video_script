@@ -595,6 +595,18 @@ def main() -> int:
     assert "SECRET_TOKEN" not in blob and "sk-SYNTH-KEY-12345" not in blob
     del fake._key
 
+    # 共用脱敏帮手：runner 的 _scrub_secrets 与 app 的合成日志走同一个函数（TTS 环境密钥、实例密钥、Bearer 都抹）
+    from render import runner as _rn
+    from render.providers import base as _base
+    os.environ["VOLC_TTS_API_KEY"], os.environ["VOLC_TTS_ACCESS_KEY"] = "tt1", "ak"
+    try:
+        probe = "Bearer TOK x tt1 y ak z inst9 w"
+        inst = type("P", (), {"_key": "inst9"})()
+        for out in (_rn._scrub_secrets(probe, inst), _base.scrub_secrets(probe, ["inst9"])):
+            assert out == "Bearer *** x *** y *** z *** w", out
+    finally:
+        del os.environ["VOLC_TTS_API_KEY"], os.environ["VOLC_TTS_ACCESS_KEY"]
+
     # 短密钥也要抹掉：厂商对象的 _key 与环境里的厂商密钥都只有几个字符
     fake._key = "xyz"
     os.environ["ARK_API_KEY"], os.environ["MINIMAX_API_KEY"] = "ab1", "q9"

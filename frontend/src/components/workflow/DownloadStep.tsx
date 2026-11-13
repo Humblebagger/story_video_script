@@ -6,11 +6,10 @@ import { downloadUrl, exportFcpxml, filmFileUrl } from '@/api'
 import { Button } from '@/components/ui/button'
 import { finalEpisodes } from '@/compose'
 import { useI18n } from '@/i18n/core'
-import { notice } from '@/lib/notice'
+import { errValue, formatMsg } from '@/i18n/serverMsg'
+import type { MsgLike } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import type { ComposePreview, FilmSession, VersionRef } from '@/types'
-
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export function DownloadStep({ version, film, compose, onOpenFilm }: {
   version: VersionRef
@@ -19,11 +18,13 @@ export function DownloadStep({ version, film, compose, onOpenFilm }: {
   compose: ComposePreview | null
   onOpenFilm: () => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   /** 卡片键（集号或 report）→ 失败原因 */
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<Record<string, MsgLike>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  /** 导出失败的原因：存原始值，渲染时按当前语言格式化 */
+  const [exportError, setExportError] = useState<MsgLike>(null)
   const episodes = finalEpisodes(film.final?.files ?? [])
   const report = film.final?.report ?? null
 
@@ -34,7 +35,7 @@ export function DownloadStep({ version, film, compose, onOpenFilm }: {
       const url = await filmFileUrl(version.nid, version.cid, version.vid, path)
       downloadUrl(url, path.split('/').pop() ?? path)
     } catch (e) {
-      setErrors((x) => ({ ...x, [key]: msg(e) }))
+      setErrors((x) => ({ ...x, [key]: errValue(e) }))
     } finally {
       setBusy(null)
     }
@@ -44,10 +45,11 @@ export function DownloadStep({ version, film, compose, onOpenFilm }: {
   const reason = compose?.export_reason ?? (compose ? 'none' : null)
   const doExport = async () => {
     setExporting(true)
+    setExportError(null)
     try {
       await exportFcpxml(version.nid, version.cid, version.vid)
     } catch (e) {
-      notice.err(t('flow.export.failed', { reason: msg(e) }))
+      setExportError(errValue(e))
     } finally {
       setExporting(false)
     }
@@ -60,7 +62,7 @@ export function DownloadStep({ version, film, compose, onOpenFilm }: {
     </Button>
   )
   const failed = (key: string) => errors[key] && (
-    <p role="alert" className="text-sm text-destructive">{t('flow.download.failed', { reason: errors[key] })}</p>
+    <p role="alert" className="text-sm text-destructive">{t('flow.download.failed', { reason: formatMsg(errors[key], locale) })}</p>
   )
 
   return (
@@ -93,6 +95,11 @@ export function DownloadStep({ version, film, compose, onOpenFilm }: {
             {exporting ? t('flow.export.busy') : t('flow.export.button')}
           </Button>
         </div>
+        {!!exportError && (
+          <p role="alert" className="text-sm text-destructive" data-testid="export-error">
+            {t('flow.export.failed', { reason: formatMsg(exportError, locale) })}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground" data-testid="export-hint">
           {exportable || !reason ? t('flow.export.hint') : t(`flow.export.reason.${reason}` as MsgKey)}
         </p>

@@ -1323,19 +1323,6 @@ def _hide_root_deep(v, root):
     return v
 
 
-_LOG_KEY_ENVS = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY")
-
-
-def _scrub_log(text: str) -> str:
-    """日志文字脱敏：Bearer 凭据加环境里配置的厂商密钥（不设最短长度）。"""
-    out = render_video_base.scrub(text)
-    for name in _LOG_KEY_ENVS:
-        k = os.environ.get(name, "").strip()
-        if k:
-            out = out.replace(k, "***")
-    return out
-
-
 def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tuple) -> None:
     def failed(err, detail: str = "") -> None:
         m = err.as_msg() if hasattr(err, "as_msg") else err
@@ -1359,12 +1346,12 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
     except Exception as e:  # noqa: BLE001  任何意外都要落到失败，不能卡在「合成中」
         # 不把原始 exc_info 交给日志：堆栈文字（含 __cause__/__context__ 链）先脱敏再写
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        log.error("合成异常 root=%s\n%s", root, _scrub_log(tb))  # i18n: internal
+        log.error("合成异常 root=%s\n%s", root, render_video_base.scrub_secrets(tb))  # i18n: internal
         try:
             failed(msg("compose.crashed"))
         except Exception as e2:  # noqa: BLE001
             tb2 = "".join(traceback.format_exception(type(e2), e2, e2.__traceback__))
-            log.error("合成失败状态写回失败 root=%s\n%s", root, _scrub_log(tb2))  # i18n: internal
+            log.error("合成失败状态写回失败 root=%s\n%s", root, render_video_base.scrub_secrets(tb2))  # i18n: internal
 
 
 @app.post(_R + "/compose")

@@ -4,6 +4,7 @@
 在 providers/__init__.py 注册一行。厂商的提示词语法（如 Seedance 的 @图片n）只在厂商模块里。
 """
 import math
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -98,6 +99,19 @@ def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:
         t = t.replace(secret, "***")
     t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
     return t if limit is None else t[:limit]
+
+
+SECRET_ENVS = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY")
+
+
+def scrub_secrets(text, extra=()) -> str:
+    """日志文字脱敏：抹掉 Bearer 凭据、环境里配置的各厂商密钥与调用方给的密钥（如厂商对象持有的）。
+    非空密钥一律抹掉，没有最短长度。"""
+    out = scrub(text)
+    for k in [os.environ.get(n, "") for n in SECRET_ENVS] + list(extra):
+        if isinstance(k, str) and k.strip():
+            out = out.replace(k.strip(), "***")
+    return out
 
 
 def request_seconds(duration: float, caps: Caps) -> int:

@@ -231,7 +231,6 @@ console.log('4. flashTarget ✓')
 // 6. 下载页：导出剪辑工程按钮
 {
   const { DownloadStep } = await import('../src/components/workflow/DownloadStep')
-  const { notice } = await import('../src/lib/notice')
   const done = { clips: [], remaining_cny: 0, final: { state: 'done', files: ['final/E01.mp4'], report: null, error: null, detail: null } } as unknown as FilmSession
   const cp = (o: Record<string, unknown>) => ({ lines: 0, final: done.final, ...o }) as never
   const dl = (compose: never) => render(<DownloadStep version={{ nid: 'n1', cid: 'c1', vid: 'v1' }} film={done} compose={compose} onOpenFilm={() => {}} />)
@@ -239,10 +238,11 @@ console.log('4. flashTarget ✓')
   const realFetch = globalThis.fetch
   const urls: string[] = []
   let status = 200
+  let failBody: unknown = { detail: '成片已过期' }
   let disposition = "attachment; filename=\"x.zip\"; filename*=utf-8''%E8%8D%AF.zip"
   globalThis.fetch = (async (u: string) => {
     urls.push(String(u))
-    if (status !== 200) return new Response(JSON.stringify({ detail: '成片已过期' }), { status })
+    if (status !== 200) return new Response(JSON.stringify(failBody), { status })
     return new Response('zipdata', { status: 200, headers: { 'content-disposition': disposition } })
   }) as never
   const g2 = globalThis as unknown as { URL: { createObjectURL: (b: Blob) => string; revokeObjectURL: (u: string) => void } }
@@ -280,12 +280,29 @@ console.log('4. flashTarget ✓')
   disposition = "attachment; filename=\"x.zip\"; filename*=utf-8''%E8%8D%AF.zip"
 
   status = 409
-  const before = notice.log.length
   await click(btn())
   await settle(60)
-  must(notice.log.length === before + 1 && notice.log[notice.log.length - 1].kind === 'err'
-       && notice.log[notice.log.length - 1].msg.includes('成片已过期'), '失败：notice.err 带后端 detail')
+  must((q('[data-testid="export-error"]')?.textContent ?? '').includes('成片已过期'), '失败：就地显示后端 detail')
   must(!btn().disabled, '失败后按钮恢复')
+  // 带代码的导出错误：按界面语言渲染，切语言跟着变
+  const { en } = await import('../src/i18n/en')
+  const { zh } = await import('../src/i18n/zh')
+  const { useI18n } = await import('../src/i18n/core')
+  let setLoc: (l: 'zh' | 'en') => void = () => {}
+  function Cap() { setLoc = useI18n().setLocale; return null }
+  const coded = { code: 'export.no_ffmpeg', params: {}, message: zh.srv.export.no_ffmpeg }
+  failBody = { detail: coded }
+  await act(async () => { root.render(<I18nProvider initial="en"><Cap />
+    <DownloadStep version={{ nid: 'n1', cid: 'c1', vid: 'v1' }} film={done} compose={cp({ exportable: true, export_reason: null })} onOpenFilm={() => {}} />
+    </I18nProvider>) })
+  await act(async () => { setLoc('en') })
+  await click(btn())
+  await settle(60)
+  must(text().includes(en.srv.export.no_ffmpeg) && !text().includes(zh.srv.export.no_ffmpeg), '导出错误（英文）')
+  await act(async () => { setLoc('zh') })
+  await settle()
+  must(text().includes(zh.srv.export.no_ffmpeg) && !text().includes(en.srv.export.no_ffmpeg), '导出错误切中文跟着变')
+  failBody = { detail: '成片已过期' }
 
   await dl(cp({ exportable: false, export_reason: 'no_timeline' }))
   must(btn().disabled && text().includes('重新合成一次即可导出（会复用已有的配音与规整结果，不花钱）'), 'no_timeline：禁用并说明')

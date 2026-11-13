@@ -274,6 +274,8 @@ def main() -> int:
         raise AssertionError("合成中应 409")
     except HTTPException as e:
         assert e.status_code == 409 and e.detail["code"] == "compose.busy", e.detail
+    r = c.get(R + "/export.zip", headers=H)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "export.busy", r.text
     render_session.recover(root)
     f = render_session.load(root)["final"]
     assert f["state"] == "failed" and f["error_msg"] == {"code": "compose.interrupted", "params": {}} and "服务中断" in f["error"]
@@ -298,7 +300,14 @@ def main() -> int:
         render_session.begin_compose(root, fingerprint="x", tts_cny=0, draft=True, voices=seen_voices)
         raise AssertionError("音色变了应 409")
     except render_session.Conflict as e:
-        assert "音色" in str(e)
+        assert e.code == "compose.voices_changed" and e.expected_cny is None, (e.code, e.expected_cny)
+    try:
+        app_mod._render_call(render_session.begin_compose, root, fingerprint="x", tts_cny=0, draft=True,
+                             voices=seen_voices)
+        raise AssertionError("音色变了应 409")
+    except HTTPException as e:
+        assert e.status_code == 409 and e.detail["code"] == "compose.voices_changed", e.detail
+        assert "expected_cny" in e.detail and e.detail["expected_cny"] is None, e.detail
     c.put(R + "/voices", headers=H, json={"voices": {"narration": seen_voices.get("narration", "")}})
     assert render_session.load(root)["final"]["state"] == "done", "被拒时不动成片"
     # 7e. 关掉后台出片（STORYBOARD_RENDER_RUNNER=0）时启动也收尾中断的合成
@@ -421,6 +430,8 @@ def main() -> int:
         assert "ValueError" in text and "炸了" in text and "Traceback" in text, text
         assert "abc.def" not in text and "tts-secret-1" not in text and " zq " not in text, text
         assert all(r.exc_info is None for r in errs), "不把原始 exc_info 交给日志"
+        from render.providers import base as _b
+        assert _b.scrub_secrets("x zq y tts-secret-1 z inst", ["inst"]) == "x *** y *** z ***", "app 与 runner 共用同一个脱敏帮手"
     finally:
         lg.removeHandler(cap)
         lg.level = old_level

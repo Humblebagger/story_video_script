@@ -111,6 +111,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
 const calls: string[] = []
 let nextConflict: number | null = null
 /** 下一次 POST /compose 直接按这个失败（测报错留在界面上） */
+let bgmFail: { status: number; detail: unknown } | null = null
 let nextPostFail: { status: number; detail: unknown } | null = null
 /** 读预览 / 音色表失败 */
 let composeDown: unknown = false
@@ -197,6 +198,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown; headers?
   const m = sub.match(/^\/bgm\/([^/]+)$/)
   if (m) {
     const ep = decodeURIComponent(m[1])
+    if (method === 'PUT' && bgmFail) return fail(bgmFail.status, bgmFail.detail)
     if (method === 'PUT') {
       calls.push(`PUT /bgm/${ep} ${init?.headers?.['Content-Type']}`)
       if (!preview.bgm.includes(ep)) preview.bgm.push(ep)
@@ -563,6 +565,16 @@ console.log('18. 预览读取失败可重试 ✓')
   await click(button(en.compose.panel.refresh))
   must(has('旧报告的对齐说明') && has('旧报告的提醒'), '报告（字符串）原样')
   preview.report = REPORT
+  // BGM 上传被服务端拒绝（带代码的错误）：按界面语言渲染，切语言跟着变
+  preview.final = null
+  await lang('zh')
+  await refresh()
+  bgmFail = { status: 422, detail: { code: 'compose.bgm.too_big', params: {}, message: zh.srv.compose.bgm.too_big } }
+  await pick('theme.mp3', '')
+  must(has(zh.srv.compose.bgm.too_big) && !has(en.srv.compose.bgm.too_big), 'BGM 错误（中文）')
+  await lang('en')
+  must(has(en.srv.compose.bgm.too_big) && !has(zh.srv.compose.bgm.too_big), 'BGM 错误切英文跟着变')
+  bgmFail = null
   console.log('20. 合成进度、失败原因、报告按界面语言渲染，旧数据原样 ✓')
 }
 
