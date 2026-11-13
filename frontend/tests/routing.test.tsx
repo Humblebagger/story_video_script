@@ -676,6 +676,25 @@ console.log('10. 同址再打开不导航 ✓')
   setCurrentLocale('zh')
 }
 console.log('I5. 章节读取失败的提示条按语言渲染并随切换更新 ✓')
+// 已在章节里再次点开它、读取返回结构化 404：走 openChapter 的错误提示条（深链接首次加载的 404 是另一条「章节已不存在」跳转分支）
+{
+  const a = await boot('/novels/n1/chapters/c1', 'alice')
+  must(!a.q('p.alert'), '先正常打开章节')
+  chapterFail = { status: 404, detail: { code: 'chapter.not_found', params: {}, message: '章节不存在' } }
+  await click(a.q('[data-testid="chapter-card"]')!)
+  await settle(200)
+  const alertText = () => a.q('p.alert')?.textContent ?? ''
+  must(alertText() === '打开章节失败：章节不存在', `中文提示条：${alertText()}`)
+  await act(async () => { setLoc('en') })
+  await settle()
+  must(alertText() === 'Could not open the chapter: Chapter not found', `切英文后整句跟着变：${alertText()}`)
+  must(!a.has('[object Object]'), '结构化 detail 不能显示成 [object Object]')
+  await act(async () => { setLoc('zh') })
+  chapterFail = null
+  await a.done()
+  setCurrentLocale('zh')
+}
+console.log('I5b. 已打开章节再读取返回结构化 404 → 提示条按语言渲染 ✓')
 
 // 提交转换失败：app.err.submit 整句随语言变
 {
