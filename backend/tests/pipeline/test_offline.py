@@ -366,7 +366,10 @@ def main() -> int:
         assert narrated == 8, f"应择优交付 80% 那版，实际旁白句数 {narrated}"
         assert len(warnings) == 1 and warnings[0]["code"] == "job.quality.degraded"
         assert warnings[0]["params"]["attempt"] == 2 and "择优交付第 2 次生成" in warnings[0]["message"]
-        assert "旁白占比 80%" in warnings[0]["params"]["report"]["text"]
+        rep = warnings[0]["params"]["report"]
+        assert rep["t"] == "lines" and rep["items"][0] == {"code": "verify.quality.density",
+                                                            "params": {"ratio": "80%", "max": "60%"}}, rep
+        assert "旁白占比 80%" in warnings[0]["message"]
 
         # 修复轮次可以先读取结构化工具结果，再提交受限补丁；仍只占一次修复 attempt。
         tool_manifest = {}

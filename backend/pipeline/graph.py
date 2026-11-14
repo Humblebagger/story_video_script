@@ -22,7 +22,7 @@ from .errors import ConversionError
 from .events import make_say
 from .prompt import load_system_prompt
 from render.providers.base import scrub_secrets
-from server.messages import REPORT_MAX, msg, vendor
+from server.messages import REPORT_MAX, compact, lines_of, msg, vendor
 from .tools import REPAIR_TOOLS
 
 _REPORT_LOG_LINES = 60
@@ -41,6 +41,20 @@ def _scrub_tree(v):
     return v
 
 
+def _shown(code: str, /, **params) -> list:
+    """一条给用户看的逐条消息（放进列表）。generate、repair_agent 里的局部变量 msg 是模型回复，
+    遮住了 messages.msg，节点函数里一律经这里生成（计划 R11）。"""
+    return [compact(msg(code, **params))]
+
+
+def _report_param(text: str, shown: list) -> dict:
+    """降级警告与失败报告的 report 参数：有逐条消息用 lines（按界面语言渲染），没有（如测试替身直接给的字符串）
+    退回报告原文。两种都先脱敏（spec 子计划 5 C、E）。"""
+    if shown:
+        return lines_of(_scrub_tree(shown))
+    return vendor(scrub_secrets(text), limit=REPORT_MAX)
+
+
 class BatchState(TypedDict):
     """单批转换的状态。
 
@@ -57,6 +71,7 @@ class BatchState(TypedDict):
     mode: str                 # "generate" | "patch"
     doc: Optional[dict]
     report: str
+    shown: List[dict]          # 同一份报告给用户看的逐条消息（report 是回喂模型的原文，spec 子计划 5 C）
     structured: Any
     candidates: list
     tool_steps: int
@@ -92,13 +107,15 @@ def _log_report(log, report: str, workdir: Path, idx: int, attempt: int) -> None
 
 def _check_batch(doc: dict, batch_text: str, settings: Settings,
                  workdir: Path, idx: int, attempt: int,
-                 review_chat, log, frozen_units=None):
+                 review_chat, log, frozen_units=None, lines_out=None):
     """结构校验 → 质量门 → 可选评审。返回 (是否通过, 硬失败?, 报告, 择优键, 结构化报告)。
 
     从 convert.py 原样搬来，逻辑未改：硬失败（schema/lint/保真不过）的产物合同
     已破坏，不可交付；软失败（密度门/评审分不过）的产物合法可用，仅质量不达标，
     择优键（越大越接近达标）供重试耗尽后降级交付时挑最优一版。
+    lines_out（可选）收同一份报告给用户看的逐条消息；全部通过时为空。
     """
+    out = lines_out if lines_out is not None else []
     # coverage 是后处理结果，不信任模型声明。先计算再覆写，然后从干净状态复验。
     probe = verification.verify_document(
         doc, frozen_units=frozen_units, original_text=batch_text)
@@ -110,29 +127,31 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
     tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8")
     if not structured.ok:
+        out.extend(structured.lines())
         return False, True, structured.render(), None, structured
     lint_ok, lint_out = validate.run_lint(tmp)
     fid_ok, fid_out = validate.run_fidelity(tmp, batch_text, workdir)
     if not (lint_ok and fid_ok):
-        return (False, True, lint_out.strip() + "\n" + fid_out.strip(), None,
-                structured)
+        text = lint_out.strip() + "\n" + fid_out.strip()
+        out.extend(verification.tool_lines(text))
+        return False, True, text, None, structured
 
     gate_ok, gate_report, ratio = quality.narration_density_gate(
-        doc, settings.narration_density_max)
+        doc, settings.narration_density_max, lines_out=out)
     if not gate_ok:
         return False, False, gate_report, (1, -ratio), structured
 
     # 时长必须够念完旁白与台词，否则成片时要么截断语音、要么被迫拉长镜头，
     # 按名义时长做的预算当场失准。排在密度门之后择优（它已多过一道门）。
     fit_ok, fit_report, over = quality.speech_fit_gate(
-        doc, settings.speech_overflow_max, settings.speech_cps)
+        doc, settings.speech_overflow_max, settings.speech_cps, lines_out=out)
     if not fit_ok:
         return False, False, fit_report, (2, -over), structured
 
     if settings.review_enabled and review_chat is not None:
         rev_ok, rev_report, overall = review.run_review(
             review_chat, batch_text, doc, settings.review_min_score,
-            settings.review_dimension_min, settings.semantic_fidelity_min)
+            settings.review_dimension_min, settings.semantic_fidelity_min, lines_out=out)
         if rev_ok is None:
             log(f"批 {idx} {rev_report}")
             return False, False, rev_report, (3, -1.0), structured
@@ -141,6 +160,7 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
             if not rev_ok:
                 # 评审失败排在前两道门之后择优（它已多过两道门）
                 return False, False, rev_report, (3, overall), structured
+    out.clear()          # 全部通过：评审通过时也写了逐条，不需要
     return True, False, structured.render(), None, structured
 
 
@@ -178,7 +198,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
                "report": scrub_secrets(report), "tools": list(state.get("used_tools") or []),
                "usage": usage}
         if structured is not None:
-            rec["verification"] = _scrub_tree(structured.to_dict())
+            rec["verification"] = _scrub_tree(structured.to_dict(shown=False))
         attempt_records.append(rec)
 
     def generate(state: BatchState) -> dict:
@@ -193,8 +213,9 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             doc = extract_json(raw)
         except ValueError as e:
             return {"messages": [msg], "doc": None, "usage_mark": mark,
-                    "report": f"输出无法解析为 JSON：{e}"}
-        return {"messages": [msg], "doc": doc, "usage_mark": mark, "report": ""}
+                    "report": f"输出无法解析为 JSON：{e}",
+                    "shown": _shown("verify.attempt.unparseable")}
+        return {"messages": [msg], "doc": doc, "usage_mark": mark, "report": "", "shown": []}
 
     def check(state: BatchState) -> dict:
         """确定性审查。本节点不调 LLM（评审阶段除外，由 settings 显式开启）。"""
@@ -205,11 +226,12 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             # 这一轮补丁修复没产出新底稿。底稿与结构化报告原样保留：
             # 下一次尝试仍从同一份底稿打补丁，与改造前一致
             report = state["report"]
+            shown = list(state["shown"])
             say("job.event.repair_failed", batch=idx, attempt=attempt)
             log(f"  {report}")
             _record({**state, "attempt": attempt}, "unparseable", report=report)
             return {"attempt": attempt, "report": report, "doc": state["doc"],
-                    "used_tools": []}
+                    "shown": shown, "used_tools": []}
         if state["doc"] is None:
             report = state["report"] or "输出无法解析为 JSON"
             say("job.event.unparseable", batch=idx, attempt=attempt)
@@ -217,6 +239,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             _record({**state, "attempt": attempt}, "unparseable", report=report)
             # 没有可打补丁的底稿，下一轮只能整份重写
             return {"attempt": attempt, "mode": "generate", "report": report,
+                    "shown": _shown("verify.attempt.unparseable"),
                     "doc": None, "used_tools": []}
 
         doc = state["doc"]
@@ -239,23 +262,24 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             fitted = quality.fit_durations(doc, settings.speech_cps)
             if fitted:
                 say("job.event.fitted", batch=idx, n=fitted, cap=f"{quality.MAX_SHOT_SECONDS:g}")
+        shown: list = []
         ok, hard, report, key, structured = _check_batch(
             doc, state["batch_text"], settings, workdir, idx, attempt,
-            review_chat, log, state["frozen_units"])
+            review_chat, log, state["frozen_units"], lines_out=shown)
         _record({**state, "attempt": attempt},
                 "passed" if ok else ("hard_failed" if hard else "soft_failed"),
                 structured=structured, report=report)
         if ok:
             say("job.event.passed", batch=idx, attempt=attempt)
-            return {"attempt": attempt, "report": report, "doc": doc,
+            return {"attempt": attempt, "report": report, "doc": doc, "shown": [],
                     "structured": structured, "result": doc, "used_tools": []}
         candidates = list(state["candidates"])
         if not hard:
-            candidates.append((key, attempt, doc, report))
+            candidates.append((key, attempt, doc, report, shown))
         say("job.event.check_failed" if hard else "job.event.gate_failed", batch=idx, attempt=attempt)
         log("  原因如下：")
         _log_report(log, report, workdir, idx, attempt)
-        return {"attempt": attempt, "report": report, "doc": doc,
+        return {"attempt": attempt, "report": report, "doc": doc, "shown": shown,
                 "structured": structured, "candidates": candidates,
                 "used_tools": []}
 
@@ -263,18 +287,18 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         """重试耗尽：有合法候选就择优降级交付，否则落盘报告并抛错。"""
         idx = state["idx"]
         if state["candidates"] and not settings.strict:
-            key, best_attempt, doc, report = max(state["candidates"],
-                                                 key=lambda c: c[0])
+            key, best_attempt, doc, report, shown = max(state["candidates"],
+                                                        key=lambda c: c[0])
             say("job.event.degraded", batch=idx, attempt=best_attempt)
             log("  （产物结构合法、逐字保真；--strict 可改为直接失败）")
             warning = msg("job.quality.degraded", batch=idx, retries=settings.max_retries,
                           attempt=best_attempt, candidates=len(state["candidates"]),
-                          report=vendor(scrub_secrets(report), limit=REPORT_MAX))
+                          report=_report_param(report, shown))
             return {"result": doc, "warnings": [warning]}
         (workdir / f"batch{idx}_failure_report.txt").write_text(
             state["report"] + "\n", encoding="utf-8")
         log(f"批 {idx} 已通过批次与失败报告保留在 {workdir}")
-        raise ConversionError.of("job.batch_failed", state["report"],
+        raise ConversionError.of("job.batch_failed", state["report"], _scrub_tree(state["shown"]),
                                  batch=idx, retries=settings.max_retries)
 
     def route_after_check(state: BatchState) -> str:
@@ -318,7 +342,8 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
         if steps > _MAX_TOOL_STEPS:
             report = f"修复工具调用无效：单轮修复超过 {_MAX_TOOL_STEPS} 个工具步骤"
             log(f"批 {state['idx']} {report}")
-            return {"repair_failed": True, "report": report, "tool_steps": steps}
+            return {"repair_failed": True, "report": report, "tool_steps": steps,
+                    "shown": _shown("verify.attempt.too_many_steps", max=_MAX_TOOL_STEPS)}
         # 修复阶段同样带系统提示词——模型得知道分镜规则才补得对
         msg = chat.invoke([system_msg] + list(state["messages"]),
                           tools=REPAIR_TOOLS, max_tokens=settings.repair_max_tokens)
@@ -343,7 +368,7 @@ def build_batch_graph(*, chat, review_chat, settings: Settings, params,
             report = "修复工具调用无效：模型没有发起任何工具调用"
             log(f"批 {state['idx']} {report}")
             return {"messages": [msg], "repair_failed": True, "report": report,
-                    "tool_steps": steps}
+                    "tool_steps": steps, "shown": _shown("verify.attempt.no_tool_call")}
         used = list(state["used_tools"]) + [c["name"] for c in calls]
         writers = [c for c in calls if c["name"] in _DOC_WRITERS]
         if invalid:
@@ -417,7 +442,7 @@ def run_batch(graph, *, user: str, batch_text: str, idx: int,
     state: BatchState = {
         "messages": [HumanMessage(user)], "user": user,
         "batch_text": batch_text, "idx": idx, "frozen_units": frozen_units,
-        "attempt": 0, "mode": "generate", "doc": None, "report": "",
+        "attempt": 0, "mode": "generate", "doc": None, "report": "", "shown": [],
         "structured": verification.VerificationReport(), "candidates": [],
         "tool_steps": 0,
         "used_tools": [], "repair_failed": False,

@@ -254,6 +254,20 @@ def main() -> int:
     del os.environ["ARK_API_KEY"]
     print("10. 脱敏与身份哈希 ✓")
 
+    # 11. 检查工具输出：标题 + 每条 ERROR 行（原文）；WARN、汇总、PASS 不要；没有 ERROR 行时取 FAIL 与缩进的差异行
+    lint = ("WARN  [E01] music.curve 未覆盖到本集最后一镜\n"
+            "ERROR [E01-SH001] location_ref 引用不存在的场景: L09\n\n"
+            "旁白模式 selective；镜头 3 个\nFAIL（1 个错误）\n"
+            "PASS 原文保真：3 个 unit 拼接后与原文逐字一致（9 字符）")
+    assert V.tool_lines(lint) == [
+        {"code": "verify.report.tool", "params": {}},
+        {"code": "verify.report.tool_error",
+         "params": {"text": {"t": "vendor", "text": "[E01-SH001] location_ref 引用不存在的场景: L09"}}}]
+    fid = "PASS\nFAIL 原文保真：unit 拼接与原文不一致\n  首个差异位置 3"
+    assert [x["params"]["text"]["text"] for x in V.tool_lines(fid)[1:]] == ["FAIL 原文保真：unit 拼接与原文不一致", "首个差异位置 3"]
+    assert [x["params"]["text"]["text"] for x in V.tool_lines("怪输出")[1:]] == ["怪输出"], "认不出格式时整段作一项"
+    print("11. 检查工具输出按 ERROR 行拆分 ✓")
+
     print("\nALL PASS")
     return 0
 

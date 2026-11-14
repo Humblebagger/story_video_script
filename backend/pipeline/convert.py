@@ -208,7 +208,7 @@ def convert_text(text: str,
         ok, out = validate.run_merge(batch_paths, merged_path)
         log(out.strip())
         if not ok:
-            raise ConversionError.of("job.merge_failed", out)
+            raise ConversionError.of("job.merge_failed", out, verification.tool_lines(out))
 
     merged_doc = json.loads(merged_path.read_text(encoding="utf-8"))
     expected_all = ([u.prompt_dict() for u in frozen]
@@ -229,11 +229,13 @@ def convert_text(text: str,
     if not final_report.ok:
         run_manifest["state"] = "failed"
         run_manifest["verification"] = final_report.to_dict()
-        raise ConversionError.of("job.final_verify_failed", final_report.render())
+        # 只给汇总一行：逐条在同屏的验证面板（job.verification）里，失败区不重复列（设计审查 Minor 5）
+        raise ConversionError.of("job.final_verify_failed", final_report.render(), final_report.lines()[:1])
     if not (lint_ok and fid_ok):
         run_manifest["state"] = "failed"
         run_manifest["verification"] = final_report.to_dict()
-        raise ConversionError.of("job.final_check_failed", lint_out + "\n" + fid_out)
+        raise ConversionError.of("job.final_check_failed", lint_out + "\n" + fid_out,
+                                 verification.tool_lines(lint_out + "\n" + fid_out))
     say("job.event.verified")
     soft = novel_memory.soft_findings(merged_doc, novel_context)
     if soft:

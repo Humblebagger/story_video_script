@@ -1787,6 +1787,20 @@
     "params": [],
     "zh": "本月用量已达上限，请联系管理员"
   },
+  "verify.attempt.no_tool_call": {
+    "params": [],
+    "zh": "这轮修复没有发起任何工具调用"
+  },
+  "verify.attempt.too_many_steps": {
+    "params": [
+      "max"
+    ],
+    "zh": "这轮修复超过了 {max} 个工具步骤"
+  },
+  "verify.attempt.unparseable": {
+    "params": [],
+    "zh": "输出无法解析为 JSON"
+  },
   "verify.finding": {
     "params": [
       "path",
@@ -1877,6 +1891,16 @@
   "verify.report.pass": {
     "params": [],
     "zh": "通过"
+  },
+  "verify.report.tool": {
+    "params": [],
+    "zh": "工具报告的错误（原文）："
+  },
+  "verify.report.tool_error": {
+    "params": [
+      "text"
+    ],
+    "zh": "  {text}"
   },
   "verify.review.call_failed": {
     "params": [],

@@ -373,3 +373,17 @@ def recompute_coverage_field(doc: dict, coverage: dict) -> None:
 
 def verification_identity(report: VerificationReport) -> str:
     return _hash_json(report.to_dict(shown=False))
+
+
+def tool_lines(text: str) -> list:
+    """检查工具（lint、保真、合并）的子进程输出 → 给用户看的逐条（计划 R6）：一行按语言渲染的标题，
+    加每条 ERROR 行一项（原文，原样显示，每项截断 300 字）。WARN、汇总、PASS 行不要：失败区只列错误。
+    没有 ERROR 行时（保真检查只打 FAIL 与缩进的差异）取 FAIL 行与缩进行的前 10 行；仍认不出就整段作一项。"""
+    rows = [ln.rstrip() for ln in scrub_secrets(text).splitlines()]
+    errs = [ln[len("ERROR "):].strip() for ln in rows if ln.startswith("ERROR ")]
+    if not errs:
+        errs = [ln.strip() for ln in rows if ln.startswith("FAIL") or ln.startswith("  ")][:10]
+    if not errs and text.strip():
+        errs = [scrub_secrets(text.strip())]
+    return [compact(msg("verify.report.tool"))] + [compact(msg("verify.report.tool_error", text=vendor(e)))
+                                                   for e in errs]

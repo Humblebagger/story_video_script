@@ -1659,6 +1659,8 @@ export const zh = {
         coverage: '覆盖：选中 {selected} 句，已承载 {covered}，豁免 {waived}，未承载 {failed}',
         pass: '通过',
         fail: '未通过（{n} 条硬性问题）',
+        tool: '工具报告的错误（原文）：',
+        tool_error: '  {text}',
       },
         quality: {
           density: '旁白占比 {ratio}，超过阈值 {max}：选择性旁白模式下，能拍出来的内容不该再念（人工基准约 20%–35%）',
@@ -1680,6 +1682,7 @@ export const zh = {
           gates: '  未通过独立门槛：{gates}',
           gate: { overall: '总分 {overall} < {min}', weak: '低分维度：{dims}', semantic: '语义忠实 {score} < {min}' },
         },
+        attempt: { unparseable: '输出无法解析为 JSON', no_tool_call: '这轮修复没有发起任何工具调用', too_many_steps: '这轮修复超过了 {max} 个工具步骤' },
     },
     job: {
       batch_failed: '批 {batch} 重试 {retries} 次后仍未通过校验',

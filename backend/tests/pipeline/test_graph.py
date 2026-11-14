@@ -15,6 +15,7 @@ from pipeline.config import Settings
 from pipeline.convert import ConvertParams
 from pipeline.errors import ConversionError
 from pipeline.graph import build_batch_graph, run_batch
+from server.messages import compact, msg
 
 YAO = ROOT / "tests" / "real_text_yao"
 
@@ -107,7 +108,7 @@ def main() -> int:
             raise AssertionError("重试耗尽应抛 ConversionError")
         except ConversionError as e:
             assert e.code == "job.batch_failed" and e.params == {"batch": 7, "retries": settings.max_retries}
-            assert isinstance(e.lines, list), "ConversionError 带逐条消息（spec 子计划 5 C）"
+            assert e.lines == [{"code": "verify.attempt.unparseable", "params": {}}], e.lines
             assert e.report and d not in str(e) and "保留在" not in str(e), "工作目录只进调试日志"
             assert (Path(d) / "batch7_failure_report.txt").exists()
         assert any(d in line for line in logs3), "工作目录仍在调试日志里"
@@ -148,6 +149,72 @@ def main() -> int:
         graph_mod._check_batch = orig_check
         os.environ.pop("ANTHROPIC_API_KEY", None)
     print("graph: 降级警告与调试日志脱敏 ✓")
+
+    # 3c. 硬失败耗尽：失败报告带逐条（汇总在首行 + 结构校验逐条）；report 仍是回喂模型的 render() 原文；
+    #     尝试记录的 verification 不带 msg（前端不显示，设计审查 Minor 1）
+    bad0 = json.loads(archived)
+    bad0["episodes"][0]["shots"][0].pop("action")
+    with tempfile.TemporaryDirectory() as d:
+        records3c = []
+        chat = ChatInvoker(settings, chat=FakeChat(responses=[json.dumps(bad0)]), log=lambda _: None)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=settings, params=params,
+                                  workdir=Path(d), attempt_records=records3c, log=lambda _: None)
+        try:
+            run_batch(graph, user="u", batch_text=batch, idx=2, frozen_units=None)
+            raise AssertionError("硬失败耗尽应抛 ConversionError")
+        except ConversionError as e:
+            codes = [x["code"] for x in e.lines]
+            assert "verify.report.finding" in codes and codes[0] == "verify.report.fail", codes
+            assert any(x["params"].get("rule") == "SCHEMA-001" for x in e.lines)
+            assert "[SCHEMA-001]" in e.report and "verify.rule" not in e.report, "report 仍是 render() 原文"
+        fs = [f for rec in records3c for f in (rec.get("verification") or {}).get("findings", [])]
+        assert fs and all("msg" not in f for f in fs), "尝试记录不带 msg"
+    print("graph: 硬失败的失败报告带逐条 ✓")
+
+    # 3d. 软质量门耗尽降级：警告的 report 是 lines；尝试记录照旧存原文
+    def fake_check(*a, lines_out=None, **kw):
+        lines_out.append(compact(msg("verify.quality.density", ratio="80%", max="60%")))
+        return False, False, "[quality] 原文报告", (0,), verification.VerificationReport()
+    graph_mod._check_batch = fake_check
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            records = []
+            chat = ChatInvoker(settings, chat=FakeChat(responses=[archived]), log=lambda _: None)
+            graph = build_batch_graph(chat=chat, review_chat=chat, settings=settings, params=params,
+                                      workdir=Path(d), attempt_records=records, log=lambda _: None)
+            _, warns = run_batch(graph, user="u", batch_text=batch, idx=1, frozen_units=None)
+            assert warns[0]["params"]["report"] == {"t": "lines", "items": [
+                {"code": "verify.quality.density", "params": {"ratio": "80%", "max": "60%"}}]}, warns[0]
+            assert "旁白占比 80%" in warns[0]["message"] and "原文报告" not in warns[0]["message"]
+            assert records[0]["report"] == "[quality] 原文报告", "尝试记录照旧存原文（R12）"
+    finally:
+        graph_mod._check_batch = orig_check
+    print("graph: 降级警告的报告是逐条 ✓")
+
+    # 3e. 整章结构终检未过：ConversionError 只带汇总一行（逐条在同屏的验证面板里）。只换掉 convert 模块里的引用，单批图照常校验
+    import types
+    import pipeline.convert as convert_mod
+    real_v = convert_mod.verification
+
+    def failing(doc, **kw):
+        r = verification.VerificationReport()
+        r.add("FID-SOURCE-001", "critical", "/source/units", "source units do not reconstruct the normalized input")
+        return r
+    convert_mod.verification = types.SimpleNamespace(verify_document=failing,
+                                                     recompute_coverage_field=real_v.recompute_coverage_field)
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            try:
+                convert_mod.convert_text(batch, params, settings=settings, llm=FakeChat(responses=[archived]),
+                                         batches=[batch], workdir=Path(d), log=lambda _: None)
+                raise AssertionError("终检未过应抛 ConversionError")
+            except ConversionError as e:
+                assert e.code == "job.final_verify_failed"
+                assert e.lines == [{"code": "verify.report.fail", "params": {"n": 1}}], e.lines
+                assert "[FID-SOURCE-001]" in e.report, "report 仍是 render() 原文"
+    finally:
+        convert_mod.verification = real_v
+    print("convert: 整章终检的失败报告带逐条 ✓")
 
     # ---- 修复循环 ----
     from langchain_core.messages import AIMessage, SystemMessage, ToolMessage

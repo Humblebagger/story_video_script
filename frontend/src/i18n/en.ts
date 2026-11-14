@@ -1673,6 +1673,8 @@ export const en: Messages = {
         coverage: 'Coverage: {selected} selected, {covered} carried, {waived} waived, {failed} missing',
         pass: 'Passed',
         fail: 'Failed (blocking issues: {n})',
+        tool: 'Errors reported by the tool (original text):',
+        tool_error: '  {text}',
       },
         quality: {
           density: 'Narration covers {ratio} of the source, above the {max} limit: in selective mode, what the picture can show shouldn’t also be read aloud (hand-made storyboards: about 20%–35%)',
@@ -1694,6 +1696,7 @@ export const en: Messages = {
           gates: '  Failed the independent thresholds: {gates}',
           gate: { overall: 'overall {overall} < {min}', weak: 'low-scoring: {dims}', semantic: 'faithfulness {score} < {min}' },
         },
+        attempt: { unparseable: 'The output couldn’t be parsed as JSON', no_tool_call: 'This repair round made no tool calls', too_many_steps: 'This repair round went over the limit of {max} tool steps' },
     },
     job: {
       batch_failed: 'Batch {batch} still failed validation after {retries} retries',
