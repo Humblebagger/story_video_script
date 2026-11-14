@@ -268,6 +268,57 @@ def main() -> int:
     assert [x["params"]["text"]["text"] for x in V.tool_lines("怪输出")[1:]] == ["怪输出"], "认不出格式时整段作一项"
     print("11. 检查工具输出按 ERROR 行拆分 ✓")
 
+    # 11. 整份对外报告脱敏：unit_refs、actual、coverage 等其余字段也不漏
+    os.environ["ARK_API_KEY"] = FAKE
+    d = SNAP.doc()
+    d["episodes"] = [{"id": "E01", "shots": [{"id": "E01-SH001", "source": {"unit_refs": [FAKE_REF := "Bearer " + "abc.def-123 " + FAKE]},
+                                              "dialogue": [{"text": "x-api-key: sk-zzz999"}]}]}]
+    d["source"] = {"units": [{"id": "u0001", "text": "他说话", "para": 1}]}
+    rep = V.verify_document(d)
+    got = {f.rule_id for f in rep.findings}
+    assert "REF-UNIT-001" in got, got
+    clean(rep.to_dict(), "report all fields")
+    assert FAKE in json.dumps(rep.to_dict(shown=False)), "回喂模型的不脱敏"
+    rep.coverage = {"selected": [blob], "failed": [FAKE]}
+    clean(rep.to_dict(), "coverage")
+    d["episodes"][0]["shots"][0]["source"]["unit_refs"] = ["u0001"]
+    d["episodes"][0]["shots"][0]["dialogue"] = [{"text": blob}]
+    rep = V.verify_document(d)
+    assert any(f.rule_id == "FID-DIALOGUE-001" for f in rep.findings)
+    clean(rep.to_dict(), "FID-DIALOGUE actual")
+    del os.environ["ARK_API_KEY"]
+
+    # 12. 跨截断边界：密钥横跨截断位置，先截断再脱敏会留下抹不掉的前半截
+    KEY = "sk-" + "Q" * 40
+    os.environ["ARK_API_KEY"] = KEY
+
+    def no_prefix(x, label):
+        t = json.dumps(x, ensure_ascii=False)
+        assert "QQQQQ" not in t and KEY[:10] not in t, (label, t)
+    u = SNAP.chatty()
+    u["source"]["units"][0]["text"] = "字" * 20 + KEY
+    out = []
+    quality.narration_density_gate(u, 0.6, lines_out=out)
+    no_prefix(out, "quality 30 cut")
+    pad = "字" * 280
+
+    class _Chat2:
+        def invoke(self, _m):
+            return SNAP.LOW_RAW.replace("E01-SH002", pad + KEY).replace("旁白重复画面", pad + KEY).replace("删掉旁白", pad + KEY)
+
+        def text(self, r):
+            return r
+    out = []
+    review.run_review(_Chat2(), "原文", {"episodes": []}, 3.5, lines_out=out)
+    assert any(x["code"] == "verify.review.issue" for x in out)
+    no_prefix(M.lines_of(out), "review 300 cut")
+    d = SNAP.doc()
+    d["meta"] = {"narration": {"mode": pad + KEY}}
+    sch = next(f for f in V.verify_document(d).findings if f.rule_id == "SCHEMA-001" and "narration" in f.object_path)
+    no_prefix(sch.as_msg(), "schema 300 cut")
+    del os.environ["ARK_API_KEY"]
+    print("11-12. 整份报告脱敏与跨截断边界 ✓")
+
     print("\nALL PASS")
     return 0
 

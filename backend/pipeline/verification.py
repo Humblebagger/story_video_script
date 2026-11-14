@@ -67,9 +67,9 @@ class Finding:
         out = {k: v for k, v in asdict(self).items()
                if k != "params" and v not in (None, "", [], {})}
         if shown:
-            # 给界面与存档：旧的 message 原文也要脱敏，否则密钥从它漏出去；回喂模型的 shown=False 一字不改
-            if "message" in out:
-                out["message"] = scrub_secrets(out["message"])
+            # 给界面与存档：整条逐字段脱敏（message、unit_refs、expected/actual、引文都可能带用户文字里的密钥）；
+            # 回喂模型的 shown=False 一字不改
+            out = scrub_params(out)
             out["msg"] = self.as_msg()
         return out
 
@@ -105,7 +105,7 @@ class VerificationReport:
         return {
             "status": "verified" if self.ok else "failed",
             "findings": [f.to_dict(shown=shown) for f in self.findings],
-            "coverage": self.coverage,
+            "coverage": scrub_params(self.coverage) if shown else self.coverage,
         }
 
     def render(self) -> str:
