@@ -195,6 +195,49 @@ def main() -> int:
             os.environ.pop("STORYBOARD_SECRET", None)
     print("脱敏：反斜杠 / 引号 / 非 ASCII 密钥的转义形态 ✓")
 
+    # 第 2 轮：单双引号混合、反斜杠、非 ASCII 的密钥，逐层嵌套序列化 1~3 层，任何一层还原都不得得到原文
+    import ast
+    import json as _json
+    fns = (("repr", repr, ast.literal_eval), ("json", _json.dumps, _json.loads),
+           ("json_u", lambda x: _json.dumps(x, ensure_ascii=False), _json.loads))
+
+    def layers(k, depth):
+        cur = [(k, [])]
+        for _ in range(depth):
+            cur = [(fn(x), ld + [load]) for x, ld in cur for _n, fn, load in fns]
+            yield from cur
+
+    for k in ("abc'123secret", 'abc"123secret', "ab'c\"123secret", "abc123\\sec'ret", "abc密钥'123secret", "sk-test-plainkey123"):
+        os.environ["ANTHROPIC_API_KEY"] = k
+        try:
+            for text, loads in layers(k, 3):
+                for wrap in (text, str({"value": text}), _json.dumps({"value": text})):
+                    for out in (base.scrub_secrets(wrap), base.scrub(wrap, k)):
+                        cur = out
+                        assert k not in cur, (k, wrap, out)
+                        # 逐层还原：任何一层都不能得到 k
+                        if wrap is text:
+                            try:
+                                for load in reversed(loads):
+                                    cur = load(cur)
+                                    assert not (isinstance(cur, str) and k in cur), (k, wrap, out)
+                            except (ValueError, SyntaxError):
+                                pass
+        finally:
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+    # 多密钥互相重叠：一个密钥的转义形态不得吞掉另一个密钥的前缀
+    k1, k2 = "abc密钥123secret", "abc密钥123secret-sensitiveTAIL987"
+    os.environ["ARK_API_KEY"], os.environ["STORYBOARD_SECRET"] = k1, k2
+    try:
+        for sm in (k2, repr(k2), _json.dumps(k2), str({"v": k2}), k1 + " " + k2):
+            out = base.scrub_secrets(sm)
+            assert "TAIL987" not in out and "sensitive" not in out, (sm, out)
+        assert base.scrub_secrets(k2) == "***", base.scrub_secrets(k2)
+    finally:
+        os.environ.pop("ARK_API_KEY", None)
+        os.environ.pop("STORYBOARD_SECRET", None)
+    print("脱敏：逐层嵌套与多密钥重叠 ✓")
+
     print("\nALL PASS")
     return 0
 

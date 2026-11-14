@@ -482,6 +482,24 @@ def main() -> int:
     del os.environ["ARK_API_KEY"]
     print("18. 含反斜杠的密钥经转义后整份报告（存档与逐条）不漏 ✓")
 
+    # 18b. 含单引号的密钥被 repr 嵌套后放进 meta.video.resolution（第 2 轮）
+    K18b = "abc'123secret"
+    os.environ["ARK_API_KEY"] = K18b
+    d = SNAP.doc()
+    d["meta"] = {"video": {"resolution": {"value": repr(K18b)}}}
+    rep = V.verify_document(d)
+    assert any(f.rule_id == "SCHEMA-001" and "resolution" in f.object_path for f in rep.findings), rep.lines()
+    for label, blob in (("to_dict", json.dumps(rep.to_dict(shown=True), ensure_ascii=False)),
+                        ("attempt", json.dumps(M.lines_of(rep.lines()) if hasattr(M, "lines_of") else rep.lines()))):
+        assert K18b not in blob, (label, blob)
+        for lay in (repr(K18b), repr(repr(K18b)), json.dumps(K18b), json.dumps(repr(K18b))):
+            assert lay not in blob and lay[1:-1] not in blob, (label, lay, blob)
+    from render.providers.base import scrub_secrets as _ss
+    att = _ss(rep.render())                      # 尝试记录 manifest.attempts[].report 的写法
+    assert K18b not in att and repr(K18b)[1:-1] not in att and repr(repr(K18b))[1:-1] not in att, att
+    del os.environ["ARK_API_KEY"]
+    print("18b. 单引号密钥嵌套转义 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -93,23 +93,35 @@ class VideoProvider(Protocol):
     def cost(self, st: TaskState, req: ClipRequest) -> float: ...
 
 
-def secret_forms(k: str) -> list:
-    """密钥在文字里可能出现的各种形态：原样、repr 转义、JSON 转义（含非 ASCII 原样版），
-    以及各转义形式再转义一层（嵌套字符串化）。去重后按长度从长到短，免得短形式先替换把长形式切碎。"""
-    forms, frontier = {k}, {k}
-    for _ in range(3):
-        nxt = set()
-        for f in frontier:
-            for g in (repr(f)[1:-1], json.dumps(f)[1:-1], json.dumps(f, ensure_ascii=False)[1:-1]):
-                if g and g not in forms:
-                    nxt.add(g)
-        forms |= nxt
-        frontier = nxt
-    return sorted(forms, key=lambda x: (-len(x), x))
+def _strip_quotes(x: str) -> str:
+    while len(x) >= 2 and x[0] == x[-1] and x[0] in "'\"":
+        x = x[1:-1]
+    return x
 
 
-def _mask_secret(text: str, k: str) -> str:
-    for f in secret_forms(k):
+def secret_forms(k: str, depth: int = 3) -> set:
+    """密钥在文字里可能出现的各种形态：对完整字符串链式序列化 s0=k, s(n+1)=f(s(n))，
+    f 取 repr、json.dumps(ensure_ascii=True)、json.dumps(ensure_ascii=False)，所有组合做 depth 层；
+    每个 s(n) 取完整形态与反复剥掉两端成对引号后的内层形态（最多几十个）。"""
+    chain, layer = {k}, {k}
+    for _ in range(depth):
+        layer = {g for x in layer for g in (repr(x), json.dumps(x), json.dumps(x, ensure_ascii=False))}
+        chain |= layer
+    forms = set()
+    for x in chain:
+        forms.add(x)
+        forms.add(_strip_quotes(x))
+    forms.discard("")
+    return forms
+
+
+def _mask_secrets(text: str, keys) -> str:
+    """所有密钥的全部形态汇总去重，按长度从长到短一次性替换，免得某个形态吞掉另一个密钥的前缀。"""
+    forms = set()
+    for k in keys:
+        if isinstance(k, str) and k:
+            forms |= secret_forms(k)
+    for f in sorted(forms, key=lambda x: (-len(x), x)):
         text = text.replace(f, "***")
     return text
 
@@ -118,7 +130,7 @@ def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:
     """服务端文字进报错前：抹掉密钥、Bearer 凭据与 x-api-key 头；limit 不为 None 时再截断。"""
     t = str(text)
     if secret:
-        t = _mask_secret(t, secret)
+        t = _mask_secrets(t, [secret])
     t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
     t = re.sub(r"(?i)(x-api-key[\"']?\s*[:=]\s*[\"']?)[^\s\"',;}]+", r"\1***", t)
     return t if limit is None else t[:limit]
@@ -133,9 +145,8 @@ def scrub_secrets(text, extra=()) -> str:
     """日志文字脱敏：抹掉 Bearer 凭据、环境里配置的各厂商密钥与调用方给的密钥（如厂商对象持有的）。
     非空密钥一律抹掉，没有最短长度。"""
     out = scrub(text)
-    for k in [os.environ.get(n, "") for n in SECRET_ENVS] + list(extra):
-        if isinstance(k, str) and k.strip():
-            out = _mask_secret(out, k.strip())
+    keys = [os.environ.get(n, "") for n in SECRET_ENVS] + list(extra)
+    out = _mask_secrets(out, [k.strip() for k in keys if isinstance(k, str) and k.strip()])
     return out
 
 
