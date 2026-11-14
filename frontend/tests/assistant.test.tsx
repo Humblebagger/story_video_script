@@ -421,6 +421,7 @@ const enter = async (composing = false, keyCode = 13) => {
 
 {
   // 对比卡：原 → 新、复验警告、应用 / 放弃；应用后撤销；撤销失败给提示；撤销成功通知工作台
+  const { en: enT } = await import('../src/i18n/en')
   const tasks: unknown[] = []
   const offTask = onTask((t) => tasks.push(t))
   const diffCard = { id: 'i9', tool_call_id: 'e1', action: 'shots_edit', chapter_id: 'c1', chapter: '第一章', version_id: 'v1',
@@ -428,7 +429,9 @@ const enter = async (composing = false, keyCode = 13) => {
                      diff: [{ target: 'E01-SH001', field: 'action', before: '旧画面', after: '新画面' },
                             { target: 'E01-SH001', field: 'camera.movement', before: 'static', after: 'push_in' }],
                      warnings: [{ code: 'verify.finding', params: { path: 'episodes[0]', detail: { t: 'vendor', text: '时长对不上' } },
-                                 message: 'episodes[0]：时长对不上' }, '旧字符串警告'] }
+                                 message: 'episodes[0]：时长对不上' }, '旧字符串警告',
+                                { code: 'verify.finding', params: { path: '/episodes/0/shots/0',
+                                  detail: { code: 'verify.rule.EVIDENCE-SHOT-001', params: {} } } }] }
   history = []
   let root = await mount('n-edit')
   script = [{ event: 'confirm', data: diffCard }]
@@ -442,6 +445,7 @@ const enter = async (composing = false, keyCode = 13) => {
        '运镜字段名 ' + rows[1].textContent)
   must(!!$('assistant-card-warnings') && $('assistant-card-warnings')!.textContent!.includes('时长'), '复验警告')
   must($('assistant-card-warnings')!.textContent!.includes('旧字符串警告') && !$('assistant-card-warnings')!.textContent!.includes('[object'), '复验警告：对象与旧字符串都显示')
+  must($('assistant-card-warnings')!.textContent!.includes('/episodes/0/shots/0: ' + enT.srv.verify.rule['EVIDENCE-SHOT-001']), '复验警告：嵌套规则消息按代码渲染（本段默认语言为英文，中英对照见后面的语言切换段） ' + $('assistant-card-warnings')!.textContent)
   must(!$('assistant-card-cost'), '改内容没有金额行')
   must(($('assistant-card-approve')!.textContent ?? '').length > 0 && !$('assistant-card-undo'), '待确认时没有撤销')
   script = [{ event: 'action', data: { tool_call_id: 'e1', action: 'shots_edit', outcome: 'approved', card: diffCard,
@@ -488,6 +492,8 @@ const enter = async (composing = false, keyCode = 13) => {
   const { useI18n, setCurrentLocale } = await import('../src/i18n/core')
   const { Toaster } = await import('../src/components/ui/sonner')
   const { getSession } = await import('../src/lib/assistantSession')
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
   let setLoc: (l: 'zh' | 'en') => void = () => {}
   const Grab = () => { setLoc = useI18n().setLocale; return null }
   const mountL = async (novelId: string) => {
@@ -557,7 +563,11 @@ const enter = async (composing = false, keyCode = 13) => {
         error_msg: { code: 'common.internal', params: {}, ref: 'K7Q2M9XD' } },
       { tool_call_id: 'p1', action: 'plot_edit', outcome: 'pending',
         card: { ...base, tool_call_id: 'p1',
-                warnings: [{ code: 'assistant.edit.nothing', params: {}, message: '没有要改的地方' }],
+                warnings: [{ code: 'assistant.edit.nothing', params: {}, message: '没有要改的地方' },
+                           { code: 'verify.finding', params: { path: 'episodes[0]', detail: { t: 'vendor', text: '时长对不上' } } },
+                           '旧字符串警告',
+                           { code: 'verify.finding', params: { path: '/episodes/0/shots/0',
+                             detail: { code: 'verify.rule.EVIDENCE-SHOT-001', params: {} } } }],
                 diff: [{ target: '全书梗概', field: 'outline', before: 'a', after: 'b' },
                        { target: '第一章 梗概', field: 'synopsis', before: 'c', after: 'd' }] } },
       { tool_call_id: 's1', action: 'shots_edit', outcome: 'pending',
@@ -572,6 +582,7 @@ const enter = async (composing = false, keyCode = 13) => {
   const rowsT = () => $$('assistant-diff-row').map((r) => r.querySelector('p')!.textContent ?? '')
   must(rowsT()[0].startsWith('全书梗概') && rowsT()[1].startsWith('第一章 梗概') && rowsT()[2].startsWith('E01-SH003'), 'diff 目标中文 ' + rowsT().join('|'))
   must(txt('assistant-card-warnings').includes('没有要改的地方'), '警告中文')
+  must(txt('assistant-card-warnings').includes('/episodes/0/shots/0: ' + zh.srv.verify.rule['EVIDENCE-SHOT-001']), '嵌套规则警告中文 ' + txt('assistant-card-warnings'))
   await toEn()
   const fe = $$('assistant-card-failed')
   must(!hasZh(fe[0].textContent ?? '') && fe[0].textContent!.length > 10, '失败卡切英文 ' + fe[0].textContent)
@@ -581,6 +592,10 @@ const enter = async (composing = false, keyCode = 13) => {
   must(rowsT()[1].startsWith('第一章 synopsis'), '章梗概英文 ' + rowsT()[1])
   must(rowsT()[2].startsWith('E01-SH003'), '镜头目标原样 ' + rowsT()[2])
   must(!txt('assistant-card-warnings').includes('没有要改的地方'), '警告切英文 ' + txt('assistant-card-warnings'))
+  must(txt('assistant-card-warnings').includes('/episodes/0/shots/0: ' + en.srv.verify.rule['EVIDENCE-SHOT-001'])
+       && !txt('assistant-card-warnings').includes(zh.srv.verify.rule['EVIDENCE-SHOT-001'])
+       && txt('assistant-card-warnings').includes('时长对不上') && txt('assistant-card-warnings').includes('旧字符串警告'),
+       '嵌套规则警告英文，厂商原文与旧字符串照旧 ' + txt('assistant-card-warnings'))
   await act(async () => { root.unmount() })
   setCurrentLocale('zh')
 

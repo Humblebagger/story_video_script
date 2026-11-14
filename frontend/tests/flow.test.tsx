@@ -118,10 +118,14 @@ const INVALID = {
   }],
   coverage: { selected: ['u0001', 'u0002'], covered: ['u0001'], waived: [], failed: ['u0002'] },
 }
+const INVALID_MSG = { ...INVALID, findings: [{ ...INVALID.findings[0], rule_id: 'FID-DIALOGUE-001',
+  msg: { code: 'verify.rule.FID-DIALOGUE-001', params: {} } }] }
 /** 下一次 PUT /history 的复验判定；置一次用一次 */
 let nextSaveVerdict: { status: string; verification: unknown } | null = null
 /** 置位后下一次 /render/plan 返回 422 验证拦截 */
 let blockNextRender = false
+/** 渲染被拦时返回的验证报告 */
+let blockReport: unknown = INVALID
 /** 非空时，新建标题等于它的章节返回 500（演导入中途失败） */
 let failChapterTitle = ''
 
@@ -237,7 +241,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
       blockNextRender = false
       // 服务端拒绝付费渲染时 detail 是对象而不是字符串
       return err(422, { message: '分镜未通过独立验证，禁止进入付费渲染',
-                        verification: INVALID })
+                        verification: blockReport })
     }
     const shots = b.result.episodes.flatMap((e: { shots: unknown[] }) => e.shots)
     const seconds = shots.reduce((a: number, s: { duration_sec: number }) =>
@@ -1285,6 +1289,19 @@ must(has('E01 / E01-SH001 · dialogue.0.text'),
 must(has('1 句原文没有任何镜头承载'), '覆盖率缺口要直说')
 must(has('草稿未过验证'), '历史列表也要标出来，否则换个页面回来就看不见了')
 
+// 17a. 同样的保存，报告带 msg：按代码渲染并随语言变化，不再显示 message
+{
+  const { zh } = await import('../src/i18n/zh')
+  await typeAt(area17, '推门，康大叔（再再改）')
+  nextSaveVerdict = { status: 'draft_invalid', verification: INVALID_MSG }
+  await click(findByText('button', '保存修改'))
+  await settle(60)
+  must(has(zh.srv.verify.rule['FID-DIALOGUE-001']) && !has('台词不是所引原文句的逐字摘录'), '保存后：msg 按代码渲染（中文），message 不再显示')
+  await act(async () => { setLoc('en') })
+  must(has(en.srv.verify.rule['FID-DIALOGUE-001']) && !has(zh.srv.verify.rule['FID-DIALOGUE-001']), '保存后：msg 切英文')
+  await act(async () => { setLoc('zh') })
+}
+
 blockNextRender = true
 await click(findByText('button', '渲染'))
 await click(findByText('button', '生成任务包'))
@@ -1292,6 +1309,20 @@ await settle(150)
 must(has('已拦在付费渲染之前'), '渲染门拦截要有明确说法')
 must(!has('[object Object]'), '结构化 detail 不能退化成 [object Object]')
 must(has('台词不是所引原文句的逐字摘录'), '拦截原因要逐条列出')
+
+// 渲染被拦，报告带 msg
+{
+  const { zh } = await import('../src/i18n/zh')
+  blockReport = INVALID_MSG
+  blockNextRender = true
+  await click(findByText('button', '生成任务包'))
+  await settle(150)
+  must(has(zh.srv.verify.rule['FID-DIALOGUE-001']) && !has('台词不是所引原文句的逐字摘录'), '渲染被拦：msg 按代码渲染（中文）')
+  await act(async () => { setLoc('en') })
+  must(has(en.srv.verify.rule['FID-DIALOGUE-001']), '渲染被拦：msg 切英文')
+  await act(async () => { setLoc('zh') })
+  blockReport = INVALID
+}
 console.log('17. 验证结果透出 → 保存复验不通过当场可见 / 渲染门给出可执行原因 ✓')
 
 // 17b. 工作流的主按钮也拦在完整性检查：说原因，「去修复」回到 ③ 并定位到检查结果

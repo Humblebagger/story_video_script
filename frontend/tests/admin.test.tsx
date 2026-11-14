@@ -113,7 +113,13 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                 error: '旧中文原因\nFAIL: E01 缺资产 C09',
                 error_msg: { code: 'job.failed_report', params: {
                   reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
-                  report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } } }] })
+                  report: { t: 'vendor', text: 'FAIL: E01 缺资产 C09' } } } },
+              { id: 'v12', user_id: 'u-amy', username: 'amy', novel_title: '孔乙己', chapter_title: '四',
+                created_at: '2026-10-26T08:00:00+00:00', chars: 20, attempts: 3, error: '旧中文',
+                error_msg: { code: 'job.failed_report', params: {
+                  reason: { code: 'job.batch_failed', params: { batch: 1, retries: 2 } },
+                  report: { t: 'lines', items: [{ code: 'verify.report.fail', params: { n: 1 } }, { code: 'verify.report.tool', params: {} },
+                    { code: 'verify.report.tool_error', params: { text: { t: 'vendor', text: '[E01-SH001] location_ref 引用不存在的场景: L09' } } }] } } } }] })
   const dm = path.match(/^\/admin\/jobs\/([^/?]+)\/debug\?user_id=(.+)$/)
   if (dm) return failDebug ? err(404, { code: 'admin.job.not_found', params: { id: dm[1] }, message: `没有这次转换的调试日志：${dm[1]}` })
     : json({ id: dm[1], user_id: dm[2], lines: ['输入 4 字符 → 1 批', '  原因如下：'] })
@@ -402,6 +408,18 @@ console.log('12. 任务页失败原因 ✓')
   await act(async () => { setL('en') })
   await settle()
   must(!sum()!.includes('批') && sum()!.length > 5 && !pre()!.includes('批 2') && pre()!.endsWith('\nFAIL: E01 缺资产 C09'), `切英文后摘要与整段变英文，实为 ${pre()}`)
+  await act(async () => { setL('zh') })
+  await settle()
+  // 逐条报告（lines）：摘要只取原因，展开整段按代码渲染，切语言跟着变，厂商原文保留
+  const row4 = () => [...container.querySelectorAll('tbody tr')].find((tr) => (tr.textContent ?? '').includes('四'))!
+  must(row4().querySelector('summary')!.textContent === '批 1 重试 2 次后仍未通过校验', `v12 摘要，实为 ${row4().querySelector('summary')!.textContent}`)
+  must(row4().querySelector('pre')!.textContent === '批 1 重试 2 次后仍未通过校验\n未通过（1 条硬性问题）\n工具报告的错误（原文）：\n  [E01-SH001] location_ref 引用不存在的场景: L09',
+    `v12 展开逐条，实为 ${row4().querySelector('pre')!.textContent}`)
+  await act(async () => { setL('en') })
+  await settle()
+  const pre4 = row4().querySelector('pre')!.textContent ?? ''
+  must(!pre4.includes('未通过') && !pre4.includes('批 1') && pre4.includes(en.srv.verify.report.fail.replace('{n}', '1')) && pre4.endsWith('[E01-SH001] location_ref 引用不存在的场景: L09'),
+    `v12 切英文，实为 ${pre4}`)
   await act(async () => { setL('zh') })
   await settle()
   // 调试日志：运行中与失败行都有按钮

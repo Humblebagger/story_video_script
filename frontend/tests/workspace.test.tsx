@@ -478,6 +478,42 @@ const novels: NS[] = [
   await lang('zh')
   await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'succeeded', quality_report: '旧质量报告', quality_msg: null }), ...props })))
   must(qtxt() === '旧质量报告', '没有 quality_msg 时显示 quality_report')
+  // 子计划 5：失败区与质量报告的逐条（lines）、任务验证面板的每条说明，按代码渲染并随语言变化；旧 finding 显示 message
+  const line = { code: 'verify.report.finding', params: { severity: { t: 'ref', code: 'verify.severity.high' }, rule: 'REF-UNIT-001',
+    path: '/episodes/0/shots/0/source/unit_refs', detail: { code: 'verify.rule.REF-UNIT-001', params: { unit: 'u0099' } } } }
+  const failedL = { code: 'job.failed_report', params: { reason: { code: 'job.batch_failed', params: { batch: 2, retries: 3 } },
+    report: { t: 'lines', items: [{ code: 'verify.report.fail', params: { n: 1 } }, line] } } }
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'failed', error: '旧中文', error_msg: failedL }), ...props })))
+  must(q('.job__err')?.textContent === '批 2 重试 3 次后仍未通过校验\n未通过（1 条硬性问题）\n严重 [REF-UNIT-001] '
+    + '/episodes/0/shots/0/source/unit_refs：镜头引用了不存在的原文句子 u0099', '失败区逐条（中文）：' + q('.job__err')?.textContent)
+  await lang('en')
+  const enLine = en.srv.verify.report.finding.replace('{severity}', en.srv.verify.severity.high).replace('{rule}', 'REF-UNIT-001')
+    .replace('{path}', '/episodes/0/shots/0/source/unit_refs')
+    .replace('{detail}', en.srv.verify.rule['REF-UNIT-001'].replace('{unit}', 'u0099'))
+  must((q('.job__err')?.textContent ?? '').includes(enLine) && !(q('.job__err')?.textContent ?? '').includes('严重'),
+    '失败区逐条切英文：' + q('.job__err')?.textContent)
+  await lang('zh')
+  const deg = { code: 'job.quality.degraded', params: { batch: 1, retries: 2, attempt: 2, candidates: 2,
+    report: { t: 'lines', items: [{ code: 'verify.quality.density', params: { ratio: '80%', max: '60%' } }] } } }
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'completed_with_warnings', quality_report: '旧', quality_msg: [deg] }), ...props })))
+  must(qtxt().includes(zh.srv.verify.quality.density.replace('{ratio}', '80%').replace('{max}', '60%')), '质量报告逐条（中文）：' + qtxt())
+  await lang('en')
+  must(qtxt().includes(en.srv.verify.quality.density.replace('{ratio}', '80%').replace('{max}', '60%')) && !qtxt().includes('旁白占比'),
+    '质量报告逐条切英文：' + qtxt())
+  await lang('zh')
+  const ver = { status: 'failed', coverage: {}, findings: [
+    { rule_id: 'REF-UNIT-001', severity: 'high', object_path: '/episodes/0/shots/0/source/unit_refs',
+      message: 'shot references unknown source unit u0099', unit_refs: ['u0099'],
+      msg: { code: 'verify.rule.REF-UNIT-001', params: { unit: 'u0099' } } },
+    { rule_id: 'ID-SHOT-001', severity: 'high', object_path: '/episodes', message: 'duplicate shot id E01-SH001' }] }
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'failed', error: 'x', verification: ver }), ...props })))
+  const vmsg = () => [...doc.querySelectorAll('.vf__msg')].map((x) => x.textContent ?? '')
+  must(vmsg()[0] === '镜头引用了不存在的原文句子 u0099' && vmsg()[1] === 'duplicate shot id E01-SH001',
+    '验证面板：有 msg 按代码，旧 finding 显示 message：' + vmsg().join('|'))
+  await lang('en')
+  must(vmsg()[0] === en.srv.verify.rule['REF-UNIT-001'].replace('{unit}', 'u0099') && vmsg()[1] === 'duplicate shot id E01-SH001',
+    '验证面板切英文：' + vmsg().join('|'))
+  await lang('zh')
   await render(null)
   console.log('7. 动态面板 ✓')
 }
