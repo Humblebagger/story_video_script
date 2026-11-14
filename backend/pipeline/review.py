@@ -11,6 +11,8 @@ from typing import Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from server.messages import compact, msg, ref, vendor
+
 from .chat import extract_json
 
 REVIEW_SYSTEM = """你是资深分镜审片人。用户给你一段小说原文和由它转换出的 NovelStoryboard 分镜 JSON（忠实转换模式：剧情属于小说，呈现属于转换器）。
@@ -34,13 +36,17 @@ SCORE_KEYS = (
 
 def run_review(chat, batch_text: str, doc: dict,
                min_score: float, dimension_min: int = 3,
-               semantic_min: int = 4) -> Tuple[Optional[bool], str, Optional[float]]:
+               semantic_min: int = 4,
+               lines_out: Optional[list] = None) -> Tuple[Optional[bool], str, Optional[float]]:
     """返回 (是否通过, 报告, 服务端重算总分)。
 
     chat 是 chat.ChatInvoker；评审是一次性打分，不入图。
 
     None 表示评审器自身不可用；调用方必须把它记为未验证，不能当作通过。
+    lines_out（可选）收同一份报告给用户看的逐条消息（spec 子计划 5 D）；评审意见是模型输出，作厂商原文参数原样显示；
+    给模型的重试指示不进逐条。
     """
+    out = lines_out if lines_out is not None else []
     user = (f"【小说原文】\n{batch_text}\n\n【分镜 JSON】\n"
             f"{json.dumps(doc, ensure_ascii=False)}")
     try:
@@ -52,6 +58,9 @@ def run_review(chat, batch_text: str, doc: dict,
         from render.providers.base import scrub_secrets
         mapped = llm_error(e)
         logging.getLogger("pipeline.review").warning("评审调用失败：%s", scrub_secrets(repr(e))[:500])  # i18n: internal
+        m = mapped.as_msg() if mapped is not None else None
+        out.append(compact(msg("verify.review.unavailable",
+                               cause=compact(m) if m else compact(msg("verify.review.call_failed")))))
         return None, f"[review] 评审服务不可用：{mapped if mapped is not None else '调用出错'}", None
     try:
         verdict = extract_json(raw)
@@ -65,6 +74,7 @@ def run_review(chat, batch_text: str, doc: dict,
         if not math.isfinite(overall):
             raise ValueError("总分不是有限数值")  # i18n: llm
     except (ValueError, KeyError, TypeError, ZeroDivisionError) as e:
+        out.append(compact(msg("verify.review.unverifiable")))
         return None, f"[review] 评审输出不可验证（{e}）", None
 
     score_line = "；".join(f"{k} {v}" for k, v in scores.items())
@@ -73,6 +83,12 @@ def run_review(chat, batch_text: str, doc: dict,
                    for i in issues]
     report = (f"[review] 评审总分 {overall}（阈值 {min_score}）：{score_line}\n"
               + ("\n".join(issue_lines) if issue_lines else "  无具体问题"))
+    out.append(compact(msg("verify.review.scored", overall=f"{overall}", min=f"{min_score}",
+                           scores=[compact(msg("verify.review.dim_score", dim=ref(f"verify.review.dim.{k}"), score=v))
+                                   for k, v in scores.items()])))
+    out.extend([compact(msg("verify.review.issue", where=vendor(i.get("where", "?")),
+                            problem=vendor(i.get("problem", "")), fix=vendor(i.get("fix", ""))))
+                for i in issues] or [compact(msg("verify.review.no_issues"))])
     weak = [k for k in SCORE_KEYS if scores[k] < dimension_min]
     semantic_ok = scores["semantic_fidelity"] >= semantic_min
     if overall >= min_score and not weak and semantic_ok:
@@ -84,6 +100,14 @@ def run_review(chat, batch_text: str, doc: dict,
         gates.append("低分维度：" + ", ".join(weak))
     if not semantic_ok:
         gates.append(f"semantic_fidelity {scores['semantic_fidelity']} < {semantic_min}")
+    shown_gates = []
+    if overall < min_score:
+        shown_gates.append(compact(msg("verify.review.gate.overall", overall=f"{overall}", min=f"{min_score}")))
+    if weak:
+        shown_gates.append(compact(msg("verify.review.gate.weak", dims=[ref(f"verify.review.dim.{k}") for k in weak])))
+    if not semantic_ok:
+        shown_gates.append(compact(msg("verify.review.gate.semantic", score=scores["semantic_fidelity"], min=semantic_min)))
+    out.append(compact(msg("verify.review.gates", gates=shown_gates)))
     return False, (report + "\n  未通过独立门槛：" + "；".join(gates)
                    + "\n\n请针对上述 issues 逐条修改后重新输出完整 JSON"
                             "（只输出一个 JSON 对象）。"), overall

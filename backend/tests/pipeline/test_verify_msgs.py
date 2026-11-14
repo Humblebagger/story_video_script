@@ -124,6 +124,82 @@ def main() -> int:
     assert V.VerificationReport().lines() == [{"code": "verify.report.pass", "params": {}}], "没有条目、没有覆盖统计时只有一行通过"
     print("6. lines()：汇总、覆盖、逐条 ✓")
 
+    # 7. 旁白密度门：带 lines_out 时报告照旧；逐条只有现象与清单
+    import anthropic
+    import httpx2
+    from pipeline import quality, review
+
+    out = []
+    assert quality.narration_density_gate(SNAP.chatty(), 0.6, lines_out=out) == (False, SNAP.DENSITY, 1.0)
+
+    def unit(i):
+        return {"code": "verify.quality.unit", "params": {"id": f"u{i:04d}", "kind": "action", "text": f"第{i}句动作描写。"}}
+    assert out == [{"code": "verify.quality.density", "params": {"ratio": "100%", "max": "60%"}},
+                   {"code": "verify.quality.density_safe", "params": {}}, unit(1), unit(3),
+                   {"code": "verify.quality.density_bare", "params": {}}, unit(2), unit(4)], out
+    txt = M.render_zh("common.unknown", {"message": M.lines_of(out)})
+    assert txt.startswith("旁白占比 100%，超过阈值 60%") and "请逐句重新裁决" not in txt, "给用户的没有给模型的操作指示"
+    out = []
+    assert quality.narration_density_gate(SNAP.chatty(), 1.0, lines_out=out)[0] and out == [], "通过时不写逐条"
+    print("7. 旁白密度门：报告照旧、逐条 ✓")
+
+    # 8. 时长门
+    out = []
+    assert quality.speech_fit_gate(SNAP.chatty(2), 0.1, lines_out=out) == (False, SNAP.SPEECH, 1.0)
+
+    def sh(i):
+        return {"code": "verify.quality.speech_shot",
+                "params": {"shot": f"E01-SH{i:03d}", "have": "1", "need": "5.3", "gap": "4.3"}}
+    assert out == [{"code": "verify.quality.speech", "params": {"over": 2, "total": 2, "ratio": "100%", "cps": "4.5",
+                                                                "max": "10%", "nominal": "2", "actual": "10.7"}},
+                   sh(1), sh(2)], out
+    print("8. 时长门：报告照旧、逐条 ✓")
+
+    # 9. 评审：报告照旧；评审意见是厂商原文；调用失败的原因是映射后的 llm.*
+    empty = {"episodes": []}
+    out = []
+    assert review.run_review(SNAP.Stub(SNAP.LOW_RAW), "原文", empty, 3.5, lines_out=out) == (False, SNAP.REV_LOW, 3.2)
+
+    def dim(k, v):
+        return {"code": "verify.review.dim_score",
+                "params": {"dim": {"t": "ref", "code": f"verify.review.dim.{k}"}, "score": v}}
+    assert out == [
+        {"code": "verify.review.scored", "params": {"overall": "3.2", "min": "3.5", "scores": [
+            dim("narration_selection", 2), dim("shot_language", 4), dim("asset_quality", 4), dim("semantic_fidelity", 3)]}},
+        {"code": "verify.review.issue", "params": {"where": {"t": "vendor", "text": "E01-SH002"},
+                                                   "problem": {"t": "vendor", "text": "旁白重复画面"},
+                                                   "fix": {"t": "vendor", "text": "删掉旁白"}}},
+        {"code": "verify.review.gates", "params": {"gates": [
+            {"code": "verify.review.gate.overall", "params": {"overall": "3.2", "min": "3.5"}},
+            {"code": "verify.review.gate.weak",
+             "params": {"dims": [{"t": "ref", "code": "verify.review.dim.narration_selection"}]}},
+            {"code": "verify.review.gate.semantic", "params": {"score": 3, "min": 4}}]}}], out
+    txt = M.render_zh("common.unknown", {"message": M.lines_of(out)})
+    assert txt.startswith("评审总分 3.2（阈值 3.5）：旁白取舍 2、镜头语言 4、资产卡质量 4、语义忠实 3\n"), txt
+    assert "请针对上述 issues" not in txt
+
+    out = []
+    assert review.run_review(SNAP.Stub(SNAP.HIGH_RAW), "原文", empty, 3.5, lines_out=out) == (True, SNAP.REV_HIGH, 5.0)
+    assert [x["code"] for x in out] == ["verify.review.scored", "verify.review.no_issues"]
+
+    out = []
+    assert review.run_review(SNAP.Stub(SNAP.BAD_RAW), "原文", empty, 3.5, lines_out=out) == (None, SNAP.REV_BAD, None)
+    assert out == [{"code": "verify.review.unverifiable", "params": {}}], "细节（对模型输出的格式检查）不给用户"
+
+    req = httpx2.Request("POST", "http://127.0.0.1:9/v1/messages")
+    e401 = anthropic.AuthenticationError(
+        "x", body={"type": "error", "error": {"type": "authentication_error", "message": "bad key"}},
+        response=httpx2.Response(401, request=req))
+    out = []
+    assert review.run_review(SNAP.Stub(raise_=e401), "原文", empty, 3.5, lines_out=out) == (None, SNAP.REV_AUTH, None)
+    assert out == [{"code": "verify.review.unavailable", "params": {"cause": {"code": "llm.auth", "params": {}}}}], out
+    out = []
+    assert review.run_review(SNAP.Stub(raise_=RuntimeError("boom")), "原文", empty, 3.5, lines_out=out) == \
+        (None, SNAP.REV_CALL_FAILED, None)
+    assert out == [{"code": "verify.review.unavailable",
+                    "params": {"cause": {"code": "verify.review.call_failed", "params": {}}}}], out
+    print("9. 评审：报告照旧、逐条、意见原样、失败原因映射 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -35,6 +35,7 @@ MODULES: dict = {
     "server/error_refs.py": None,
     "pipeline/chat.py": None,
     "pipeline/review.py": None,
+    "pipeline/quality.py": None,
     "pipeline/errors.py": None,
     "pipeline/events.py": None,
     "pipeline/convert.py": None,

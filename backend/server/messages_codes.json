@@ -1806,6 +1806,50 @@
     "params": [],
     "zh": "已永久离开"
   },
+  "verify.quality.density": {
+    "params": [
+      "ratio",
+      "max"
+    ],
+    "zh": "旁白占比 {ratio}，超过阈值 {max}：选择性旁白模式下，能拍出来的内容不该再念（人工基准约 20%–35%）"
+  },
+  "verify.quality.density_bare": {
+    "params": [],
+    "zh": "这些句子只靠旁白承载（没有镜头画面引用它们）："
+  },
+  "verify.quality.density_safe": {
+    "params": [],
+    "zh": "这些句子已有镜头画面承载，可以从旁白里拿掉："
+  },
+  "verify.quality.speech": {
+    "params": [
+      "over",
+      "total",
+      "ratio",
+      "cps",
+      "max",
+      "nominal",
+      "actual"
+    ],
+    "zh": "{over}/{total} 个镜头（{ratio}）的时长不够念完自己的旁白与台词（按 {cps} 字/秒），超过阈值 {max}；名义总时长 {nominal}s，全部念完实际需要 {actual}s"
+  },
+  "verify.quality.speech_shot": {
+    "params": [
+      "shot",
+      "have",
+      "need",
+      "gap"
+    ],
+    "zh": "  {shot} 时长 {have}s，念完需 {need}s（缺 {gap}s）"
+  },
+  "verify.quality.unit": {
+    "params": [
+      "id",
+      "kind",
+      "text"
+    ],
+    "zh": "  {id} [{kind}] {text}"
+  },
   "verify.report.coverage": {
     "params": [
       "selected",
@@ -1833,6 +1877,89 @@
   "verify.report.pass": {
     "params": [],
     "zh": "通过"
+  },
+  "verify.review.call_failed": {
+    "params": [],
+    "zh": "调用出错"
+  },
+  "verify.review.dim.asset_quality": {
+    "params": [],
+    "zh": "资产卡质量"
+  },
+  "verify.review.dim.narration_selection": {
+    "params": [],
+    "zh": "旁白取舍"
+  },
+  "verify.review.dim.semantic_fidelity": {
+    "params": [],
+    "zh": "语义忠实"
+  },
+  "verify.review.dim.shot_language": {
+    "params": [],
+    "zh": "镜头语言"
+  },
+  "verify.review.dim_score": {
+    "params": [
+      "dim",
+      "score"
+    ],
+    "zh": "{dim} {score}"
+  },
+  "verify.review.gate.overall": {
+    "params": [
+      "overall",
+      "min"
+    ],
+    "zh": "总分 {overall} < {min}"
+  },
+  "verify.review.gate.semantic": {
+    "params": [
+      "score",
+      "min"
+    ],
+    "zh": "语义忠实 {score} < {min}"
+  },
+  "verify.review.gate.weak": {
+    "params": [
+      "dims"
+    ],
+    "zh": "低分维度：{dims}"
+  },
+  "verify.review.gates": {
+    "params": [
+      "gates"
+    ],
+    "zh": "  未通过独立门槛：{gates}"
+  },
+  "verify.review.issue": {
+    "params": [
+      "where",
+      "problem",
+      "fix"
+    ],
+    "zh": "  [{where}] {problem} → 建议：{fix}"
+  },
+  "verify.review.no_issues": {
+    "params": [],
+    "zh": "  无具体问题"
+  },
+  "verify.review.scored": {
+    "params": [
+      "overall",
+      "min",
+      "scores"
+    ],
+    "zh": "评审总分 {overall}（阈值 {min}）：{scores}"
+  },
+  "verify.review.unavailable": {
+    "params": [
+      "cause"
+    ],
+    "zh": "评审服务不可用：{cause}"
+  },
+  "verify.review.unverifiable": {
+    "params": [],
+    "zh": "评审输出无法核验"
   },
   "verify.rule.COVERAGE-001": {
     "params": [

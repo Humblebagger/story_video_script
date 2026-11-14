@@ -5,7 +5,9 @@
 """
 import json
 import math
-from typing import Tuple
+from typing import List, Optional, Tuple
+
+from server.messages import compact, msg
 
 
 def apply_meta_overrides(doc: dict, params) -> None:
@@ -28,13 +30,15 @@ def apply_meta_overrides(doc: dict, params) -> None:
     narration["tts_voice"] = params.tts_voice
 
 
-def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str, float]:
+def narration_density_gate(doc: dict, max_ratio: float,
+                           lines_out: Optional[List[dict]] = None) -> Tuple[bool, str, float]:
     """selective 模式下"能拍出来的不念"的机器兜底。
 
     人工基准的旁白占比在 18%–36%（《药》0.18、《玉佩》0.36）；弱模型常退化成
     逐句朗读（100%）。占比超过 max_ratio 即不通过，报告列出可拍句清单供模型
     逐句重新裁决。max_ratio >= 1 视为关闭该门。
     返回 (是否通过, 报告, 实际占比)——占比供重试耗尽后择优降级交付时比较。
+    lines_out（可选）收同一份报告给用户看的逐条消息（spec 子计划 5 D）：只有现象与清单，没有给模型的操作指示。
     """
     mode = doc.get("meta", {}).get("narration", {}).get("mode")
     if mode != "selective" or max_ratio >= 1.0:
@@ -78,6 +82,15 @@ def narration_density_gate(doc: dict, max_ratio: float) -> Tuple[bool, str, floa
         report += ("只靠旁白承载的（没有任何镜头的 source.unit_refs 引用它们）：若要移除，"
                    "须先把它加进呈现该内容的镜头的 source.unit_refs，否则就成了未覆盖：\n"
                    + "\n".join(fmt(bare)) + "\n")
+    if lines_out is not None:
+        def items(us):
+            return [compact(msg("verify.quality.unit", id=u["id"], kind=u["kind"], text=u["text"][:30]))
+                    for u in us[:40]]
+        lines_out.append(compact(msg("verify.quality.density", ratio=f"{ratio:.0%}", max=f"{max_ratio:.0%}")))
+        if safe:
+            lines_out.extend([compact(msg("verify.quality.density_safe"))] + items(safe))
+        if bare:
+            lines_out.extend([compact(msg("verify.quality.density_bare"))] + items(bare))
     return False, report.rstrip("\n"), ratio
 
 
@@ -280,7 +293,8 @@ def normalize_curve_refs(doc: dict) -> int:
 
 
 def speech_fit_gate(doc: dict, max_overflow_ratio: float,
-                    cps: float = DEFAULT_SPEECH_CPS) -> Tuple[bool, str, float]:
+                    cps: float = DEFAULT_SPEECH_CPS,
+                    lines_out: Optional[List[dict]] = None) -> Tuple[bool, str, float]:
     """镜头时长必须够念完它承载的旁白与台词。
 
     这是"时长可控"的地基：念不完的镜头在成片时要么截断旁白（破坏保真的听感），
@@ -288,6 +302,7 @@ def speech_fit_gate(doc: dict, max_overflow_ratio: float,
     只是呈现层的秒数没配平——重试耗尽仍可择优降级交付。
     max_overflow_ratio >= 1 视为关闭。
     返回 (是否通过, 报告, 超时比例)。
+    lines_out（可选）收同一份报告给用户看的逐条消息（spec 子计划 5 D）：只有现象与清单，没有给模型的操作指示。
     """
     if max_overflow_ratio >= 1.0:
         return True, "", 0.0
@@ -316,4 +331,11 @@ def speech_fit_gate(doc: dict, max_overflow_ratio: float,
         f"超出上限的镜头必须拆成多个镜头分担旁白，或把画面承载得了的句子从 "
         f"narration.unit_refs 移除（不得改动旁白与台词文本、也不得改 source.unit_refs）：\n"
         + "\n".join(lines))
+    if lines_out is not None:
+        lines_out.append(compact(msg("verify.quality.speech", over=len(over), total=total, ratio=f"{ratio:.0%}",
+                                     cps=f"{cps:g}", max=f"{max_overflow_ratio:.0%}",
+                                     nominal=f"{nominal:g}", actual=f"{actual:g}")))
+        lines_out.extend(compact(msg("verify.quality.speech_shot", shot=sid, have=f"{have:g}",
+                                     need=f"{need:.1f}", gap=f"{need - have:.1f}"))
+                         for sid, have, need in over[:40])
     return False, report, ratio
