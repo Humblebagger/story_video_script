@@ -3,10 +3,10 @@
 主流程只用 caps / rewrite_prompt / submit / poll / download / cost。新增厂商 = 新文件 +
 在 providers/__init__.py 注册一行。厂商的提示词语法（如 Seedance 的 @图片n）只在厂商模块里。
 """
-import json
 import math
 import os
 import re
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol
@@ -93,37 +93,63 @@ class VideoProvider(Protocol):
     def cost(self, st: TaskState, req: ClipRequest) -> float: ...
 
 
-def _strip_quotes(x: str) -> str:
-    while len(x) >= 2 and x[0] == x[-1] and x[0] in "'\"":
-        x = x[1:-1]
-    return x
+_CTRL = {"\n": "n", "\t": "t", "\r": "r", "\a": "a", "\b": "b", "\f": "f", "\v": "v"}
 
 
-def secret_forms(k: str, depth: int = 3) -> set:
-    """密钥在文字里可能出现的各种形态：对完整字符串链式序列化 s0=k, s(n+1)=f(s(n))，
-    f 取 repr、json.dumps(ensure_ascii=True)、json.dumps(ensure_ascii=False)，所有组合做 depth 层；
-    每个 s(n) 取完整形态与反复剥掉两端成对引号后的内层形态（最多几十个）。"""
-    chain, layer = {k}, {k}
-    for _ in range(depth):
-        layer = {g for x in layer for g in (repr(x), json.dumps(x), json.dumps(x, ensure_ascii=False))}
-        chain |= layer
-    forms = set()
-    for x in chain:
-        forms.add(x)
-        forms.add(_strip_quotes(x))
-    forms.discard("")
-    return forms
+def _char_pat(c: str) -> str:
+    """单个字符在各种转义文字里可能的写法（repr、json.dumps 任意嵌套层，反斜杠个数不定）。"""
+    o = ord(c)
+    if c == "\\":
+        return r"\\+"
+    if c in "'\"":
+        return r"\\*" + re.escape(c)
+    if c in _CTRL:
+        return r"(?:%s|\\+%s)" % (re.escape(c), _CTRL[c])
+    alts = [re.escape(c)]
+    if o < 0x20 or o == 0x7f or o > 0x7e:
+        if o <= 0xff:
+            alts.append(r"\\+x(?i:%02x)" % o)
+        if o <= 0xffff:
+            alts.append(r"\\+u(?i:%04x)" % o)
+        alts.append(r"\\+U(?i:%08x)" % o)
+        if o > 0xffff:
+            v = o - 0x10000
+            alts.append(r"\\+u(?i:%04x)\\+u(?i:%04x)" % (0xd800 + (v >> 10), 0xdc00 + (v & 0x3ff)))
+        return "(?:" + "|".join(alts) + ")"
+    return r"\\*" + alts[0]
+
+
+@lru_cache(maxsize=64)
+def _secret_patterns(keys: tuple) -> tuple:
+    # 前瞻包一层，同一密钥自身重叠的匹配也收得到
+    return tuple(re.compile("(?=(" + "".join(_char_pat(c) for c in k) + "))") for k in keys)
 
 
 def _mask_secrets(text: str, keys) -> str:
-    """所有密钥的全部形态汇总去重，按长度从长到短一次性替换，免得某个形态吞掉另一个密钥的前缀。"""
-    forms = set()
-    for k in keys:
-        if isinstance(k, str) and k:
-            forms |= secret_forms(k)
-    for f in sorted(forms, key=lambda x: (-len(x), x)):
-        text = text.replace(f, "***")
-    return text
+    """容忍转义的密钥脱敏：每个密钥按字符生成"可带转义"的正则，收集所有匹配区间，
+    跨密钥取并集（重叠或相邻合并），每段整体换成 ***，任何被覆盖的字符都不会留下残片。"""
+    ks = tuple(sorted({k for k in keys if isinstance(k, str) and k}))
+    if not ks or not text:
+        return text
+    spans = sorted(m.span(1) for pat in _secret_patterns(ks) for m in pat.finditer(text))
+    if not spans:
+        return text
+    out, pos, cur = [], 0, None
+    for st, en in spans:
+        if cur and st <= cur[1]:
+            cur[1] = max(cur[1], en)
+        else:
+            if cur:
+                out.append((cur[0], cur[1]))
+            cur = [st, en]
+    out.append((cur[0], cur[1]))
+    parts = []
+    for st, en in out:
+        parts.append(text[pos:st])
+        parts.append("***")
+        pos = en
+    parts.append(text[pos:])
+    return "".join(parts)
 
 
 def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:

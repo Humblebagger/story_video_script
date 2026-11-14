@@ -486,7 +486,7 @@ def main() -> int:
     K18b = "abc'123secret"
     os.environ["ARK_API_KEY"] = K18b
     d = SNAP.doc()
-    d["meta"] = {"video": {"resolution": {"value": repr(K18b)}}}
+    d["meta"] = {"video": {"resolution": {"value": repr(repr({"value": K18b}))}}}
     rep = V.verify_document(d)
     assert any(f.rule_id == "SCHEMA-001" and "resolution" in f.object_path for f in rep.findings), rep.lines()
     for label, blob in (("to_dict", json.dumps(rep.to_dict(shown=True), ensure_ascii=False)),
@@ -496,7 +496,7 @@ def main() -> int:
             assert lay not in blob and lay[1:-1] not in blob, (label, lay, blob)
     from render.providers.base import scrub_secrets as _ss
     att = _ss(rep.render())                      # 尝试记录 manifest.attempts[].report 的写法
-    assert K18b not in att and repr(K18b)[1:-1] not in att and repr(repr(K18b))[1:-1] not in att, att
+    assert K18b not in att and "123secret" not in att and repr(K18b)[1:-1] not in att and repr(repr(K18b))[1:-1] not in att, att
     del os.environ["ARK_API_KEY"]
     print("18b. 单引号密钥嵌套转义 ✓")
 

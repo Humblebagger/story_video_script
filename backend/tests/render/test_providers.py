@@ -195,36 +195,68 @@ def main() -> int:
             os.environ.pop("STORYBOARD_SECRET", None)
     print("脱敏：反斜杠 / 引号 / 非 ASCII 密钥的转义形态 ✓")
 
-    # 第 2 轮：单双引号混合、反斜杠、非 ASCII 的密钥，逐层嵌套序列化 1~3 层，任何一层还原都不得得到原文
+    # 第 3 轮：容器 x 序列化 x 1~4 层嵌套穷举；逐层解码到底，沿途所有字符串都不含 k 及其长度 >= 8 的子串
     import ast
+    import itertools
     import json as _json
-    fns = (("repr", repr, ast.literal_eval), ("json", _json.dumps, _json.loads),
-           ("json_u", lambda x: _json.dumps(x, ensure_ascii=False), _json.loads))
+    import time
+    sers = (("repr", repr, ast.literal_eval), ("json", _json.dumps, _json.loads),
+            ("json_u", lambda x: _json.dumps(x, ensure_ascii=False), _json.loads))
+    conts = (("value", lambda x: {"value": x}, lambda v: v["value"]), ("list", lambda x: [x], lambda v: v[0]),
+             ("key", lambda x: {x: 1}, lambda v: next(iter(v))), ("xy", lambda x: "x" + x + "y", lambda v: v[1:-1]))
+    combos = [(c, f) for c in conts for f in sers]
 
-    def layers(k, depth):
-        cur = [(k, [])]
-        for _ in range(depth):
-            cur = [(fn(x), ld + [load]) for x, ld in cur for _n, fn, load in fns]
-            yield from cur
+    def pieces(k):
+        return {k[i:i + 8] for i in range(max(1, len(k) - 7))} | {k}
 
-    for k in ("abc'123secret", 'abc"123secret', "ab'c\"123secret", "abc123\\sec'ret", "abc密钥'123secret", "sk-test-plainkey123"):
+    def roundtrip(k, plan):
+        text = k
+        for c, f in plan:
+            text = f[1](c[1](text))
+        out = base.scrub_secrets(text)
+        assert not any(p in out for p in pieces(k)), (k, plan, out)
+        for c, f in reversed(plan):                 # 解码失败即失败，不跳过
+            v = f[2](out)
+            out = c[2](v)
+            assert not any(p in out for p in pieces(k)), (k, [(x[0], y[0]) for x, y in plan], out)
+
+    keys3 = ("abc'123secret", 'abc"123secret', "ab'c\"123secret", "abc123\\sec'ret", "abc\\'123secret",
+             "abc密钥'123secret", "abc😀123secret", "sk-test-plainkey123")
+    t0 = time.perf_counter()
+    nplans = 0
+    for k in keys3:
         os.environ["ANTHROPIC_API_KEY"] = k
         try:
-            for text, loads in layers(k, 3):
-                for wrap in (text, str({"value": text}), _json.dumps({"value": text})):
-                    for out in (base.scrub_secrets(wrap), base.scrub(wrap, k)):
-                        cur = out
-                        assert k not in cur, (k, wrap, out)
-                        # 逐层还原：任何一层都不能得到 k
-                        if wrap is text:
-                            try:
-                                for load in reversed(loads):
-                                    cur = load(cur)
-                                    assert not (isinstance(cur, str) and k in cur), (k, wrap, out)
-                            except (ValueError, SyntaxError):
-                                pass
+            for depth in (1, 2, 3, 4):
+                for plan in itertools.product(combos, repeat=depth):
+                    roundtrip(k, plan)
+                    nplans += 1
         finally:
             os.environ.pop("ANTHROPIC_API_KEY", None)
+    print(f"  嵌套穷举 {nplans} 组 {time.perf_counter() - t0:.1f}s")
+    # 误伤：带引号的密钥不得抹掉不带引号的正常文本；中英文长文本不变
+    os.environ["ANTHROPIC_API_KEY"] = "'not-a-secret'"
+    try:
+        assert base.scrub_secrets("normal not-a-secret text") == "normal not-a-secret text"
+        long_txt = "普通的中文句子，English sentence with quotes 'a' \"b\" and back\\slash. " * 200
+        assert base.scrub_secrets(long_txt) == long_txt
+    finally:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+    # 性能：10 万字 + 6 个混合字符密钥
+    names = ("ARK_API_KEY", "MINIMAX_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_ACCESS_KEY", "ANTHROPIC_API_KEY", "STORYBOARD_SECRET")
+    for i, n in enumerate(names):
+        os.environ[n] = f"k{i}密钥😀a\\b'c\"d{i}"
+    try:
+        big = ("普通中文文本 plain english text 一二三 " * 4000)[:100000]
+        base.scrub_secrets(big)
+        t0 = time.perf_counter()
+        base.scrub_secrets(big)
+        ms = (time.perf_counter() - t0) * 1000
+        print(f"  10 万字 x 6 密钥脱敏 {ms:.1f}ms")
+        assert ms < 20, ms
+    finally:
+        for n in names:
+            os.environ.pop(n, None)
     # 多密钥互相重叠：一个密钥的转义形态不得吞掉另一个密钥的前缀
     k1, k2 = "abc密钥123secret", "abc密钥123secret-sensitiveTAIL987"
     os.environ["ARK_API_KEY"], os.environ["STORYBOARD_SECRET"] = k1, k2
