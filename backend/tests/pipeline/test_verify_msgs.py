@@ -338,6 +338,29 @@ def main() -> int:
     del os.environ["ARK_API_KEY"]
     print("13. 原始字段 code/t 键不豁免 ✓")
 
+    # 14. 环境密钥本身就是合法标识符时，消息对象的 code/t 也照样脱敏（Codex 复审 f5faccd）
+    K14 = "abc123secret_token"
+    assert V._ID_RE.match(K14), "假密钥须匹配标识符正则，才测得到豁免分支"
+    os.environ["ARK_API_KEY"] = K14
+    for label, v in (("code", {"code": K14}), ("t", {"t": K14}),
+                     ("nested code", {"code": "verify.rule.X", "params": {"a": {"code": K14}, "other": K14}}),
+                     ("nested t", {"code": "verify.rule.X", "params": {"a": {"t": K14}, "other": K14}})):
+        assert K14 not in json.dumps(V.scrub_params(v)), ("scrub_params", label)
+        assert K14 not in json.dumps(V.scrub_params(v, keep=False)), ("scrub_params keep=False", label)
+    for key in ("code", "t"):
+        f = V.Finding("SOURCE-FROZEN-002", "critical", "/source/units/0/para", message="m",
+                      params={"unit": {key: K14, "message": "safe"}, "field": "para"})
+        assert K14 not in json.dumps(f.as_msg()), ("as_msg", key)
+        assert K14 not in json.dumps(f.to_dict(shown=True), ensure_ascii=False), ("Finding.to_dict", key)
+        rep = V.VerificationReport(findings=[f])
+        assert K14 not in json.dumps(rep.to_dict(shown=True), ensure_ascii=False), ("Report.to_dict", key)
+        assert f.to_dict(shown=True)["msg"]["params"]["unit"][key] == "***", key
+    ok = {"code": "verify.rule.X", "params": {"a": M.money(1.5), "b": M.ref("common.unknown"),
+                                              "c": M.vendor("v"), "d": M.lines_of([M.msg("common.unknown", message="m")])}}
+    assert V.scrub_params(ok) == ok, "正常的消息代码与 t 标记（money/ref/vendor/lines）原样保留"
+    del os.environ["ARK_API_KEY"]
+    print("14. 合法标识符形状的环境密钥也脱敏 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -19,14 +19,14 @@ _ASSET_KINDS = ("characters", "locations", "props", "creatures")
 
 _KEEP = ("code", "t")
 # code 与 t 只有长这样才原样保留：代码如 verify.rule.X、类型标记如 money/ref/vendor/lines。
-# 当初豁免是因为这两个值是标识符，脱敏（环境密钥无最短长度、路径前缀改写）可能误改它们；
-# 但不能无条件豁免，外部原文里同名键会借此带出密钥。
+# 合法标识符只免去递归（照字符串处理），密钥脱敏照做：环境密钥本身也可能是合法标识符
+# （如 abc123secret_token）；外部原文里同名键会借此带出密钥。
 _ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[A-Za-z0-9_-]+)*$")
 
 
 def scrub_params(v, *, keep: bool = True):
     """给界面的消息参数递归脱敏（密钥、Bearer 凭据）；返回新对象。
-    keep=True：键 code/t 的值是合法标识符字符串时原样保留（消息对象用）；
+    keep=True：键 code/t 的值是合法标识符字符串时只抹密钥（消息对象用；正常代码与类型标记不含密钥，原样不变）；
     keep=False：不豁免任何键（原始报告字段用，其中不是受信消息对象）。
     外部原文要「先脱敏再截断」：截断可能把密钥切成抹不掉的半截。"""
     if isinstance(v, str):
@@ -34,7 +34,7 @@ def scrub_params(v, *, keep: bool = True):
     if isinstance(v, list):
         return [scrub_params(x, keep=keep) for x in v]
     if isinstance(v, dict):
-        return {k: x if keep and k in _KEEP and isinstance(x, str) and _ID_RE.match(x)
+        return {k: scrub_secrets(x) if keep and k in _KEEP and isinstance(x, str) and _ID_RE.match(x)
                 else scrub_params(x, keep=keep) for k, x in v.items()}
     return v
 

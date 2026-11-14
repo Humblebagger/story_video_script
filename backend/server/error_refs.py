@@ -81,17 +81,18 @@ def scrub_text(text: str, secrets_extra=()) -> str:
 
 
 _KEEP_KEYS = ("code", "t")      # 消息对象的代码与参数类型标记：是标识符，不是文字
-_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[A-Za-z0-9_-]+)*$")   # 只有长这样的值才原样保留
+_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[A-Za-z0-9_-]+)*$")   # 只有长这样的值才免去路径改写
 
 
 def scrub_deep(v):
-    """消息对象（含嵌套消息、列表、lines、厂商原文）里的字符串逐个 scrub_text；code 与 t 的值是合法标识符时不动，其余照常脱敏，返回新对象。"""
+    """消息对象（含嵌套消息、列表、lines、厂商原文）里的字符串逐个 scrub_text，返回新对象。
+    code 与 t 的值是合法标识符时只跳过路径改写，密钥照样抹掉：环境密钥本身也可能是合法标识符。"""
     if isinstance(v, str):
         return scrub_text(v)
     if isinstance(v, list):
         return [scrub_deep(x) for x in v]
     if isinstance(v, dict):
-        return {k: x if k in _KEEP_KEYS and isinstance(x, str) and _ID_RE.match(x)
+        return {k: scrub_secrets(x) if k in _KEEP_KEYS and isinstance(x, str) and _ID_RE.match(x)
                 else scrub_deep(x) for k, x in v.items()}
     return v
 

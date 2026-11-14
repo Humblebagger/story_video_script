@@ -211,6 +211,18 @@ def part_scrub_deep():
     ok = {"code": "verify.rule.X", "params": {"a": M.money(1.5), "b": M.ref("common.unknown"),
                                               "c": M.vendor("v"), "d": M.lines_of([M.msg("common.unknown", message="m")])}}
     assert error_refs.scrub_deep(ok) == ok, "合法消息对象原样保留"
+    # 环境密钥本身就是合法标识符：code/t 只跳过路径改写，密钥照样抹掉（Codex 复审 f5faccd）
+    k = "abc123secret_token"
+    assert error_refs._ID_RE.match(k), "假密钥须匹配标识符正则，才测得到豁免分支"
+    os.environ["ARK_API_KEY"] = k
+    try:
+        for label, v in (("code", {"code": k}), ("t", {"t": k}),
+                         ("nested code", {"code": "verify.rule.X", "params": {"a": {"code": k}, "other": k}}),
+                         ("nested t", {"code": "verify.rule.X", "params": {"a": {"t": k}, "other": k}})):
+            assert k not in json.dumps(error_refs.scrub_deep(v)), label
+        assert error_refs.scrub_deep(ok) == ok, "正常的消息代码与 t 标记原样保留"
+    finally:
+        os.environ["ARK_API_KEY"] = KEY
     print("6. scrub_deep：字符串逐个脱敏，code 与 t 不动 ✓")
 
 
