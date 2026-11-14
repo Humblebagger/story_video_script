@@ -1,6 +1,8 @@
 /** 后端消息对象的渲染：字符串原样、代码按语言、带类型参数、嵌套原因、缺译回落。跑法：npm test */
 import { formatMsg, itemError, errValue, failHead, findingText } from '../src/i18n/serverMsg'
 import { ApiError, conflictCny } from '../src/api'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { zh } from '../src/i18n/zh'
 import { en } from '../src/i18n/en'
 
@@ -129,6 +131,41 @@ must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
   must(findingText({ message: 'old', msg: { code: 'x.not.registered', params: {} } }, 'en') === 'old', '缺译回落到 message，不显示代码名')
   must(findingText({ message: 'old', msg: { code: 'common.unknown', params: { message: 'new' } } }, 'en') === 'new', '有 msg 按代码渲染')
   console.log('子计划 5：lines / findingText ✓')
+}
+
+// 子计划 5b：分镜检查（lint）逐条按规则渲染，英文里没有中文；中文与后端代码表的中文模板代入同一组参数后逐字相同；旧报告的原文照旧
+{
+  const CJK = /[\u4e00-\u9fff]/
+  const codes = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/server/messages_codes.json'), 'utf-8')) as Record<string, { zh: string }>
+  const zhVal = (v: unknown): string => Array.isArray(v) ? v.map(zhVal).join('、') : typeof v === 'object' && v !== null ? String((v as { text?: unknown }).text ?? '') : String(v)
+  const lintRules = Object.keys(en.srv.verify.lint) as (keyof typeof en.srv.verify.lint)[]
+  must(lintRules.length === 23 && lintRules.every((k) => k in zh.srv.verify.lint), 'verify.lint 中英各 23 条')
+  for (const rule of lintRules) {
+    const holes = [...zh.srv.verify.lint[rule].matchAll(/\{(\w+)\}/g)].map((m) => m[1])
+    const params: Record<string, unknown> = {}
+    for (const k of holes) params[k] = k === 'options' ? ['default', 'summer'] : k === 'detail' ? { t: 'vendor', text: "'huge' is not valid" } : k === 'n' || k === 'beat' ? 2 : `X-${k}`
+    const line = { code: 'verify.report.tool_error', params: { text: { code: `verify.lint.${rule}`, params } } }
+    const e = formatMsg(line, 'en'), z = formatMsg(line, 'zh')
+    must(!CJK.test(e) && !e.includes('{') && e.startsWith('  '), `${rule} 英文不混中文、占位符都填上：${e}`)
+    const want = '  ' + codes[`verify.lint.${rule}`].zh.replace(/\{(\w+)\}/g, (_all, k: string) => zhVal(params[k]))
+    must(z === want, `${rule} 中文与后端模板代入同一组参数后逐字相同：${z} ≠ ${want}`)
+    must(CJK.test(z) && !e.includes(z.trim()), `${rule} 中文是中文、且与英文不同：${z}`)
+  }
+  const none = { code: 'verify.lint.ref_image_outfit', params: { card: 'C06', outfit: 'summer', options: { t: 'ref', code: 'verify.report.lint_none' } } }
+  must(formatMsg(none, 'en') === '[C06] A reference image is tagged with outfit “summer”, which doesn’t exist (options: none)', formatMsg(none, 'en'))
+  must(formatMsg(none, 'zh') === '[C06] 参考图标注的 outfit「summer」不存在（可选：无）', formatMsg(none, 'zh'))
+  const opts = { code: 'verify.lint.outfit_unknown', params: { shot: 'E01-SH001', character: 'C01', outfit: 'summer', options: ['default', 'night'] } }
+  must(formatMsg(opts, 'en').endsWith('(options: default, night)') && formatMsg(opts, 'zh').endsWith('（可选：default、night）'), '可选项按语言的列表分隔')
+  const report = { t: 'lines', items: [{ code: 'verify.report.lint', params: {} },
+    { code: 'verify.report.tool_error', params: { text: { code: 'verify.lint.location_ref', params: { shot: 'E01-SH001', location: 'S99' } } } },
+    { code: 'verify.report.tool_error', params: { text: { t: 'vendor', text: '[E01] 认不出的一条' } } }] }
+  const failedLint = { code: 'job.failed_report', params: { reason: { code: 'job.batch_failed', params: { batch: 1, retries: 2 } }, report } }
+  must(formatMsg(failedLint, 'en').endsWith(`${en.srv.verify.report.lint}\n  [E01-SH001] location_ref refers to a location that doesn’t exist: S99\n  [E01] 认不出的一条`),
+    '失败报告里的 lint 逐条（英文），认不出的一条原文显示：' + formatMsg(failedLint, 'en'))
+  must(formatMsg(failedLint, 'zh').endsWith('分镜检查发现的错误：\n  [E01-SH001] location_ref 引用了不存在的场景：S99\n  [E01] 认不出的一条'), formatMsg(failedLint, 'zh'))
+  const old = { code: 'verify.report.tool_error', params: { text: { t: 'vendor', text: '[E01-SH001] location_ref 引用不存在的场景: L09' } } }
+  must(formatMsg(old, 'en') === '  [E01-SH001] location_ref 引用不存在的场景: L09', '旧报告（子计划 5 的 tool_error 原文）照旧原样显示')
+  console.log('子计划 5b：lint 逐条中英渲染、旧报告兼容 ✓')
 }
 
 console.log('\nALL PASS')

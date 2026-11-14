@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from render.providers.base import scrub_secrets
-from server.messages import compact, msg, ref, vendor
+from server.messages import VENDOR_MAX, compact, msg, ref, vendor
 
 from .config import ROOT
 
@@ -397,3 +397,71 @@ def tool_lines(text: str) -> list:
         errs = [scrub_secrets(text.strip())]
     return [compact(msg("verify.report.tool"))] + [compact(msg("verify.report.tool_error", text=vendor(e)))
                                                    for e in errs]
+
+
+_LINT_LIST_MAX = 20     # lint 的列表参数（可选项、未覆盖句子）最多列几项，超出的末尾补一项「…」；未覆盖句子另有总数 n
+_LINT_ITEM_MAX = 1000   # 单条（中文兜底）的上限：超了就按紧的口径（每段 40 字、列表 10 项）重新规范化一遍（设计审查 M3、R14）
+_LINT_TIGHT = (40, 10)
+
+
+def _lint_value(v, limit: int = VENDOR_MAX, items: int = _LINT_LIST_MAX):
+    """lint 参数 → 消息参数（spec 子计划 5b E）：字符串先脱敏再截断到 limit 字；整数原样；
+    布尔、小数、None 按文本模式的写法转成字符串（前后端渲染一致）；列表逐项、最多 items 项，超出的末尾补「…」；
+    其它（字典等）序列化后同字符串（键与值一起脱敏）。"""
+    if isinstance(v, bool) or v is None or isinstance(v, float):
+        return str(v)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str):
+        return scrub_secrets(v)[:limit]
+    if isinstance(v, list):
+        out = [_lint_value(x, limit, items) for x in v[:items]]
+        return out + ["…"] if len(v) > items else out
+    return scrub_secrets(json.dumps(v, ensure_ascii=False, default=str))[:limit]
+
+
+def _lint_msg(item) -> dict:
+    """lint 的一条错误 → verify.lint.<rule> 消息。规则没登记、参数与模板不符、形状不对时退回该条原文（厂商原文，
+    先脱敏再截断）；缺原文时退回规则名（设计审查 M2）。"""
+    try:
+        code = f"verify.lint.{item['rule']}"
+        for limit, items in ((VENDOR_MAX, _LINT_LIST_MAX), _LINT_TIGHT):
+            params = {k: _lint_value(v, limit, items) for k, v in item["params"].items()}
+            if "detail" in params:                  # jsonschema 原文：与 SCHEMA-001 一样作厂商原文
+                params["detail"] = vendor(params["detail"])
+            if params.get("options") == []:
+                params["options"] = ref("verify.report.lint_none")
+            m = msg(code, **params)
+            if len(m["message"]) <= _LINT_ITEM_MAX:
+                break
+        return compact(m)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("rule") or json.dumps(item, ensure_ascii=False, default=str)
+        else:
+            text = item
+        return vendor(scrub_secrets(str(text)))
+
+
+def lint_lines(errors: list) -> list:
+    """lint 的结构化错误 → 给用户看的逐条：标题 verify.report.lint，加每条一项 verify.report.tool_error，
+    其 text 是嵌套的 verify.lint.<rule> 消息（认不出的一条退回原文）。"""
+    return [compact(msg("verify.report.lint"))] + [
+        compact(msg("verify.report.tool_error", text=_lint_msg(e))) for e in errors]
+
+
+def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
+                  fid_ok: bool, fid_text: str) -> list:
+    """lint 与保真未过时给用户的逐条（批内校验与整章终检共用，spec 子计划 5b C）。
+    lint 有结构化错误就按条翻译；没有（崩溃、输出认不出、测试替身）就与保真输出一起按行拆分（tool_lines，同子计划 5）。"""
+    out, raw = [], []
+    if not lint_ok:
+        if lint_errors:
+            out.extend(lint_lines(lint_errors))
+        else:
+            raw.append(lint_text.strip())
+    if not fid_ok:
+        raw.append(fid_text.strip())
+    if raw:
+        out.extend(tool_lines("\n".join(raw)))
+    return out

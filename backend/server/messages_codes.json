@@ -1820,6 +1820,173 @@
     "params": [],
     "zh": "已永久离开"
   },
+  "verify.lint.asset_empty_constraint": {
+    "params": [
+      "card"
+    ],
+    "zh": "[{card}] constraints 里有空的约束项"
+  },
+  "verify.lint.beat_no_action": {
+    "params": [
+      "shot",
+      "beat"
+    ],
+    "zh": "[{shot}] beats 第 {beat} 拍缺少 action"
+  },
+  "verify.lint.beats_duration": {
+    "params": [
+      "shot",
+      "total",
+      "duration"
+    ],
+    "zh": "[{shot}] beats 各拍时长之和 {total}s 与镜头 duration_sec {duration}s 不符"
+  },
+  "verify.lint.character_ref": {
+    "params": [
+      "shot",
+      "character"
+    ],
+    "zh": "[{shot}] characters.ref 引用了不存在的角色或生物：{character}"
+  },
+  "verify.lint.coverage_unmapped": {
+    "params": [
+      "n",
+      "units"
+    ],
+    "zh": "[coverage] 有 {n} 句原文没有被任何镜头的旁白覆盖，也没有标 skipped：{units}"
+  },
+  "verify.lint.creature_outfit": {
+    "params": [
+      "shot",
+      "creature"
+    ],
+    "zh": "[{shot}] 生物 {creature} 的引用不应填 outfit"
+  },
+  "verify.lint.curve_reversed": {
+    "params": [
+      "episode",
+      "start",
+      "end"
+    ],
+    "zh": "[{episode}] music.curve 区间倒序：{start} 在 {end} 之后"
+  },
+  "verify.lint.curve_shot": {
+    "params": [
+      "episode",
+      "shot"
+    ],
+    "zh": "[{episode}] music.curve 引用了本集没有的镜头：{shot}"
+  },
+  "verify.lint.curve_unit": {
+    "params": [
+      "episode",
+      "unit"
+    ],
+    "zh": "[{episode}] music.curve.unit_refs 引用了不存在的句子：{unit}"
+  },
+  "verify.lint.dialogue_character": {
+    "params": [
+      "shot",
+      "character"
+    ],
+    "zh": "[{shot}] dialogue.character_ref 引用了不存在的角色：{character}"
+  },
+  "verify.lint.inferred_no_note": {
+    "params": [
+      "shot"
+    ],
+    "zh": "[{shot}] derivation=inferred 但缺少 inference_note"
+  },
+  "verify.lint.location_ref": {
+    "params": [
+      "shot",
+      "location"
+    ],
+    "zh": "[{shot}] location_ref 引用了不存在的场景：{location}"
+  },
+  "verify.lint.narration_unit": {
+    "params": [
+      "shot",
+      "unit"
+    ],
+    "zh": "[{shot}] narration.unit_refs 引用了不存在的句子：{unit}"
+  },
+  "verify.lint.outfit_unknown": {
+    "params": [
+      "shot",
+      "character",
+      "outfit",
+      "options"
+    ],
+    "zh": "[{shot}] 角色 {character} 没有 outfit「{outfit}」（可选：{options}）"
+  },
+  "verify.lint.prop_ref": {
+    "params": [
+      "shot",
+      "prop"
+    ],
+    "zh": "[{shot}] prop_refs 引用了不存在的道具：{prop}"
+  },
+  "verify.lint.prop_state_required": {
+    "params": [
+      "shot",
+      "prop",
+      "options"
+    ],
+    "zh": "[{shot}] 道具 {prop} 有状态集，引用时必须填 state（可选：{options}）"
+  },
+  "verify.lint.prop_state_unexpected": {
+    "params": [
+      "shot",
+      "prop"
+    ],
+    "zh": "[{shot}] 道具 {prop} 没有状态集，引用时不应填 state"
+  },
+  "verify.lint.prop_state_unknown": {
+    "params": [
+      "shot",
+      "prop",
+      "state",
+      "options"
+    ],
+    "zh": "[{shot}] 道具 {prop} 没有 state「{state}」（可选：{options}）"
+  },
+  "verify.lint.ref_image_outfit": {
+    "params": [
+      "card",
+      "outfit",
+      "options"
+    ],
+    "zh": "[{card}] 参考图标注的 outfit「{outfit}」不存在（可选：{options}）"
+  },
+  "verify.lint.ref_image_state": {
+    "params": [
+      "card",
+      "state",
+      "options"
+    ],
+    "zh": "[{card}] 参考图标注的 state「{state}」不存在（可选：{options}）"
+  },
+  "verify.lint.schema": {
+    "params": [
+      "path",
+      "detail"
+    ],
+    "zh": "不符合分镜结构定义（{path}）：{detail}"
+  },
+  "verify.lint.shot_empty_constraint": {
+    "params": [
+      "shot"
+    ],
+    "zh": "[{shot}] constraints 里有空的约束项"
+  },
+  "verify.lint.shot_unit": {
+    "params": [
+      "shot",
+      "unit"
+    ],
+    "zh": "[{shot}] source.unit_refs 引用了不存在的句子：{unit}"
+  },
   "verify.quality.density": {
     "params": [
       "ratio",
@@ -1887,6 +2054,14 @@
       "detail"
     ],
     "zh": "{severity} [{rule}] {path}：{detail}"
+  },
+  "verify.report.lint": {
+    "params": [],
+    "zh": "分镜检查发现的错误："
+  },
+  "verify.report.lint_none": {
+    "params": [],
+    "zh": "无"
   },
   "verify.report.pass": {
     "params": [],
