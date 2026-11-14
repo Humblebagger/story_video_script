@@ -319,6 +319,25 @@ def main() -> int:
     del os.environ["ARK_API_KEY"]
     print("11-12. 整份报告脱敏与跨截断边界 ✓")
 
+    # 13. 原始字段不得借 code/t 键绕过脱敏（Codex 复审）
+    K13 = "sk-" + "R" * 40
+    os.environ["ARK_API_KEY"] = K13
+    for label, para in (("code", {"code": K13}), ("t", {"t": K13}), ("nested", {"x": {"code": K13}}),
+                        ("list", [{"t": K13}])):
+        d, fz = SNAP.snapshot_doc()
+        d["source"]["units"][0]["para"] = para
+        rep = V.verify_document(d, frozen_units=fz)
+        f = next(f for f in rep.findings if f.rule_id == "SOURCE-FROZEN-002")
+        assert K13 not in json.dumps(f.to_dict(shown=True), ensure_ascii=False), label
+        assert K13 not in json.dumps(rep.to_dict(shown=True), ensure_ascii=False), label
+    rep = V.VerificationReport(coverage={"selected": [{"code": K13}], "x": {"t": K13}})
+    assert K13 not in json.dumps(rep.to_dict(shown=True), ensure_ascii=False), "coverage"
+    assert V.scrub_params({"code": "verify.rule.X", "t": "money", "n": {"t": "ref", "code": "a.b-c"}}) == \
+        {"code": "verify.rule.X", "t": "money", "n": {"t": "ref", "code": "a.b-c"}}, "合法标识符照旧保留"
+    assert K13 not in json.dumps(V.scrub_params({"code": [K13], "t": 5, "m": {"code": K13}}))
+    del os.environ["ARK_API_KEY"]
+    print("13. 原始字段 code/t 键不豁免 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -204,6 +204,13 @@ def part_scrub_deep():
     assert out["code"] == "job.failed_report" and out["params"]["report"]["t"] == "lines"
     assert out["params"]["report"]["items"][0]["code"] == "common.unknown", "code 与 t 不动"
     assert m["params"]["report"]["items"][0]["params"]["message"]["text"] == raw, "不改调用方的对象"
+    # code/t 键只有值是合法标识符才保留；其余（含外部原文里的同名键）照常脱敏
+    bad = {"code": "verify.rule.X", "params": {"a": {"code": LLM_KEY}, "b": {"t": LLM_KEY},
+                                               "c": {"x": {"code": LLM_KEY}}, "d": {"t": "ref", "code": f"k {LLM_KEY}"}}}
+    assert LLM_KEY not in json.dumps(error_refs.scrub_deep(bad)), "code/t 键不得绕过脱敏"
+    ok = {"code": "verify.rule.X", "params": {"a": M.money(1.5), "b": M.ref("common.unknown"),
+                                              "c": M.vendor("v"), "d": M.lines_of([M.msg("common.unknown", message="m")])}}
+    assert error_refs.scrub_deep(ok) == ok, "合法消息对象原样保留"
     print("6. scrub_deep：字符串逐个脱敏，code 与 t 不动 ✓")
 
 

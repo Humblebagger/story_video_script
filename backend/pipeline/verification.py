@@ -18,17 +18,24 @@ _ASSET_KINDS = ("characters", "locations", "props", "creatures")
 
 
 _KEEP = ("code", "t")
+# code 与 t 只有长这样才原样保留：代码如 verify.rule.X、类型标记如 money/ref/vendor/lines。
+# 当初豁免是因为这两个值是标识符，脱敏（环境密钥无最短长度、路径前缀改写）可能误改它们；
+# 但不能无条件豁免，外部原文里同名键会借此带出密钥。
+_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[A-Za-z0-9_-]+)*$")
 
 
-def scrub_params(v):
-    """给界面的消息参数递归脱敏（密钥、Bearer 凭据）；code 与 t 不动，返回新对象。
+def scrub_params(v, *, keep: bool = True):
+    """给界面的消息参数递归脱敏（密钥、Bearer 凭据）；返回新对象。
+    keep=True：键 code/t 的值是合法标识符字符串时原样保留（消息对象用）；
+    keep=False：不豁免任何键（原始报告字段用，其中不是受信消息对象）。
     外部原文要「先脱敏再截断」：截断可能把密钥切成抹不掉的半截。"""
     if isinstance(v, str):
         return scrub_secrets(v)
     if isinstance(v, list):
-        return [scrub_params(x) for x in v]
+        return [scrub_params(x, keep=keep) for x in v]
     if isinstance(v, dict):
-        return {k: x if k in _KEEP else scrub_params(x) for k, x in v.items()}
+        return {k: x if keep and k in _KEEP and isinstance(x, str) and _ID_RE.match(x)
+                else scrub_params(x, keep=keep) for k, x in v.items()}
     return v
 
 
@@ -69,7 +76,7 @@ class Finding:
         if shown:
             # 给界面与存档：整条逐字段脱敏（message、unit_refs、expected/actual、引文都可能带用户文字里的密钥）；
             # 回喂模型的 shown=False 一字不改
-            out = scrub_params(out)
+            out = scrub_params(out, keep=False)
             out["msg"] = self.as_msg()
         return out
 
@@ -105,7 +112,7 @@ class VerificationReport:
         return {
             "status": "verified" if self.ok else "failed",
             "findings": [f.to_dict(shown=shown) for f in self.findings],
-            "coverage": scrub_params(self.coverage) if shown else self.coverage,
+            "coverage": scrub_params(self.coverage, keep=False) if shown else self.coverage,
         }
 
     def render(self) -> str:
