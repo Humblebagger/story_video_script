@@ -20,9 +20,14 @@ import pipeline.config as _pc  # noqa: E402
 _pc._load_dotenv = lambda *_a, **_k: None                # 不读真实的 backend/.env
 
 import lint_snapshot as SNAP  # noqa: E402
-from pipeline import verification as V  # noqa: E402
+from fakes import FakeChat  # noqa: E402
+from pipeline import graph, validate, verification as V  # noqa: E402
+from pipeline.chat import ChatInvoker  # noqa: E402
+from pipeline.config import Settings  # noqa: E402
+from pipeline.errors import ConversionError  # noqa: E402
 from server import messages as M  # noqa: E402
 from test_lint_json import EXPECT_PARAMS, lint_json, source_rules  # noqa: E402
+from test_lint_feed_snapshot import PARAMS as CONVERT_PARAMS  # noqa: E402
 
 ZH_P01 = "charred、fresh_bleeding、lotus_wrapped、paper_wrapped、split_open"
 # 每条规则逐条消息（verify.report.tool_error 套 verify.lint.<rule>）的中文兜底
@@ -179,6 +184,57 @@ def main() -> int:
     assert V.checker_lines(False, "ERROR 原文一条\n", [], True, "PASS") == V.tool_lines("ERROR 原文一条")
     assert V.checker_lines(True, "PASS", None, False, fid_fail) == V.tool_lines(fid_fail)
     print("7. checker_lines 的五种组合 ✓")
+
+    # 8. 流水线：_check_batch 的逐条按规则翻译、报告仍是原文；重试耗尽时 ConversionError.lines 同样
+    shown = []
+    with tempfile.TemporaryDirectory() as w:
+        ok, hard, report, _, _ = graph._check_batch(SNAP.feed_doc(), SNAP.batch_text(), Settings(), Path(w), 1, 1,
+                                                    None, lambda _: None, lines_out=shown)
+    assert (ok, hard, report) == (False, True, SNAP.FEED_REPORT)
+    codes = [x["params"]["text"]["code"] for x in shown[1:]]
+    assert shown[0]["code"] == "verify.report.lint" and codes == [
+        "verify.lint.location_ref", "verify.lint.character_ref", "verify.lint.outfit_unknown",
+        "verify.lint.dialogue_character", "verify.lint.prop_ref"], codes
+    settings = Settings(api_key="k", max_retries=0, normalize_input=False, freeze_source_units=False)
+    with tempfile.TemporaryDirectory() as w:
+        chat = ChatInvoker(settings, chat=FakeChat(responses=[json.dumps(SNAP.feed_doc(), ensure_ascii=False)]),
+                           log=lambda _: None)
+        g = graph.build_batch_graph(chat=chat, review_chat=None, settings=settings, params=CONVERT_PARAMS,
+                                    workdir=Path(w), attempt_records=[], log=lambda _: None)
+        try:
+            graph.run_batch(g, user="原文", batch_text=SNAP.batch_text(), idx=1, frozen_units=None)
+            raise AssertionError("应抛 ConversionError")
+        except ConversionError as e:
+            assert e.code == "job.batch_failed" and e.report == SNAP.FEED_REPORT
+            assert e.lines == shown, e.lines
+            text = M.render_zh("job.failed_report", {"reason": {"code": e.code, "params": e.params},
+                                                      "report": M.lines_of(e.lines)})
+            assert "ERROR" not in text and "location_ref 引用了不存在的场景：S99" in text, text
+    print("8. 流水线：逐条按规则、报告与回喂仍是原文 ✓")
+
+    # 9. 整章终检：lint 未过时用同一套逐条（批内那次用真的 lint，只让终检那次失败）
+    import pipeline.convert as convert_mod
+    real_lint = validate.run_lint_report
+    calls = []
+
+    def final_fails(path):
+        calls.append(path)
+        return real_lint(path) if len(calls) == 1 else validate.LintReport(False, "ERROR 原文\n", ERRS)
+    validate.run_lint_report = final_fails
+    try:
+        archived = json.dumps(SNAP.base(), ensure_ascii=False)
+        with tempfile.TemporaryDirectory() as w:
+            try:
+                convert_mod.convert_text(SNAP.batch_text(), CONVERT_PARAMS, settings=settings,
+                                         llm=FakeChat(responses=[archived]), batches=[SNAP.batch_text()],
+                                         workdir=Path(w), log=lambda _: None)
+                raise AssertionError("终检 lint 未过应抛 ConversionError")
+            except ConversionError as e:
+                assert e.code == "job.final_check_failed" and e.report.startswith("ERROR 原文\n\n"), e.report
+                assert e.lines == V.lint_lines(ERRS), e.lines
+    finally:
+        validate.run_lint_report = real_lint
+    print("9. 整章终检的逐条 ✓")
 
     print("\nALL PASS")
     return 0

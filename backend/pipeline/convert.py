@@ -222,9 +222,9 @@ def convert_text(text: str,
     final_report = verification.verify_document(
         merged_doc, frozen_units=expected_all, original_text=text)
 
-    lint_ok, lint_out = validate.run_lint(merged_path)
+    lint = validate.run_lint_report(merged_path)
     fid_ok, fid_out = validate.run_fidelity(merged_path, text, workdir)
-    log(lint_out.strip())
+    log(lint.text.strip())
     log(fid_out.strip())
     log(final_report.render())
     if not final_report.ok:
@@ -232,11 +232,11 @@ def convert_text(text: str,
         run_manifest["verification"] = final_report.to_dict()
         # 只给汇总一行：逐条在同屏的验证面板（job.verification）里，失败区不重复列（设计审查 Minor 5）
         raise ConversionError.of("job.final_verify_failed", final_report.render(), final_report.lines()[:1])
-    if not (lint_ok and fid_ok):
+    if not (lint.ok and fid_ok):
         run_manifest["state"] = "failed"
         run_manifest["verification"] = final_report.to_dict()
-        raise ConversionError.of("job.final_check_failed", lint_out + "\n" + fid_out,
-                                 verification.tool_lines(lint_out + "\n" + fid_out))
+        raise ConversionError.of("job.final_check_failed", lint.text + "\n" + fid_out,
+                                 verification.checker_lines(lint.ok, lint.text, lint.errors, fid_ok, fid_out))
     say("job.event.verified")
     soft = novel_memory.soft_findings(merged_doc, novel_context)
     if soft:

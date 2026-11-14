@@ -130,11 +130,12 @@ def _check_batch(doc: dict, batch_text: str, settings: Settings,
     if not structured.ok:
         out.extend(structured.lines())
         return False, True, structured.render(), None, structured
-    lint_ok, lint_out = validate.run_lint(tmp)
+    lint = validate.run_lint_report(tmp)
     fid_ok, fid_out = validate.run_fidelity(tmp, batch_text, workdir)
-    if not (lint_ok and fid_ok):
-        text = lint_out.strip() + "\n" + fid_out.strip()
-        out.extend(verification.tool_lines(text))
+    if not (lint.ok and fid_ok):
+        # 回喂模型的仍是 lint 文本原文（与加 --json 之前逐字相同）；给用户的逐条按规则翻译（spec 子计划 5b D）
+        text = lint.text.strip() + "\n" + fid_out.strip()
+        out.extend(verification.checker_lines(lint.ok, lint.text, lint.errors, fid_ok, fid_out))
         return False, True, text, None, structured
 
     gate_ok, gate_report, ratio = quality.narration_density_gate(

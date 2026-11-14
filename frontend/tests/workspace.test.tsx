@@ -493,6 +493,20 @@ const novels: NS[] = [
   must((q('.job__err')?.textContent ?? '').includes(enLine) && !(q('.job__err')?.textContent ?? '').includes('严重'),
     '失败区逐条切英文：' + q('.job__err')?.textContent)
   await lang('zh')
+  // 子计划 5b：lint 未过时失败区的逐条按规则渲染，英文里没有中文（数据是 ASCII 编号）
+  const lintL = { code: 'job.failed_report', params: { reason: { code: 'job.batch_failed', params: { batch: 1, retries: 2 } },
+    report: { t: 'lines', items: [{ code: 'verify.report.lint', params: {} },
+      { code: 'verify.report.tool_error', params: { text: { code: 'verify.lint.location_ref', params: { shot: 'E01-SH001', location: 'S99' } } } },
+      { code: 'verify.report.tool_error', params: { text: { code: 'verify.lint.outfit_unknown',
+        params: { shot: 'E01-SH003', character: 'C01', outfit: 'summer', options: ['default'] } } } }] } } }
+  await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'failed', error: '旧中文', error_msg: lintL }), ...props })))
+  must(q('.job__err')?.textContent === '批 1 重试 2 次后仍未通过校验\n分镜检查发现的错误：\n  [E01-SH001] location_ref 引用了不存在的场景：S99'
+    + '\n  [E01-SH003] 角色 C01 没有 outfit「summer」（可选：default）', 'lint 逐条（中文）：' + q('.job__err')?.textContent)
+  await lang('en')
+  const enErr = q('.job__err')?.textContent ?? ''
+  must(!/[\u4e00-\u9fff]/.test(enErr) && enErr.includes(en.srv.verify.report.lint)
+    && enErr.endsWith('\n  [E01-SH003] Character C01 has no outfit “summer” (options: default)'), 'lint 逐条切英文、不混中文：' + enErr)
+  await lang('zh')
   const deg = { code: 'job.quality.degraded', params: { batch: 1, retries: 2, attempt: 2, candidates: 2,
     report: { t: 'lines', items: [{ code: 'verify.quality.density', params: { ratio: '80%', max: '60%' } }] } } }
   await render(jwrap(h(JobPanel, { job: jobOf([], { status: 'completed_with_warnings', quality_report: '旧', quality_msg: [deg] }), ...props })))

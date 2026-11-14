@@ -218,7 +218,7 @@ def main() -> int:
 
     # 3f. 合并失败与 lint/保真失败：逐条来自检查工具输出（ERROR 行一项，原文原样），report 是工具原文
     import pipeline.validate as validate_mod
-    real_merge, real_lint, real_fid = validate_mod.run_merge, validate_mod.run_lint, validate_mod.run_fidelity
+    real_merge, real_lint, real_fid = validate_mod.run_merge, validate_mod.run_lint_report, validate_mod.run_fidelity
     tool_out = "WARN 无关\nERROR /meta/title 缺失\nERROR /episodes/0 形状不对\nPASS 0"
     try:
         validate_mod.run_merge = lambda paths, out: (False, tool_out)
@@ -239,8 +239,8 @@ def main() -> int:
 
         def lint_final_fails(path):  # 批内校验照常过（第一次），整章终检（第二次）才失败
             calls.append(path)
-            return real_lint(path) if len(calls) == 1 else (False, "ERROR lint 失败一条")
-        validate_mod.run_lint = lint_final_fails
+            return real_lint(path) if len(calls) == 1 else validate_mod.LintReport(False, "ERROR lint 失败一条")
+        validate_mod.run_lint_report = lint_final_fails
         validate_mod.run_fidelity = lambda path, text, wd: (True, "")
         with tempfile.TemporaryDirectory() as d:
             try:
@@ -255,7 +255,7 @@ def main() -> int:
                     {"code": "verify.report.tool_error", "params": {"text": {"t": "vendor", "text": "lint 失败一条"}}},
                 ], e.lines
     finally:
-        validate_mod.run_merge, validate_mod.run_lint, validate_mod.run_fidelity = real_merge, real_lint, real_fid
+        validate_mod.run_merge, validate_mod.run_lint_report, validate_mod.run_fidelity = real_merge, real_lint, real_fid
     print("convert: 合并失败与终检工具失败带逐条 ✓")
 
     # ---- 修复循环 ----

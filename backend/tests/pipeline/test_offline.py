@@ -341,7 +341,7 @@ def main() -> int:
                 "episodes": [{"shots": [{"narration": {"unit_refs": [f"u{i:04d}"]}}
                                         for i in range(1, n_narrated + 1)]}]}
 
-    orig_lint = convert_mod.validate.run_lint
+    orig_lint = convert_mod.validate.run_lint_report
     orig_fid = convert_mod.validate.run_fidelity
     orig_verify = convert_mod.verification.verify_document
     convert_mod.verification.verify_document = lambda *a, **kw: \
@@ -349,7 +349,7 @@ def main() -> int:
             "selected": [], "covered": [], "waived": [], "failed": [],
             "inferred_shot_ratio": 0,
         })
-    convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
+    convert_mod.validate.run_lint_report = lambda p: convert_mod.validate.LintReport(True, "PASS（打桩）")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
         warnings = []
@@ -407,7 +407,7 @@ def main() -> int:
         except ConversionError:
             pass
     finally:
-        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_lint_report = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
     print("降级交付: 软门耗尽择优交付+警告 / strict 直接失败 ✓")
     print("标定装置: rewrite 模式走整份重写 / token 按尝试归属并汇总 ✓")
@@ -417,7 +417,7 @@ def main() -> int:
     cleaned, n = normalize_source_text("徘徊；\u200b定睛\ufeff再看\u2060。")
     assert (cleaned, n) == ("徘徊；定睛再看。", 3)
     assert Settings().normalize_input, "归一化应默认开启"
-    convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
+    convert_mod.validate.run_lint_report = lambda p: convert_mod.validate.LintReport(True, "PASS（打桩）")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
         mock5 = FakeChat(responses=[json.dumps(deg_doc(1))])
@@ -426,14 +426,14 @@ def main() -> int:
         assert "\u200b" not in user_msg(mock5, 0), \
             "零宽字符不应出现在发给 LLM 的原文里"
     finally:
-        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_lint_report = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
     print("入口归一化: U+200B/BOM/U+2060 剔除，LLM 输入已清洗 ✓")
 
     # 11. 跨转换沿用资产库：首批就带【已有资产库】，且编号不走续批逻辑
     seed = {"characters": [{"id": "C01", "name": "华老栓"}],
             "locations": [{"id": "S01", "name": "古□亭口"}]}
-    convert_mod.validate.run_lint = lambda p: (True, "PASS（打桩）")
+    convert_mod.validate.run_lint_report = lambda p: convert_mod.validate.LintReport(True, "PASS（打桩）")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
         mock6 = FakeChat(responses=[json.dumps(deg_doc(1))])
@@ -448,7 +448,7 @@ def main() -> int:
                      llm=mock7, log=lambda m: None)
         assert "【已有资产库】\n无" in user_msg(mock7, 0)
     finally:
-        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_lint_report = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
     print("资产库沿用: 首批注入历史资产 / 编号仍从头 / 不传则不变 ✓")
 
@@ -658,7 +658,7 @@ def main() -> int:
     print("资产库: 增删改 / 入库合并不覆盖人工编辑 / 按用户与作品隔离 ✓")
 
     # 13. 失败原因必须进日志：光说"未通过"等于没说，用户看不到工作目录
-    convert_mod.validate.run_lint = lambda p: (
+    convert_mod.validate.run_lint_report = lambda p: convert_mod.validate.LintReport(
         False, "FAIL: E01-SH003 引用了不存在的资产 C09\nFAIL: u0007 未被任何镜头覆盖")
     convert_mod.validate.run_fidelity = lambda p, t, w: (True, "PASS（打桩）")
     try:
@@ -677,7 +677,7 @@ def main() -> int:
 
         # 超长报告：截断但保留完整报告的落盘路径，不让单批淹掉整个日志
         long_report = "\n".join(f"FAIL: 第 {i} 个问题" for i in range(200))
-        convert_mod.validate.run_lint = lambda p: (False, long_report)
+        convert_mod.validate.run_lint_report = lambda p: convert_mod.validate.LintReport(False, long_report)
         logs14 = []
         mock9 = FakeChat(responses=[json.dumps(deg_doc(1))])
         try:
@@ -692,7 +692,7 @@ def main() -> int:
         assert int(m.group(1)) > 0 and Path(m.group(2)).read_text(
             encoding="utf-8").count("\n") > _REPORT_LOG_LINES, "落盘的应是完整报告"
     finally:
-        convert_mod.validate.run_lint = orig_lint
+        convert_mod.validate.run_lint_report = orig_lint
         convert_mod.validate.run_fidelity = orig_fid
         convert_mod.verification.verify_document = orig_verify
     print("失败可诊断: 校验报告逐行进日志 / 超长截断并指向完整报告 ✓")
