@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from render.providers.base import scrub_secrets
 from server.messages import compact, msg, ref, vendor
 
 from .config import ROOT
@@ -14,6 +15,21 @@ from .config import ROOT
 SCHEMA_PATH = ROOT / "schema" / "storyboard.schema.json"
 _UNIT_ID_RE = re.compile(r"^u(\d{4})$")
 _ASSET_KINDS = ("characters", "locations", "props", "creatures")
+
+
+_KEEP = ("code", "t")
+
+
+def scrub_params(v):
+    """给界面的消息参数递归脱敏（密钥、Bearer 凭据）；code 与 t 不动，返回新对象。
+    外部原文要「先脱敏再截断」：截断可能把密钥切成抹不掉的半截。"""
+    if isinstance(v, str):
+        return scrub_secrets(v)
+    if isinstance(v, list):
+        return [scrub_params(x) for x in v]
+    if isinstance(v, dict):
+        return {k: x if k in _KEEP else scrub_params(x) for k, x in v.items()}
+    return v
 
 
 @dataclass
@@ -31,6 +47,7 @@ class Finding:
 
     def __post_init__(self) -> None:
         # 代码未登记或参数与模板不符，在这里就抛错：每条规则的用例都会走到这一行
+        self.params = scrub_params(self.params)
         m = msg(self.code, **self.params)
         if not self.message:
             # 软核查两条（NOVEL-*，不回喂模型）：模板与旧写法一字不差，直接用它。
@@ -42,7 +59,7 @@ class Finding:
         return f"verify.rule.{self.rule_id}"
 
     def as_msg(self) -> dict:
-        return {"code": self.code, "params": dict(self.params)}
+        return {"code": self.code, "params": scrub_params(self.params)}
 
     def to_dict(self, *, shown: bool = True) -> dict:
         """shown=True：存档与接口用，多一个 msg 给界面按语言渲染。
@@ -50,6 +67,9 @@ class Finding:
         out = {k: v for k, v in asdict(self).items()
                if k != "params" and v not in (None, "", [], {})}
         if shown:
+            # 给界面与存档：旧的 message 原文也要脱敏，否则密钥从它漏出去；回喂模型的 shown=False 一字不改
+            if "message" in out:
+                out["message"] = scrub_secrets(out["message"])
             out["msg"] = self.as_msg()
         return out
 
@@ -151,7 +171,7 @@ def _validate_schema(doc: dict, report: VerificationReport) -> None:
     validator = jsonschema.Draft202012Validator(schema)
     for error in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path)):
         path = "/" + "/".join(str(p) for p in error.absolute_path)
-        report.add("SCHEMA-001", "high", path, error.message, params={"detail": vendor(error.message)})
+        report.add("SCHEMA-001", "high", path, error.message, params={"detail": vendor(scrub_secrets(error.message))})
 
 
 def _validate_frozen_units(doc: dict, expected: list[dict],

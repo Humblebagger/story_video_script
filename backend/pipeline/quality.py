@@ -8,6 +8,7 @@ import math
 from typing import List, Optional, Tuple
 
 from server.messages import compact, msg
+from .verification import scrub_params
 
 
 def apply_meta_overrides(doc: dict, params) -> None:
@@ -84,7 +85,7 @@ def narration_density_gate(doc: dict, max_ratio: float,
                    + "\n".join(fmt(bare)) + "\n")
     if lines_out is not None:
         def items(us):
-            return [compact(msg("verify.quality.unit", id=u["id"], kind=u["kind"], text=u["text"][:30]))
+            return [compact(msg("verify.quality.unit", id=u["id"], kind=u["kind"], text=scrub_params(u["text"])[:30]))
                     for u in us[:40]]
         lines_out.append(compact(msg("verify.quality.density", ratio=f"{ratio:.0%}", max=f"{max_ratio:.0%}")))
         if safe:

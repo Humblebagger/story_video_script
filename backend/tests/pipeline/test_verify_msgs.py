@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """验证报告逐条（spec 子计划 5）：每条规则的代码与参数、给用户的逐条消息。回喂模型的原文见 test_llm_feed_snapshot.py。
 不调模型、不联网。用法: python3 tests/pipeline/test_verify_msgs.py"""
+import json
 import os
 import re
 import sys
@@ -199,6 +200,59 @@ def main() -> int:
     assert out == [{"code": "verify.review.unavailable",
                     "params": {"cause": {"code": "verify.review.call_failed", "params": {}}}}], out
     print("9. 评审：报告照旧、逐条、意见原样、失败原因映射 ✓")
+
+    # 10. 脱敏（Codex 审查）：给界面的参数、旧 message 都不带密钥；回喂模型的原文不动
+    import hashlib  # noqa: F401
+    FAKE = "fake-provider-key-0123456789"
+    os.environ["ARK_API_KEY"] = FAKE
+    leaks = [FAKE, "Bearer abc.def-123", "x-api-key: sk-zzz999"]
+    blob = " ".join(leaks)
+
+    def clean(x, label):
+        t = json.dumps(x, ensure_ascii=False)
+        assert FAKE not in t and "abc.def-123" not in t and "sk-zzz999" not in t, (label, t)
+
+    d = SNAP.doc()
+    d["meta"] = {"narration": {"mode": blob}}
+    rep = V.verify_document(d)
+    sch = next(f for f in rep.findings if f.rule_id == "SCHEMA-001" and "narration" in f.object_path)
+    clean(sch.as_msg(), "schema msg")
+    clean(rep.to_dict(), "report to_dict")
+    clean(rep.lines(), "lines")
+    assert FAKE in json.dumps(rep.to_dict(shown=False)), "回喂模型的原文照旧（模型侧不在本任务脱敏）"
+    doc_soft, ctx = SNAP.soft_case()
+    ctx["constraints"][0]["text"] = "不出现血腥画面 " + blob
+    ctx["names"]["C03"] = "小栓 " + blob
+    soft = nm.soft_findings(doc_soft, nm.NovelContext(**ctx))
+    assert len(soft) == 2
+    for f in soft:
+        clean(f.as_msg(), "soft msg")
+        clean(f.to_dict(), "soft dict")
+        clean(f.message, "soft message")
+
+    class _Chat:
+        def invoke(self, _m):
+            return SNAP.LOW_RAW.replace("删掉旁白", blob)
+
+        def text(self, r):
+            return r
+    out = []
+    review.run_review(_Chat(), "原文", {"episodes": []}, 3.5, lines_out=out)
+    assert any(x["code"] == "verify.review.issue" for x in out)
+    clean(out, "review lines")
+    u = SNAP.chatty()
+    u["source"]["units"][0]["text"] = blob
+    out = []
+    quality.narration_density_gate(u, 0.6, lines_out=out)
+    clean(out, "quality lines")
+
+    # 身份哈希不因 msg 变化（控制器裁定保留 shown=False）
+    d2, fz = SNAP.snapshot_doc()
+    r2 = V.verify_document(d2, frozen_units=fz)
+    assert V.verification_identity(r2) == V._hash_json(r2.to_dict(shown=False))
+    assert "msg" in r2.to_dict()["findings"][0] and V._hash_json(r2.to_dict()) != V.verification_identity(r2)
+    del os.environ["ARK_API_KEY"]
+    print("10. 脱敏与身份哈希 ✓")
 
     print("\nALL PASS")
     return 0

@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from server.messages import compact, msg, ref, vendor
 
 from .chat import extract_json
+from .verification import scrub_params
 
 REVIEW_SYSTEM = """你是资深分镜审片人。用户给你一段小说原文和由它转换出的 NovelStoryboard 分镜 JSON（忠实转换模式：剧情属于小说，呈现属于转换器）。
 
@@ -86,8 +87,8 @@ def run_review(chat, batch_text: str, doc: dict,
     out.append(compact(msg("verify.review.scored", overall=f"{overall}", min=f"{min_score}",
                            scores=[compact(msg("verify.review.dim_score", dim=ref(f"verify.review.dim.{k}"), score=v))
                                    for k, v in scores.items()])))
-    out.extend([compact(msg("verify.review.issue", where=vendor(i.get("where", "?")),
-                            problem=vendor(i.get("problem", "")), fix=vendor(i.get("fix", ""))))
+    out.extend([compact(msg("verify.review.issue", where=vendor(scrub_params(i.get("where", "?"))),
+                            problem=vendor(scrub_params(i.get("problem", ""))), fix=vendor(scrub_params(i.get("fix", "")))))
                 for i in issues] or [compact(msg("verify.review.no_issues"))])
     weak = [k for k in SCORE_KEYS if scores[k] < dimension_min]
     semantic_ok = scores["semantic_fidelity"] >= semantic_min
