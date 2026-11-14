@@ -406,6 +406,96 @@ def main() -> int:
             assert out == text, label
     print("脱敏：性能 ✓")
 
+    # 第 5 轮（codex-accept-fix4-result.txt）
+    # 5a. 拼接边界吞字：文本里的字面 \ud8 / \u00 经 repr / json 序列化后，N0 不看奇偶会把它和密钥开头一起解码
+    for k, payload in ((r"3d\ude00SECRETTAIL", r"C:\ud8" + r"3d\ude00SECRETTAIL"), ("41", r"C:\u00" + "41"),
+                       ("abcdef", r"\U00" + "abcdef"), ("0041SECRETTAIL", r"\u" + "0041SECRETTAIL")):
+        for ser, load in ((repr, ast.literal_eval), (_json.dumps, _json.loads),
+                          (lambda x: _json.dumps(x, ensure_ascii=False), _json.loads)):
+            for depth in (1, 2, 3):
+                text = payload
+                for _ in range(depth):
+                    text = ser({"value": text})
+                for out in (base.scrub(text, k), base.scrub_secrets(text, extra=[k])):
+                    cur = out
+                    for _ in range(depth):
+                        cur = load(cur)["value"]          # 解码失败即失败
+                    assert k not in cur and "SECRETTAIL" not in cur, (k, depth, text, out, cur)
+    print("脱敏：拼接边界吞字 ✓")
+
+    # 5b. 随机接缝 fuzz：转义前缀 x 随机密钥（含十六进制开头的、短的） x 1~3 层 repr / json；泄露 0、误伤 0
+    import random
+    rnd = random.Random(20261114)
+    prefixes = ("\\u", "\\u0", "\\u00", "\\u000", "\\ud83d", "\\ud8", "\\x", "\\x4", "\\U0001", "\\U000",
+                "\\", "\\\\", "\\\\\\", "C:\\", "")
+    hexd = "0123456789abcdefABCDEF"
+    pool = list(hexd) + list("uxUntrbfvSECRT-'\"密😀") + ["\\ude00", "\\udc00", "\\u12", "\\", "\n", "\x01"]
+    sers5 = ((repr, ast.literal_eval), (_json.dumps, _json.loads),
+             (lambda x: _json.dumps(x, ensure_ascii=False), _json.loads))
+
+    def wrap(v, plan):
+        for f in plan:
+            v = f[0]({"_Z": v})
+        return v
+
+    def unwrap(v, plan):
+        layers = []
+        for f in reversed(plan):
+            v = f[1](v)["_Z"]
+            layers.append(v)
+        return layers
+
+    t0 = time.perf_counter()
+    ntrial = leaks = fps = 0
+    while ntrial < 6000:
+        r = rnd.random()
+        if r < 0.3:
+            k = "".join(rnd.choice(hexd) for _ in range(rnd.randint(2, 4)))
+        elif r < 0.6:
+            k = ("".join(rnd.choice(hexd) for _ in range(rnd.randint(1, 3)))
+                 + "".join(rnd.choice(pool) for _ in range(rnd.randint(0, 4))) + "SECRETTAIL")
+        else:
+            k = "".join(rnd.choice(pool) for _ in range(rnd.randint(1, 6))) + rnd.choice(["", "SECRETTAIL"])
+        k = k.strip()
+        # 退化密钥（单字符、只有引号或反斜杠）会与容器语法本身撞车，不是脱敏问题
+        if len(k) < 2 or sum(c.isalnum() for c in k) < (3 if ("'" in k or '"' in k) else 1):
+            continue
+        ntrial += 1
+        pre, suf = rnd.choice(prefixes), rnd.choice(prefixes + ("x", "'"))
+        plan = [rnd.choice(sers5) for _ in range(rnd.randint(1, 3))]
+        text = wrap(pre + k + suf, plan)
+        out = base.scrub(text, k)
+        if k in unwrap(out, plan)[-1]:
+            leaks += 1
+        other = "".join("Z" if c.isalnum() else c for c in k) + "Q"   # 同样的前后缀与转义结构，换成不含密钥的串
+        t2 = wrap(pre + other + suf, plan)
+        if k not in t2 and not any(k in x for x in unwrap(t2, plan)) and base.scrub(t2, k) != t2:
+            fps += 1
+    print(f"  接缝 fuzz {ntrial} 组 {time.perf_counter() - t0:.1f}s：泄露 {leaks}，误伤 {fps}")
+    assert leaks == 0 and fps == 0, (leaks, fps)
+
+    # 5c. 密钥里是原始代理对，文本里是解码后的 astral 字符（或转义写法）
+    kp = "headTOKEN\ud83d\ude00tailTOKEN"
+    for sm in (repr({"value": kp}), _json.dumps({"value": kp}), "headTOKEN😀tailTOKEN", repr("headTOKEN😀tailTOKEN"),
+               _json.dumps("headTOKEN😀tailTOKEN"), _json.dumps("headTOKEN😀tailTOKEN", ensure_ascii=False)):
+        for out in (base.scrub(sm, kp), base.scrub_secrets(sm, extra=[kp])):
+            assert "tailTOKEN" not in out and "headTOKEN" not in out, (sm, out)
+    assert base.scrub("x headTOKEN😀tailTOKEN y", "headTOKEN😀tailTOKEN") == "x *** y"
+    assert base.scrub("x headTOKEN\ud83d\ude00tailTOKEN y", "headTOKEN😀tailTOKEN") == "x *** y"
+    print("脱敏：原始代理对与 astral 字符 ✓")
+
+    # 5d. 超长自重叠密钥：全部出现位置的查找是线性的（最小周期顺延 + 倍增），n = 16 万时小于 100ms
+    for text, k, want in (("a" * 160000, "a" * 80000, "***"), ("ab" * 80000, "ab" * 40000, "***"),
+                          ("a" * 160000, "a" * 79999 + "b", None), ("\\a" * 80000, "\a" * 40000, "***")):
+        base._needles.cache_clear()                    # 含查找串的生成（冷启动）
+        t0 = time.perf_counter()
+        out = base.scrub(text, k)
+        ms = (time.perf_counter() - t0) * 1000
+        print(f"  自重叠 文本 {len(text)} 密钥 {len(k)}：{ms:.1f}ms（上限 100ms）")
+        assert ms < 100, (len(text), len(k), ms)
+        assert out == (text if want is None else want), out[:20]
+    print("脱敏：自重叠密钥线性查找 ✓")
+
     print("\nALL PASS")
     return 0
 

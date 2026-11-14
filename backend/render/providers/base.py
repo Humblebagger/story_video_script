@@ -93,16 +93,21 @@ class VideoProvider(Protocol):
     def cost(self, st: TaskState, req: ClipRequest) -> float: ...
 
 
-# ---- 密钥脱敏：规范化 N + 位置映射（验收 G1 第 4 轮）----
-# 不用正则匹配密钥。文本与密钥都过同一个单遍规范化 N：一串反斜杠 R 连同它后面的转义一起解码成
-# 一个字符（R 的个数不计，所以 repr / json 任意嵌套层都归到同一个结果），其余字符原样；每个输出字符
-# 记下它在原文里的区间。之后在 N(文本) 里用 str.find 找 N(密钥)，命中位置经映射换回原文区间，
-# 与 Bearer / x-api-key 的区间取并集后一次替换成 ***。全程不回溯，耗时与文本长度成线性。
+# ---- 密钥脱敏：三道规范化扫描 + 位置映射（验收 G1 第 4、5 轮）----
+# 不用正则匹配密钥。文本过三种单遍规范化，每个输出字符记下它在原文里的区间：
+#   N0（不看奇偶）：一串反斜杠 R 连同其后的转义解码成一个字符，R 的个数不计，repr / json 任意嵌套层都归到同一结果；
+#   NP（遵守奇偶）：R 里成对的反斜杠是字面反斜杠，只有落单的那个才开始转义，即如实解一层；
+#   NC（只压缩）：一串反斜杠压成一个，不做任何解码，从不吞反斜杠以外的字符，兜住拼接边界的吞字。
+# 每种扫描在其文本里用 str.find（自重叠时按最小周期顺延，线性）找对应的密钥串，命中经映射换回原文区间；
+# 三种扫描的区间与 Bearer / x-api-key 的区间取并集后一次替换成 ***。全程不回溯，耗时与文本长度成线性。
 
 _BS_RUN = re.compile(r"\\+")                    # 只做 match：贪婪吃满一串反斜杠，不回溯
+_BS_RUN2 = re.compile(r"\\{2,}")                # 两个以上的连续反斜杠（单一字符类的贪婪重复，无回溯）
+_SPECIAL = re.compile("\\\\|[\ud800-\udbff][\udc00-\udfff]")   # 反斜杠，或原始的高低代理对
 _HEXSET = frozenset("0123456789abcdefABCDEF")
 _SHORT = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", "v": "\v", "a": "\a", "0": "\0", "/": "/"}
 _HEXLEN = {"u": 4, "U": 8, "x": 2}
+_ESC_BODY = _HEXSET | frozenset("uxUntrbfva")   # 转义体里可能出现的字符：被拼接边界吞掉的只能是这些
 
 
 def _hex_at(s: str, p: int, n: int):
@@ -113,64 +118,94 @@ def _hex_at(s: str, p: int, n: int):
     return None
 
 
-def _escape_at(s: str, j: int):
-    """j 处是一串反斜杠：返回 (输出字符, 原文结束位置)。规则见上；每次只向前看定长。"""
+def _decode_at(s: str, q: int, parity: bool):
+    """q 处紧跟在（起转义作用的）反斜杠之后：返回 (输出字符, 原文结束位置)，构不成转义时返回 None。"""
     n = len(s)
-    q = _BS_RUN.match(s, j).end()
     if q >= n:
-        return "\\", q                                  # R 在末尾：一个反斜杠
+        return None
     c = s[q]
     if c in _HEXLEN:
         cp = _hex_at(s, q + 1, _HEXLEN[c])
         if cp is None or cp > 0x10FFFF:
-            return "\\", q                              # 构不成转义：一个反斜杠，字母留给下一步原样输出
+            return None
         e = q + 1 + _HEXLEN[c]
         if c == "u" and 0xD800 <= cp <= 0xDBFF and e < n and s[e] == "\\":
             q2 = _BS_RUN.match(s, e).end()              # 这串反斜杠若不成对，主循环还会再扫一次：至多两次
-            if q2 < n and s[q2] == "u":
+            if (not parity or q2 - e == 1) and q2 < n and s[q2] == "u":   # 遵守奇偶时只认紧挨着的单个反斜杠
                 lo = _hex_at(s, q2 + 1, 4)
                 if lo is not None and 0xDC00 <= lo <= 0xDFFF:
                     return chr(0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00)), q2 + 5
         return chr(cp), e
     if c in _SHORT:
         return _SHORT[c], q + 1
-    return c, q + 1                                     # 其他字符（含引号）：丢掉 R，输出该字符
+    return c, q + 1                                     # 其他字符（含引号）：丢掉反斜杠，输出该字符
 
 
 class _Norm:
-    """N(s) 与位置映射。原文没有反斜杠时 N(s) == s、映射是恒等。
-    marks 只记转义产生的输出字符（输出下标、原文起止）；输出字符的原文区间首尾相连、恰好铺满原文，
+    """一种规范化（mode 为 "n0" / "np" / "nc"）的结果与位置映射。原文没有反斜杠与原始代理对时 text == s、映射是恒等。
+    marks 只记特殊位置产生的输出字符（输出下标、原文起止）；输出字符的原文区间首尾相连、恰好铺满原文，
     所以第一次需要换算时一次性展开成 st（st[o] 为第 o 个输出字符的起点，st[o + 1] 即其终点），之后 O(1)。"""
     __slots__ = ("src", "text", "mo", "ms", "me", "_st")
 
-    def __init__(self, s: str):
+    def __init__(self, s: str, mode: str = "n0"):
         self.src = s
         self.mo, self.ms, self.me, self._st = [], [], [], None
-        if "\\" not in s:
-            self.text = s
-            return
         parts, olen, pos = [], 0, 0
+        mo, ms, me = self.mo, self.ms, self.me
+        if mode == "nc":                                # 只压缩：两个以上的连续反斜杠变成一个，单个的原样
+            for m in _BS_RUN2.finditer(s):
+                j, q = m.span()
+                parts.append(s[pos:j])
+                olen += j - pos
+                parts.append("\\")
+                mo.append(olen), ms.append(j), me.append(q)
+                olen, pos = olen + 1, q
+            self.text = "".join(parts) + s[pos:] if mo else s
+            return
         while True:
-            j = s.find("\\", pos)
-            if j < 0:
-                parts.append(s[pos:])
+            m = _SPECIAL.search(s, pos)
+            if m is None:
                 break
+            j = m.start()
             parts.append(s[pos:j])
             olen += j - pos
-            ch, e = _escape_at(s, j)
+            if s[j] != "\\":                            # 原始的高低代理对：合成一个字符，与解码出来的一致
+                parts.append(chr(0x10000 + ((ord(s[j]) - 0xD800) << 10) + (ord(s[j + 1]) - 0xDC00)))
+                mo.append(olen), ms.append(j), me.append(j + 2)
+                olen, pos = olen + 1, j + 2
+                continue
+            q = _BS_RUN.match(s, j).end()
+            if mode == "np":
+                h = (q - j) // 2                        # 成对的反斜杠：每对是一个字面反斜杠
+                if h:
+                    parts.append("\\" * h)
+                    mo.extend(range(olen, olen + h))
+                    ms.extend(range(j, j + 2 * h, 2))
+                    me.extend(range(j + 2, j + 2 * h + 2, 2))
+                    olen += h
+                if (q - j) % 2 == 0:
+                    pos = q
+                    continue
+                j = q - 1                               # 落单的那个反斜杠开始转义
+            d = _decode_at(s, q, mode == "np")
+            if d is None:                               # R 在末尾或构不成转义：一个反斜杠，后面的字符留给下一步原样输出
+                ch, e = "\\", q
+            else:
+                ch, e = d
             parts.append(ch)
-            self.mo.append(olen)
-            self.ms.append(j)
-            self.me.append(e)
-            olen += 1
-            pos = e
+            mo.append(olen), ms.append(j), me.append(e)
+            olen, pos = olen + 1, e
+        if not mo:
+            self.text = s
+            return
+        parts.append(s[pos:])
         self.text = "".join(parts)
 
     def _table(self) -> list:
         if self._st is None:
             st, po, ps = [], 0, 0
             for o, a, b in zip(self.mo, self.ms, self.me):
-                st.extend(range(ps, ps + (o - po)))     # 两个转义之间的原样字符：逐一对应
+                st.extend(range(ps, ps + (o - po)))     # 两个特殊位置之间的原样字符：逐一对应
                 st.append(a)
                 po, ps = o + 1, b
             st.extend(range(ps, ps + (len(self.text) - po)))
@@ -187,107 +222,161 @@ class _Norm:
         return self._table()[o + 1] if self.mo else o + 1
 
 
-def _absorbable_heads(k: str) -> list:
-    """文本里紧挨密钥前面的残缺转义（如一个孤立的反斜杠、\\u00）会吞掉密钥开头的几个字符，
-    合成一个别的字符。返回所有可能被吞的开头长度 m（只看定长的转义文法）。"""
-    ms = set()
-    if not k:
-        return []
-    if k[0] in "ntrbfva0":                              # 文本里的 R + 短转义字母
-        ms.add(1)
-    for m in range(1, 8):                               # 文本里的 R+u / R+x / R+U 加不足位的十六进制，由密钥补齐
-        if m <= len(k) and k[m - 1] in _HEXSET:
-            ms.add(m)
-        else:
-            break
-    for c, n in _HEXLEN.items():                        # 文本里的 R + 密钥开头的 u/x/U 加满位十六进制
-        if k[0] == c and _hex_at(k, 1, n) is not None:
-            ms.add(1 + n)
-    if k[0] == "\\":                                    # 文本里的高代理转义 + 密钥开头的 R+u+低代理
-        q = _BS_RUN.match(k).end()
-        lo = _hex_at(k, q + 1, 4) if k[q:q + 1] == "u" else None
-        if lo is not None and 0xDC00 <= lo <= 0xDFFF:
-            ms.add(q + 5)
-    return sorted(m for m in ms if m < len(k))
-
-
-def _unstable_tails(k: str) -> list:
-    """密钥结尾是残缺转义（孤立的 R、R+u 不足 4 位、R+x 不足 2 位、R+U 不足 8 位）或高代理转义时，
-    后面的文本会把它补成别的字符（高代理还会与后面的低代理合成一个字符）。
-    返回这段尾巴在 k 里所有可能的起点；结尾稳定时返回空表。"""
-    j = k.rfind("\\")
-    if j < 0:
-        return []
-    t = j
-    while t > 0 and k[t - 1] == "\\":
-        t -= 1
-    x = k[j + 1:]
-    if x:
-        c, h = x[0], x[1:]
-        n = _HEXLEN.get(c)
-        if n is None or not all(ch in _HEXSET for ch in h[:n]):
-            return []                                   # 已是完整的短转义、普通字符或构不成转义：后文改不了它
-        if len(h) >= n:
-            if c == "u" and len(h) == 4 and 0xD800 <= int(h, 16) <= 0xDBFF:
-                return [t]                              # 结尾是完整的高代理转义
-            return []                                   # 完整的十六进制转义
-    out = [t]
-    # 孤立的 R 或残缺的 R+u 前面紧挨着高代理转义：补成低代理后会与它合成一个字符，尾巴也可能从高代理算起
-    if (not x or x[0] == "u") and t >= 6 and k[t - 5] == "u" and k[t - 6] == "\\":
-        hi = _hex_at(k, t - 4, 4)
-        if hi is not None and 0xD800 <= hi <= 0xDBFF:
-            s = t - 6
-            while s > 0 and k[s - 1] == "\\":
-                s -= 1
-            out.append(s)
-    return out
-
-
 def _bare(s: str) -> str:
     return s.replace("\\", "")
 
 
+def _absorbable_heads(k: str) -> list:
+    """文本里紧挨密钥前面的残缺转义（孤立的反斜杠、\\u00、\\ud8 等）会把密钥开头的若干字符一起解成一个字符。
+    被吞的只能是转义体里的字符（十六进制、u x U、短转义字母，及密钥自带的反斜杠），去掉反斜杠后不超过 10 个
+    （最长的转义体是代理对 uXXXXuXXXX）。返回所有可能的开头长度 m（不含整个密钥：整个被吞由 NC 兜住）。"""
+    out = []
+    for m in range(1, len(k)):
+        c = k[m - 1]
+        if c != "\\" and c not in _ESC_BODY:
+            break
+        if len(_bare(k[:m])) > 10:
+            break
+        if c != "\\":
+            out.append(m)
+    return out
+
+
+def _unstable_tails(k: str) -> list:
+    """密钥结尾若是一段以反斜杠开始、其后只含转义体字符（去掉反斜杠不超过 10 个）的尾巴，后面的文本可能把它
+    补成别的字符（如残缺的 \\u12、结尾的高代理与后文的低代理合成）。返回这些尾巴在 k 里的起点。"""
+    out, t = [], len(k)
+    while t > 0:
+        j = k.rfind("\\", 0, t)
+        if j < 0:
+            break
+        s = j
+        while s > 0 and k[s - 1] == "\\":
+            s -= 1
+        tail = _bare(k[s:])
+        if len(tail) > 10 or any(c not in _ESC_BODY for c in tail):
+            break
+        if s > 0:
+            out.append(s)
+        t = s
+    return out
+
+
+_PAIR = re.compile("[\ud800-\udbff][\udc00-\udfff]")
+
+
+def _pairs(s: str) -> str:
+    """只把原始的高低代理对合成一个字符，其余不动。"""
+    return _PAIR.sub(lambda m: chr(0x10000 + ((ord(m[0][0]) - 0xD800) << 10) + (ord(m[0][1]) - 0xDC00)), s)
+
+
 @lru_cache(maxsize=64)
 def _needles(keys: tuple) -> tuple:
-    """每个密钥的查找串：(N(片段), 开头被吞的字面, 结尾残缺的字面)。
-    开头/结尾字面为 None 表示无附加条件；否则命中时要求原文相邻处确有对应的转义，并把它一并抹掉。"""
-    out = {}
+    """返回 (N0 查找串, NP 查找串, NC 查找串)，每项为 (串, 开头被吞的字面, 结尾残缺的字面, 须以反斜杠开头)：
+    - 开头/结尾字面为 None 表示无附加条件；否则命中时要求原文相邻处确有对应的转义，并把它一并抹掉；
+      结尾字面为空串表示密钥以反斜杠结尾：命中处后面须紧跟反斜杠，只抹前面的部分。
+    - 须以反斜杠开头：密钥以反斜杠开头时，N0 会丢掉这串反斜杠，命中处在原文里也须以反斜杠开始，免得误伤。
+    NP 找原样的密钥（原始代理对已合成），NC 找压缩反斜杠后的密钥。"""
+    n0, np_, nc = {}, {}, {}
     for k in keys:
         heads = [(0, None)] + [(m, _bare(k[:m])) for m in _absorbable_heads(k)]
-        tails = [(len(k), None)] + [(t, _bare(k[t:])) for t in _unstable_tails(k) if t > 0]
+        tails = [(len(k), None)] + [(t, _bare(k[t:])) for t in _unstable_tails(k)]
         for m, hl in heads:
             for e, tl in tails:
                 if e <= m:
                     continue
                 nd = _Norm(k[m:e]).text
                 if nd:
-                    out.setdefault((nd, hl, tl), None)
-    return tuple(out)
+                    n0.setdefault((nd, hl, tl, m == 0 and k.startswith("\\")), None)
+        # 结尾的反斜杠不进 NP / NC 的查找串：序列化后那串反斜杠还转义着外层引号，抹掉会破坏结构，它本身也不含密钥内容
+        core = k.rstrip("\\")
+        if core:
+            cut = "" if core != k else None
+            np_.setdefault((_pairs(core), None, cut, False), None)
+            nc.setdefault((_Norm(core, "nc").text, None, cut, False), None)
+    return tuple(n0), tuple(np_), tuple(nc)
+
+
+@lru_cache(maxsize=256)
+def _period(nd: str) -> int:
+    """查找串的最小周期（KMP 前缀函数，O(len)）：自重叠的出现只能间隔它的整数倍顺延。"""
+    L, f, k = len(nd), [0] * len(nd), 0
+    for i in range(1, L):
+        while k and nd[i] != nd[k]:
+            k = f[k - 1]
+        if nd[i] == nd[k]:
+            k += 1
+        f[i] = k
+    return L - f[-1]
+
+
+def _occurrences(s: str, nd: str):
+    """s 里 nd 的全部出现（含重叠），线性：命中后先按最小周期 p 顺延（每步只比较新增的 p 个字符），
+    顺延断了再用 str.find 从下一位接着找。由 Fine–Wilf 定理，断开后下一次重叠出现距上次超过 len/2，
+    所以 find 的调用次数是 O(n / len)，每次 O(len + 间隔)，总计 O(n + len)。"""
+    L, n = len(nd), len(s)
+    i = s.find(nd)
+    if i == -1:
+        return
+    p = _period(nd)
+    tail = nd[L - p:]
+    while i != -1:
+        yield i
+        while i + L + p <= n and s.startswith(tail, i + L):
+            i += p
+            yield i
+        i = s.find(nd, i + 1)
+
+
+def _runs(s: str, nd: str):
+    """s 里 nd 的各次出现（含重叠）的并集，按段给出 [起, 止)。与 _occurrences 同理，但周期顺延按倍增
+    一次比较一大块（块总是周期尾巴的重复），不必逐个出现走一遍；总比较量仍是 O(n)。"""
+    L, n = len(nd), len(s)
+    i = s.find(nd)
+    if i == -1:
+        return
+    p = _period(nd)
+    tail = nd[L - p:]
+    while i != -1:
+        first, end = i, i + L
+        while True:
+            chunk = tail
+            while end + p <= n:                         # 倍增顺延：成功就把块加倍，失败就减半，直到一个周期也接不上
+                if s.startswith(chunk, end):
+                    end += len(chunk)
+                    if len(chunk) * 2 <= n - end:
+                        chunk += chunk
+                elif len(chunk) > p:
+                    chunk = chunk[:len(chunk) // 2 // p * p] or tail
+                else:
+                    break
+            j = s.find(nd, end - L + 1)
+            if j != -1 and j <= end:                    # 不按周期的重叠或首尾相接：并入同一段
+                end = j + L
+                continue
+            break
+        yield first, end
+        i = j
 
 
 def _key_spans(nt: _Norm, needles) -> list:
-    """N(文本) 里每个查找串的全部出现（含重叠），换回原文区间。"""
+    """规范化文本里每个查找串的全部出现（含重叠），换回原文区间。"""
     src, s, spans = nt.src, nt.text, []
     ident = not nt.mo
-    for nd, hl, tl in needles:
-        if ident and (hl is not None or tl is not None):
+    no_bs = "\\" not in src
+    for nd, hl, tl, lb in needles:
+        if no_bs and (hl is not None or tl is not None or lb):
             continue                                    # 原文没有反斜杠：附加条件不可能成立
         L = len(nd)
-        i = s.find(nd)
-        if hl is None and tl is None:
+        if hl is None and tl is None and not lb:
             # 无附加条件：相互重叠或首尾相接的一串出现只换算首尾两端（输出区间在原文里首尾相连，并集不变）
-            while i != -1:
-                last = i
-                j = s.find(nd, i + 1)
-                while j != -1 and j <= last + L:
-                    last = j
-                    j = s.find(nd, j + 1)
-                spans.append((i, last + L) if ident else (nt.start(i), nt.end(last + L - 1)))
-                i = j
+            for a, b in _runs(s, nd):
+                spans.append((a, b) if ident else (nt.start(a), nt.end(b - 1)))
             continue
-        while i != -1:
-            a, b, ok = nt.start(i), nt.end(i + L - 1), True
-            if hl is not None:                          # 前一个输出字符须是吞掉密钥开头的那个转义
+        for i in _occurrences(s, nd):
+            a, b = nt.start(i), nt.end(i + L - 1)
+            ok = not lb or src[a] == "\\"
+            if ok and hl is not None:                          # 前一个输出字符须是吞掉密钥开头的那个转义
                 ok = i > 0 and src[nt.start(i - 1)] == "\\" and _bare(src[nt.start(i - 1):a]).endswith(hl)
                 if ok:
                     a = nt.start(i - 1)
@@ -301,8 +390,11 @@ def _key_spans(nt: _Norm, needles) -> list:
                     b = nb
             if ok:
                 spans.append((a, b))
-            i = s.find(nd, i + 1)
     return spans
+
+
+_BEARER = re.compile(r"(?i)bearer\s+([^\s\"',;]+)")
+_XAPIKEY = re.compile(r"(?i)x-api-key[\"']?\s*[:=]\s*[\"']?([^\s\"',;}]+)")
 
 
 def _cred_spans(t: str) -> list:
@@ -310,16 +402,21 @@ def _cred_spans(t: str) -> list:
     return [m.span(1) for pat in (_BEARER, _XAPIKEY) for m in pat.finditer(t)]
 
 
-_BEARER = re.compile(r"(?i)bearer\s+([^\s\"',;]+)")
-_XAPIKEY = re.compile(r"(?i)x-api-key[\"']?\s*[:=]\s*[\"']?([^\s\"',;}]+)")
-
-
 def _mask(text: str, keys) -> str:
-    """区间并集：各密钥与凭据的区间重叠或相邻的合成一段，每段整体换成 ***，一次完成。"""
+    """区间并集：三种扫描的密钥区间与凭据区间，重叠或相邻的合成一段，每段整体换成 ***，一次完成。"""
     ks = tuple(sorted({k.strip() for k in keys if isinstance(k, str) and k.strip()}))
     spans = _cred_spans(text)
     if ks and text:
-        spans += _key_spans(_Norm(text), _needles(ks))
+        n0_needles, np_needles, nc_needles = _needles(ks)
+        n0 = _Norm(text, "n0")
+        spans += _key_spans(n0, n0_needles)
+        if n0.mo:
+            # 没有两个相连的反斜杠时，每串反斜杠都是单个（奇数），NP 与 N0 逐字相同、NC 等于原文：省掉重复扫描
+            dbl = "\\\\" in text
+            spans += _key_spans(_Norm(text, "np") if dbl else n0, np_needles)
+            spans += _key_spans(_Norm(text, "nc"), nc_needles)
+        else:                                           # 原文没有特殊字符：三种规范化都等于原文，查找串去重后再找
+            spans += _key_spans(n0, tuple(x for x in dict.fromkeys(np_needles + nc_needles) if x not in n0_needles))
     if not spans:
         return text
     spans.sort()

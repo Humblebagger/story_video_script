@@ -520,6 +520,30 @@ def main() -> int:
         del os.environ["ARK_API_KEY"]
     print("18c. 控制字符密钥经转义后整份报告不漏 ✓")
 
+    # 18d. 拼接边界吞字（第 4 轮复审）：字面 \ud8 / \u00 紧挨密钥，经 jsonschema 报错的 repr 进 SCHEMA-001
+    import ast as _ast
+    for K18d, payload, must_absent in ((r"3d\ude00SECRETTAIL", r"C:\ud8" + r"3d\ude00SECRETTAIL", "SECRETTAIL"),
+                                       ("41", r"C:\u00" + "41", "41")):
+        os.environ["ARK_API_KEY"] = K18d
+        for val in ({"value": payload}, {"value": json.dumps({"value": payload})}):
+            d = SNAP.doc()
+            d["meta"] = {"video": {"resolution": val}}
+            rep = V.verify_document(d)
+            hit = [f for f in rep.findings if f.rule_id == "SCHEMA-001" and "resolution" in f.object_path]
+            assert hit, rep.lines()
+            for label, blob in (("to_dict", json.dumps(rep.to_dict(shown=True), ensure_ascii=False)),
+                                ("to_dict ascii", json.dumps(rep.to_dict(shown=True))),
+                                ("lines", json.dumps(rep.lines(), ensure_ascii=False)),
+                                ("attempt", _ss(rep.render()))):
+                assert must_absent not in blob, (label, val, blob)
+            # 逐条消息里的 repr 片段解码回来也不含密钥
+            shown = rep.to_dict(shown=True)["findings"]
+            msg = next(f["message"] for f in shown if f["rule_id"] == "SCHEMA-001" and "resolution" in f["object_path"])
+            back = _ast.literal_eval(msg.split(" is not of type")[0])["value"]
+            assert K18d not in back and must_absent not in back, (msg, back)
+        del os.environ["ARK_API_KEY"]
+    print("18d. 拼接边界吞字的密钥经 SCHEMA-001 不漏 ✓")
+
     print("\nALL PASS")
     return 0
 
