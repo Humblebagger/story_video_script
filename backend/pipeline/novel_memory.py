@@ -258,7 +258,7 @@ def check_digest(raw: dict, units: List[dict], characters: List[dict]
             kept.append({"character_id": cid, "type": kind,
                          "detail": str(item.get("detail") or "").strip(),
                          "unit_ref": ref, "evidence_quote": quote})
-    synopsis = str(raw.get("synopsis") or "").strip()[:SYNOPSIS_MAX]
+    synopsis = scrub_secrets(str(raw.get("synopsis") or "").strip())[:SYNOPSIS_MAX]
     return kept, synopsis, dropped
 
 

@@ -303,11 +303,24 @@ def main() -> int:
     _ok, qreport, _r = quality.narration_density_gate(u, 0.6)  # 回喂模型的报告字符串也先脱敏再截 30 字
     no_prefix(qreport, "quality report string 30 cut")
     kept, _syn, dropped = nm.check_digest(
-        {"lifecycle": [{"character_id": "C01", "type": "death", "unit_ref": "u0001",
+        {"lifecycle": [{"character_id": "C01", "type": "deceased", "unit_ref": "u0001",
                         "evidence_quote": "字" * 20 + KEY}]},
         [{"id": "u0001", "text": "无关"}], [{"id": "C01", "name": "甲"}])
-    assert not kept and dropped, dropped
+    assert not kept and len(dropped) == 1 and "逐字片段" in dropped[0], dropped  # 确实走到证据分支
     no_prefix(dropped, "novel_memory quote 30 cut")
+    _k, syn, _d = nm.check_digest({"synopsis": "字" * 180 + KEY}, [], [])
+    assert len(syn) <= nm.SYNOPSIS_MAX
+    no_prefix(syn, "novel_memory synopsis 200 cut")
+    import pipeline.convert as convert_mod, pipeline.validate as validate_mod
+    real_merge = validate_mod.run_merge
+    validate_mod.run_merge = lambda paths, out: (False, "字" * 110 + KEY)
+    logs12 = []
+    try:
+        convert_mod._emit_partial(lambda *a: None, [Path("a.json"), Path("b.json")], Path(_TMP.name), 2, 3, logs12.append)
+    finally:
+        validate_mod.run_merge = real_merge
+    assert logs12 and "预览合并失败" in logs12[0], logs12
+    no_prefix(logs12, "convert preview merge log 120 cut")
     pad = "字" * 280
 
     class _Chat2:
