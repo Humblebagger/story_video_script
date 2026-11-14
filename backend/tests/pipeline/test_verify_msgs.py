@@ -433,6 +433,24 @@ def main() -> int:
     review.run_review(_Chat4(), "原文", {"episodes": []}, 3.5, lines_out=out)
     iss = next(x for x in out if x["code"] == "verify.review.issue")
     assert iss["params"]["problem"]["text"] == "p" * 300, iss["params"]["problem"]
+    # 含反斜杠的密钥：repr 会转义成 \\，字符串化之后再脱敏就匹配不上（复审 N1）
+    import ast
+    K16b = "abc123\\secret_token"
+    os.environ["ARK_API_KEY"] = K16b
+    for fld in ("where", "problem", "fix"):
+        for pos in ("key", "value"):
+            iss16 = {"where": "w", "problem": "p", "fix": "f"}
+            iss16[fld] = {K16b: "v"} if pos == "key" else {"k": K16b}
+            raw["issues"] = [iss16]
+            out = []
+            review.run_review(_Chat4(), "原文", {"episodes": []}, 3.5, lines_out=out)
+            shown = next(x for x in out if x["code"] == "verify.review.issue")["params"][fld]["text"]
+            assert K16b not in shown and repr(K16b)[1:-1] not in shown and "secret_token" not in shown, (fld, pos, shown)
+            try:
+                back = ast.literal_eval(shown)
+            except (ValueError, SyntaxError):
+                back = shown
+            assert K16b not in str(back), (fld, pos, shown)
     del os.environ["ARK_API_KEY"]
     print("16. 评审对象先字符串化再脱敏再截断 ✓")
 

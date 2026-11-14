@@ -15,6 +15,7 @@ from server.messages import compact, msg, ref, vendor
 
 from .chat import extract_json
 from render.providers.base import scrub_secrets
+from .verification import scrub_params
 
 REVIEW_SYSTEM = """你是资深分镜审片人。用户给你一段小说原文和由它转换出的 NovelStoryboard 分镜 JSON（忠实转换模式：剧情属于小说，呈现属于转换器）。
 
@@ -87,8 +88,12 @@ def run_review(chat, batch_text: str, doc: dict,
                            scores=[compact(msg("verify.review.dim_score", dim=ref(f"verify.review.dim.{k}"), score=v))
                                    for k, v in scores.items()])))
     def _raw(x):
-        # 先完整字符串化、再脱敏、最后由 vendor 截断：截断会把密钥切成抹不掉的半截（含对象的键）
-        return vendor(scrub_secrets(x if isinstance(x, str) else str(x)))
+        # 先脱敏、再截断：截断会把密钥切成抹不掉的半截。
+        # 对象先递归脱敏键与值（repr 会转义反斜杠，字符串化之后再抹就匹配不上含 \\ 的密钥），
+        # 再完整字符串化、整体再抹一次，最后由 vendor 截断。
+        if isinstance(x, str):
+            return vendor(scrub_secrets(x))
+        return vendor(scrub_secrets(str(scrub_params(x, keep=False))))
 
     out.extend([compact(msg("verify.review.issue", where=_raw(i.get("where", "?")),
                             problem=_raw(i.get("problem", "")), fix=_raw(i.get("fix", ""))))
