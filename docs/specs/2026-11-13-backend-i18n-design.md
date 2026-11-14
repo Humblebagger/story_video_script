@@ -1,7 +1,7 @@
 # 后端对用户文字统一中英双语 设计
 
 日期：2026-11-13
-状态：已过设计审查（Opus），修订完毕；子计划 1、2、3、4 已交付；子计划 2、3、4、5 范围已补充（见文末）
+状态：已过设计审查（Opus），修订完毕；子计划 1、2、3、4、5 已交付；子计划 2、3、4、5、5b 范围已补充（见文末）
 
 ## 1. 目标与已决事项
 
@@ -1183,3 +1183,194 @@
 ### 规格例外（终审裁定，2026-11-14）
 
 质量门回喂报告里的句子摘录（`quality.py` 的 `fmt`）保留「先脱敏再截 30 字」，与旧写法 `text[:30]` 在类凭据文本上有差别，属有意例外：回喂报告还会进尝试记录（任务接口会返回）和调试日志，被截断的密钥前缀事后无法再抹掉。普通文本的摘录与旧写法逐字相同，由 `test_verify_msgs.py` 第 17 节钉住。`novel_memory` 的摘要（200 字）与证据引文（30 字）同理。
+
+## 子计划 5b 范围补充（2026-11-14）
+
+子计划 5 把检查工具的子进程输出按 `ERROR` 行拆成逐条（`verify.report.tool` + `verify.report.tool_error`，厂商原文）。lint 的错误行是中文，英文界面会实际看到（A「不在本子计划」与计划 R6 的分析）。本节给 `tools/lint_storyboard.py` 加 `--json`，流水线改读结构化错误，按条登记 `verify.lint.*`。保真工具与合并工具保持原文。实施计划：`docs/plans/2026-11-14-backend-i18n-5b-lint.md`。
+
+### A. 范围
+
+**后端**：
+
+| 模块 | 改法 | 说明 |
+|---|---|---|
+| `tools/lint_storyboard.py` | 每处 `errors.append` / `warnings.append` 改成 `_item(rule, 原 f-string, **params)`；汇报改为先拼出整段文本，默认 `sys.stdout.write`，`--json` 时把同一段文本放进 `text` 字段输出 JSON | 原 f-string 一字不改；默认文本输出逐字不变（见 D） |
+| `pipeline/validate.py` | 新增 `LintReport(ok, text, errors)` 与 `run_lint_report(path)`（跑一次 `--json`）；`run_lint` 不改 | 见 C、F |
+| `pipeline/verification.py` | 新增 `lint_lines(errors)`、`checker_lines(lint_ok, lint_text, lint_errors, fid_ok, fid_text)`，以及参数规范化 `_lint_value`、单条转换 `_lint_msg` | 见 C、E |
+| `pipeline/graph.py` | `_check_batch` 改用 `run_lint_report`；回喂模型的报告仍由 `lint.text` 拼出；逐条改用 `checker_lines` | 见 D |
+| `pipeline/convert.py` | 整章终检同上；`job.final_check_failed` 的逐条改用 `checker_lines` | 合并失败照旧 `tool_lines` |
+| `server/messages.py`、`messages_codes.json` | 登记 `verify.report.lint`、`verify.report.lint_none` 与 23 条 `verify.lint.<rule>` | 见 B、H |
+
+**前端**：`zh.ts`、`en.ts` 的 `srv.verify.lint.*` 与 `srv.verify.report.lint/lint_none`。显示处的形状都不变（见 C），只补测试。
+
+**不在本子计划**：
+- `tools/check_fidelity.py`、`tools/merge_storyboard.py`：照旧按行拆分、原文显示（「后续：子计划 5b」已定）。
+- lint 的 WARN：`--json` 里带规则名与参数，但不登记代码、不显示（与子计划 5 相同：失败区只列错误）。
+- `tools/lint_storyboard.py` 不加进 ast 扫描的 `MODULES`：它的中文是命令行输出与回喂模型的原文，不是给界面的出口；改由「源码规则名 ↔ 登记表」的测试守护（G）。
+- 命令行 `python -m pipeline …` 与 README 的用法：不改。
+
+### B. 逐条规则
+
+代码一律是 `verify.lint.<rule>`。「原文」一栏是 lint 现在打印的文字（去掉行首的 `ERROR `），回喂修复模型，**不改**。参数由 lint 原样给出（编号、字段值都是模型写的数据），流水线按 E 节规范化。中文模板与原文意思相同，措辞更通顺：字段名照旧（`location_ref`、`outfit`、`state` 是 JSON 字段，中英界面都不翻），值用「」括起，冒号用全角。
+
+| rule | 位置（lint） | 参数 | 原文（给模型，不改） | 中文模板 | 英文模板 |
+|---|---|---|---|---|---|
+| `schema` | JSON Schema 校验 | `path`（`/` 开头的 JSON 路径）、`detail`（厂商原文：jsonschema 的 `e.message`） | `[schema] {路径}: {e.message}` | 不符合分镜结构定义（{path}）：{detail} | Doesn’t match the storyboard schema ({path}): {detail} |
+| `ref_image_outfit` | 角色卡参考图 | `card`、`outfit`、`options`（列表） | `[{card}] 参考图标注的 outfit '{tag}' 不存在（可选: {…或「本卡无 outfits」}）` | [{card}] 参考图标注的 outfit「{outfit}」不存在（可选：{options}） | [{card}] A reference image is tagged with outfit “{outfit}”, which doesn’t exist (options: {options}) |
+| `ref_image_state` | 道具卡参考图 | `card`、`state`、`options` | `[{card}] 参考图标注的 state '{tag}' 不存在（可选: …）` | [{card}] 参考图标注的 state「{state}」不存在（可选：{options}） | [{card}] A reference image is tagged with state “{state}”, which doesn’t exist (options: {options}) |
+| `asset_empty_constraint` | 资产卡 constraints | `card` | `[{card}] constraints 里有空约束项` | [{card}] constraints 里有空的约束项 | [{card}] constraints has an empty item |
+| `curve_shot` | music.curve | `episode`、`shot` | `[{ep}] music.curve 引用不存在于本集的镜头: {ref}` | [{episode}] music.curve 引用了本集没有的镜头：{shot} | [{episode}] music.curve refers to a shot that isn’t in this episode: {shot} |
+| `curve_unit` | music.curve.unit_refs | `episode`、`unit` | `[{ep}] music.curve.unit_refs 引用不存在的句子: {ref}` | [{episode}] music.curve.unit_refs 引用了不存在的句子：{unit} | [{episode}] music.curve.unit_refs refers to a source line that doesn’t exist: {unit} |
+| `curve_reversed` | music.curve | `episode`、`start`、`end` | `[{ep}] music.curve 区间倒序: {f} > {t}` | [{episode}] music.curve 区间倒序：{start} 在 {end} 之后 | [{episode}] music.curve range is reversed: {start} comes after {end} |
+| `shot_unit` | 镜头 source.unit_refs | `shot`、`unit` | `[{sid}] source.unit_refs 引用不存在的句子: {ref}` | [{shot}] source.unit_refs 引用了不存在的句子：{unit} | [{shot}] source.unit_refs refers to a source line that doesn’t exist: {unit} |
+| `inferred_no_note` | 镜头 source | `shot` | `[{sid}] derivation=inferred 但缺少 inference_note` | [{shot}] derivation=inferred 但缺少 inference_note | [{shot}] derivation is inferred, but inference_note is missing |
+| `beats_duration` | 镜头 beats | `shot`、`total`、`duration`（都按原文的 `:g` 预先格式化成字符串） | `[{sid}] beats 各拍时长之和 {total:g}s 与镜头 duration_sec {dur:g}s 不符` | [{shot}] beats 各拍时长之和 {total}s 与镜头 duration_sec {duration}s 不符 | [{shot}] The beats add up to {total}s, but the shot’s duration_sec is {duration}s |
+| `beat_no_action` | 镜头 beats | `shot`、`beat`（第几拍，整数） | `[{sid}] beats 第 {i} 拍缺少 action` | [{shot}] beats 第 {beat} 拍缺少 action | [{shot}] Beat {beat} has no action |
+| `shot_empty_constraint` | 镜头 constraints | `shot` | `[{sid}] constraints 里有空约束项` | [{shot}] constraints 里有空的约束项 | [{shot}] constraints has an empty item |
+| `location_ref` | 镜头 location_ref | `shot`、`location` | `[{sid}] location_ref 引用不存在的场景: {loc}` | [{shot}] location_ref 引用了不存在的场景：{location} | [{shot}] location_ref refers to a location that doesn’t exist: {location} |
+| `prop_ref` | 镜头 prop_refs | `shot`、`prop` | `[{sid}] prop_refs 引用不存在的道具: {ref}` | [{shot}] prop_refs 引用了不存在的道具：{prop} | [{shot}] prop_refs refers to a prop that doesn’t exist: {prop} |
+| `prop_state_required` | 同上 | `shot`、`prop`、`options` | `[{sid}] 道具 {ref} 有状态集，引用必须填 state（可选: {…}）` | [{shot}] 道具 {prop} 有状态集，引用时必须填 state（可选：{options}） | [{shot}] Prop {prop} has states, so the reference must set state (options: {options}) |
+| `prop_state_unknown` | 同上 | `shot`、`prop`、`state`、`options` | `[{sid}] 道具 {ref} 不存在 state '{state}'（可选: {…}）` | [{shot}] 道具 {prop} 没有 state「{state}」（可选：{options}） | [{shot}] Prop {prop} has no state “{state}” (options: {options}) |
+| `prop_state_unexpected` | 同上 | `shot`、`prop` | `[{sid}] 道具 {ref} 无 states，引用不应填 state` | [{shot}] 道具 {prop} 没有状态集，引用时不应填 state | [{shot}] Prop {prop} has no states, so the reference shouldn’t set state |
+| `creature_outfit` | 镜头 characters | `shot`、`creature` | `[{sid}] 生物 {ref} 引用不应填 outfit` | [{shot}] 生物 {creature} 的引用不应填 outfit | [{shot}] Creature {creature}: the reference shouldn’t set outfit |
+| `character_ref` | 同上 | `shot`、`character` | `[{sid}] characters.ref 引用不存在的角色/生物: {ref}` | [{shot}] characters.ref 引用了不存在的角色或生物：{character} | [{shot}] characters.ref refers to a character or creature that doesn’t exist: {character} |
+| `outfit_unknown` | 同上 | `shot`、`character`、`outfit`、`options` | `[{sid}] 角色 {ref} 不存在 outfit '{outfit}'（可选: {…}）` | [{shot}] 角色 {character} 没有 outfit「{outfit}」（可选：{options}） | [{shot}] Character {character} has no outfit “{outfit}” (options: {options}) |
+| `dialogue_character` | 镜头 dialogue | `shot`、`character` | `[{sid}] dialogue.character_ref 引用不存在的角色: {cref}` | [{shot}] dialogue.character_ref 引用了不存在的角色：{character} | [{shot}] dialogue.character_ref refers to a character that doesn’t exist: {character} |
+| `narration_unit` | 镜头 narration | `shot`、`unit` | `[{sid}] narration.unit_refs 引用不存在的句子: {ref}` | [{shot}] narration.unit_refs 引用了不存在的句子：{unit} | [{shot}] narration.unit_refs refers to a source line that doesn’t exist: {unit} |
+| `coverage_unmapped` | 覆盖率 | `n`（未覆盖句数）、`units`（句子编号列表） | `[coverage] 以下句子未被任何镜头旁白覆盖且未标 skipped: {unmapped}` | [coverage] 有 {n} 句原文没有被任何镜头的旁白覆盖，也没有标 skipped：{units} | [coverage] Source lines not covered by any shot’s narration and not marked skipped ({n}): {units} |
+
+共 23 条，与 lint 源码里 23 处 `errors.append` 一一对应（`[schema]` 与 coverage 两条在内）。
+
+**WARN**（6 处 `warnings.append`）：同样改成 `_item`，规则名与参数进 `--json` 的 `warnings`，**不登记代码、不进给用户的逐条**：
+
+| rule | 参数 | 原文 |
+|---|---|---|
+| `schema_unavailable` | — | `jsonschema 未安装，跳过结构校验（pip install jsonschema）` |
+| `curve_gap` | `episode`、`shot` | `[{ep}] music.curve 段落不连续（{f} 之前有缝隙或重叠）` |
+| `curve_incomplete` | `episode` | `[{ep}] music.curve 未覆盖到本集最后一镜` |
+| `shot_id_prefix` | `shot`、`episode` | `[{sid}] 镜头 ID 前缀与所属集 {ep} 不一致` |
+| `coverage_declared_units` | `actual`（列表） | `[coverage] 声明的 unmapped_units 与实际不符，实际: {unmapped}` |
+| `coverage_declared_ratio` | `declared`、`actual` | `[coverage] inferred_shot_ratio 声明 {…}，实际 {actual_ratio}` |
+
+理由：WARN 不让 lint 失败，lint 失败时失败区只列错误（子计划 5 C 的取舍不变）；lint 通过时根本没有逐条。规则名先给出来，以后要显示只需登记。
+
+**参数约定**：
+- 编号、字段值、JSON 路径是数据，原样作参数（字符串或整数），不翻译（子计划 5 R8）。
+- `schema` 的 `detail` 是外部库原文，作厂商原文类型，与 `SCHEMA-001` 一样（`[schema]` 在流水线里几乎不会出现：批内先跑的结构校验用的是同一份 schema，未过就不会走到 lint；仍然登记，以免整章终检或手工版本时漏译）。`path` 加前导 `/`，与 `SCHEMA-001` 的路径写法一致；原文里的路径照旧不带。
+- `options` 是可选项列表，前端按语言的列表分隔符连接（中文「、」、英文「, 」）；为空时（原文写「本卡无 outfits」）换成代码引用 `verify.report.lint_none`（「无」/「none」）。
+- `coverage_unmapped` 的 `units` 最多列 20 个，总数在 `n`；英文写法不依赖单复数（数量放括号里）。
+- 数值：时长按原文的 `:g` 在 lint 里预先格式化成字符串；第几拍、句数是整数（子计划 5 R7）。
+
+### C. JSON 输出形状，以及报告怎样到达界面
+
+**`--json` 输出**（stdout 只有一行 JSON，`ensure_ascii=True`；退出码与文本模式相同：通过 0、有错误 1、参数不对 2）：
+
+```json
+{"version": 1,
+ "ok": false,
+ "errors":   [{"rule": "location_ref", "params": {"shot": "E01-SH001", "location": "S99"},
+               "text": "[E01-SH001] location_ref 引用不存在的场景: S99"}],
+ "warnings": [{"rule": "curve_gap", "params": {"episode": "E01", "shot": "E01-SH011"},
+               "text": "[E01] music.curve 段落不连续（E01-SH011 之前有缝隙或重叠）"}],
+ "text": "WARN  [E01] music.curve 段落不连续（E01-SH011 之前有缝隙或重叠）\nERROR [E01-SH001] location_ref 引用不存在的场景: S99\n\n旁白模式 …\nFAIL（1 个错误）\n"}
+```
+
+- `text` 与同一份文档的文本模式 stdout 逐字相同（同一个函数拼出来的同一个字符串）；
+- 每条的 `text` 是原文（不含行首 `ERROR `/`WARN  `）；`params` 的值是 lint 里的原始值，可能是字符串、整数、列表，模型写坏时可能是 `null` 或别的类型（`default=str` 兜底）；
+- 崩溃（文档不是合法 JSON、模型写出 lint 没料到的类型）时与文本模式一样：stdout 为空，回溯在 stderr，退出码 1。
+
+**流水线**：
+- `validate.run_lint_report(path) -> LintReport(ok, text, errors)`：跑一次 `--json`；`text = data["text"] + stderr`，与 `run_lint` 的「stdout + stderr」逐字相同；stdout 解析不出 JSON、缺 `text`/`errors` 或类型不对时，`text = stdout + stderr`、`errors = None`。
+- `verification.lint_lines(errors)`：标题 `verify.report.lint`（「分镜检查发现的错误：」），每条一项 `verify.report.tool_error {text}`，`text` 的值是嵌套消息 `{code: "verify.lint.<rule>", params}`。某一条认不出（规则没登记、参数与模板不符、形状不对）时，这一项的 `text` 退回该条原文（厂商原文，脱敏），其余照常翻译。
+- `verification.checker_lines(lint_ok, lint_text, lint_errors, fid_ok, fid_text)`：
+  - lint 未过且有结构化错误：`lint_lines(errors)`；
+  - lint 未过但 `errors` 为 `None`（崩溃、替身）：lint 原文与保真原文一起走 `tool_lines`（子计划 5 的按行拆分）；
+  - 保真未过：保真原文走 `tool_lines`（标题仍是 `verify.report.tool`「工具报告的错误（原文）：」）。
+  - lint 与保真都未过时两段都列。子计划 5 的 `tool_lines(lint + 保真)` 在 lint 有 `ERROR` 行时会丢掉保真的 `FAIL` 行，这里不再丢（计划 R8）。
+- 逐条照旧进 `lines_out` → `BatchState.shown` → `ConversionError.lines` → `job.failed_report` 的 `report`（`lines` 类型），截断规则不变（100 项、6000 字、汇总在前）。lint 未过是硬失败，不进择优候选，所以不会出现在 `job.quality.degraded` 里。
+
+**形状的取舍**：每条 lint 错误套在现有的 `verify.report.tool_error` 里（`text` 由厂商原文换成嵌套消息），不另起包装代码。理由：
+- `tool_error` 的模板只是缩进加 `{text}`，参数类型本来就允许嵌套消息；子计划 5 存下的旧报告（`text` 是厂商原文）与新报告共用一个代码，前端不用分辨新旧；
+- 标题另起 `verify.report.lint`：原标题写着「（原文）」，对已翻译的逐条不再成立。
+
+**显示处**：
+
+| 显示处 | 数据 | 影响 |
+|---|---|---|
+| JobPanel 失败区 | `job.error_msg` = `job.failed_report`（`batch_failed`、`final_check_failed`） | lint 逐条按语言渲染；形状不变 |
+| 后台任务页展开的失败全文 | `admin/JobsTab.tsx` 的 `<pre>{itemError(j)}</pre>` | 同上（同一个 `formatMsg`） |
+| 一行显示（提示条、助手任务卡、后台任务页摘要） | `failHead` 只取原因 | 不变 |
+| JobPanel 质量报告 | `job.quality_msg` | 不涉及（lint 未过不会降级交付） |
+| 验证面板、编辑卡复验原因、验证门 | `verify_document` 的结果 | 不涉及（这些路径不跑 lint） |
+| 管理后台调试日志、工作目录失败报告、尝试记录 `report` | lint 文本原文 | 不变 |
+| 命令行 | lint 默认文本输出 | 逐字不变 |
+
+### D. 回喂模型的文字不变
+
+**lint 输出现在去哪儿**（同一个字符串同时进「回喂」与「给用户」两条路）：
+- 批内（`graph._check_batch`）：结构校验通过后跑 `validate.run_lint`，`text = lint_out.strip() + "\n" + fid_out.strip()` 作为报告返回；同一处 `tool_lines(text)` 生成逐条进 `lines_out`。
+  - 报告 → `check` 节点写进 `state["report"]`、尝试记录 `report`（脱敏）、调试日志（`_log_report`，超长落盘）；
+  - `plan_repair`：补丁模式回喂 `repair.repair_request(structured, state["report"])`，重写模式回喂「你的输出未通过自动校验，报告如下：\n\n{report}\n\n请修正…」；
+  - 重试耗尽：`batch{idx}_failure_report.txt` 与 `ConversionError.report`（`_execute` 记进调试日志）；
+  - 逐条 → `state["shown"]` → `ConversionError.lines` → 失败区。
+- 整章终检（`convert.py`）：`run_lint` 的输出进调试日志与 `ConversionError("job.final_check_failed").report`，逐条进 `.lines`。不回喂模型，但同样保持原文。
+
+**方案**：lint 同一次运行同时产出文本与 JSON。`--json` 的 `text` 字段就是文本模式要打印的那段字符串（同一个变量），流水线回喂、日志、失败报告只用 `LintReport.text`，界面只用 `LintReport.errors`。原 f-string 留在 lint 里（`_item(rule, 原 f-string, **params)`），界面模板只在 `messages.py` 与 `srv`：以后润色界面文案不会改到模型输入（与 `ORDER-001` 保留原 f-string 同理）。
+
+不选的做法：
+- 跑两次（文本一次、`--json` 一次）：子进程多一倍；两次输出理论上可以分叉，回喂与界面不再是同一次检查的结果。
+- 在进程内 `import` lint：lint 是独立脚本，流水线一直以子进程调用（`validate.py` 的约定，崩溃不会拖垮转换进程）；进程内调用还要改捕获 stdout 的方式，回喂文字的来源就变了。
+- 流水线从 JSON 重新拼出文本：拼法就有了两份，漂移只能靠测试发现。
+
+**守护**（计划 Task 0，在任何改动之前单独提交；`test_llm_feed_snapshot.py` 与 `feed_snapshot.py` 不得修改）：
+- 新增 `tests/pipeline/lint_snapshot.py`（数据与造数据的函数，不导入 pipeline）与 `test_lint_feed_snapshot.py`（只用改动前就有的接口）：
+  1. 23 条错误规则各一种改坏的文档、只有 WARN、全部通过三类情形：lint 文本模式的退出码、stdout 的 sha256 与其中的 `ERROR`/`WARN` 行逐字不变；
+  2. jsonschema 缺失时进程内 `main(path)` 的输出逐字不变；
+  3. `validate.run_lint` 的返回不变；
+  4. 结构校验通过、只有 lint 报错（资产引用五条）的文档经 `graph._check_batch`：报告字面量与 `repair_request` 的 sha256 不变；
+  5. 整张图（`FakeChat`）：重写模式与补丁模式真正发给模型的那条消息的 sha256、重试耗尽时 `ConversionError.report` 的 sha256 不变。
+- 快照的字面量与哈希在未改动的代码（HEAD `71f72a8`）上跑出来，不是手写；之后每个 Task 的全套校验都包含这个测试与 `test_llm_feed_snapshot.py`。
+- 新接口另有一致性测试：每种情形下 `--json` 的 `text` 与文本模式 stdout 逐字相同、`run_lint_report().text` 与 `run_lint()` 相同。
+
+### E. 脱敏与截断
+
+- lint 给出的参数是模型写进文档的值，可能夹带用户原文与密钥。流水线在 `_lint_value` 里规范化：
+  - 字符串：先 `scrub_secrets` 再截断 300 字（`VENDOR_MAX`；先截断会把密钥切成抹不掉的半截）；
+  - 整数原样；布尔、小数、`None` 按原文的写法转成字符串（`True`、`1.0`、`None`），前后端渲染一致；
+  - 列表逐项处理，最多 20 项；其它类型 `json.dumps` 后按字符串处理。
+- 认不出的一条退回的原文同样先脱敏（`vendor(scrub_secrets(text))`，`vendor` 再截断）。
+- 之后的路径与子计划 5 相同：`_report_param`/`finalize` 经 `graph._scrub_tree`，`_execute` 经 `error_refs.scrub_deep`（换数据目录等主机路径）。`verification.scrub_params` 不必另调：`_lint_value` 已逐个字符串脱敏，后面两步还会再过一遍。
+- 回喂模型的 `LintReport.text` 不脱敏，与 `render()` 相同（子计划 5 F）；进尝试记录与调试日志时照旧由 `_record`、`log` 脱敏。
+
+### F. 兼容
+
+- **旧报告**（子计划 5 之后存下的 `job.failed_report`）：`verify.report.tool` 标题加 `verify.report.tool_error {text: 厂商原文}`，照旧原样显示；子计划 5 之前的 `report` 是整段厂商原文，也照旧显示。都不迁移。
+- **命令行**：`python3 tools/lint_storyboard.py <file>` 的输出逐字不变（快照守护）。用法说明（参数不对时打印的 `__doc__`）多一行 `--json` 的写法。`--json` 可以写在路径前后任一处。
+- **`validate.run_lint`** 不改，仓库里 `test_offline.py` 的覆盖率三处口径对照仍用它；流水线两处调用改用 `run_lint_report`。
+- **测试替身**：现有测试里替换 `validate.run_lint` 的地方（`test_offline.py` 10 行、`test_graph.py` 3f 节 4 行）改为替换 `run_lint_report`、返回 `LintReport(ok, text)`（`errors` 缺省 `None`，走原文拆分，断言不变）。
+- **前端**：代码登记与 `srv` 文案在同一个 Task 落地，流水线下一个 Task 才开始产出新代码，中间提交不会出现缺译的 `verify.lint.*`。万一缺译，`formatMsg` 回落到中文，再回落到代码名，不崩。
+- **调试日志与失败报告文件**：不变（仍是 lint 原文）。
+
+### G. 测试补充
+
+- 后端：
+  - `tests/pipeline/lint_snapshot.py`、`test_lint_feed_snapshot.py`（Task 0，改动前单独提交，见 D）。
+  - `tests/pipeline/test_lint_json.py`（Task 1）：23 条规则各一条触发用例（规则名、参数、原文，且只触发这一条）；`--json` 的 `text` 与文本模式逐字相同；源码里每处 `errors.append`/`warnings.append` 都是 `_item(规则名, …)`；WARN 的 6 个规则名；只输出 ASCII；`run_lint_report` 与 `run_lint` 一致、认不出时退回原文；默认文本输出不带 JSON、用法与退出码 2。
+  - `tests/pipeline/test_lint_msgs.py`（Task 2、3）：23 条规则的逐条消息代码与中文兜底；源码规则名 ↔ 登记的 `verify.lint.*` 一一对应、WARN 不登记；WARN 不进逐条；认不出的一条退回原文（四种）；先脱敏再截断（密钥横跨截断位置）、回喂原文不脱敏、列表上限、可选项为空、值的写法；`checker_lines` 四种组合；`_check_batch` 的逐条与报告、重试耗尽时 `ConversionError.lines` 与中文兜底；整章终检的逐条。
+  - `test_graph.py`、`test_offline.py`：替身改名（F），断言不变。
+- 前端：
+  - `server-msg.test.ts`：23 条 `verify.lint.*` 逐条渲染——英文结果不含中文字符、占位符都已填上，中文结果不含英文模板词；可选项为空写成「无」/「none」、列表按语言分隔；失败报告里 lint 逐条的中英渲染与认不出一条的原文；旧报告的 `tool_error` 原文照旧。
+  - `workspace.test.tsx`（JobPanel 失败区）：lint 逐条的中文全文、切英文后不含中文字符。
+- 所有既有测试照旧通过；`test_llm_feed_snapshot.py`、`test_lint_feed_snapshot.py` 每个 Task 都跑。
+
+### H. 代码命名（新登记）
+
+- `verify.report.lint`：分镜检查发现的错误：/ Errors found by the storyboard check:
+- `verify.report.lint_none`：无 / none（可选项为空时的代码引用）
+- `verify.lint.<rule>`：B 节 23 条，`rule` 是 lint 的规则名（小写下划线，`srv` 里不用加引号）。
+
+前缀核对：`verify.report.lint` 与 `verify.report.lint_none` 按「.」分段不构成前缀关系；`verify.lint.*` 与 `verify.report.*` 不同段；没有登记裸的 `verify.lint`。`register()` 的前缀检查会在导入时报出冲突。`messages_codes.json` 由 `python -m server.messages --write` 重新生成，`srv-codes` 校验键齐全、中文一字不差、占位符一致。
+
+### 修订记录
+
+- 2026-11-14 子计划 5 交付后起草。lint 的规则名、参数与模板在 HEAD `71f72a8` 的副本上实测：23 条规则各一种改坏的文档都只触发这一条错误，原型实现让快照测试与全部后端测试、前端相关测试通过。
