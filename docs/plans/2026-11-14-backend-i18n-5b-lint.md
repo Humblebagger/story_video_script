@@ -22,7 +22,7 @@
 
 **Spec:** `docs/specs/2026-11-13-backend-i18n-design.md` 文末「子计划 5b 范围补充（2026-11-14）」A–H 八节（以及「子计划 5 范围补充」A「不在本子计划」、C、E、F、G 与「后续：子计划 5b」）。本计划与 spec 冲突时以 spec 为准；spec 没写的细节见文末「实施裁定」。
 
-**本计划里的代码怎么来的**：Task 0 的快照字面量与哈希、Task 1–3 的全部代码与测试，是编写本计划时在仓库外的副本（`git archive 71f72a8`）上实际跑过的：快照测试在未改动的代码上通过；按 Task 1–3 改完后，后端全套脚本测试 `fail=0`，前端 `typecheck`、`server-msg`、`srv-codes`、`workspace`、`edit-validity` 通过，`oxlint` 仍是 5 条 warning。
+**本计划里的代码怎么来的**：Task 0 的快照字面量与哈希、Task 1–3 的全部代码与测试，是编写本计划时在仓库外的副本（`git archive 71f72a8`）上实际跑过的：快照测试在未改动的代码上通过；按 Task 1–3 改完后，后端全套脚本测试 `fail=0`，前端 `typecheck`、`server-msg`、`srv-codes`、`workspace`、`edit-validity` 通过，`oxlint` 仍是 5 条 warning。设计审查后的修订（文末「设计审查修订记录」）同样在副本上重跑过。
 
 ---
 
@@ -63,6 +63,7 @@
 - **回喂模型的文字一字不改**：lint 的文本输出（`run_lint`、`run_lint_report().text`）、`graph._check_batch` 返回的报告、`repair.repair_request`、`plan_repair` 拼的整份重写回喂、`ConversionError.report`、调试日志与失败报告文件。由 Task 0 的 `test_lint_feed_snapshot.py` 守护：它只用改动前就有的接口，在任何改动之前单独提交并通过，之后每个 Task 的全套校验都包含它。
 - **快照文件不得修改**：`backend/tests/pipeline/feed_snapshot.py`、`test_llm_feed_snapshot.py`（子计划 5），以及本计划 Task 0 新增的 `lint_snapshot.py`、`test_lint_feed_snapshot.py`，在 Task 0 之后都不得再改。快照对不上说明实现改了回喂内容，要改的是实现。
 - **lint 命令行默认（文本）输出逐字不变**；`tools/lint_storyboard.py` 里每条原 f-string 一字不改，只包进 `_item(…)`。
+- **lint 只用标准库**（另加可选的 `jsonschema`），不导入 `server.*`、`pipeline.*`：它是可以脱离后端单独运行的脚本，代码、模板、脱敏都在流水线侧（R3）。`test_lint_json.py` 第 2 节有 ast 断言。
 - 后端测试跑法补充：单个脚本 `cd backend && .venv/bin/python tests/pipeline/test_lint_json.py`；lint 相关测试会起子进程跑 `tools/lint_storyboard.py`，用的是同一个 `sys.executable`。
 - `npm run lint` 的基线是 5 条 warning（`timeline.ts` no-control-regex、`ParamsForm.tsx` 与 `VerificationPanel.tsx` only-export-components、`App.tsx` exhaustive-deps 等既有项），不得新增。
 
@@ -318,6 +319,9 @@ FEED_SHA = {
     "repair_request": "5c1f7b09b4fb3f96c4a59af9657fba131883f4b28f86dadb49d100f3b71382f5",   # 补丁修复的回喂（= repair_request(structured, FEED_REPORT)）
     "rewrite": "4016c8d6af01aaebcc27f5edc8a977b000f1d6fb5e0398c3566bd4b94697725c",          # 整份重写的回喂
     "batch_failed": "35ed3b4c5a73aded462018e75ab9fbe2fd8d98b716c568b20c68b8312ef4f0d0",     # 重写模式重试耗尽时 ConversionError.report
+    "batch_failed_patch": "bfa800e0d656b9422b77e5fd3f2f94c33a6a53d6041a3f2dbba3cb3766d69024",  # 补丁模式重试耗尽时 ConversionError.report（最后一轮是「没有发起工具调用」）
+    "final_report": "f0caab61b293e78fa97584ed60985aaa76af02f81defc01f6832aef7092faab3",     # 整章终检 lint 未过：ConversionError.report（lint 原文 + 换行 + 保真原文）
+    "final_log": "615a06a13d83f6e864c447708f0ec28ec546cc858c86712bad2efc85a23d2a3c",        # 整章终检写进调试日志的 lint 原文（strip 后的一整段）
 }
 ```
 
@@ -353,7 +357,7 @@ _pc._load_dotenv = lambda *_a, **_k: None                # 不读真实的 backe
 import lint_snapshot as SNAP  # noqa: E402
 from fakes import FakeChat  # noqa: E402
 from langchain_core.messages import AIMessage  # noqa: E402
-from pipeline import graph, repair, validate  # noqa: E402
+from pipeline import convert, graph, repair, validate, verification  # noqa: E402
 from pipeline.chat import ChatInvoker  # noqa: E402
 from pipeline.config import Settings  # noqa: E402
 from pipeline.convert import ConvertParams  # noqa: E402
@@ -460,7 +464,28 @@ def main() -> int:
                     assert SNAP.FEED_REPORT in fed
                 else:
                     assert sha(fed) == SNAP.FEED_SHA["repair_request"], fed
+                    assert sha(e.report) == SNAP.FEED_SHA["batch_failed_patch"], e.report
     print("5. 两种修复模式的回喂与失败报告不变 ✓")
+
+    # 6. 整章终检：批内校验换成恒通过的替身，让终检跑真的 lint；失败报告与调试日志里的 lint 原文不变
+    real_check = graph._check_batch
+    graph._check_batch = lambda doc, *a, **k: (True, False, "", None, verification.verify_document(doc))
+    try:
+        settings = Settings(api_key="k", max_retries=0, normalize_input=False, freeze_source_units=False)
+        logs = []
+        with tempfile.TemporaryDirectory() as w:
+            try:
+                convert.convert_text(SNAP.batch_text(), PARAMS, settings=settings, llm=FakeChat(responses=[bad]),
+                                     batches=[SNAP.batch_text()], workdir=Path(w), log=logs.append)
+                raise AssertionError("整章终检 lint 未过应抛 ConversionError")
+            except ConversionError as e:
+                assert e.code == "job.final_check_failed", e.code
+                assert sha(e.report) == SNAP.FEED_SHA["final_report"], e.report
+                assert e.report.startswith(SNAP.FEED_REPORT.split("\nPASS 原文保真")[0] + "\n"), e.report
+        assert [x for x in logs if sha(x) == SNAP.FEED_SHA["final_log"]], "调试日志里应有整段 lint 原文"
+    finally:
+        graph._check_batch = real_check
+    print("6. 整章终检的失败报告与调试日志不变 ✓")
 
     print("\nALL PASS")
     return 0
@@ -477,9 +502,11 @@ if __name__ == "__main__":
   3. run_lint 的返回不变 ✓
   4. _check_batch 的 lint 报告与修复请求不变 ✓
   5. 两种修复模式的回喂与失败报告不变 ✓
+  6. 整章终检的失败报告与调试日志不变 ✓
 
   ALL PASS
   ```
+  第 6 节把 `graph._check_batch` 换成恒返回通过的替身（结构化报告用真的 `verify_document`），只让整章终检跑真的 lint，冻结 `job.final_check_failed` 的 `ConversionError.report` 与调试日志里那一整段 lint 原文（设计审查 I3）；第 5 节补丁模式也冻结了 `e.report`。
   若哪一条对不上：不要改快照去迁就，先查是不是仓库与 `71f72a8` 有差异（`git diff 71f72a8 -- backend/tools backend/schema backend/pipeline backend/tests/real_text_yao`），有差异就停下报告。
 - [ ] **Step 4: 跑全部校验**（全局约束里的整套）。
 - [ ] **Step 5: 单独提交**：
@@ -605,7 +632,14 @@ def main() -> int:
     rules = source_rules()
     assert len(rules["errors"]) == 23 and sorted(rules["errors"]) == sorted(EXPECT_PARAMS), rules["errors"]
     assert sorted(rules["warnings"]) == sorted(WARN_RULES + ["schema_unavailable"]), rules["warnings"]
-    print("2. 源码每处 append 都有规则名 ✓")
+    imported = set()
+    for node in ast.walk(ast.parse(LINT.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            imported |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            imported.add((node.module or "").split(".")[0])
+    assert imported <= {"json", "re", "sys", "pathlib", "jsonschema"}, f"lint 只用标准库（加 jsonschema），实际导入 {imported}"
+    print("2. 源码每处 append 都有规则名；lint 只用标准库 ✓")
 
     # 3. WARN：带规则名；只有 WARN 时 ok 为真、errors 为空；jsonschema 缺失也有规则名
     d = SNAP.base()
@@ -647,6 +681,15 @@ def main() -> int:
         bad.write_text("{不是 JSON", encoding="utf-8")
         r = validate.run_lint_report(bad)
         assert r.ok is False and r.errors is None and (r.ok, r.text) == validate.run_lint(bad) and "Traceback" in r.text
+    # 编号里带 \r 或 \r\n：文本模式的 \r 被 subprocess 的换行还原吃掉，--json 里的要在 run_lint_report 里补做（设计审查 I1）
+    for weird in ("u99\r9", "u99\r\n9"):
+        d = SNAP.base()
+        d["episodes"][0]["shots"][0]["narration"]["unit_refs"].append(weird)
+        with tempfile.TemporaryDirectory() as w:
+            p = dump(d, w)
+            r = validate.run_lint_report(p)
+            assert (r.ok, r.text) == validate.run_lint(p), repr(r.text)
+            assert "\r" not in r.text and "narration_unit" in [e["rule"] for e in r.errors]
     real_run = validate.subprocess.run
 
     class _Proc:
@@ -654,6 +697,8 @@ def main() -> int:
     try:
         validate.subprocess.run = lambda *a, **k: _Proc()
         assert validate.run_lint_report(Path("x")) == validate.LintReport(False, '{"errors": []}E', None), "缺 text 时退回原文"
+        _Proc.stdout = '{"version": 2, "ok": false, "errors": [], "text": "T\\r\\n"}'
+        assert validate.run_lint_report(Path("x")) == validate.LintReport(False, "T\nE", None), "version 不符：逐条不可信，text 照用"
     finally:
         validate.subprocess.run = real_run
     print("4. run_lint_report 与 run_lint 一致、认不出时退回原文 ✓")
@@ -967,11 +1012,17 @@ if __name__ == "__main__":
 @dataclass
 class LintReport:
     """lint 一次 --json 运行的结果（spec 子计划 5b C、D）。
-    text：与文本模式的「stdout + stderr」逐字相同，回喂模型、日志、失败报告只用它；
-    errors：逐条错误 {rule, params, text}，只给界面翻译；拿不到结构化输出（崩溃、输出认不出）时为 None。"""
+    text：与 run_lint（文本模式）的「stdout + stderr」逐字相同，回喂模型、日志、失败报告只用它；
+    errors：逐条错误 {rule, params, text}，只给界面翻译；拿不到可信的结构化输出（崩溃、输出认不出、version 不符）时为 None。"""
     ok: bool
     text: str
     errors: Optional[list] = None
+
+
+def _universal_newlines(s: str) -> str:
+    r"""与 subprocess.run(text=True) 对 stdout 做的换行还原相同：\r\n、\r 都换成 \n。
+    --json 里的 \r 被转义成 \\r，躲过了这一步，json.loads 之后要补做，text 才与文本模式逐字相同（设计审查 I1）。"""
+    return s.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def run_lint_report(json_path: Path) -> LintReport:
@@ -980,19 +1031,52 @@ def run_lint_report(json_path: Path) -> LintReport:
     ok = proc.returncode == 0
     try:
         data = json.loads(proc.stdout)
-        text, errors = data["text"], data["errors"]
-        if not isinstance(text, str) or not isinstance(errors, list):
+        text = data["text"]
+        if not isinstance(text, str):
             raise TypeError
     except (ValueError, KeyError, TypeError):
         # 没有 JSON（崩溃时 stdout 为空、只有 stderr 的回溯）：与文本模式一样原样拼起来
         return LintReport(ok, proc.stdout + proc.stderr)
-    return LintReport(ok, text + proc.stderr, errors)
+    text = _universal_newlines(text) + proc.stderr
+    errors = data.get("errors")
+    if data.get("version") != 1 or not isinstance(errors, list):
+        return LintReport(ok, text)        # 形状不认识：逐条不可信，退回按行拆分；回喂仍用 text
+    return LintReport(ok, text, errors)
 ```
+
+  要点：`subprocess.run(text=True)` 会把文本模式 stdout 里的 `\r\n`、`\r` 换成 `\n`，而 `--json` 里的 `\r` 是转义过的 `\\r`，躲过了这一步，所以 `json.loads` 之后要按同一规则补做（`_universal_newlines`），`text` 才与 `run_lint()` 逐字相同（设计审查 I1，R15）。`version` 不是 1 或 `errors` 不是列表时，`errors = None`（逐条不可信，走按行拆分），`text` 照用。
 
 - [ ] **Step 5: 运行确认通过**：
   - `cd backend && .venv/bin/python tests/pipeline/test_lint_json.py`，预期 5 节各打一个 ✓，最后 `ALL PASS`；
   - `.venv/bin/python tests/pipeline/test_lint_feed_snapshot.py` 仍 `ALL PASS`（文本输出逐字不变）；
-  - 人工核对：`git diff backend/tools/lint_storyboard.py | grep '^-' | grep -v '^---' | grep 'f"'` 列出的每一行被删的 f-string，都能在 `^+` 行里原样找到。
+  - 核对原文一字不改（只比 `errors.append` / `warnings.append` 的原文实参，按 AST 结构比较，缩进与换行位置不影响结果）：
+
+```bash
+cd backend && .venv/bin/python - <<'PY'
+import ast
+import subprocess
+
+
+def texts(src: str, new: bool) -> list:
+    """errors.append / warnings.append 的原文实参（新文件取 _item 的第二个参数），按 AST 结构比较。"""
+    out = []
+    for n in ast.walk(ast.parse(src)):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "append"
+                and getattr(n.func.value, "id", "") in ("errors", "warnings")):
+            arg = n.args[0].args[1] if new else n.args[0]
+            out.append((n.func.value.id, ast.dump(arg)))
+    return sorted(out)
+
+
+old = subprocess.run(["git", "show", "71f72a8:backend/tools/lint_storyboard.py"],
+                     capture_output=True, text=True, check=True).stdout
+new = open("tools/lint_storyboard.py", encoding="utf-8").read()
+a, b = texts(old, False), texts(new, True)
+print("appends:", len(a), "same:", a == b)
+PY
+```
+
+    预期输出 `appends: 29 same: True`（23 处错误 + 6 处警告）。不要用 `git diff | grep 'f"'` 之类的文本比对：汇报段的 `print(f"WARN  {w}")`、`print(f"ERROR {e}")` 改成了 `rows` 里的 `f"WARN  {w['text']}"`、`f"ERROR {e['text']}"`（`w`、`e` 现在是 `_item` 字典），这两行一定会出现在差异里，属于预期内的变化；它们打印出的文字不变，由 Task 0 的快照守护。
 - [ ] **Step 6: 跑全部校验并提交**：
   ```bash
   git add backend/tools/lint_storyboard.py backend/pipeline/validate.py backend/tests/pipeline/test_lint_json.py
@@ -1009,7 +1093,7 @@ def run_lint_report(json_path: Path) -> LintReport:
 - Modify: `frontend/src/i18n/zh.ts`、`frontend/src/i18n/en.ts`
 - Test: `backend/tests/pipeline/test_lint_msgs.py`（新）、`frontend/tests/server-msg.test.ts`
 
-- [ ] **Step 1: 写失败测试** `backend/tests/pipeline/test_lint_msgs.py`（完整内容；Task 3 再追加两节）：
+- [ ] **Step 1: 写失败测试** `backend/tests/pipeline/test_lint_msgs.py`（完整内容；Task 3 再追加第 8、9 节）：
 
 ```python
 #!/usr/bin/env python3
@@ -1110,47 +1194,89 @@ def main() -> int:
         got = V.lint_lines([item])[1]["params"]["text"]
         want = item["text"] if isinstance(item, dict) else item
         assert got == {"t": "vendor", "text": want}, (item, got)
-    print("4. 认不出的一条退回原文 ✓")
+    got = V.lint_lines([{"rule": "future_rule", "params": {}}])[1]["params"]["text"]
+    assert got == {"t": "vendor", "text": "future_rule"}, "缺原文时退回规则名，不显示空行"
+    print("4. 认不出的一条退回原文；缺原文时退回规则名 ✓")
 
-    # 5. 参数先脱敏再截断；列表最多 20 项；空的可选项写成「无」；布尔、小数、None 按文本写法
+    # 5. 脱敏：参数与退回的原文都先脱敏再截断，结果一律过 clean()。每类注明它挡住的回退写法（设计审查 I4）
+    leaks = ["Bearer abc.def-123", "x-api-key: sk-zzz999"]
+
+    def clean(x, label):
+        t = json.dumps(x, ensure_ascii=False)
+        assert FAKE[:8] not in t and FAKE[-8:] not in t and "abc.def-123" not in t and "sk-zzz999" not in t, (label, t)
+
+    def one(rule, params, text="x"):
+        return V.lint_lines([{"rule": rule, "params": params, "text": text}])[1]
+
     os.environ["ARK_API_KEY"] = FAKE
     try:
-        long_loc = "S" * 290 + FAKE                  # 密钥横跨 300 字的截断位置
-        got = V.lint_lines([{"rule": "location_ref", "params": {"shot": "E01-SH001", "location": long_loc},
-                             "text": "x"}])[1]["params"]["text"]["params"]["location"]
-        assert FAKE[:6] not in got and got == ("S" * 290 + "***")[:300], got
-        fb = V.lint_lines([{"rule": "nope", "params": {}, "text": "坏 " + FAKE}])[1]["params"]["text"]["text"]
-        assert FAKE not in fb and "***" in fb
+        # 5a 字符串参数，密钥横跨 300 字的截断位置：挡住「先截断再脱敏」（scrub_secrets(v[:300])）
+        line = one("location_ref", {"shot": "E01-SH001", "location": "S" * 290 + FAKE})
+        clean(line, "5a")
+        assert line["params"]["text"]["params"]["location"] == ("S" * 290 + "***")[:300]
+        # 5b 列表项，密钥横跨截断位置：挡住列表分支不递归脱敏（v[:20]）或逐项先截再抹
+        line = one("outfit_unknown", {"shot": "E01-SH001", "character": "C01", "outfit": "x",
+                                      "options": ["a", "S" * 290 + FAKE]})
+        clean(line, "5b")
+        # 5c 字典（模型把编号写成了对象），值与键都带密钥：挡住「其它类型」分支漏掉 scrub_secrets（只 json.dumps 再截断）
+        line = one("location_ref", {"shot": "E01-SH001", "location": {"k": FAKE, FAKE: 1}})
+        clean(line, "5c")
+        # 5d 退回原文，密钥横跨截断位置：挡住退回分支写成 vendor(text)（不脱敏）或 vendor(scrub_secrets(text[:300]))（先截再抹）
+        line = one("future_rule", {}, text="x" * 290 + FAKE)
+        clean(line, "5d")
+        assert line["params"]["text"] == {"t": "vendor", "text": ("x" * 290 + "***")[:300]}
+        # 5e Bearer 与 x-api-key: 两种形态（参数与退回原文各一）：挡住把 scrub_secrets 换成只抹环境密钥的替换
+        clean(one("location_ref", {"shot": "E01-SH001", "location": leaks[0]}), "5e 参数")
+        clean(one("future_rule", {}, text="坏 " + leaks[1]), "5e 原文")
+        # 回喂模型的原文不脱敏（与 render() 相同，spec 子计划 5 F）；给界面的逐条脱敏
         d = SNAP.base()
         d["episodes"][0]["shots"][0]["location_ref"] = "S9" + FAKE
         _, data, _ = lint_json(d)
-        assert FAKE in data["text"], "回喂模型的原文不脱敏（与 render() 相同，spec 子计划 5 F）"
-        assert FAKE not in json.dumps(V.lint_lines(data["errors"]), ensure_ascii=False)
+        assert FAKE in data["text"]
+        clean(V.lint_lines(data["errors"]), "5f 真实 lint")
     finally:
         del os.environ["ARK_API_KEY"]
+    print("5. 先脱敏再截断：字符串、列表、字典、退回原文、Bearer 与 x-api-key ✓")
+
+    # 6. 列表上限与省略提示；可选项为空写成「无」；单条 1000 字上限；值的写法
     d = SNAP.base()
     d["source"]["units"].extend({"id": f"u{i:04d}", "text": "多。", "para": 29, "kind": "action"} for i in range(68, 93))
     _, data, _ = lint_json(d)
-    p = V.lint_lines(data["errors"])[1]["params"]["text"]["params"]
-    assert p["n"] == 25 and p["units"] == [f"u{i:04d}" for i in range(68, 88)], p
+    line = V.lint_lines(data["errors"])[1]
+    p = line["params"]["text"]["params"]
+    assert p["n"] == 25 and p["units"] == [f"u{i:04d}" for i in range(68, 88)] + ["…"], p
+    assert zh(line).endswith("u0086、u0087、…"), zh(line)
     d = SNAP.base()
     next(c for c in d["assets"]["characters"] if c["id"] == "C06")["reference_images"] = [
         {"view": "front", "uri": "c.png", "outfit": "summer"}]
+    next(c for c in d["assets"]["props"] if c["id"] == "P02")["reference_images"] = [
+        {"view": "close_up", "uri": "p.png", "state": "melted"}]
     _, data, _ = lint_json(d)
-    line = V.lint_lines(data["errors"])[1]
-    assert line["params"]["text"]["params"]["options"] == {"t": "ref", "code": "verify.report.lint_none"}
-    assert zh(line) == "  [C06] 参考图标注的 outfit「summer」不存在（可选：无）", zh(line)
+    got = [zh(x) for x in V.lint_lines(data["errors"])[1:]]
+    assert got == ["  [C06] 参考图标注的 outfit「summer」不存在（可选：无）",
+                   "  [P02] 参考图标注的 state「melted」不存在（可选：无）"], got
+    for x in V.lint_lines(data["errors"])[1:]:
+        assert x["params"]["text"]["params"]["options"] == {"t": "ref", "code": "verify.report.lint_none"}
+    big = one("outfit_unknown", {"shot": "E01-SH001", "character": "C01", "outfit": "x",
+                                 "options": [f"o{i}" + "z" * 290 for i in range(20)]})
+    m = big["params"]["text"]
+    assert len(M.render_zh(m["code"], m["params"])) <= 1000, "单条超 1000 字时按紧的口径重来"
+    assert len(m["params"]["options"]) == 11 and m["params"]["options"][-1] == "…"
+    assert all(len(o) <= 40 for o in m["params"]["options"])
+    small = one("location_ref", {"shot": "E01-SH001", "location": "S" * 300})["params"]["text"]["params"]
+    assert small["location"] == "S" * 300, "不超 1000 字时照常 300 字"
     assert V._lint_value(True) == "True" and V._lint_value(1.0) == "1.0" and V._lint_value(None) == "None"
     assert V._lint_value(3) == 3 and V._lint_value({"a": 1}) == '{"a": 1}'
-    print("5. 先脱敏再截断、列表上限、可选项为空、值的写法 ✓")
+    print("6. 列表上限与省略、可选项为空（outfit 与 state）、单条上限、值的写法 ✓")
 
-    # 6. checker_lines：lint 有结构化错误就翻译；没有就和保真输出一起按行拆分（子计划 5 的做法）
+    # 7. checker_lines：lint 有结构化错误就翻译；没有（None 或空列表）就和保真输出一起按行拆分（子计划 5 的做法）
     fid_fail = "FAIL 原文保真：unit 拼接与原文不一致\n  首个差异位置 3"
     assert V.checker_lines(False, "ERROR t", ERRS, True, "PASS") == V.lint_lines(ERRS)
     assert V.checker_lines(False, "ERROR t", ERRS, False, fid_fail) == V.lint_lines(ERRS) + V.tool_lines(fid_fail)
     assert V.checker_lines(False, "ERROR 原文一条\n", None, True, "PASS") == V.tool_lines("ERROR 原文一条")
+    assert V.checker_lines(False, "ERROR 原文一条\n", [], True, "PASS") == V.tool_lines("ERROR 原文一条")
     assert V.checker_lines(True, "PASS", None, False, fid_fail) == V.tool_lines(fid_fail)
-    print("6. checker_lines 的四种组合 ✓")
+    print("7. checker_lines 的五种组合 ✓")
 
     print("\nALL PASS")
     return 0
@@ -1160,12 +1286,20 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 2: 写前端失败测试**：`frontend/tests/server-msg.test.ts` 末尾 `console.log('\nALL PASS')` 之前加一节：
+- [ ] **Step 2: 写前端失败测试**：`frontend/tests/server-msg.test.ts`
+  - 顶部 `import { zh } from '../src/i18n/zh'` 之前加两行（中文渲染要与后端代码表逐字比对，设计审查 M8；读法照 `srv-codes.test.ts`）：
+    ```ts
+    import { readFileSync } from 'node:fs'
+    import { resolve } from 'node:path'
+    ```
+  - 末尾 `console.log('\nALL PASS')` 之前加一节：
 
 ```ts
-// 子计划 5b：分镜检查（lint）逐条按规则渲染，英文里没有中文，中文里没有英文模板；旧报告的原文照旧
+// 子计划 5b：分镜检查（lint）逐条按规则渲染，英文里没有中文；中文与后端代码表的中文模板代入同一组参数后逐字相同；旧报告的原文照旧
 {
   const CJK = /[\u4e00-\u9fff]/
+  const codes = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/server/messages_codes.json'), 'utf-8')) as Record<string, { zh: string }>
+  const zhVal = (v: unknown): string => Array.isArray(v) ? v.map(zhVal).join('、') : typeof v === 'object' && v !== null ? String((v as { text?: unknown }).text ?? '') : String(v)
   const lintRules = Object.keys(en.srv.verify.lint) as (keyof typeof en.srv.verify.lint)[]
   must(lintRules.length === 23 && lintRules.every((k) => k in zh.srv.verify.lint), 'verify.lint 中英各 23 条')
   for (const rule of lintRules) {
@@ -1175,7 +1309,9 @@ if __name__ == "__main__":
     const line = { code: 'verify.report.tool_error', params: { text: { code: `verify.lint.${rule}`, params } } }
     const e = formatMsg(line, 'en'), z = formatMsg(line, 'zh')
     must(!CJK.test(e) && !e.includes('{') && e.startsWith('  '), `${rule} 英文不混中文、占位符都填上：${e}`)
-    must(CJK.test(z) && !/refers to|doesn’t|isn’t/.test(z), `${rule} 中文不混英文模板：${z}`)
+    const want = '  ' + codes[`verify.lint.${rule}`].zh.replace(/\{(\w+)\}/g, (_all, k: string) => zhVal(params[k]))
+    must(z === want, `${rule} 中文与后端模板代入同一组参数后逐字相同：${z} ≠ ${want}`)
+    must(CJK.test(z) && !e.includes(z.trim()), `${rule} 中文是中文、且与英文不同：${z}`)
   }
   const none = { code: 'verify.lint.ref_image_outfit', params: { card: 'C06', outfit: 'summer', options: { t: 'ref', code: 'verify.report.lint_none' } } }
   must(formatMsg(none, 'en') === '[C06] A reference image is tagged with outfit “summer”, which doesn’t exist (options: none)', formatMsg(none, 'en'))
@@ -1282,7 +1418,7 @@ register("verify.lint.coverage_unmapped", "[coverage] 有 {n} 句原文没有被
         schema: 'Doesn’t match the storyboard schema ({path}): {detail}',
         ref_image_outfit: '[{card}] A reference image is tagged with outfit “{outfit}”, which doesn’t exist (options: {options})',
         ref_image_state: '[{card}] A reference image is tagged with state “{state}”, which doesn’t exist (options: {options})',
-        asset_empty_constraint: '[{card}] constraints has an empty item',
+        asset_empty_constraint: '[{card}] constraints contains an empty entry',
         curve_shot: '[{episode}] music.curve refers to a shot that isn’t in this episode: {shot}',
         curve_unit: '[{episode}] music.curve.unit_refs refers to a source line that doesn’t exist: {unit}',
         curve_reversed: '[{episode}] music.curve range is reversed: {start} comes after {end}',
@@ -1290,7 +1426,7 @@ register("verify.lint.coverage_unmapped", "[coverage] 有 {n} 句原文没有被
         inferred_no_note: '[{shot}] derivation is inferred, but inference_note is missing',
         beats_duration: '[{shot}] The beats add up to {total}s, but the shot’s duration_sec is {duration}s',
         beat_no_action: '[{shot}] Beat {beat} has no action',
-        shot_empty_constraint: '[{shot}] constraints has an empty item',
+        shot_empty_constraint: '[{shot}] constraints contains an empty entry',
         location_ref: '[{shot}] location_ref refers to a location that doesn’t exist: {location}',
         prop_ref: '[{shot}] prop_refs refers to a prop that doesn’t exist: {prop}',
         prop_state_required: '[{shot}] Prop {prop} has states, so the reference must set state (options: {options})',
@@ -1311,34 +1447,47 @@ register("verify.lint.coverage_unmapped", "[coverage] 有 {n} 句原文没有被
   - 文件末尾（`tool_lines` 之后）追加：
 
 ```python
-_LINT_LIST_MAX = 20     # lint 的列表参数（可选项、未覆盖句子）最多列几项；未覆盖句子另有总数 n
+_LINT_LIST_MAX = 20     # lint 的列表参数（可选项、未覆盖句子）最多列几项，超出的末尾补一项「…」；未覆盖句子另有总数 n
+_LINT_ITEM_MAX = 1000   # 单条（中文兜底）的上限：超了就按紧的口径（每段 40 字、列表 10 项）重新规范化一遍（设计审查 M3、R14）
+_LINT_TIGHT = (40, 10)
 
 
-def _lint_value(v):
-    """lint 参数 → 消息参数（spec 子计划 5b E）：字符串先脱敏再截断 300 字；整数原样；
-    布尔、小数、None 按文本模式的写法转成字符串（前后端渲染一致）；列表逐项、最多 20 项；其它序列化后同字符串。"""
+def _lint_value(v, limit: int = VENDOR_MAX, items: int = _LINT_LIST_MAX):
+    """lint 参数 → 消息参数（spec 子计划 5b E）：字符串先脱敏再截断到 limit 字；整数原样；
+    布尔、小数、None 按文本模式的写法转成字符串（前后端渲染一致）；列表逐项、最多 items 项，超出的末尾补「…」；
+    其它（字典等）序列化后同字符串（键与值一起脱敏）。"""
     if isinstance(v, bool) or v is None or isinstance(v, float):
         return str(v)
     if isinstance(v, int):
         return v
     if isinstance(v, str):
-        return scrub_secrets(v)[:VENDOR_MAX]
+        return scrub_secrets(v)[:limit]
     if isinstance(v, list):
-        return [_lint_value(x) for x in v[:_LINT_LIST_MAX]]
-    return scrub_secrets(json.dumps(v, ensure_ascii=False, default=str))[:VENDOR_MAX]
+        out = [_lint_value(x, limit, items) for x in v[:items]]
+        return out + ["…"] if len(v) > items else out
+    return scrub_secrets(json.dumps(v, ensure_ascii=False, default=str))[:limit]
 
 
 def _lint_msg(item) -> dict:
-    """lint 的一条错误 → verify.lint.<rule> 消息。规则没登记、参数与模板不符、形状不对时退回该条原文（厂商原文，脱敏）。"""
+    """lint 的一条错误 → verify.lint.<rule> 消息。规则没登记、参数与模板不符、形状不对时退回该条原文（厂商原文，
+    先脱敏再截断）；缺原文时退回规则名（设计审查 M2）。"""
     try:
-        params = {k: _lint_value(v) for k, v in item["params"].items()}
-        if "detail" in params:                      # jsonschema 原文：与 SCHEMA-001 一样作厂商原文
-            params["detail"] = vendor(params["detail"])
-        if params.get("options") == []:
-            params["options"] = ref("verify.report.lint_none")
-        return compact(msg(f"verify.lint.{item['rule']}", **params))
+        code = f"verify.lint.{item['rule']}"
+        for limit, items in ((VENDOR_MAX, _LINT_LIST_MAX), _LINT_TIGHT):
+            params = {k: _lint_value(v, limit, items) for k, v in item["params"].items()}
+            if "detail" in params:                  # jsonschema 原文：与 SCHEMA-001 一样作厂商原文
+                params["detail"] = vendor(params["detail"])
+            if params.get("options") == []:
+                params["options"] = ref("verify.report.lint_none")
+            m = msg(code, **params)
+            if len(m["message"]) <= _LINT_ITEM_MAX:
+                break
+        return compact(m)
     except (KeyError, TypeError, ValueError, AttributeError):
-        text = item.get("text", "") if isinstance(item, dict) else item
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("rule") or json.dumps(item, ensure_ascii=False, default=str)
+        else:
+            text = item
         return vendor(scrub_secrets(str(text)))
 
 
@@ -1368,7 +1517,7 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
 
   注意：`_lint_msg` 里调用模块级的 `ref(…)`；本文件 `_validate_evidence` 里有同名循环变量，新函数里不要引入名叫 `ref` 的局部变量（子计划 5 R11）。
 - [ ] **Step 7: 运行确认通过**：
-  - `cd backend && .venv/bin/python tests/pipeline/test_lint_msgs.py`，预期第 1–6 节各一个 ✓、`ALL PASS`；
+  - `cd backend && .venv/bin/python tests/pipeline/test_lint_msgs.py`，预期第 1–7 节各一个 ✓、`ALL PASS`；
   - `cd frontend && npm test`：`server-msg` 打印「子计划 5b：lint 逐条中英渲染、旧报告兼容 ✓」，`srv-codes` 通过（代码数比改动前多 25）。
 - [ ] **Step 8: 跑全部校验并提交**：
   ```bash
@@ -1399,10 +1548,10 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
     ```python
     from test_lint_feed_snapshot import PARAMS as CONVERT_PARAMS  # noqa: E402
     ```
-  - `main()` 里 `print("\nALL PASS")` 之前插入：
+  - `main()` 里 `print("\nALL PASS")` 之前插入（第 8、9 节）：
 
 ```python
-    # 7. 流水线：_check_batch 的逐条按规则翻译、报告仍是原文；重试耗尽时 ConversionError.lines 同样
+    # 8. 流水线：_check_batch 的逐条按规则翻译、报告仍是原文；重试耗尽时 ConversionError.lines 同样
     shown = []
     with tempfile.TemporaryDirectory() as w:
         ok, hard, report, _, _ = graph._check_batch(SNAP.feed_doc(), SNAP.batch_text(), Settings(), Path(w), 1, 1,
@@ -1427,9 +1576,9 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
             text = M.render_zh("job.failed_report", {"reason": {"code": e.code, "params": e.params},
                                                       "report": M.lines_of(e.lines)})
             assert "ERROR" not in text and "location_ref 引用了不存在的场景：S99" in text, text
-    print("7. 流水线：逐条按规则、报告与回喂仍是原文 ✓")
+    print("8. 流水线：逐条按规则、报告与回喂仍是原文 ✓")
 
-    # 8. 整章终检：lint 未过时用同一套逐条（批内那次用真的 lint，只让终检那次失败）
+    # 9. 整章终检：lint 未过时用同一套逐条（批内那次用真的 lint，只让终检那次失败）
     import pipeline.convert as convert_mod
     real_lint = validate.run_lint_report
     calls = []
@@ -1451,7 +1600,7 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
                 assert e.lines == V.lint_lines(ERRS), e.lines
     finally:
         validate.run_lint_report = real_lint
-    print("8. 整章终检的逐条 ✓")
+    print("9. 整章终检的逐条 ✓")
 
 ```
 
@@ -1475,7 +1624,7 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
 ```
 
   （这条前端用例在 Task 2 之后其实已经能过：它只依赖文案与 `formatMsg`。放在本 Task 是因为它对应「失败区」这个显示处。）
-- [ ] **Step 3: 运行确认失败**：`cd backend && .venv/bin/python tests/pipeline/test_lint_msgs.py`，第 7 节断言 `shown[0]["code"] == "verify.report.lint"` 失败（现在是 `verify.report.tool`）。
+- [ ] **Step 3: 运行确认失败**：`cd backend && .venv/bin/python tests/pipeline/test_lint_msgs.py`，第 8 节断言 `shown[0]["code"] == "verify.report.lint"` 失败（现在是 `verify.report.tool`）。
 - [ ] **Step 4: 接入 `graph._check_batch`**：把
   ```python
       lint_ok, lint_out = validate.run_lint(tmp)
@@ -1537,7 +1686,7 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
     - 1124 行不改。
   - 改完 `grep -n "validate.run_lint\b" tests/pipeline/test_offline.py tests/pipeline/test_graph.py` 只剩 `test_offline.py` 的 1124 行。
 - [ ] **Step 7: 运行确认通过**：
-  - `.venv/bin/python tests/pipeline/test_lint_msgs.py`：第 1–8 节、`ALL PASS`；
+  - `.venv/bin/python tests/pipeline/test_lint_msgs.py`：第 1–9 节、`ALL PASS`；
   - `test_lint_feed_snapshot.py`、`test_llm_feed_snapshot.py`、`test_graph.py`、`test_offline.py` 全部 `ALL PASS`；
   - `cd frontend && npm test` 通过（`workspace: ALL PASS`）。
 - [ ] **Step 8: 跑全部校验并提交**：
@@ -1558,18 +1707,7 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
   - `test_lint_feed_snapshot.py`、`test_llm_feed_snapshot.py` 通过；
   - `git log --oneline -- backend/tests/pipeline/lint_snapshot.py backend/tests/pipeline/test_lint_feed_snapshot.py` 只有 Task 0 那一次提交；`git log --oneline 71f72a8.. -- backend/tests/pipeline/feed_snapshot.py backend/tests/pipeline/test_llm_feed_snapshot.py` 为空；
   - `git diff 71f72a8 -- backend/pipeline/graph.py` 只动了 `_check_batch` 里 lint 那几行，`plan_repair`、`_record`、`_log_report`、`finalize` 没有改动；`backend/pipeline/repair.py` 没有改动。
-- [ ] **Step 2: lint 原文一字不改**：
-  ```bash
-  cd backend && .venv/bin/python - <<'PY'
-  import re, subprocess
-  old = subprocess.run(["git", "show", "71f72a8:backend/tools/lint_storyboard.py"], capture_output=True, text=True).stdout
-  new = open("tools/lint_storyboard.py", encoding="utf-8").read()
-  pat = re.compile(r'f"[^"\n]*"|"jsonschema 未安装[^"]*"')
-  lost = [s for s in pat.findall(old) if s not in new]
-  print("lost:", lost)
-  PY
-  ```
-  输出 `lost: []`（旧文件里每个 f-string 与 jsonschema 那句都原样出现在新文件里）。
+- [ ] **Step 2: lint 原文一字不改**：在 `backend/` 下重跑 Task 1 Step 5 的 AST 核对脚本，预期 `appends: 29 same: True`。核对只限 `errors.append` / `warnings.append` 的原文实参；汇报段的 `f"WARN  {w}"`、`f"ERROR {e}"` 改成了 `f"WARN  {w['text']}"`、`f"ERROR {e['text']}"`（`w`、`e` 现在是 `_item` 字典），是预期内的不同，打印出的文字由 `test_lint_feed_snapshot.py` 第 1 节守护（设计审查 I2）。
 - [ ] **Step 3: 规则齐全**：`grep -c 'errors.append(_item(' tools/lint_storyboard.py` 为 23，`grep -c 'warnings.append(_item(' tools/lint_storyboard.py` 为 6；`grep -c '"verify.lint\.' server/messages_codes.json` 为 23（`test_lint_msgs.py` 第 2 节已断言，这里人工再看一眼）。
 - [ ] **Step 4: 文案检查**：
   - `grep -in "deepseek\|claude\|anthropic" server/messages_codes.json` 不命中新登记的文案；
@@ -1612,11 +1750,11 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
   - 理由：失败区只列错误（子计划 5 C），lint 通过时没有逐条；先把规则名给出来，以后要显示只需登记加文案。登记了却不用的代码会让 `srv-codes` 要求写 6 条用不到的英文。
   - 若错的代价：以后显示 WARN 时要补 6 条登记与文案（测试第 2 节会提醒规则名与登记表的差集）。
 - **R6 参数在流水线侧规范化，lint 给原始值**：
-  - 裁定：lint 的 `params` 是原始值；`verification._lint_value` 负责：字符串先 `scrub_secrets` 再截断 300 字，整数原样，布尔/小数/`None` 转成与原文相同的字符串，列表最多 20 项，其它 `json.dumps` 后按字符串；`detail` 包成厂商原文；`options` 为空换成代码引用 `verify.report.lint_none`。
+  - 裁定：lint 的 `params` 是原始值；`verification._lint_value` 负责：字符串先 `scrub_secrets` 再截断 300 字，整数原样，布尔/小数/`None` 转成与原文相同的字符串，列表逐项递归、最多 20 项（超出的末尾补一项「…」），其它（字典等）`json.dumps` 后与字符串同样先脱敏再截断（键与值一起）；`detail` 包成厂商原文；`options` 为空换成代码引用 `verify.report.lint_none`。
   - 理由：脱敏要用后端的密钥清单（`SECRET_ENVS`），lint 作为独立脚本不该依赖它；「先脱敏再截断」与子计划 5、规格例外的做法一致；前端 `String(1.0)` 是 `"1"`，后端中文兜底是 `"1.0"`，小数预先转成字符串两边才一致（子计划 5 R7）；时长在 lint 里已经按原文的 `:g` 格式化成字符串。
   - 若错的代价：`--json` 的直接读者（流水线之外）拿到的是未脱敏的原始值——与 lint 文本输出相同，本来就不脱敏。
 - **R7 两级回落**：
-  - 裁定：某一条认不出（规则没登记、参数与模板不符、`params` 不是字典、整条不是字典）时，这一项的 `text` 退回该条原文（`vendor(scrub_secrets(text))`），其余照常翻译；整份 JSON 认不出（崩溃、替身）时 `errors = None`，`checker_lines` 走子计划 5 的 `tool_lines` 按行拆分。
+  - 裁定：某一条认不出（规则没登记、参数与模板不符、`params` 不是字典、整条不是字典）时，这一项的 `text` 退回该条原文（`vendor(scrub_secrets(text))`，先脱敏再截断），缺原文时退回规则名（再缺就是整条序列化），其余照常翻译；整份 JSON 认不出（崩溃、替身、`version` 不是 1、`errors` 不是列表）时 `errors = None`，`checker_lines` 走子计划 5 的 `tool_lines` 按行拆分。
   - 理由：lint 以后新加规则而忘了登记，不应让转换因为一条显示文案抛错（`Finding` 构造时抛错是因为规则与测试同在一个模块，这里 lint 与登记表分属两处）；漏登记由 `test_lint_msgs.py` 第 2 节（源码规则名 ↔ 登记表）抓住。
   - 若错的代价：漏登记的规则在英文界面显示中文原文（与子计划 5 的现状相同），直到测试报出来。
 - **R8 lint 与保真都未过时两段都列**：
@@ -1639,10 +1777,21 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
   - 裁定：`schema` 的 `path` 参数是 `"/" + "/".join(…)`，`detail` 是厂商原文；原文里的路径照旧不带 `/`。
   - 理由：流水线里批内先跑的结构校验（`SCHEMA-001`）用同一份 schema，没过就不会走到 lint，所以这条在流水线里几乎不会出现；但整章终检与外部调用会用到，登记了不会漏译。路径写法与 `SCHEMA-001` 一致，失败报告里两种来源对得上。
   - 若错的代价：无。
-- **R13 未覆盖句子最多列 20 个，总数另给**：
-  - 裁定：`coverage_unmapped` 的 `units` 截到 20 项（`_LINT_LIST_MAX`），`n` 是 lint 算出的总数；英文「(… skipped ({n}): {units}」不依赖单复数。
+- **R13 列表最多列 20 项，超出补「…」，未覆盖句子另给总数**：
+  - 裁定：所有列表参数（`coverage_unmapped` 的 `units`、各规则的 `options`）截到 20 项（`_LINT_LIST_MAX`），超出时末尾补一项字符串「…」（中英通用，随列表分隔符连接，如「u0086、u0087、…」）；`n` 是 lint 算出的总数；英文「(… skipped ({n}): {units}」不依赖单复数（设计审查 M4）。
   - 理由：一章几百句的稿子可能整批没覆盖，原文会打印整个列表（回喂模型需要），给用户看的逐条只要知道有多少、前几个是哪些；`lines_of` 的 6000 字预算按项计，一项几千字会把后面的错误挤掉。
-  - 若错的代价：可选项列表（`options`）同样截到 20 项且不提示还有更多；实际的服装与道具状态远少于 20 个。
+  - 若错的代价：「…」是一个列表项，读原始 JSON 的人要知道它不是编号；不另加 `more` 参数，是为了 23 条模板的参数集不变。
+- **R14 单条 1000 字上限**（设计审查 M3）：
+  - 判断：单条确实可能占满预算。每个字符串参数最多 300 字、列表最多 20 项，`outfit_unknown` 一条最坏是 3×300 + 20×300 ≈ 6900 字，超过 `lines_of` 的 6000 字预算，失败区会只剩标题和「还有 N 项」。
+  - 裁定：给单条加 1000 字上限（`_LINT_ITEM_MAX`，按中文兜底计）。`_lint_msg` 先按常规口径（每段 300 字、列表 20 项）规范化；渲染超过 1000 字就按紧的口径（`_LINT_TIGHT`：每段 40 字、列表 10 项）重来一遍。紧口径下最长的模板也只有约 600 字。不选「把列表上限降到 10」：那样单条最坏仍有约 4000 字，正常情况下又白白少列一半可选项。
+  - 若错的代价：极端长的一条只显示每段前 40 字；完整原文在调试日志与失败报告文件里。
+- **R15 `--json` 的 `text` 补做换行还原**（设计审查 I1）：
+  - 裁定：`run_lint_report` 对 `data["text"]` 做与 `subprocess.run(text=True)` 相同的还原（`\r\n`、`\r` 都换成 `\n`，`_universal_newlines`），再接上 stderr。不写成 spec 例外。
+  - 理由：文本模式的 stdout 由 subprocess 做换行还原；`--json` 里的 `\r` 是转义序列 `\\r`，躲过了这一步，`json.loads` 之后又成了真正的 `\r`。`narration.unit_refs`、`source.unit_refs`、`music.curve.*.unit_refs`、参考图标注只要求是字符串，模型写出带 `\r` 的编号时能走到 lint，回喂内容就会和改造前不同。补做之后两边逐字相同，由 `test_lint_json.py` 第 4 节的 `\r`、`\r\n` 两例守护。不变式的前提：子进程 stdout 用 UTF-8（非 UTF-8 区域设置下文本模式本来就会出错，不是本子计划引入的）。
+  - 若错的代价：无。
+- **R16 lint 崩溃时回溯的行号会变**（设计审查 M6）：
+  - 裁定：接受，不处理。lint 崩溃时 stdout 为空，`run_lint_report` 退回「stdout + stderr」原文，与文本模式相同；回溯里的行号随 lint 文件变长而变，这是改了文件就无法避免的，不算回归（spec 子计划 5b D 已注明）。
+  - 若错的代价：无。
 
 ## 自查记录
 
@@ -1651,12 +1800,12 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
   - B 逐条规则：23 条都在调用点清单与 Task 1 的 lint 代码里，参数与 spec 表一致；中英模板在 Task 2 Step 4、5；WARN 6 条 → Task 1（规则名）、R5；参数约定 → R6、R12、R13。
   - C JSON 形状 → Task 1（lint 代码、`test_lint_json.py` 第 1、3 节）；`run_lint_report` → Task 1 Step 4、测试第 4 节；`lint_lines`/`checker_lines`、两级回落 → Task 2、R7、R8；显示处 → 调用点清单「显示处」、Task 2（`server-msg.test.ts`）、Task 3（`workspace.test.tsx`）。
   - D 回喂不变 → Task 0（先行快照，单独提交）、R1、Task 3 Step 4 的注释、Task 4 Step 1–2；一致性测试 → `test_lint_json.py` 第 1、4 节。
-  - E 脱敏与截断 → Task 2 `_lint_value`/`_lint_msg`、`test_lint_msgs.py` 第 5 节（密钥横跨截断位置、回喂原文不脱敏）；后续 `_scrub_tree`/`scrub_deep` 沿用子计划 5，不改。
+  - E 脱敏与截断 → Task 2 `_lint_value`/`_lint_msg`、`test_lint_msgs.py` 第 5 节（字符串、列表、字典、退回原文四类跨截断位置或带密钥，Bearer 与 `x-api-key:` 形态，回喂原文不脱敏）与第 6 节（列表上限、单条上限）；后续 `_scrub_tree`/`scrub_deep` 沿用子计划 5，不改。
   - F 兼容：旧报告 → `server-msg.test.ts` 的旧 `tool_error` 用例（以及子计划 5 已有的 `admin.test.tsx` v12 用例照旧通过）；命令行 → `test_lint_json.py` 第 5 节、Task 4 Step 8、R11；`run_lint` 保留 → R2、`test_lint_json.py` 第 4 节；替身 → Task 3 Step 6；前端中间提交 → Task 2 登记与文案同一提交、Task 3 才产出。
-  - G 测试：每条规则各一条触发用例 → `test_lint_json.py` 第 1 节（规则名与参数）+ `test_lint_msgs.py` 第 1 节（代码与中文）；回喂不变 → Task 0；中英渲染不混杂 → `server-msg.test.ts`（23 条英文无中文字符、中文无英文模板词）与 `workspace.test.tsx`；旧报告兼容 → `server-msg.test.ts`。
+  - G 测试：每条规则各一条触发用例 → `test_lint_json.py` 第 1 节（规则名与参数）+ `test_lint_msgs.py` 第 1 节（代码与中文）；回喂不变 → Task 0；中英渲染不混杂 → `server-msg.test.ts`（23 条英文无中文字符；中文与后端代码表的模板代入同一组参数后逐字相同）与 `workspace.test.tsx`；旧报告兼容 → `server-msg.test.ts`。
   - H 代码命名 → Task 2 Step 4；前缀关系由 `register()` 在导入时检查。
 - **中间提交都能跑**：Task 0 只加测试；Task 1 lint 多一种模式、`run_lint_report` 无人调用；Task 2 只加登记、文案与纯函数；Task 3 才改流水线与替身。每个登记了代码的 Task 同时补 `zh.ts`、`en.ts`，`srv-codes` 每步都过。
-- **名称一致**：`_item`、`main(path, as_json=False)`、`LintReport(ok, text, errors)`、`run_lint_report`、`_LINT_LIST_MAX`、`_lint_value`、`_lint_msg`、`lint_lines`、`checker_lines(lint_ok, lint_text, lint_errors, fid_ok, fid_text)`；代码 `verify.report.lint`、`verify.report.lint_none`、`verify.lint.<rule>`；测试 `lint_snapshot`（`SNAP`：`CASES`、`LINT`、`PASS_TEXT`、`NO_JSONSCHEMA_TEXT`、`FEED_REPORT`、`FEED_SHA`、`base`、`batch_text`、`warn_case`、`feed_doc`）、`test_lint_feed_snapshot`（`PARAMS`、`dump`、`lint_text`）、`test_lint_json`（`EXPECT_PARAMS`、`WARN_RULES`、`lint_json`、`source_rules`）、`test_lint_msgs`（`EXPECT_ZH`、`ERRS`）。各 Task 引用一致。
+- **名称一致**：`_item`、`main(path, as_json=False)`、`LintReport(ok, text, errors)`、`run_lint_report`、`_universal_newlines`、`_LINT_LIST_MAX`、`_LINT_ITEM_MAX`、`_LINT_TIGHT`、`_lint_value(v, limit, items)`、`_lint_msg`、`lint_lines`、`checker_lines(lint_ok, lint_text, lint_errors, fid_ok, fid_text)`；代码 `verify.report.lint`、`verify.report.lint_none`、`verify.lint.<rule>`；测试 `lint_snapshot`（`SNAP`：`CASES`、`LINT`、`PASS_TEXT`、`NO_JSONSCHEMA_TEXT`、`FEED_REPORT`、`FEED_SHA`、`base`、`batch_text`、`warn_case`、`feed_doc`）、`test_lint_feed_snapshot`（`PARAMS`、`dump`、`lint_text`）、`test_lint_json`（`EXPECT_PARAMS`、`WARN_RULES`、`lint_json`、`source_rules`）、`test_lint_msgs`（`EXPECT_ZH`、`ERRS`）。各 Task 引用一致。
 - **没有占位**：所有新文件给出完整内容；所有修改给出替换前后的代码；快照字面量与哈希是实测值。
 - **测试不碰真实模型与数据**：新测试文件都设临时 `STORYBOARD_DATA_DIR`、不可达的 `ANTHROPIC_BASE_URL`，桩掉 `_load_dotenv`；转换只用 `FakeChat`；lint 子进程只读临时目录里的文档与仓库里的 schema。
 - **自查中发现并已改正**：
@@ -1664,3 +1813,23 @@ def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
   - 原想在 lint 与保真都失败时沿用 `tool_lines(lint + 保真)`，那样保真的 `FAIL` 行在 lint 有 `ERROR` 行时会被丢掉，改为两段（R8）；
   - `curve_reversed` 的参数原想叫 `from`/`to`，`from` 是 Python 关键字，`msg(code, from=…)` 写不出来，改为 `start`/`end`；
   - 生物卡的造数据最初少了 schema 必填的 `visual_prompt`，会顺带触发 `[schema]`，已补齐，23 种情形都只触发一条错误。
+
+## 设计审查修订记录
+
+- 2026-11-14 独立设计审查（审 1a6b12f，结论 approve with changes：0 Critical / 4 Important / 12 Minor），协调方裁定后本计划与 spec「子计划 5b 范围补充」同步修订。修订后的代码与测试照旧在仓库外的副本上跑过：Task 0 的快照在 `71f72a8` 原样代码与改完 Task 1–3 的代码上都 `ALL PASS`；后端全套 `fail=0`；前端 `typecheck`、`server-msg`、`srv-codes`、`workspace` 通过，`oxlint` 仍是 5 条 warning；I4 列出的六种回退写法逐一试过，各自在对应的断言处失败。
+- **I1 采纳**：`run_lint_report` 对 `text` 补做换行还原（R15、Task 1 Step 4）；`test_lint_json.py` 第 4 节加 `narration.unit_refs` 里带 `\r`、`\r\n` 的两例，断言 `run_lint_report().text == run_lint()[1]`（去掉还原会在这里失败）。没有写成 spec 例外；spec C 注明了 UTF-8 前提。
+- **I2 采纳**：Task 1 Step 5 与 Task 4 Step 2 的核对改为按 AST 比较 `errors.append` / `warnings.append` 的原文实参，预期 `appends: 29 same: True`；写明汇报段两行为什么一定不同、由谁守护。
+- **I3 采纳**：Task 0 加第 6 节（`_check_batch` 换成恒通过的替身，整章终检跑真的 lint，冻结 `ConversionError.report` 的 sha256 与调试日志里那段 lint 原文的 sha256）；第 5 节补丁模式补 `e.report` 的 sha256。快照值在 `71f72a8` 上采集。
+- **I4 采纳**：`test_lint_msgs.py` 第 5 节改为五类、每类过 `clean()`：5a 字符串跨截断位置（挡「先截再抹」）、5b 列表项跨截断位置（挡列表分支不递归）、5c 字典的值与键（挡其它类型分支漏脱敏）、5d 退回原文跨截断位置（挡 `vendor(text)` 与 `scrub_secrets(text[:300])`）、5e Bearer 与 `x-api-key:` 两种形态（挡换成只抹环境密钥的替换）。
+- **M1 采纳**：`version` 不是 1 时 `errors = None`、`text` 照用（R7、Task 1 Step 4），测试第 4 节有替身用例。
+- **M2 采纳**：缺原文时退回规则名（R7），测试第 4 节。
+- **M3 采纳，选单条 1000 字上限**：判断与取舍见 R14，测试第 6 节（20 个近 300 字的可选项）。
+- **M4 采纳**：列表超过 20 项时末尾补「…」（R13），测试第 6 节。
+- **M5 不采纳**：lint 的整数参数只有第几拍（`beat`）与未覆盖句数（`n`），都是小整数，到不了 2^53；为一个不会出现的情形加分支不值得。
+- **M6 采纳（写进 spec）**：spec 子计划 5b D 注明崩溃时回溯行号会变，本来就退回原文；R16。
+- **M7 采纳**：两条空约束的英文改为 “constraints contains an empty entry”。
+- **M8 采纳**：`server-msg.test.ts` 的中文断言改为与 `messages_codes.json` 的中文模板代入同一组参数后逐字相同（并且与英文结果不同）。
+- **M9 采纳**：补 `ref_image_state` 可选项为空（第 6 节）与 `checker_lines` 收到 `errors == []`（第 7 节）。
+- **M10 不采纳**：`test_lint_feed_snapshot.py` 冻结的是测试内容；`dump`、`lint_text`、`PARAMS` 是它的一部分，新测试复用的正是快照用的同一套造数据方式。保持现状，冻结约束不变（全局约束「快照文件不得修改」已覆盖它的导出）。
+- **M11 采纳**：全局约束加「lint 只用标准库，不导入 `server.*`、`pipeline.*`」，`test_lint_json.py` 第 2 节加 ast 断言。
+- **M12 不采纳（接受）**：Task 3 的前端用例在 Task 2 之后就能过，不是先失败；计划在 Task 3 Step 2 已经注明，它守护的是显示处而不是新代码。
