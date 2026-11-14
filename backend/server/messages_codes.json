@@ -1798,6 +1798,185 @@
     "params": [],
     "zh": "分镜未通过独立验证，禁止进入付费渲染"
   },
+  "verify.lifecycle.deceased": {
+    "params": [],
+    "zh": "已死亡"
+  },
+  "verify.lifecycle.departed": {
+    "params": [],
+    "zh": "已永久离开"
+  },
+  "verify.report.coverage": {
+    "params": [
+      "selected",
+      "covered",
+      "waived",
+      "failed"
+    ],
+    "zh": "覆盖：选中 {selected} 句，已承载 {covered}，豁免 {waived}，未承载 {failed}"
+  },
+  "verify.report.fail": {
+    "params": [
+      "n"
+    ],
+    "zh": "未通过（{n} 条硬性问题）"
+  },
+  "verify.report.finding": {
+    "params": [
+      "severity",
+      "rule",
+      "path",
+      "detail"
+    ],
+    "zh": "{severity} [{rule}] {path}：{detail}"
+  },
+  "verify.report.pass": {
+    "params": [],
+    "zh": "通过"
+  },
+  "verify.rule.COVERAGE-001": {
+    "params": [
+      "n"
+    ],
+    "zh": "有 {n} 句原文没有被旁白、台词或画面承载"
+  },
+  "verify.rule.COVERAGE-DECLARED-001": {
+    "params": [],
+    "zh": "声明的未覆盖句子与程序算出的不一致"
+  },
+  "verify.rule.COVERAGE-DECLARED-002": {
+    "params": [],
+    "zh": "声明的推断镜头占比与程序算出的不一致"
+  },
+  "verify.rule.EVIDENCE-INFERENCE-001": {
+    "params": [],
+    "zh": "推断镜头必须写明具体的推断依据"
+  },
+  "verify.rule.EVIDENCE-RANGE-001": {
+    "params": [],
+    "zh": "一个镜头的原文依据通常应是 1–3 个相邻句子"
+  },
+  "verify.rule.EVIDENCE-SHOT-001": {
+    "params": [],
+    "zh": "除转场镜头外，每个镜头都要引用原文依据"
+  },
+  "verify.rule.FID-DIALOGUE-001": {
+    "params": [],
+    "zh": "台词不是所引原文的逐字摘录"
+  },
+  "verify.rule.FID-NARRATION-001": {
+    "params": [],
+    "zh": "旁白文字不是所引原文的原句摘录"
+  },
+  "verify.rule.FID-SOURCE-001": {
+    "params": [],
+    "zh": "原文句子拼起来与归一化后的原文不一致"
+  },
+  "verify.rule.ID-ASSET-001": {
+    "params": [
+      "id"
+    ],
+    "zh": "资产卡编号重复：{id}"
+  },
+  "verify.rule.ID-EPISODE-001": {
+    "params": [
+      "id"
+    ],
+    "zh": "分集编号重复：{id}"
+  },
+  "verify.rule.ID-SHOT-001": {
+    "params": [
+      "id"
+    ],
+    "zh": "镜头编号重复：{id}"
+  },
+  "verify.rule.ID-UNIT-001": {
+    "params": [
+      "id"
+    ],
+    "zh": "原文句子编号重复：{id}"
+  },
+  "verify.rule.NOVEL-CONSTRAINT-001": {
+    "params": [
+      "shot",
+      "keywords",
+      "constraint"
+    ],
+    "zh": "镜头 {shot} 的画面描述含限制关键词「{keywords}」（限制：{constraint}），请人工确认是否违规"
+  },
+  "verify.rule.NOVEL-LIFECYCLE-001": {
+    "params": [
+      "shot",
+      "state",
+      "character"
+    ],
+    "zh": "镜头 {shot} 里出现了{state}的角色 {character}，画面描述里没有回忆/梦境等标记，请人工确认是不是闪回"
+  },
+  "verify.rule.ORDER-001": {
+    "params": [
+      "prev",
+      "unit"
+    ],
+    "zh": "镜头回跳到更早的原文（上一处 {prev} 引至 {unit}）"
+  },
+  "verify.rule.REF-NARRATION-001": {
+    "params": [
+      "unit"
+    ],
+    "zh": "旁白引用了不存在的原文句子 {unit}"
+  },
+  "verify.rule.REF-UNIT-001": {
+    "params": [
+      "unit"
+    ],
+    "zh": "镜头引用了不存在的原文句子 {unit}"
+  },
+  "verify.rule.SCHEMA-001": {
+    "params": [
+      "detail"
+    ],
+    "zh": "不符合分镜结构定义：{detail}"
+  },
+  "verify.rule.SCHEMA-ENGINE-001": {
+    "params": [],
+    "zh": "服务器缺少结构校验组件，无法校验分镜结构，请联系管理员"
+  },
+  "verify.rule.SOURCE-FROZEN-001": {
+    "params": [
+      "expected",
+      "actual"
+    ],
+    "zh": "原文句子数被改动：应为 {expected} 句，实际 {actual} 句"
+  },
+  "verify.rule.SOURCE-FROZEN-002": {
+    "params": [
+      "unit",
+      "field"
+    ],
+    "zh": "原文句子 {unit} 的 {field} 被改动（原文证据不能修改）"
+  },
+  "verify.rule.SOURCE-WAIVER-001": {
+    "params": [
+      "unit"
+    ],
+    "zh": "跳过原文句子 {unit} 时必须写明理由，方便审阅"
+  },
+  "verify.severity.critical": {
+    "params": [],
+    "zh": "致命"
+  },
+  "verify.severity.high": {
+    "params": [],
+    "zh": "严重"
+  },
+  "verify.severity.low": {
+    "params": [],
+    "zh": "提示"
+  },
+  "verify.severity.medium": {
+    "params": [],
+    "zh": "提醒"
+  },
   "voice.narrator": {
     "params": [],
     "zh": "旁白"

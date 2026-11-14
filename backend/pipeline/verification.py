@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from server.messages import compact, msg, ref, vendor
+
 from .config import ROOT
 
 
@@ -19,16 +21,37 @@ class Finding:
     rule_id: str
     severity: str
     object_path: str
-    message: str
+    message: str = ""          # 回喂模型的原文（多为英文），不翻译；没给时由中文模板生成
     unit_refs: list[str] = field(default_factory=list)
     evidence_quote: str = ""
     expected: object = None
     actual: object = None
     suggested_patch: list[dict] = field(default_factory=list)
+    params: dict = field(default_factory=dict)   # 给界面的参数，代码是 verify.rule.<rule_id>（spec 子计划 5 B）
 
-    def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items()
-                if v not in (None, "", [], {})}
+    def __post_init__(self) -> None:
+        # 代码未登记或参数与模板不符，在这里就抛错：每条规则的用例都会走到这一行
+        m = msg(self.code, **self.params)
+        if not self.message:
+            # 软核查两条（NOVEL-*，不回喂模型）：模板与旧写法一字不差，直接用它。
+            # 回喂模型的规则一律自己传原文，不由界面文案生成（ORDER-001，设计审查 Minor 2）
+            self.message = m["message"]
+
+    @property
+    def code(self) -> str:
+        return f"verify.rule.{self.rule_id}"
+
+    def as_msg(self) -> dict:
+        return {"code": self.code, "params": dict(self.params)}
+
+    def to_dict(self, *, shown: bool = True) -> dict:
+        """shown=True：存档与接口用，多一个 msg 给界面按语言渲染。
+        shown=False：回喂修复模型的形状，与改造前逐字一致（不含 msg、params）。"""
+        out = {k: v for k, v in asdict(self).items()
+               if k != "params" and v not in (None, "", [], {})}
+        if shown:
+            out["msg"] = self.as_msg()
+        return out
 
 
 @dataclass
@@ -49,7 +72,7 @@ class VerificationReport:
         return not self.errors
 
     def add(self, rule_id: str, severity: str, object_path: str,
-            message: str, **kwargs) -> None:
+            message: str = "", **kwargs) -> None:
         self.findings.append(Finding(rule_id, severity, object_path, message, **kwargs))
 
     def extend(self, other: "VerificationReport") -> None:
@@ -57,10 +80,11 @@ class VerificationReport:
         if other.coverage:
             self.coverage = other.coverage
 
-    def to_dict(self) -> dict:
+    def to_dict(self, *, shown: bool = True) -> dict:
+        """shown=False：尝试记录用（前端不显示，不带 msg，设计审查 Minor 1）。"""
         return {
             "status": "verified" if self.ok else "failed",
-            "findings": [f.to_dict() for f in self.findings],
+            "findings": [f.to_dict(shown=shown) for f in self.findings],
             "coverage": self.coverage,
         }
 
@@ -79,6 +103,21 @@ class VerificationReport:
                 f"COVERAGE selected={selected} covered={covered} waived={waived} failed={failed}")
         lines.append("PASS" if self.ok else f"FAIL ({len(self.errors)} hard finding(s))")
         return "\n".join(lines)
+
+    def lines(self) -> list[dict]:
+        """render() 的逐条消息版，给用户看（spec 子计划 5 C）；render() 照旧回喂模型。
+        汇总（通过 / 未通过几条）放第一行，lines_of 截断时不会丢（设计审查 I3）；然后覆盖统计、逐条。"""
+        out = [compact(msg("verify.report.pass")) if self.ok
+               else compact(msg("verify.report.fail", n=len(self.errors)))]
+        cov = self.coverage
+        if cov.get("selected"):
+            out.append(compact(msg("verify.report.coverage", selected=len(cov.get("selected", [])),
+                                   covered=len(cov.get("covered", [])), waived=len(cov.get("waived", [])),
+                                   failed=len(cov.get("failed", [])))))
+        out += [compact(msg("verify.report.finding", severity=ref(f"verify.severity.{f.severity}"),
+                            rule=f.rule_id, path=f.object_path, detail=f.as_msg()))
+                for f in self.findings]
+        return out
 
 
 def _hash_json(value: object) -> str:
@@ -112,7 +151,7 @@ def _validate_schema(doc: dict, report: VerificationReport) -> None:
     validator = jsonschema.Draft202012Validator(schema)
     for error in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path)):
         path = "/" + "/".join(str(p) for p in error.absolute_path)
-        report.add("SCHEMA-001", "high", path, error.message)
+        report.add("SCHEMA-001", "high", path, error.message, params={"detail": vendor(error.message)})
 
 
 def _validate_frozen_units(doc: dict, expected: list[dict],
@@ -122,7 +161,8 @@ def _validate_frozen_units(doc: dict, expected: list[dict],
         report.add(
             "SOURCE-FROZEN-001", "critical", "/source/units",
             "model changed the deterministic source-unit count",
-            expected=len(expected), actual=len(actual))
+            expected=len(expected), actual=len(actual),
+            params={"expected": len(expected), "actual": len(actual)})
     for i, exp in enumerate(expected):
         if i >= len(actual):
             break
@@ -134,33 +174,36 @@ def _validate_frozen_units(doc: dict, expected: list[dict],
                     "model changed immutable source evidence",
                     unit_refs=[exp.get("id", "")],
                     evidence_quote=exp.get("text", ""),
-                    expected=exp.get(key), actual=got.get(key))
+                    expected=exp.get(key), actual=got.get(key),
+                    params={"unit": exp.get("id", ""), "field": key})
         if got.get("skipped") and not (got.get("skip_reason") or "").strip():
             report.add(
                 "SOURCE-WAIVER-001", "high", f"/source/units/{i}/skip_reason",
                 "skipped source units require an explicit reviewable reason",
-                unit_refs=[exp.get("id", "")], evidence_quote=exp.get("text", ""))
+                unit_refs=[exp.get("id", "")], evidence_quote=exp.get("text", ""),
+                params={"unit": exp.get("id", "")})
 
 
 def _validate_identity(doc: dict, report: VerificationReport) -> None:
     units = (doc.get("source") or {}).get("units") or []
     for duplicate in _duplicate_ids(units):
         report.add("ID-UNIT-001", "critical", "/source/units",
-                   f"duplicate unit id {duplicate}", unit_refs=[duplicate])
+                   f"duplicate unit id {duplicate}", unit_refs=[duplicate],
+                   params={"id": duplicate})
 
     episodes = doc.get("episodes") or []
     for duplicate in _duplicate_ids(episodes):
         report.add("ID-EPISODE-001", "high", "/episodes",
-                   f"duplicate episode id {duplicate}")
+                   f"duplicate episode id {duplicate}", params={"id": duplicate})
     shots = [shot for ep in episodes for shot in ep.get("shots") or []]
     for duplicate in _duplicate_ids(shots):
         report.add("ID-SHOT-001", "high", "/episodes",
-                   f"duplicate shot id {duplicate}")
+                   f"duplicate shot id {duplicate}", params={"id": duplicate})
     for kind in _ASSET_KINDS:
         cards = (doc.get("assets") or {}).get(kind) or []
         for duplicate in _duplicate_ids(cards):
             report.add("ID-ASSET-001", "high", f"/assets/{kind}",
-                       f"duplicate asset id {duplicate}")
+                       f"duplicate asset id {duplicate}", params={"id": duplicate})
 
 
 def _unit_number(unit_id: str) -> Optional[int]:
@@ -186,7 +229,7 @@ def _validate_evidence(doc: dict, report: VerificationReport) -> dict:
             missing = [ref for ref in refs if ref not in units]
             for ref in missing:
                 report.add("REF-UNIT-001", "high", base + "/source/unit_refs",
-                           f"shot references unknown source unit {ref}", unit_refs=[ref])
+                           f"shot references unknown source unit {ref}", unit_refs=[ref], params={"unit": ref})
             valid_refs = [ref for ref in refs if ref in units]
             visual.update(valid_refs)
             derivation = source.get("derivation")
@@ -215,7 +258,8 @@ def _validate_evidence(doc: dict, report: VerificationReport) -> dict:
                 if prev_number is not None and first < prev_number:
                     report.add(
                         "ORDER-001", "medium", base + "/source/unit_refs",
-                        f"镜头回跳到更早的原文（上一处 {prev_label} 引至 u{prev_number:04d}）",
+                        f"镜头回跳到更早的原文（上一处 {prev_label} 引至 u{prev_number:04d}）",  # i18n: llm
+                        params={"prev": prev_label, "unit": f"u{prev_number:04d}"},
                         unit_refs=valid_refs, expected=f">= u{prev_number:04d}",
                         actual=f"u{first:04d}")
                 prev_number = max(n for n in numbers if n is not None)
@@ -239,7 +283,7 @@ def _validate_evidence(doc: dict, report: VerificationReport) -> dict:
             for ref in narration_refs:
                 if ref not in units:
                     report.add("REF-NARRATION-001", "high", base + "/narration/unit_refs",
-                               f"narration references unknown source unit {ref}", unit_refs=[ref])
+                               f"narration references unknown source unit {ref}", unit_refs=[ref], params={"unit": ref})
                 else:
                     narrated.add(ref)
             narration_text = narration.get("text") or ""
@@ -261,7 +305,7 @@ def _validate_evidence(doc: dict, report: VerificationReport) -> dict:
     if failed:
         report.add("COVERAGE-001", "critical", "/coverage/unmapped_units",
                    "source units are not carried by narration, dialogue, or visuals",
-                   unit_refs=failed)
+                   unit_refs=failed, params={"n": len(failed)})
     coverage = {
         "selected": selected,
         "covered": [uid for uid in selected if uid in covered],
@@ -308,4 +352,4 @@ def recompute_coverage_field(doc: dict, coverage: dict) -> None:
 
 
 def verification_identity(report: VerificationReport) -> str:
-    return _hash_json(report.to_dict())
+    return _hash_json(report.to_dict(shown=False))

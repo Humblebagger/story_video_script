@@ -13,6 +13,7 @@ from typing import List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .chat import extract_json
+from server.messages import ref
 from .verification import Finding
 
 LIFECYCLE_TYPES = ("deceased", "permanent_condition", "departed")
@@ -186,8 +187,7 @@ def soft_findings(doc: dict, ctx: Optional[NovelContext]) -> List[Finding]:
                 if hit:
                     found.append(Finding(
                         "NOVEL-CONSTRAINT-001", "medium", f"{path}/{key}",
-                        f"镜头 {sid} 的画面描述含限制关键词「{'、'.join(hit)}」"
-                        f"（限制：{c.get('text', '')}），请人工确认是否违规",
+                        params={"shot": sid, "keywords": hit, "constraint": c.get("text", "")},
                         unit_refs=list(refs)))
         if not gone:
             continue
@@ -195,12 +195,12 @@ def soft_findings(doc: dict, ctx: Optional[NovelContext]) -> List[Finding]:
         for c in shot.get("characters") or []:
             entry = gone.get(c.get("ref"))
             if entry and not marked:
-                state = "已死亡" if entry["type"] == "deceased" else "已永久离开"
+                state = ref("verify.lifecycle.deceased" if entry["type"] == "deceased"
+                            else "verify.lifecycle.departed")
                 found.append(Finding(
                     "NOVEL-LIFECYCLE-001", "medium", f"{path}/characters",
-                    f"镜头 {sid} 里出现了{state}的角色 {c.get('ref')}"
-                    f"{ctx.names.get(c.get('ref'), '')}，画面描述里没有回忆/梦境等标记，"
-                    "请人工确认是不是闪回",
+                    params={"shot": sid, "state": state,
+                            "character": f"{c.get('ref')}{ctx.names.get(c.get('ref'), '')}"},
                     unit_refs=list(refs)))
     return found
 
