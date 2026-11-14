@@ -34,7 +34,10 @@ def scrub_params(v, *, keep: bool = True):
     if isinstance(v, list):
         return [scrub_params(x, keep=keep) for x in v]
     if isinstance(v, dict):
-        return {k: scrub_secrets(x) if keep and k in _KEEP and isinstance(x, str) and _ID_RE.match(x)
+        # 键也要脱敏（字符串键过 scrub_secrets，不做路径改写以免误改协议字段名）；
+        # 脱敏后两个键可能撞成同一个 ***，后写的覆盖先写的，可以接受。
+        return {scrub_secrets(k) if isinstance(k, str) else k:
+                scrub_secrets(x) if keep and k in _KEEP and isinstance(x, str) and _ID_RE.match(x)
                 else scrub_params(x, keep=keep) for k, x in v.items()}
     return v
 

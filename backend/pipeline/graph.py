@@ -37,7 +37,8 @@ def _scrub_tree(v):
     if isinstance(v, list):
         return [_scrub_tree(x) for x in v]
     if isinstance(v, dict):
-        return {k: _scrub_tree(x) for k, x in v.items()}
+        # 键也要脱敏；脱敏后两个键可能撞成同一个 ***，后写的覆盖先写的，可以接受。
+        return {scrub_secrets(k) if isinstance(k, str) else k: _scrub_tree(x) for k, x in v.items()}
     return v
 
 

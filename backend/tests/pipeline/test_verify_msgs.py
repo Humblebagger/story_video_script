@@ -382,6 +382,71 @@ def main() -> int:
     del os.environ["ARK_API_KEY"]
     print("14. 合法标识符形状的环境密钥也脱敏 ✓")
 
+    # 15. 字典键也要脱敏（终审 I1）：键不做路径改写，只抹密钥
+    from server import error_refs as ER  # noqa: E402
+    from pipeline import graph as G  # noqa: E402
+    K15 = "sk-" + "S" * 40
+    K15b = "abc123secret_token"          # 匹配标识符正则的假密钥
+    assert V._ID_RE.match(K15b)
+    for kk in (K15, K15b):
+        os.environ["ARK_API_KEY"] = kk
+        for label, v in (("flat", {kk: 1}), ("nested", {"x": {kk: 1}}), ("list", [{"x": [{kk: 1}]}])):
+            for name, fn in (("scrub_params", V.scrub_params), ("scrub_params keep=False", lambda x: V.scrub_params(x, keep=False)),
+                             ("scrub_deep", ER.scrub_deep), ("_scrub_tree", G._scrub_tree)):
+                assert kk not in json.dumps(fn(v), ensure_ascii=False), (name, label, kk)
+        d, fz = SNAP.snapshot_doc()
+        d["source"]["units"][0]["para"] = {kk: "innocent"}
+        rep = V.verify_document(d, frozen_units=fz)
+        f = next(f for f in rep.findings if f.rule_id == "SOURCE-FROZEN-002")
+        assert kk not in json.dumps(f.to_dict(shown=True), ensure_ascii=False), ("Finding", kk)
+        d["source"]["units"][0]["para"] = {"x": {kk: "innocent"}}
+        rep = V.verify_document(d, frozen_units=fz)
+        assert kk not in json.dumps(rep.to_dict(shown=True), ensure_ascii=False), ("Report", kk)
+        del os.environ["ARK_API_KEY"]
+    okmsg = {"code": "verify.rule.X", "params": {"unit": "u1", "items": [{"text": "a"}], "n": M.money(1.5),
+                                                "b": M.ref("common.unknown"), "c": M.vendor("v"),
+                                                "d": M.lines_of([M.msg("common.unknown", message="m")]), "t": "x"}}
+    for name, fn in (("scrub_params", V.scrub_params), ("scrub_params keep=False", lambda x: V.scrub_params(x, keep=False)),
+                     ("scrub_deep", ER.scrub_deep), ("_scrub_tree", G._scrub_tree)):
+        assert fn(okmsg) == okmsg, ("正常消息对象不变", name)
+    print("15. 字典键脱敏 ✓")
+
+    # 16. 评审原文先完整字符串化、再脱敏、最后截断（终审 I1b）
+    K16 = "sk-" + "T" * 40
+    os.environ["ARK_API_KEY"] = K16
+    raw = json.loads(SNAP.LOW_RAW)
+    raw["issues"] = [{"where": "w", "problem": {"a" * 280 + K16: "value"}, "fix": "f"}]
+
+    class _Chat4:
+        def invoke(self, _m):
+            return json.dumps(raw, ensure_ascii=False)
+
+        def text(self, r):
+            return r
+    out = []
+    review.run_review(_Chat4(), "原文", {"episodes": []}, 3.5, lines_out=out)
+    assert any(x["code"] == "verify.review.issue" for x in out), out
+    t = json.dumps(M.lines_of(out), ensure_ascii=False)
+    assert "TTTTT" not in t and K16[:10] not in t, t
+    raw["issues"] = [{"where": "w", "problem": "p" * 400, "fix": "f"}]   # 字符串形式截断照旧
+    out = []
+    review.run_review(_Chat4(), "原文", {"episodes": []}, 3.5, lines_out=out)
+    iss = next(x for x in out if x["code"] == "verify.review.issue")
+    assert iss["params"]["problem"]["text"] == "p" * 300, iss["params"]["problem"]
+    del os.environ["ARK_API_KEY"]
+    print("16. 评审对象先字符串化再脱敏再截断 ✓")
+
+    # 17. 质量门回喂摘录：普通文本与旧写法逐字相同，类凭据文本先脱敏（控制者裁定 I2，不撤回）
+    u17 = SNAP.chatty()
+    plain = "普通的旁白句子，长度超过三十个字用来检验摘录是否与旧写法完全相同的截断行为"
+    u17["source"]["units"][0]["text"] = plain
+    _ok, rep17, _r = quality.narration_density_gate(u17, 0.6)
+    assert plain[:30] in rep17 and plain[:31] not in rep17, rep17
+    u17["source"]["units"][0]["text"] = "Authorization: Bearer ordinaryfictiontoken"
+    _ok, rep17, _r = quality.narration_density_gate(u17, 0.6)
+    assert "Authorization: Bearer ***" in rep17 and "ordinary" not in rep17, rep17
+    print("17. 质量门摘录差异 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from server.messages import compact, msg, ref, vendor
 
 from .chat import extract_json
-from .verification import scrub_params
+from render.providers.base import scrub_secrets
 
 REVIEW_SYSTEM = """你是资深分镜审片人。用户给你一段小说原文和由它转换出的 NovelStoryboard 分镜 JSON（忠实转换模式：剧情属于小说，呈现属于转换器）。
 
@@ -56,7 +56,6 @@ def run_review(chat, batch_text: str, doc: dict,
     except Exception as e:
         # 原文（可能带模型名、厂商报错）只进日志；报告会进质量报告与界面
         from .chat import llm_error
-        from render.providers.base import scrub_secrets
         mapped = llm_error(e)
         logging.getLogger("pipeline.review").warning("评审调用失败：%s", scrub_secrets(repr(e))[:500])  # i18n: internal
         m = mapped.as_msg() if mapped is not None else None
@@ -87,8 +86,12 @@ def run_review(chat, batch_text: str, doc: dict,
     out.append(compact(msg("verify.review.scored", overall=f"{overall}", min=f"{min_score}",
                            scores=[compact(msg("verify.review.dim_score", dim=ref(f"verify.review.dim.{k}"), score=v))
                                    for k, v in scores.items()])))
-    out.extend([compact(msg("verify.review.issue", where=vendor(scrub_params(i.get("where", "?"))),
-                            problem=vendor(scrub_params(i.get("problem", ""))), fix=vendor(scrub_params(i.get("fix", "")))))
+    def _raw(x):
+        # 先完整字符串化、再脱敏、最后由 vendor 截断：截断会把密钥切成抹不掉的半截（含对象的键）
+        return vendor(scrub_secrets(x if isinstance(x, str) else str(x)))
+
+    out.extend([compact(msg("verify.review.issue", where=_raw(i.get("where", "?")),
+                            problem=_raw(i.get("problem", "")), fix=_raw(i.get("fix", ""))))
                 for i in issues] or [compact(msg("verify.review.no_issues"))])
     weak = [k for k in SCORE_KEYS if scores[k] < dimension_min]
     semantic_ok = scores["semantic_fidelity"] >= semantic_min
