@@ -300,6 +300,14 @@ def main() -> int:
     out = []
     quality.narration_density_gate(u, 0.6, lines_out=out)
     no_prefix(out, "quality 30 cut")
+    _ok, qreport, _r = quality.narration_density_gate(u, 0.6)  # 回喂模型的报告字符串也先脱敏再截 30 字
+    no_prefix(qreport, "quality report string 30 cut")
+    kept, _syn, dropped = nm.check_digest(
+        {"lifecycle": [{"character_id": "C01", "type": "death", "unit_ref": "u0001",
+                        "evidence_quote": "字" * 20 + KEY}]},
+        [{"id": "u0001", "text": "无关"}], [{"id": "C01", "name": "甲"}])
+    assert not kept and dropped, dropped
+    no_prefix(dropped, "novel_memory quote 30 cut")
     pad = "字" * 280
 
     class _Chat2:

@@ -8,6 +8,7 @@ import math
 from typing import List, Optional, Tuple
 
 from server.messages import compact, msg
+from render.providers.base import scrub_secrets
 from .verification import scrub_params
 
 
@@ -69,7 +70,7 @@ def narration_density_gate(doc: dict, max_ratio: float,
     bare = [u for u in candidates if u["id"] not in pictured]
 
     def fmt(us):
-        return [f"  {u['id']} [{u['kind']}] {u['text'][:30]}" for u in us[:40]]
+        return [f"  {u['id']} [{u['kind']}] {scrub_secrets(u['text'])[:30]}" for u in us[:40]]
 
     report = (
         f"[quality] selective 模式下旁白占比 {ratio:.0%}，超过阈值 {max_ratio:.0%}"

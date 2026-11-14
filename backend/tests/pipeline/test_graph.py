@@ -216,6 +216,48 @@ def main() -> int:
         convert_mod.verification = real_v
     print("convert: 整章终检的失败报告带逐条 ✓")
 
+    # 3f. 合并失败与 lint/保真失败：逐条来自检查工具输出（ERROR 行一项，原文原样），report 是工具原文
+    import pipeline.validate as validate_mod
+    real_merge, real_lint, real_fid = validate_mod.run_merge, validate_mod.run_lint, validate_mod.run_fidelity
+    tool_out = "WARN 无关\nERROR /meta/title 缺失\nERROR /episodes/0 形状不对\nPASS 0"
+    try:
+        validate_mod.run_merge = lambda paths, out: (False, tool_out)
+        with tempfile.TemporaryDirectory() as d:
+            try:
+                convert_mod.convert_text(batch, params, settings=settings, llm=FakeChat(responses=[archived, archived]),
+                                         batches=[batch, batch], workdir=Path(d), log=lambda _: None)
+                raise AssertionError("合并失败应抛 ConversionError")
+            except ConversionError as e:
+                assert e.code == "job.merge_failed" and e.report == tool_out, (e.code, e.report)
+                assert e.lines == [
+                    {"code": "verify.report.tool", "params": {}},
+                    {"code": "verify.report.tool_error", "params": {"text": {"t": "vendor", "text": "/meta/title 缺失"}}},
+                    {"code": "verify.report.tool_error", "params": {"text": {"t": "vendor", "text": "/episodes/0 形状不对"}}},
+                ], e.lines
+        validate_mod.run_merge = real_merge
+        calls = []
+
+        def lint_final_fails(path):  # 批内校验照常过（第一次），整章终检（第二次）才失败
+            calls.append(path)
+            return real_lint(path) if len(calls) == 1 else (False, "ERROR lint 失败一条")
+        validate_mod.run_lint = lint_final_fails
+        validate_mod.run_fidelity = lambda path, text, wd: (True, "")
+        with tempfile.TemporaryDirectory() as d:
+            try:
+                convert_mod.convert_text(batch, params, settings=settings, llm=FakeChat(responses=[archived]),
+                                         batches=[batch], workdir=Path(d), log=lambda _: None)
+                raise AssertionError("lint 未过应抛 ConversionError")
+            except ConversionError as e:
+                assert e.code == "job.final_check_failed", e.code
+                assert e.report == "ERROR lint 失败一条\n", repr(e.report)
+                assert e.lines == [
+                    {"code": "verify.report.tool", "params": {}},
+                    {"code": "verify.report.tool_error", "params": {"text": {"t": "vendor", "text": "lint 失败一条"}}},
+                ], e.lines
+    finally:
+        validate_mod.run_merge, validate_mod.run_lint, validate_mod.run_fidelity = real_merge, real_lint, real_fid
+    print("convert: 合并失败与终检工具失败带逐条 ✓")
+
     # ---- 修复循环 ----
     from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
     from pipeline.graph import _check_batch
@@ -305,8 +347,9 @@ def main() -> int:
             run_batch(graph, user=user_msg, batch_text=batch, idx=2,
                       frozen_units=None)
             raise AssertionError("重试耗尽且无合法候选应抛 ConversionError")
-        except ConversionError:
-            pass
+        except ConversionError as e5:
+            assert e5.lines == [{"code": "verify.attempt.too_many_steps", "params": {"max": 8}}], e5.lines
+            assert "8 个工具步骤" in e5.report, "report 仍是回喂模型的原文"
         assert [r["status"] for r in records] == ["hard_failed", "unparseable"]
         assert "8 个工具步骤" in records[1]["report"], \
             "超过 8 步要明说，与改造前 for _ in range(8) 等价"
@@ -417,6 +460,23 @@ def main() -> int:
             ("patch", "passed")]
         assert "没有发起任何工具调用" in records[1]["report"]
         print("graph: 无工具调用 → 保留底稿，下一次再补 ✓")
+
+    # 10b. 无工具调用且重试耗尽：失败报告的逐条是 verify.attempt.no_tool_call，原文同尝试记录
+    with tempfile.TemporaryDirectory() as d:
+        records, logs = [], []
+        s10b = patch_settings(1)
+        fake10b = FakeChat(responses=[json.dumps(bad, ensure_ascii=False), "我觉得没问题"])
+        chat = ChatInvoker(s10b, chat=fake10b, log=logs.append)
+        graph = build_batch_graph(chat=chat, review_chat=chat, settings=s10b,
+                                  params=params, workdir=Path(d),
+                                  attempt_records=records, log=logs.append)
+        try:
+            run_batch(graph, user=user_msg, batch_text=batch, idx=1, frozen_units=None)
+            raise AssertionError("重试耗尽且无合法候选应抛 ConversionError")
+        except ConversionError as e10:
+            assert e10.lines == [{"code": "verify.attempt.no_tool_call", "params": {}}], e10.lines
+            assert "没有发起任何工具调用" in e10.report
+        print("graph: 无工具调用耗尽 → 逐条与原文 ✓")
 
     # 11. 修复回复撞 max_tokens：补丁参数可能被 parse_partial_json 截成「合法」值，
     #     绝不能应用。补丁截断说明补丁太大：打回要求拆小，同一轮里重交即可，

@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .chat import extract_json
 from server.messages import ref
+from render.providers.base import scrub_secrets
 from .verification import Finding
 
 LIFECYCLE_TYPES = ("deceased", "permanent_condition", "departed")
@@ -252,7 +253,7 @@ def check_digest(raw: dict, units: List[dict], characters: List[dict]
         elif ref not in by_id:
             dropped.append(f"{cid}：引用的句子 {ref} 不在本章")
         elif not quote or quote not in by_id[ref]:
-            dropped.append(f"{cid}：证据「{quote[:30]}」不是 {ref} 原文的逐字片段")
+            dropped.append(f"{cid}：证据「{scrub_secrets(quote)[:30]}」不是 {ref} 原文的逐字片段")
         else:
             kept.append({"character_id": cid, "type": kind,
                          "detail": str(item.get("detail") or "").strip(),

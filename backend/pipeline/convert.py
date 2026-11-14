@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
 
+from render.providers.base import scrub_secrets
 from . import novel_memory, validate, verification
 from .chat import ChatInvoker
 from .config import Settings, load_settings
@@ -56,7 +57,7 @@ def _emit_partial(on_partial, batch_paths: List[Path], workdir: Path,
         partial_path = workdir / f"partial_{done}.json"
         ok, out = validate.run_merge(batch_paths, partial_path)
         if not ok:
-            log(f"（前 {done} 批的预览合并失败，跳过预览：{out.strip()[:120]}）")
+            log(f"（前 {done} 批的预览合并失败，跳过预览：{scrub_secrets(out.strip())[:120]}）")
             return
     try:
         on_partial(json.loads(partial_path.read_text(encoding="utf-8")), done, total)
