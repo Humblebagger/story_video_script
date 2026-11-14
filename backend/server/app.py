@@ -105,7 +105,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, error_refs, library, novels, pricing, store, summary, usage
-from server.messages import REPORT_MAX, UserError, compact, money, msg, ref, render_zh, to_detail, vendor, with_ref
+from server.messages import REPORT_MAX, UserError, compact, lines_of, money, msg, ref, render_zh, to_detail, vendor, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
 
@@ -366,6 +366,8 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
         job["verification"] = manifest.get("verification")
         job["partial"] = None    # 整章已出，预览作废；失败时则保留，已通过的批次照样能看
         if warnings:
+            # 评审意见等原文里可能有服务器路径；graph._scrub_tree 只抹密钥，这里整体换路径占位（中文兜底一起）
+            warnings[:] = [error_refs.scrub_deep(w) for w in warnings]
             job["quality_msg"] = list(warnings)
             job["quality_report"] = "\n\n".join(w["message"] for w in warnings)
             job["status"] = "completed_with_warnings"
@@ -391,9 +393,15 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
             return
         m = e.as_msg()
         report = getattr(e, "report", "") or ""
+        shown = getattr(e, "lines", None) or []
+        if report or shown:
+            # 逐条消息优先（按界面语言渲染，spec 子计划 5 C）；没有逐条的退回报告原文
+            body = (lines_of(error_refs.scrub_deep(shown)) if shown
+                    else vendor(error_refs.scrub_text(report), limit=REPORT_MAX))
+            m = msg("job.failed_report", reason=compact(m), report=body)
         if report:
-            m = msg("job.failed_report", reason=compact(m),
-                    report=vendor(error_refs.scrub_text(report), limit=REPORT_MAX))
+            # 失败区只有逐条；完整原文给管理员排查（只进调试日志，_job_debug 会脱敏，审查 Minor 11）
+            _job_debug(job, "失败报告原文：\n" + report[:REPORT_MAX])  # i18n: internal
         _job_debug(job, f"转换失败：{e}")  # i18n: internal
         if getattr(e, "hint", ""):
             _job_debug(job, e.hint)
@@ -773,12 +781,12 @@ def versions_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_user))
 
 
 def _check_version_doc(user: dict, nid: str, cid: str, vid: str, doc: dict) -> dict:
-    """人工编辑后的整份复验，不保存（助手出对比卡时预先告诉用户）：{ok, warnings（最多 5 条，隐去服务器目录，每条是 verify.finding 消息对象）}。"""
+    """人工编辑后的整份复验，不保存（助手出对比卡时预先告诉用户）：{ok, warnings（最多 5 条，隐去服务器目录，每条是 verify.finding 消息对象，detail 是该条规则的消息对象）}。"""
     existing = _novel_call(novels.get_version, user["id"], nid, cid, vid)
     context = _novel_call(novels.novel_context, user["id"], nid, cid)
     _doc, report, _status, _frozen = _reverify(existing, doc, context)
     return {"ok": report.ok,
-            "warnings": [_hide_root_deep(msg("verify.finding", path=f.object_path, detail=vendor(f.message)),
+            "warnings": [_hide_root_deep(msg("verify.finding", path=f.object_path, detail=f.as_msg()),
                                          auth.DATA_DIR) for f in report.errors][:5]}
 
 

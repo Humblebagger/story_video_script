@@ -268,7 +268,7 @@ register("film.minimax.no_result_url", "MiniMax 没有返回结果地址")
 
 # 验证（子计划 5 的逐条规则在 verify.rule.*，与这里不冲突）
 register("verify.gate.blocked", "分镜未通过独立验证，禁止进入付费渲染")
-register("verify.finding", "{path}: {detail}")  # 编辑卡的复验原因（Task 7 用）；子计划 5 把 detail 换成逐条规则
+register("verify.finding", "{path}: {detail}")  # 编辑卡的复验原因；detail 是该条规则的消息对象（子计划 5），旧存档里是厂商原文
 # 验证报告逐条（子计划 5）：代码是 verify.rule.<rule_id>；回喂模型的是 Finding.message 原文，不走这里
 register("verify.rule.SCHEMA-ENGINE-001", "服务器缺少结构校验组件，无法校验分镜结构，请联系管理员")
 register("verify.rule.SCHEMA-001", "不符合分镜结构定义：{detail}")

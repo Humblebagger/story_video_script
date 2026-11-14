@@ -104,6 +104,28 @@ def part_execute(nid, cid):
     assert v["error"].startswith("批 2 重试 3 次后仍未通过校验\nFAIL: E01-SH003") and v["status"] == "failed"
     assert v["verification"] == {"status": "failed", "findings": []}, "ConversionError 照旧保存验证报告"
 
+    # 子计划 5：ConversionError 带逐条消息 → report 参数是 lines；逐条里的数据目录换成 <data>；不再用报告原文
+    from server.messages import compact, lines_of
+    shown = [compact(msg("verify.report.tool")),
+             compact(msg("verify.report.tool_error", text=vendor(f"路径 {auth.DATA_DIR}/users/x")))]
+    job = new_job(nid, cid, "v_lines")
+    v = run(job, fake_raise(ConversionError.of("job.batch_failed", "原文报告", shown, batch=1, retries=0)))
+    rep = v["error_msg"]["params"]["report"]
+    assert rep["t"] == "lines" and rep["items"][0]["code"] == "verify.report.tool", rep
+    assert str(auth.DATA_DIR) not in json.dumps(rep, ensure_ascii=False)
+    assert rep["items"][1]["params"]["text"]["text"] == "路径 <data>/users/x"
+    assert v["error"] == "批 1 重试 0 次后仍未通过校验\n工具报告的错误（原文）：\n  路径 <data>/users/x", v["error"]
+    assert any("原文报告" in x for x in v["debug_log"]), "报告原文另记进调试日志，管理员能看到（审查 Minor 11）"
+
+    # 降级警告里的原文（评审意见等）也经 scrub_deep：数据目录换成 <data>，中文兜底一起换（审查 Minor 3）
+    warn2 = msg("job.quality.degraded", batch=1, retries=2, attempt=2, candidates=2,
+                report=lines_of([msg("verify.review.issue", where=vendor("E01"),
+                                     problem=vendor(f"见 {auth.DATA_DIR}/users/x"), fix=vendor("改"))]))
+    job = new_job(nid, cid, "v_warn2")
+    v = run(job, fake_ok(warn2))
+    blob = json.dumps(v["quality_msg"], ensure_ascii=False) + v["quality_report"]
+    assert str(auth.DATA_DIR) not in blob and "<data>/users/x" in v["quality_report"], blob
+
     # 已映射的模型服务错误：代码，不带编号；hint 进调试日志；error 里没有模型名与原文
     req = httpx2.Request("POST", "http://127.0.0.1:9/v1/messages")
     body = {"type": "error", "error": {"type": "rate_limit_error", "message": f"{MODEL} quota {LLM_KEY}"}}
@@ -315,12 +337,29 @@ def part_admin(nid, cid, vid):
     print("4. 管理员：服务信息带模型名 / 调试日志接口写审计 / 普通用户 403 ✓")
 
 
+def part_gate():
+    """验证门 422 的附加字段 verification：每条 finding 带 msg（spec 子计划 5 C）；名字与其余内容不变。"""
+    from fastapi import HTTPException
+    bad = {"source": {"units": []},
+           "episodes": [{"id": "E01", "shots": [{"id": "E01-SH001", "source": {"unit_refs": ["u0099"]}}]}]}
+    try:
+        app_mod._render_gate(bad, None)
+        raise AssertionError("应被验证门拦下")
+    except HTTPException as e:
+        fs = e.detail["verification"]["findings"]
+        assert e.detail["code"] == "verify.gate.blocked" and e.detail["verification"]["status"] == "failed" and fs
+        assert all(f["msg"]["code"] == "verify.rule." + f["rule_id"] and f["message"] for f in fs)
+        assert any(f["msg"] == {"code": "verify.rule.REF-UNIT-001", "params": {"unit": "u0099"}} for f in fs)
+    print("验证门：422 的逐条带消息对象 ✓")
+
+
 def main() -> int:
     global U
     U = auth.register("jobuser", "secret1")["id"]
     nid = novels.create_novel(U, "药")["id"]
     cid = novels.create_chapter(U, nid, "第一章", text="他推门。")["id"]
     part_execute(nid, cid)
+    part_gate()
     part_digest(nid, cid)
     part_views(nid, cid)
     vid = part_no_model(nid, cid)

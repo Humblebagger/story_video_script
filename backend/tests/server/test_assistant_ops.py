@@ -128,6 +128,10 @@ def main() -> int:
     chk = app_mod._check_version_doc(user, nid, cid, "v1", bad)
     assert chk["ok"] is False and chk["warnings"] and len(chk["warnings"]) <= 5, chk
     assert all(w["code"] == "verify.finding" and _TMP.name not in json.dumps(w, ensure_ascii=False) for w in chk["warnings"])
+    assert all(w["params"]["detail"]["code"].startswith("verify.rule.") and "t" not in w["params"]["detail"]
+               for w in chk["warnings"]), "复验原因的 detail 是该条规则的消息对象（子计划 5）"
+    assert any(w["params"]["detail"] == {"code": "verify.rule.REF-NARRATION-001", "params": {"unit": "u99999"}}
+               for w in chk["warnings"]), chk["warnings"]
     assert app_mod._save_version_doc(user, nid, cid, "v1", bad)["status"] == "draft_invalid"
     app_mod._save_version_doc(user, nid, cid, "v1", doc)      # 改回去，免得影响后面
     print("6. 复验与保存 ✓")

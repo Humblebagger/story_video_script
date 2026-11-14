@@ -541,6 +541,10 @@ def main() -> int:
         assert r["status"] == "succeeded"
         assert any(f["rule_id"] == "NOVEL-LIFECYCLE-001"
                    for f in r["verification"]["findings"])
+        assert all(f["msg"]["code"] == "verify.rule." + f["rule_id"] for f in r["verification"]["findings"]), \
+            "保存后返回的每条带消息对象"
+        saved_ver = novels.get_version(A["id"], anid, ch2["id"], v2)["verification"]
+        assert saved_ver["findings"] and all("msg" in f for f in saved_ver["findings"]), "存进版本记录的同样带"
         wait_digest(anid, ch2["id"])
         assert any(s["chapter_id"] == ch2["id"]
                    for s in app_mod.memory_get(anid, A)["plot"]["chapters"])
