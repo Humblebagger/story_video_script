@@ -3,6 +3,7 @@
 主流程只用 caps / rewrite_prompt / submit / poll / download / cost。新增厂商 = 新文件 +
 在 providers/__init__.py 注册一行。厂商的提示词语法（如 Seedance 的 @图片n）只在厂商模块里。
 """
+import json
 import math
 import os
 import re
@@ -92,11 +93,32 @@ class VideoProvider(Protocol):
     def cost(self, st: TaskState, req: ClipRequest) -> float: ...
 
 
+def secret_forms(k: str) -> list:
+    """密钥在文字里可能出现的各种形态：原样、repr 转义、JSON 转义（含非 ASCII 原样版），
+    以及各转义形式再转义一层（嵌套字符串化）。去重后按长度从长到短，免得短形式先替换把长形式切碎。"""
+    forms, frontier = {k}, {k}
+    for _ in range(3):
+        nxt = set()
+        for f in frontier:
+            for g in (repr(f)[1:-1], json.dumps(f)[1:-1], json.dumps(f, ensure_ascii=False)[1:-1]):
+                if g and g not in forms:
+                    nxt.add(g)
+        forms |= nxt
+        frontier = nxt
+    return sorted(forms, key=lambda x: (-len(x), x))
+
+
+def _mask_secret(text: str, k: str) -> str:
+    for f in secret_forms(k):
+        text = text.replace(f, "***")
+    return text
+
+
 def scrub(text, secret: str = "", limit: Optional[int] = None) -> str:
     """服务端文字进报错前：抹掉密钥、Bearer 凭据与 x-api-key 头；limit 不为 None 时再截断。"""
     t = str(text)
     if secret:
-        t = t.replace(secret, "***")
+        t = _mask_secret(t, secret)
     t = re.sub(r"(?i)(bearer\s+)[^\s\"',;]+", r"\1***", t)
     t = re.sub(r"(?i)(x-api-key[\"']?\s*[:=]\s*[\"']?)[^\s\"',;}]+", r"\1***", t)
     return t if limit is None else t[:limit]
@@ -113,7 +135,7 @@ def scrub_secrets(text, extra=()) -> str:
     out = scrub(text)
     for k in [os.environ.get(n, "") for n in SECRET_ENVS] + list(extra):
         if isinstance(k, str) and k.strip():
-            out = out.replace(k.strip(), "***")
+            out = _mask_secret(out, k.strip())
     return out
 
 

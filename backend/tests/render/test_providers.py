@@ -163,6 +163,38 @@ def main() -> int:
         assert "abc" not in base.scrub(raw), (raw, base.scrub(raw))
     print("脱敏：模型密钥 / 签名密钥 / x-api-key ✓")
 
+    # 脱敏：含反斜杠 / 引号 / 非 ASCII 的密钥经转义后也要抹掉（验收 G1）
+    import ast
+    import json as _json
+    for secret in ("abc123\\secret_token", 'abc"123secret', "abc密钥123secret", "sk-test-plainkey123"):
+        os.environ["STORYBOARD_SECRET"] = secret
+        try:
+            k = secret
+            forms = {k, repr(k)[1:-1], _json.dumps(k)[1:-1], _json.dumps(k, ensure_ascii=False)[1:-1],
+                     repr(repr(k))[1:-1], _json.dumps(_json.dumps(k))[1:-1]}
+            samples = [k, repr(k), str({"v": k}), str({k: 1}), _json.dumps(k), _json.dumps({"v": k}),
+                       _json.dumps(k, ensure_ascii=False), repr(repr(k)), _json.dumps(_json.dumps(k)),
+                       str({"v": repr(k)}), "msg: " + repr([k])]
+            for sm in samples:
+                for out in (base.scrub_secrets(sm), base.scrub(sm, k)):
+                    for form in forms:
+                        assert form not in out, (k, sm, out)
+                    assert k not in out, (k, sm, out)
+                    assert "***" in out, (k, sm, out)
+            for sm, load in ((repr(k), ast.literal_eval), (str({"v": k}), ast.literal_eval),
+                             (str({k: 1}), ast.literal_eval), (_json.dumps(k), _json.loads),
+                             (_json.dumps({"v": k}), _json.loads), (repr(repr(k)), ast.literal_eval)):
+                try:
+                    back = load(base.scrub_secrets(sm))
+                except (ValueError, SyntaxError):
+                    continue
+                assert k not in str(back), (k, sm, back)
+            normal = "普通文本 plain text, path C:\\dir, quote \" and 'x'"
+            assert base.scrub_secrets(normal) == normal and base.scrub(normal) == normal, normal
+        finally:
+            os.environ.pop("STORYBOARD_SECRET", None)
+    print("脱敏：反斜杠 / 引号 / 非 ASCII 密钥的转义形态 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -465,6 +465,23 @@ def main() -> int:
     assert "Authorization: Bearer ***" in rep17 and "ordinary" not in rep17, rep17
     print("17. 质量门摘录差异 ✓")
 
+    # 18. 含反斜杠的环境密钥进 SCHEMA-001 的 detail 后经转义也要抹掉（验收 G1）
+    K18 = "abc123\\secret_token"
+    os.environ["ARK_API_KEY"] = K18
+    forms18 = {K18, repr(K18)[1:-1], json.dumps(K18)[1:-1], repr(repr(K18))[1:-1]}
+    d = SNAP.doc()
+    d["meta"] = {"narration": {"mode": {K18: K18}}}
+    rep = V.verify_document(d)
+    assert any(f.rule_id == "SCHEMA-001" for f in rep.findings)
+    for label, blob18 in (("to_dict", json.dumps(rep.to_dict(shown=True), ensure_ascii=False)),
+                          ("to_dict ascii", json.dumps(rep.to_dict(shown=True))),
+                          ("lines", json.dumps(rep.lines()))):
+        for form in forms18:
+            assert form not in blob18, (label, form, blob18)
+    # render() 是回喂模型的原文，按设计一字不改、不脱敏（普通密钥同样原样），这里不断言它
+    del os.environ["ARK_API_KEY"]
+    print("18. 含反斜杠的密钥经转义后整份报告（存档与逐条）不漏 ✓")
+
     print("\nALL PASS")
     return 0
 
