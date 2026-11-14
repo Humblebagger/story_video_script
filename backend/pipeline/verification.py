@@ -404,6 +404,14 @@ _LINT_ITEM_MAX = 1000   # 单条（中文兜底）的上限：超了就按紧的
 _LINT_TIGHT = (40, 10)
 
 
+_LINT_BREAKS = re.compile("[\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029]+")
+
+
+def _lint_str(s: str, limit: int) -> str:
+    """脱敏 → 把连续换行类字符合并成一个空格 → 截断（顺序不可换：换行不能切开密钥的匹配，长度按合并后算）。"""
+    return _LINT_BREAKS.sub(" ", scrub_secrets(s))[:limit]
+
+
 def _lint_value(v, limit: int = VENDOR_MAX, items: int = _LINT_LIST_MAX):
     """lint 参数 → 消息参数（spec 子计划 5b E）：字符串先脱敏再截断到 limit 字；整数原样；
     布尔、小数、None 按文本模式的写法转成字符串（前后端渲染一致）；列表逐项、最多 items 项，超出的末尾补「…」；
@@ -413,11 +421,11 @@ def _lint_value(v, limit: int = VENDOR_MAX, items: int = _LINT_LIST_MAX):
     if isinstance(v, int):
         return v
     if isinstance(v, str):
-        return scrub_secrets(v)[:limit]
+        return _lint_str(v, limit)
     if isinstance(v, list):
         out = [_lint_value(x, limit, items) for x in v[:items]]
         return out + ["…"] if len(v) > items else out
-    return scrub_secrets(json.dumps(v, ensure_ascii=False, default=str))[:limit]
+    return _lint_str(json.dumps(v, ensure_ascii=False, default=str), limit)
 
 
 def _lint_msg(item) -> dict:

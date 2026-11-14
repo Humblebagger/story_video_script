@@ -241,6 +241,42 @@ def main() -> int:
         validate.run_lint_report = real_lint
     print("9. 整章终检的逐条 ✓")
 
+    # 10. 参数里的换行（模型写在服装名、状态名里）不拆开失败区里的一条：合并成单个空格；先脱敏、再合并、最后截断
+    def shown(params, rule="location_ref"):
+        line = V.lint_lines([{"rule": rule, "params": params, "text": "x"}])[1]
+        return line["params"]["text"]["params"], zh(line)
+
+    for raw, want in (("a\nb", "a b"), ("a\r\nb", "a b"), ("a\rb", "a b"), ("a\u2028b", "a b"),
+                      ("a\n\n\r\n\rb", "a b"), ("a\vb\fc\x85d\u2029e", "a b c d e")):
+        p, text = shown({"shot": "E01-SH001", "location": raw})
+        assert p["location"] == want and not any(c in text for c in "\r\n\u2028\u2029"), (raw, p, text)
+    p, _ = shown({"shot": "E01-SH001", "character": "C01", "outfit": "x\ny",
+                  "options": ["a\nb", "c\r\nd"]}, "outfit_unknown")
+    assert p["outfit"] == "x y" and p["options"] == ["a b", "c d"], p
+    p, _ = shown({"shot": "E01-SH001", "location": {"k": "a\u2028b"}})
+    assert "\u2028" not in p["location"], p
+    p, _ = shown({"shot": "E01-SH001", "location": "x" * 38 + "\n\n\n" + "y" * 10})
+    assert p["location"] == "x" * 38 + " " + "y" * 10, "长度按合并后的文字算"
+    # 假密钥：跨换行的不要求抹掉（换行本来就把它断开了）；完整出现在换行前或后的照样抹掉
+    SECRET = "abc123secret_token"
+    os.environ["ARK_API_KEY"] = SECRET
+    try:
+        for raw in (SECRET + "\nrest", "head\n" + SECRET, "h\r\n" + SECRET + "\r\nt"):
+            p, text = shown({"shot": "E01-SH001", "location": raw})
+            assert SECRET not in p["location"] and SECRET not in text and "\n" not in p["location"], (raw, p)
+        p, _ = shown({"shot": "E01-SH001", "location": "abc123\nsecret_token"})
+        assert "\n" not in p["location"]
+    finally:
+        os.environ.pop("ARK_API_KEY", None)
+    # 回喂的 text 与原 lint 输出逐字相同（换行不动）
+    ln = "ERROR [E01-SH001] location_ref 引用了不存在的场景：a\nb"
+    lines = V.checker_lines(False, ln + "\n", [{"rule": "location_ref", "params": {"shot": "E01-SH001",
+                            "location": "a\nb"}, "text": ln}], True, "PASS")
+    assert lines and all("\n" not in zh(x["params"]["text"]) for x in lines[1:] if "text" in x["params"])
+    rep = validate.LintReport(False, ln + "\n", ERRS)
+    assert rep.text == ln + "\n" and "\n" in rep.text.split("：")[1]
+    print("10. 参数里的换行合并成空格，回喂原文不变 ✓")
+
     print("\nALL PASS")
     return 0
 
