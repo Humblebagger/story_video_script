@@ -959,7 +959,8 @@
 **§3.7 前提更正**：§3.7 写「回喂模型的仍是原来的中文 message」。实测 `verification.py` 的规则说明除 `ORDER-001` 外都是英文，`novel_memory.soft_findings` 的两条是中文。所以准确的说法是：
 - 回喂模型的 `Finding.message` 与 `render()` 文字**一字不改**（多数是英文原文）；
 - 给用户看的另由代码渲染：中文界面从此看到中文说明，英文界面看到英文说明；
-- 原文是中文的三条（`ORDER-001`、`NOVEL-CONSTRAINT-001`、`NOVEL-LIFECYCLE-001`），中文模板与原文一字不差，`message` 直接由模板生成。
+- 原文是中文的三条（`ORDER-001`、`NOVEL-CONSTRAINT-001`、`NOVEL-LIFECYCLE-001`），中文模板与原文一字不差。其中软核查两条不回喂模型，`message` 直接由模板生成；`ORDER-001` 回喂修复模型，保留原 f-string，不由界面文案生成（以后润色界面文案不能悄悄改掉模型输入）。
+- §3.7 写的 `verification.py:22` 实为 :19（`Finding.rule_id` 字段）。
 
 ### A. 范围
 
@@ -967,17 +968,17 @@
 
 | 模块 | 改法 | 说明 |
 |---|---|---|
-| `pipeline/verification.py` | `Finding` 加 `params`，构造时按 `verify.rule.<rule_id>` 校验参数；`as_msg()`；`to_dict()` 多一个 `msg` 字段，`to_dict(shown=False)` 是回喂模型的旧形状；`VerificationReport.lines()` | 23 条规则逐条给参数，见 B |
+| `pipeline/verification.py` | `Finding` 加 `params`，构造时按 `verify.rule.<rule_id>` 校验参数；`as_msg()`；`to_dict()` 多一个 `msg` 字段，`to_dict(shown=False)` 是回喂模型与尝试记录用的旧形状（`VerificationReport.to_dict` 透传）；`VerificationReport.lines()`（汇总在首行）；`tool_lines()` | 23 条规则逐条给参数，见 B |
 | `pipeline/novel_memory.py` | `soft_findings` 两条规则给参数，`message` 由中文模板生成 | 与原文一字不差 |
 | `pipeline/repair.py` | `validation_list` 用 `to_dict(shown=False)`；14 处 `RepairError` 标 `# i18n: llm` | 回喂模型的内容与改造前逐字一致 |
 | `pipeline/quality.py` | `narration_density_gate`、`speech_fit_gate` 加出参 `lines_out` | 回喂模型的报告文字不变，见 D |
 | `pipeline/review.py` | `run_review` 加出参 `lines_out` | 评审意见原文作厂商原文参数，见 D、E |
-| `pipeline/graph.py` | `_check_batch` 加出参 `lines_out`；`BatchState.shown`；候选带 `shown`；降级警告与 `job.batch_failed` 带逐条消息 | 见 C |
+| `pipeline/graph.py` | `_check_batch` 加出参 `lines_out`；`BatchState.shown`；候选带 `shown`；降级警告与 `job.batch_failed` 带逐条消息；尝试记录的 `verification` 不带 `msg` | 见 C |
 | `pipeline/convert.py` | `job.final_verify_failed`、`job.final_check_failed`、`job.merge_failed` 带逐条消息 | 见 C |
 | `pipeline/errors.py` | `ConversionError(msg, report="", lines=None)`，新增属性 `lines` | `report` 照旧是原文 |
 | `server/messages.py` | 新增参数类型 `lines` 与函数 `lines_of()`；`_zh_value` 认它；登记 `verify.*`、`common.more_lines` | 见 C、H |
-| `server/error_refs.py` | `scrub_deep(v)` | 消息对象里的字符串逐个 `scrub_text` |
-| `server/app.py` | `_execute` 优先用 `e.lines`；`_check_version_doc` 的 `detail` 换成逐条规则的消息对象 | 其余出口（门、保存、版本、任务）随 `to_dict()` 自动带上 `msg` |
+| `server/error_refs.py` | `scrub_deep(v)`；`_rel` 只换整段路径前缀 | 消息对象里的字符串逐个 `scrub_text`；`/app` 不再把 `/appearance` 换成 `<app>earance` |
+| `server/app.py` | `_execute` 优先用 `e.lines`，报告原文另记进调试日志，降级警告先 `scrub_deep`；`_check_version_doc` 的 `detail` 换成逐条规则的消息对象 | 其余出口（门、保存、版本、任务）随 `to_dict()` 自动带上 `msg` |
 
 **前端**：
 - `i18n/serverMsg.ts`：`formatMsg` 认 `lines` 类型（逐项渲染、换行连接）；新增 `findingText(f)`。
@@ -987,7 +988,7 @@
 - 其余显示处（JobPanel 的失败区与质量报告、助手编辑卡的复验原因）已经走 `formatMsg`，形状不用再改，只补测试。
 
 **不在本子计划**：
-- 检查工具（`tools/lint_storyboard.py`、`tools/check_fidelity.py`、`tools/merge_storyboard.py`）的子进程输出：保持原文（中文），作为厂商原文参数原样显示，外面包一行按语言渲染的标题（`verify.report.tool`）。理由见计划 R6。
+- 检查工具（`tools/lint_storyboard.py`、`tools/check_fidelity.py`、`tools/merge_storyboard.py`）本身不改。它们的子进程输出在本子计划按 `ERROR` 行拆成逐条：一行按语言渲染的标题（`verify.report.tool`），每条错误一项（`verify.report.tool_error`，厂商原文，仍是中文）；`WARN`、汇总、`PASS` 行不进。lint 能拦下结构校验完全不查的资产引用错误（`location_ref`、`prop_refs`、`characters.ref`、服装、道具状态、`dialogue.character_ref`），英文界面会实际看到这些行，所以 lint 的逐条翻译列为子计划 5b（见文末「后续：子计划 5b」），海外上线前必须完成。理由见计划 R6。
 - 转换途中按规则代码发进度事件（子计划 4 R13 提到的可选项）：不做，失败与降级时报告里已有逐条原因。
 - 尝试记录（`manifest.attempts[].report`）：照旧存原文，前端不显示它，只作审计。它的 `verification` 随 `to_dict()` 自动带上 `msg`。
 
@@ -1037,7 +1038,8 @@
    ```
    - 前端逐项渲染、用换行连接；后端中文兜底同样换行连接；
    - 每项是紧凑消息 `{code, params}`（也允许字符串与厂商原文）；
-   - 最多 100 项，超出的截掉，末尾补一项 `common.more_lines {n}`。
+   - 最多 100 项，且按中文兜底累计不超过 6000 字（与原来整份报告的上限相同），超出的截掉，末尾补一项 `common.more_lines {n}`；
+   - 汇总行（「未通过（N 条硬性问题）」）放第一项，截断时不会丢。
 
 **取舍**：
 - 结构化报告选「每条 finding 带消息对象」，不另起一个只放消息的列表：
@@ -1048,21 +1050,27 @@
   - 这份报告是几种来源拼起来的（结构校验、检查工具输出、旁白密度门、时长门、评审、解析失败），没有统一的 finding 结构，按行组织最贴近原样；
   - 包装代码、参数名、模板都不变，子计划 4 R3 预留的就是这一步；`failHead` 的一行显示、`job.failed_report` 的中文兜底形状、`quality_msg` 的存法都不用动；
   - 另加字段要同时改任务、版本记录、`quality_msg`、前端三处显示，收益只是少一种参数类型。
-- `lines` 是 §3.1 参数类型表的新增一行。旧前端（Task 0 之前）遇到不认识的 `t` 渲染为空串，不会崩；计划仍先做前端兼容。
+- **§3.1 参数类型补充**（§3.1 正文不改，以这里为准）：
+
+  | 类型 | 写法 | 前端渲染 |
+  |---|---|---|
+  | 逐条报告 | `{"t":"lines","items":[…]}` | 逐项渲染（项可以是嵌套消息、字符串、厂商原文），用换行连接；后端中文兜底同样换行连接 |
+
+  旧前端（Task 0 之前）遇到不认识的 `t` 渲染为空串，不会崩；计划先做前端兼容。
 
 **逐条消息怎样产生**（「同一处生成两份」：回喂模型的原文与给用户的逐条消息在同一个函数里生成）：
 
 | 报告来源 | 回喂模型的原文（不变） | 给用户的逐条（新） |
 |---|---|---|
-| 结构校验未过 | `VerificationReport.render()` | `VerificationReport.lines()`：每条 `verify.report.finding {severity, rule, path, detail}`（`severity` 是代码引用 `verify.severity.*`，`detail` 是该条规则的消息），有覆盖统计时一行 `verify.report.coverage`，末行 `verify.report.fail {n}` |
-| 检查工具未过（lint、保真） | 工具输出原文 | 一项 `verify.report.tool {text}`，`text` 是厂商原文类型（脱敏、截断 6000 字） |
+| 结构校验未过 | `VerificationReport.render()` | `VerificationReport.lines()`：首行 `verify.report.fail {n}`（通过时 `verify.report.pass`），有覆盖统计时一行 `verify.report.coverage`，然后每条 `verify.report.finding {severity, rule, path, detail}`（`severity` 是代码引用 `verify.severity.*`，`detail` 是该条规则的消息） |
+| 检查工具未过（lint、保真） | 工具输出原文 | `tool_lines()`：标题 `verify.report.tool`，每条 `ERROR` 行一项 `verify.report.tool_error {text}`（厂商原文，脱敏，每项 300 字）；没有 `ERROR` 行时取 `FAIL` 行与缩进的差异行 |
 | 旁白密度门 | `[quality] selective 模式下旁白占比…` | `verify.quality.density`、两组标题与逐句 `verify.quality.unit`（见 D） |
 | 时长门 | `[quality] N/M 个镜头…` | `verify.quality.speech` 与逐镜 `verify.quality.speech_shot` |
 | 评审 | `[review] 评审总分…` | `verify.review.*`（见 D） |
 | 输出无法解析 | `输出无法解析为 JSON：…` | `verify.attempt.unparseable` |
 | 修复没产出新底稿 | `修复工具调用无效：…` | `verify.attempt.no_tool_call`、`verify.attempt.too_many_steps {max}` |
-| 合并失败、整章终检（lint、保真）未过 | 工具输出原文 | 一项 `verify.report.tool` |
-| 整章结构终检未过 | `final_report.render()` | `final_report.lines()` |
+| 合并失败、整章终检（lint、保真）未过 | 工具输出原文 | `tool_lines()` |
+| 整章结构终检未过 | `final_report.render()` | 只有汇总一行 `final_report.lines()[:1]`：逐条在同屏的验证面板（`job.verification`）里，不重复列 |
 
 **显示处**（逐个列在计划的调用点清单里）：
 
@@ -1071,10 +1079,11 @@
 | 验证面板：保存后（App）、渲染前被拦（RenderView）、转换任务（JobPanel） | `version.verification`、`PUT` 返回的 `verification`、422 附加字段 `verification`、`job.verification` | 说明文字用 `findingText`：有 `msg` 按代码，缺译或旧报告用 `message` |
 | JobPanel 失败区 | `job.error_msg = job.failed_report` | 已走 `formatMsg`；`report` 变成 `lines` 后自动按语言渲染 |
 | JobPanel 质量报告 | `job.quality_msg[]` = `job.quality.degraded` | 同上 |
-| 一行显示（提示条、助手任务卡、后台任务页） | `failHead` 只取 `reason` | 不变 |
+| 一行显示（提示条、助手任务卡、后台任务页的摘要） | `failHead` 只取 `reason` | 不变 |
+| 后台任务页展开的失败全文 | `admin/JobsTab.tsx` 的 `<details><pre>`（`itemError`） | 已走 `formatMsg`，`lines` 自动逐行渲染 |
 | 助手编辑卡的复验原因 | `verify.finding {path, detail}` | `detail` 由厂商原文换成该条规则的消息（子计划 4 D 已约定，形状不变） |
 | 验证门提示（出片、合成） | `verify.gate.blocked` | 不变（只有一句话，没有逐条） |
-| 管理后台调试日志 | 原文 | 不变（只给管理员，不翻译） |
+| 管理后台调试日志 | 原文 | 不变（只给管理员，不翻译）；转换失败时另记一份报告原文（截断 6000 字），代替原来 `error` 里的原文 |
 | 命令行 | `render()`、`e.report` | 不变；质量报告打印的中文兜底随之变成逐条中文 |
 
 ### D. 质量门与评审报告的英文
@@ -1096,9 +1105,9 @@
 
 ### E. 保持原文、不翻译的部分
 
-- **模型输出**：评审意见的 `where`、`problem`、`fix`。作为厂商原文参数，先经 `scrub_secrets`（`graph._scrub_tree`）与 `error_refs.scrub_deep` 脱敏，每项截断 300 字。界面原样显示，中文界面与英文界面都一样。子计划 4 E 节的要求照旧：这些文字可能带模型自报的名字，不额外过滤（R10 同理），但我们自己的文案与代码表里不得出现模型名。
+- **模型输出**：评审意见的 `where`、`problem`、`fix`。作为厂商原文参数，每项截断 300 字；在流水线里经 `graph._scrub_tree`（抹密钥），到 `_execute` 再经 `error_refs.scrub_deep`（数据目录等主机路径换占位）。失败报告与降级警告两条路径都经过这两步（降级警告原来只经第一步，本子计划补上）。界面原样显示，中文界面与英文界面都一样。子计划 4 E 节的要求照旧：这些文字可能带模型自报的名字，不额外过滤（R10 同理），但我们自己的文案与代码表里不得出现模型名。
 - **外部库原文**：`SCHEMA-001` 的 jsonschema `error.message`（英文，常引用文档里的值）。
-- **检查工具输出**：lint、保真、合并工具的子进程输出（中文）。见 A「不在本子计划」。
+- **检查工具输出**：lint、保真、合并工具的 `ERROR` 行（中文）。见 A「不在本子计划」与「后续：子计划 5b」。
 - **数据**：句子与镜头编号、JSON 路径、字段名（`text`、`para`）、`kind` 枚举、用户原文、用户写的创作限制、角色名。
 
 ### F. 兼容
@@ -1109,44 +1118,64 @@
   - 编辑卡 `detail` 是厂商原文：照旧原样显示。
 - **旧前端**：`msg` 字段忽略；`lines` 类型渲染为空串（报告正文消失，但不崩）。计划先做前端兼容（Task 0），之后才改后端形状。
 - **回喂模型**：修复请求（`repair_request`）、`validation_list` 工具结果、整份重写的回喂、评审重试的回喂，与改造前逐字一致，由测试守护。
-- **中文兜底的文字变化**：`job.failed_report` 与 `job.quality.degraded` 的 `message`（以及由它生成的 `error`、`quality_report` 字符串）从「原因 + 报告原文」变成「原因 + 逐条中文」；给模型的操作指示不再出现在里面。完整原文仍在调试日志与工作目录的失败报告文件里。
+- **中文兜底的文字变化**：`job.failed_report` 与 `job.quality.degraded` 的 `message`（以及由它生成的 `error`、`quality_report` 字符串）从「原因 + 报告原文」变成「原因 + 逐条中文」；给模型的操作指示不再出现在里面。完整原文在调试日志（`_execute` 失败时另记一份）与工作目录的失败报告文件里。旧记录不迁移：前端只在没有 `error_msg` 时才读 `error`，一行显示取第一行（仍是原因）。
+- **空值的细微差别**：原 f-string 遇到 `None` 写成 `"None"`，模板兜底写成空串（软核查的 `constraint`、`character`，时长门的 `shot`）。它们不回喂模型，忽略。
+- **命令行**：`pipeline/__main__.py` 的 JSON 输出里每条 finding 多了 `msg`。
 - **`verification_identity`**：对 `to_dict()` 取哈希，多了 `msg` 后哈希值会变。目前没有调用方，不处理。
 
 ### G. 测试补充
 
 - 后端：
-  - 新增 `tests/pipeline/test_verify_msgs.py`：
+  - 新增 `tests/pipeline/feed_snapshot.py` 与 `test_llm_feed_snapshot.py`（**在任何后端改动之前单独提交**，只用旧接口）：一份同时触发多条规则（含 `ORDER-001`、`SCHEMA-001`、`COVERAGE-001`、`SOURCE-FROZEN-002`）的文档的 `render()`、`validation_list`、`repair_request` 逐字快照；23 条规则的 `message`；两道质量门与评审五种情形的报告字符串。快照在未改动的代码上采集，后续每一步都必须照样通过；
+  - 新增 `tests/pipeline/test_verify_msgs.py`（只测新接口，复用快照里的造数据函数与常量）：
     - 23 条规则各一条触发用例，断言代码与参数；源码里出现的规则编号与登记的 `verify.rule.*` 一一对应；
-    - 原文是中文的三条：`message` 与旧写法一字不差；
-    - 回喂模型：`validation_list` 不含 `msg`/`params`，指定规则的条目与改造前的字典完全相等，`repair_request` 里没有 `verify.rule`；
-    - `VerificationReport.lines()`：逐条、覆盖统计、末行；
-    - 两道质量门与评审：回喂模型的报告与改造前一字不差（特征断言先于改动写好），逐条消息的代码与参数正确，评审意见是厂商原文；
-  - `test_messages.py`：`lines_of()` 的截断与 `common.more_lines`、`_zh_value` 换行连接；
-  - `test_error_refs.py`：`scrub_deep` 不动 `code` 与 `t`；
-  - `test_graph.py`：硬失败的 `ConversionError.lines`、解析失败的 `verify.attempt.unparseable`、降级警告的 `report` 是 `lines`、桩掉 `_check_batch` 时退回厂商原文、整章结构终检失败带 `lines`；
+    - 存档形状：接口与版本记录带 `msg`，`to_dict(shown=False)`、`validation_list` 不带；
+    - `VerificationReport.lines()`：汇总首行、覆盖统计、逐条；
+    - 两道质量门与评审：带上 `lines_out` 后报告照旧，逐条消息的代码与参数正确，评审意见是厂商原文；
+    - 检查工具输出按 `ERROR` 行拆分，丢掉 `WARN`、汇总、`PASS`；
+  - `test_messages.py`：`lines_of()` 的条数截断与总长截断、`common.more_lines`、`_zh_value` 换行连接；
+  - `test_error_refs.py`：`scrub_deep` 不动 `code` 与 `t`；`_rel` 只换整段路径前缀；
+  - `test_graph.py`：硬失败的 `ConversionError.lines`（汇总首行）与尝试记录不带 `msg`、解析失败的 `verify.attempt.unparseable`、降级警告的 `report` 是 `lines`、桩掉 `_check_batch` 时退回厂商原文、整章结构终检失败只有汇总一行；
   - `test_offline.py`：降级警告的断言由 `["text"]` 改为 `lines` 与中文兜底；
-  - `test_jobs.py`：`_execute` 用 `e.lines` 生成 `report`，数据目录被替换；验证门 422 的 finding 带 `msg`；
+  - `test_jobs.py`：`_execute` 用 `e.lines` 生成 `report`，数据目录被替换，报告原文进调试日志；降级警告经 `scrub_deep`；验证门 422 的 finding 带 `msg`；
   - `test_assistant_ops.py`：编辑卡复验原因的 `detail` 是 `verify.rule.*`；
   - `test_novels.py`：保存后返回的 finding 带 `msg`；
-  - ast 扫描：`Finding(…)` 与 `report.add(…)` 加进出口规则；`MODULES` 加 `pipeline/verification.py`、`pipeline/quality.py`、`pipeline/repair.py`（全文件）与 `pipeline/novel_memory.py` 的 `soft_findings`。改动前的基线：新规则下 3 处（`ORDER-001` 与两条软核查），`repair.py` 现有规则下 14 处（标 `# i18n: llm`）。扫描结果要清零。
+  - ast 扫描：`Finding(…)` 与 `report.add(…)` 加进出口规则；`MODULES` 加 `pipeline/verification.py`、`pipeline/quality.py`、`pipeline/repair.py`（全文件）与 `pipeline/novel_memory.py` 的 `soft_findings`。改动前的基线：新规则下 3 处（`ORDER-001` 标 `# i18n: llm`，两条软核查改由模板生成），`repair.py` 现有规则下 14 处（标 `# i18n: llm`）。扫描结果要清零。
 - 前端：
   - `server-msg.test.ts`：`lines` 渲染（中英、嵌套在 `job.failed_report` 里、`failHead` 仍只取原因）、未知 `t` 为空串、`findingText` 的三种回落；
   - `workspace.test.tsx`（JobPanel）：失败区与质量报告的 `lines` 中英渲染；任务验证面板的 finding 按代码渲染、旧 finding 显示 `message`；
   - `flow.test.tsx`：保存后与渲染被拦的验证面板切英文后跟着变；
-  - `assistant.test.tsx`：编辑卡复验原因里嵌套规则消息的中英渲染，旧存档的厂商原文照旧显示。
+  - `assistant.test.tsx`：编辑卡复验原因里嵌套规则消息的中英渲染，旧存档的厂商原文照旧显示；
+  - `admin.test.tsx`：后台任务页展开的失败全文里 `lines` 逐行渲染。
 
 ### H. 代码命名（新登记）
 
 全部在 `verify` 域（与子计划 4 的 `verify.gate.blocked`、`verify.finding` 不冲突），另加 `common.more_lines`：
 - `verify.rule.<rule_id>`：B 节 23 条；
 - `verify.severity.critical/high/medium/low`、`verify.lifecycle.deceased/departed`；
-- `verify.report.finding/coverage/pass/fail/tool`；
+- `verify.report.finding/coverage/pass/fail/tool/tool_error`；
 - `verify.attempt.unparseable/no_tool_call/too_many_steps`；
 - `verify.quality.density/density_safe/density_bare/unit/speech/speech_shot`；
 - `verify.review.unavailable/call_failed/unverifiable/scored/dim_score/issue/no_issues/gates`、`verify.review.dim.<四个维度>`、`verify.review.gate.overall/weak/semantic`。
 
 叶子与前缀已逐个核对：`verify.review.gates` 与 `verify.review.gate.*`、`verify.review.dim_score` 与 `verify.review.dim.*` 按「.」分段不构成前缀关系。规则编号里的连字符（`SCHEMA-001`）在 `srv` 节点里写成带引号的键。完整列表与中英文案见计划。
 
+### 后续：子计划 5b（lint 结构化输出，海外上线前必须完成）
+
+- 给 `tools/lint_storyboard.py` 加 `--json` 输出（每条错误给规则名与结构化参数，约 20 个模板），转换流水线改读 JSON，按条登记 `verify.lint.*`，英文界面里 lint 的错误行也按语言显示。
+- 保真与合并工具可以继续保持原文：保真与 `FID-SOURCE-001` 重叠（结构校验先跑），合并错误很少见。
+- 本子计划只做按 `ERROR` 行拆分的过渡，不展开 5b 的设计（协调方裁定）。
+
 ### 修订记录
 
 - 2026-11-14 子计划 4 交付后起草。§3.7「回喂模型的仍是原来的中文 message」更正为「原文（多为英文）一字不改」。
+
+### 设计审查修订记录
+
+- 2026-11-14 独立设计审查（Opus，审 bcd93c2，结论 approve with changes：0 Critical / 3 Important / 11 Minor），本节与计划同步修订：
+  - I1 回喂模型的守护弱于声称：G 节新增改动前单独提交的快照测试（计划 Task 0b），`test_verify_msgs.py` 只测新接口。
+  - I2 检查工具保持原文的理由与代码不符：A「不在本子计划」与 C、E 节改为按 `ERROR` 行拆成逐条；lint `--json` 定为子计划 5b，海外上线前必须完成（协调方裁定）。
+  - I3 `lines` 不限总长、汇总会被截掉：C 节加 6000 字的总长预算，汇总放第一项。
+  - Minor 采纳的：尝试记录不带 `msg`（A 节）；`ORDER-001` 保留原 f-string（开头「前提更正」）；降级警告也经 `scrub_deep`（A、E 节）；`_rel` 只换整段路径前缀（A 节）；整章结构终检只给汇总一行（C 节）；后台任务页展开全文列为显示处（C、G 节）；`§3.7` 行号、工具标题措辞；空值写法与命令行 JSON（F 节）；报告原文另记进调试日志（C、F 节）。
+  - Minor 7 不采纳回改 §3.1/§4/§6 正文：本节约定只改状态行，`lines` 的类型说明写在 C 节「§3.1 参数类型补充」（计划 R18）。
+  - 开放问题按审查建议定：lint 见 5b；中文兜底的变化接受、不迁移；评审意见维持原文、不翻译（要改须动 `REVIEW_SYSTEM`，会影响修复效果，以后单独决策）；不按规则发进度事件。
