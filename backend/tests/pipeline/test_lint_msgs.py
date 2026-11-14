@@ -176,7 +176,7 @@ def main() -> int:
     assert V._lint_value(3) == 3 and V._lint_value({"a": 1}) == '{"a": 1}'
     print("6. 列表上限与省略、可选项为空（outfit 与 state）、单条上限、值的写法 ✓")
 
-    # 7. checker_lines：lint 有结构化错误就翻译；没有（None 或空列表）就和保真输出一起按行拆分（子计划 5 的做法）
+    # 7. checker_lines：lint 有结构化错误就翻译；没有（None 或空列表）就退回按行拆分原文；lint 与保真各自拆分、依次追加（R8）
     fid_fail = "FAIL 原文保真：unit 拼接与原文不一致\n  首个差异位置 3"
     assert V.checker_lines(False, "ERROR t", ERRS, True, "PASS") == V.lint_lines(ERRS)
     assert V.checker_lines(False, "ERROR t", ERRS, False, fid_fail) == V.lint_lines(ERRS) + V.tool_lines(fid_fail)
@@ -188,7 +188,7 @@ def main() -> int:
         assert both == V.tool_lines("ERROR 原文一条") + V.tool_lines(fid_fail), both
         flat = json.dumps(both, ensure_ascii=False)
         assert "原文一条" in flat and "FAIL 原文保真" in flat and "首个差异位置 3" in flat, flat
-    print("7. checker_lines 的五种组合 ✓")
+    print("7. checker_lines 的七种组合 ✓")
 
     # 8. 流水线：_check_batch 的逐条按规则翻译、报告仍是原文；重试耗尽时 ConversionError.lines 同样
     shown = []
