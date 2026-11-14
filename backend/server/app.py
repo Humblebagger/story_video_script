@@ -401,7 +401,7 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
             m = msg("job.failed_report", reason=compact(m), report=body)
         if report:
             # 失败区只有逐条；完整原文给管理员排查（只进调试日志，_job_debug 会脱敏，审查 Minor 11）
-            _job_debug(job, "失败报告原文：\n" + report[:REPORT_MAX])  # i18n: internal
+            _job_debug(job, "失败报告原文：\n" + error_refs.scrub_text(report)[:REPORT_MAX])  # i18n: internal
         _job_debug(job, f"转换失败：{e}")  # i18n: internal
         if getattr(e, "hint", ""):
             _job_debug(job, e.hint)

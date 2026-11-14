@@ -105,7 +105,7 @@ def part_execute(nid, cid):
     assert v["verification"] == {"status": "failed", "findings": []}, "ConversionError 照旧保存验证报告"
 
     # 子计划 5：ConversionError 带逐条消息 → report 参数是 lines；逐条里的数据目录换成 <data>；不再用报告原文
-    from server.messages import compact, lines_of
+    from server.messages import REPORT_MAX, compact, lines_of
     shown = [compact(msg("verify.report.tool")),
              compact(msg("verify.report.tool_error", text=vendor(f"路径 {auth.DATA_DIR}/users/x")))]
     job = new_job(nid, cid, "v_lines")
@@ -116,6 +116,13 @@ def part_execute(nid, cid):
     assert rep["items"][1]["params"]["text"]["text"] == "路径 <data>/users/x"
     assert v["error"] == "批 1 重试 0 次后仍未通过校验\n工具报告的错误（原文）：\n  路径 <data>/users/x", v["error"]
     assert any("原文报告" in x for x in v["debug_log"]), "报告原文另记进调试日志，管理员能看到（审查 Minor 11）"
+
+    # 密钥跨过报告原文的截断边界：先脱敏整份再截断，调试日志里不留密钥前缀（修复第 1 轮）
+    job = new_job(nid, cid, "v_cut")
+    v = run(job, fake_raise(ConversionError.of("job.batch_failed", "X" * (REPORT_MAX - 20) + LLM_KEY,
+                                               shown, batch=1, retries=0)))
+    for log in (job["debug_log"], v["debug_log"]):
+        assert not any(LLM_KEY in x or LLM_KEY[:20] in x for x in log), "密钥或其前缀残留在调试日志"
 
     # 降级警告里的原文（评审意见等）也经 scrub_deep：数据目录换成 <data>，中文兜底一起换（审查 Minor 3）
     warn2 = msg("job.quality.degraded", batch=1, retries=2, attempt=2, candidates=2,
