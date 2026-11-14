@@ -500,6 +500,26 @@ def main() -> int:
     del os.environ["ARK_API_KEY"]
     print("18b. 单引号密钥嵌套转义 ✓")
 
+    # 18c. 控制字符密钥进 meta.video.resolution（第 3 轮）：repr 写成 \x07 / \n，json 写成 \u0007 / \n
+    from render.providers.base import scrub_secrets as _ss
+    for K18c in ("headTOKEN\atailTOKEN", "abc\n123secret-TAIL"):
+        os.environ["ARK_API_KEY"] = K18c
+        tail = K18c[-9:]
+        for val in ({"value": K18c}, {"value": repr(K18c)}, {"value": json.dumps({"k": K18c})}):
+            d = SNAP.doc()
+            d["meta"] = {"video": {"resolution": val}}
+            rep = V.verify_document(d)
+            assert any(f.rule_id == "SCHEMA-001" and "resolution" in f.object_path for f in rep.findings), rep.lines()
+            for label, blob in (("to_dict", json.dumps(rep.to_dict(shown=True), ensure_ascii=False)),
+                                ("to_dict ascii", json.dumps(rep.to_dict(shown=True))),
+                                ("lines", json.dumps(rep.lines(), ensure_ascii=False)),
+                                ("attempt", _ss(rep.render()))):  # 尝试记录 manifest.attempts[].report 的写法
+                assert tail not in blob and K18c[:8] not in blob, (label, val, blob)
+                for lay in (repr(K18c), json.dumps(K18c), repr(repr(K18c))):
+                    assert lay[1:-1] not in blob, (label, lay, blob)
+        del os.environ["ARK_API_KEY"]
+    print("18c. 控制字符密钥经转义后整份报告不漏 ✓")
+
     print("\nALL PASS")
     return 0
 

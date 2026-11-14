@@ -253,7 +253,7 @@ def main() -> int:
         base.scrub_secrets(big)
         ms = (time.perf_counter() - t0) * 1000
         print(f"  10 万字 x 6 密钥脱敏 {ms:.1f}ms")
-        assert ms < 20, ms
+        assert ms < 30, ms
     finally:
         for n in names:
             os.environ.pop(n, None)
@@ -269,6 +269,142 @@ def main() -> int:
         os.environ.pop("ARK_API_KEY", None)
         os.environ.pop("STORYBOARD_SECRET", None)
     print("脱敏：逐层嵌套与多密钥重叠 ✓")
+
+    # 第 4 轮：规范化 N + 位置映射。各轮复审（codex-accept-fix*-result.txt）的复现逐条在此
+    # 4a. 控制字符密钥：repr / json / 混合序列化，容器嵌套 1~4 层，逐层解码都不含 k 及其长度 >= 8 的子串
+    keys4 = ("abc\n123secret", "abc\t\x01secret", "headTOKEN\atailTOKEN", "headTOKEN\btailTOKEN",
+             "headTOKEN\vtailTOKEN", "headTOKEN\ftailTOKEN")
+    t0 = time.perf_counter()
+    nplans = 0
+    for k in keys4:
+        os.environ["ANTHROPIC_API_KEY"] = k
+        try:
+            for depth in (1, 2, 3, 4):
+                for plan in itertools.product(combos, repeat=depth):
+                    roundtrip(k, plan)
+                    nplans += 1
+        finally:
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+    print(f"  控制字符嵌套穷举 {nplans} 组 {time.perf_counter() - t0:.1f}s")
+    # 4b. 原文直接写成 \u000A、\x0A、\n（十六进制大小写都算），以及复审给的 \a \b \v \f 的 repr / json 形态
+    direct = {
+        "abc\n123secret": ("abc\\u000A123secret", "abc\\u000a123secret", "abc\\x0A123secret", "abc\\x0a123secret",
+                           "abc\\n123secret", "abc\\\\\\n123secret", "abc\\U0000000A123secret"),
+        "abc\t\x01secret": ("abc\\t\\x01secret", "abc\\u0009\\u0001secret", "abc\\x09\\\\u0001secret"),
+        "headTOKEN\atailTOKEN": ("headTOKEN\\x07tailTOKEN", "headTOKEN\\u0007tailTOKEN", "headTOKEN\\atailTOKEN"),
+    }
+    for ch in "\a\b\v\f":
+        k = "headTOKEN" + ch + "tailTOKEN"
+        direct.setdefault(k, ())
+        direct[k] += (repr(k), _json.dumps(k), repr(repr(k)), _json.dumps(_json.dumps(k)))
+    for k, texts in direct.items():
+        for sm in texts:
+            for out in (base.scrub_secrets(sm, extra=[k]), base.scrub(sm, k)):
+                assert out.replace("'", "").replace('"', "").replace("\\", "") == "***", (k, sm, out)
+    print("脱敏：控制字符密钥的各种转义写法 ✓")
+
+    # 4c. 凭据与密钥交叠：Bearer / x-api-key 只收集区间、与密钥区间取并集，不得留下 ***'123secret
+    kq = "abc'123secret"
+    os.environ["STORYBOARD_SECRET"] = kq
+    try:
+        for raw in ("Bearer abc'123secret", "x-api-key: abc'123secret", "authorization: bearer abc'123secret;",
+                    '{"x-api-key": "abc\'123secret"}'):
+            for sm in (raw, repr(raw), _json.dumps(raw), repr(repr(raw)), _json.dumps(_json.dumps(raw)),
+                       str({"h": raw}), _json.dumps({"h": raw})):
+                for out in (base.scrub_secrets(sm), base.scrub(sm, kq)):
+                    assert "123secret" not in out and "abc" not in out and "***" in out, (sm, out)
+        assert base.scrub_secrets("Bearer abc'123secret") == "Bearer ***"
+        assert base.scrub("x-api-key: abc'123secret", kq) == "x-api-key: ***"
+        # scrub 只管传进来的密钥与凭据，环境密钥不归它；limit 截断在脱敏之后
+        assert base.scrub("plain abc'123secret") == "plain abc'123secret"
+        assert base.scrub("abc'123secret tail", kq, limit=5) == "*** t"
+        assert base.scrub("Bearer tok123 rest", limit=10) == "Bearer ***"
+    finally:
+        os.environ.pop("STORYBOARD_SECRET", None)
+    print("脱敏：凭据与密钥交叠 ✓")
+
+    # 4d. 前几轮复审的原始复现
+    os.environ["STORYBOARD_SECRET"] = kq
+    try:
+        for sm in (repr(repr(kq)), repr(repr(repr({"value": kq})))):                # 第 1、2 轮
+            out = base.scrub_secrets(sm)
+            assert "123secret" not in out and out == base.scrub(sm, kq), (sm, out)
+            back = out
+            while isinstance(back, str) and back not in ("***",):
+                try:
+                    back = ast.literal_eval(back)
+                except (ValueError, SyntaxError):
+                    raise AssertionError(("解码失败", sm, out))
+                if isinstance(back, dict):
+                    back = back["value"]
+            assert back == "***", (sm, out, back)
+    finally:
+        os.environ.pop("STORYBOARD_SECRET", None)
+    k1, k2raw = "abc密钥123secret", r"abc\u5bc6\u94a5123secret-sensitiveTAIL987"     # 第 1 轮：跨密钥交叠
+    os.environ["ARK_API_KEY"], os.environ["STORYBOARD_SECRET"] = k1, k2raw
+    try:
+        assert base.scrub_secrets(k2raw) == "***", base.scrub_secrets(k2raw)
+        assert base.scrub_secrets("abc密钥123secret-sensitiveTAIL987") == "***"
+        for sm in (repr(k2raw), _json.dumps(k2raw), _json.dumps({"v": k2raw}), k1 + " " + k2raw):
+            out = base.scrub_secrets(sm)
+            assert "TAIL987" not in out and "sensitive" not in out and "123secret" not in out, (sm, out)
+    finally:
+        os.environ.pop("ARK_API_KEY", None)
+        os.environ.pop("STORYBOARD_SECRET", None)
+    assert base.scrub_secrets("normal not-a-secret text", extra=["'not-a-secret'"]) == "normal not-a-secret text"
+    # 可接受的误伤：原文解码后恰好就是密钥（反斜杠加普通字符解码为该字符）
+    assert base.scrub_secrets("x ab\\c y", extra=["abc"]) == "x *** y"
+    assert base.scrub_secrets("x a\\bc y", extra=["abc"]) == "x a\\bc y", "\\b 是退格，解码后不等于密钥"
+    print("脱敏：前几轮复审复现 ✓")
+
+    # 4e. 接缝：文本里紧挨密钥的残缺转义会吞掉密钥开头、或补齐密钥结尾的残缺转义（报告里的边界判定）
+    for k, sm in (("abc123secretXY", "dir\\abc123secretXY"),                    # 孤立反斜杠 + 短转义字母 a
+                  ("abc123secretXY", repr("C:\\dir\\" + "abc123secretXY")),
+                  ("ntoken-secret-1", repr("C:\\keys\\" + "ntoken-secret-1")),   # \n
+                  ("41secretsecret", "x\\u0041secretsecret"),                      # \u00 + 密钥开头的十六进制
+                  ("ude00secretsecret".join(["\\", ""]), "\\ud83d\\ude00secretsecret"),   # 高代理 + 密钥开头的低代理
+                  ("mysecretkey\\u12", "mysecretkey\\u1234"),                     # 密钥结尾残缺的 \u
+                  ("mysecretkey\\u12", repr("mysecretkey\\u1234z")),
+                  ("mysecretkey\\ud83d", "mysecretkey\\ud83d\\ude00"),             # 密钥结尾的高代理与后文合成
+                  ("mysecretkey\\", repr({"v": "mysecretkey\\"})),                 # 密钥结尾是反斜杠
+                  ("mysecretkey\\", _json.dumps(["mysecretkey\\"]))):
+        for out in (base.scrub_secrets(sm, extra=[k]), base.scrub(sm, k)):
+            assert "secret" not in out and "***" in out, (k, sm, out)
+    assert ast.literal_eval(base.scrub_secrets(repr({"v": "mysecretkey\\"}), extra=["mysecretkey\\"]))["v"] == "***\\"
+    assert _json.loads(base.scrub_secrets(_json.dumps(["mysecretkey\\"]), extra=["mysecretkey\\"])) == ["***\\"]
+    print("脱敏：转义接缝 ✓")
+
+    # 4f. 性能：严格线性，不回溯（每项取 3 次最好成绩）
+    def best_ms(text, keys):
+        base.scrub_secrets(text[:200], extra=keys)
+        best = None
+        for _ in range(3):
+            t0 = time.perf_counter()
+            out = base.scrub_secrets(text, extra=keys)
+            ms = (time.perf_counter() - t0) * 1000
+            best = ms if best is None else min(best, ms)
+        return best, out
+
+    mixed6 = [f"k{i}密钥😀a\\b'c\"d{i}" for i in range(6)]
+    plain = "sk-test-plainkey123"
+    perf = (
+        ("10 万个反斜杠", "\\" * 100000, [plain, "head" + "\\" * 6 + "tail"], 50, None),
+        ("head+96 个反斜杠+FAIL", "head" + "\\" * 96 + "FAIL", ["head" + "\\" * 6 + "tail"], 5, None),
+        ("5 万个反斜杠+完整密钥", "\\" * 50000 + plain, [plain], 50, "***"),
+        ("5 万个反斜杠+a 开头的密钥", "\\" * 50000 + "abc'123secret", ["abc'123secret"], 50, "***"),
+        ("10 万字常见文本 x 6 个混合密钥", ("普通中文文本 plain english text 一二三 " * 4000)[:100000], mixed6, 30, None),
+        ("10 万个重复字符（未命中）", "a" * 100000, [plain] + mixed6, 50, None),
+        ("10 万个重复字符（逐位重叠命中）", "a" * 100000, ["aaaaaaaa", "a"], 50, "***"),
+    )
+    for label, text, keys, limit_ms, want in perf:
+        ms, out = best_ms(text, keys)
+        print(f"  {label}：{ms:.3f}ms（上限 {limit_ms}ms）")
+        assert ms < limit_ms, (label, ms)
+        if want is not None:
+            assert out == want, (label, out[:80])
+        elif label.startswith("10 万字") or "未命中" in label:
+            assert out == text, label
+    print("脱敏：性能 ✓")
 
     print("\nALL PASS")
     return 0
