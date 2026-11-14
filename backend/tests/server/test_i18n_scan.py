@@ -3,6 +3,7 @@
 
 逐子计划把模块加进 MODULES；app.py 只扫列出的函数。豁免：行尾 # i18n: internal / llm / todo(N)。
 子计划 4 起还扫 `say(…)`、`job["log"].append(…)`、字典里 message/error/summary 键的值。
+子计划 5 起还扫 `Finding(…)` 与 `report.add(…)`（验证报告的条目）。
 """
 import ast
 import re
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 CJK = re.compile(r"[\u4e00-\u9fff]")
 MARK = re.compile(r"#\s*i18n:\s*(internal|llm|todo\(\d\))")
 SINK_NAME = re.compile(r"(Error|Exception|Submit|Conflict|NotFound|Corrupt|Exceeded|Invalid|Stale|Busy)$")
-SINK_CALLS = {"HTTPException", "note_error", "submit_failed", "download_failed", "TaskState", "say"}
+SINK_CALLS = {"HTTPException", "note_error", "submit_failed", "download_failed", "TaskState", "say", "Finding"}
 SINK_KW = {"error", "detail", "message", "step"}
 SINK_DICT_KEYS = {"message", "error", "summary"}     # 字典字面量里这些键的值：SSE 事件、门的结果、历史条目
 SINK_SUBSCRIPTS = {"error", "summary", "message"}    # obj["error"] = … 这类赋值
@@ -120,6 +121,12 @@ def _sinks(node):
                     and isinstance(f.value.slice, ast.Constant) and f.value.slice.value == "log"):
                 for a in n.args:
                     yield a, '["log"].append'
+            if (isinstance(f, ast.Attribute) and f.attr == "add" and isinstance(f.value, ast.Name)
+                    and f.value.id == "report"):
+                for a in n.args:
+                    yield a, "report.add"
+                for k in n.keywords:
+                    yield k.value, f"report.add({k.arg}=)"
             name = _name(n.func)
             if name in SINK_CALLS or SINK_NAME.search(name):
                 for a in n.args:
@@ -219,6 +226,11 @@ def main() -> int:
         ('def f(job):\n    job["debug_log"].append("中文")\n    log("中文")\n', 0),
         ('d = {"message": "中文"}  # i18n: llm\n', 0),
         ('d = {"target": "全书梗概"}\n', 0),
+        # 子计划 5：验证报告的两个出口（回喂模型的原文标 # i18n: llm；给界面的走代码）
+        ('def f(r, x):\n    r.add("A", "high", "/", "中文")\n    report.add("A", "high", "/", f"中文{x}")\n', 1),
+        ('def f(p):\n    Finding("A", "medium", p, "中文")\n', 1),
+        ('def f(p):\n    report.add("A", "high", p, "english")\n    Finding("A", "medium", p, params={"x": 1})\n', 0),
+        ('def f(p):\n    report.add("ORDER-001", "medium", p, "中文")  # i18n: llm\n', 0),
     ]
     for i, (code, want) in enumerate(cases):
         got = probe_hits(code)

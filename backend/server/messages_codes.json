@@ -493,6 +493,12 @@
     "params": [],
     "zh": "服务器出了点问题，请稍后重试；仍失败请联系管理员"
   },
+  "common.more_lines": {
+    "params": [
+      "n"
+    ],
+    "zh": "…还有 {n} 行未显示"
+  },
   "common.unknown": {
     "params": [
       "message"

@@ -194,6 +194,29 @@ def part_expected():
     print("5. expected：带代码且不需要编号才算可预期 ✓")
 
 
+def part_scrub_deep():
+    raw = f"{auth.DATA_DIR}/users/x key={LLM_KEY}"
+    m = M.compact(M.msg("job.failed_report", reason=M.compact(M.msg("job.batch_failed", batch=1, retries=0)),
+                        report=M.lines_of([M.msg("common.unknown", message=M.vendor(raw))])))
+    out = error_refs.scrub_deep(m)
+    blob = json.dumps(out, ensure_ascii=False)
+    assert str(auth.DATA_DIR) not in blob and LLM_KEY not in blob and "<data>" in blob, blob
+    assert out["code"] == "job.failed_report" and out["params"]["report"]["t"] == "lines"
+    assert out["params"]["report"]["items"][0]["code"] == "common.unknown", "code 与 t 不动"
+    assert m["params"]["report"]["items"][0]["params"]["message"]["text"] == raw, "不改调用方的对象"
+    print("6. scrub_deep：字符串逐个脱敏，code 与 t 不动 ✓")
+
+
+def part_rel():
+    """只换整段路径前缀：Docker 里后端目录是 /app，/assets/…/appearance 不能变成 <app>earance（设计审查 Minor 4）。"""
+    app = str(error_refs._APP_ROOT)
+    assert error_refs.scrub_text(f"{app}/server/app.py:12") == "<app>/server/app.py:12"
+    assert error_refs.scrub_text(f"{app}earance/face") == f"{app}earance/face", "不是这个目录的前缀不替换"
+    assert error_refs.scrub_text(f"'{auth.DATA_DIR}'") == "'<data>'"
+    assert error_refs.scrub_text(f"at {auth.DATA_DIR}") == "at <data>"
+    print("7. _rel 只换整段路径前缀 ✓")
+
+
 def main() -> int:
     part_ref()
     part_record()
@@ -201,6 +224,8 @@ def main() -> int:
     part_trim()
     part_api()
     part_expected()
+    part_scrub_deep()
+    part_rel()
     print("\nALL PASS")
     return 0
 

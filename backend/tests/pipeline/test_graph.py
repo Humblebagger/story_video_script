@@ -107,10 +107,15 @@ def main() -> int:
             raise AssertionError("重试耗尽应抛 ConversionError")
         except ConversionError as e:
             assert e.code == "job.batch_failed" and e.params == {"batch": 7, "retries": settings.max_retries}
+            assert isinstance(e.lines, list), "ConversionError 带逐条消息（spec 子计划 5 C）"
             assert e.report and d not in str(e) and "保留在" not in str(e), "工作目录只进调试日志"
             assert (Path(d) / "batch7_failure_report.txt").exists()
         assert any(d in line for line in logs3), "工作目录仍在调试日志里"
         print("graph: 重试耗尽 → ConversionError + 报告落盘 ✓")
+
+    e = ConversionError.of("job.merge_failed", "原文", [{"code": "common.unknown", "params": {"message": "x"}}])
+    assert e.report == "原文" and e.lines == [{"code": "common.unknown", "params": {"message": "x"}}] and e.code == "job.merge_failed"
+    assert ConversionError("无代码").lines == []
 
     # 3b. 软质量门耗尽降级：评审原文里的密钥不进警告对象、事件与调试日志
     import os

@@ -1355,7 +1355,7 @@ export const zh = {
     unitMissing: '（未找到 {id}）',
   },
   srv: {
-    common: { image_too_big: '图片为空或超过 {mb}MB', unknown: '{message}', internal: '服务器出了点问题，请稍后重试；仍失败请联系管理员' },
+    common: { more_lines: '…还有 {n} 行未显示', image_too_big: '图片为空或超过 {mb}MB', unknown: '{message}', internal: '服务器出了点问题，请稍后重试；仍失败请联系管理员' },
     console: { generic: '厂商控制台', ark: '方舟控制台', minimax: 'MiniMax 开放平台' },
     rate: {
       fake: '假厂商：不联网、不花钱，金额只用于演示',

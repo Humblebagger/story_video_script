@@ -70,13 +70,28 @@ def _rel(text: str) -> str:
     pairs += [(d, "<app>") for d in {str(_APP_ROOT), str(Path(__file__).parents[1])}]
     for d, mark in sorted(pairs, key=lambda x: -len(x[0])):
         if d and d != "/":
-            text = text.replace(d, mark)
+            # 只换整段路径前缀：/app 后面接 earance 的不是这个目录（设计审查 Minor 4）
+            text = re.sub(re.escape(d) + r"(?![\w.\-])", lambda _m, mark=mark: mark, text)
     return text
 
 
 def scrub_text(text: str, secrets_extra=()) -> str:
     """日志文字统一脱敏：密钥抹掉、数据目录换成 <data>（record 与调用方的二次失败日志共用）。"""
     return _rel(scrub_secrets(str(text), secrets_extra))
+
+
+_KEEP_KEYS = ("code", "t")      # 消息对象的代码与参数类型标记：不是文字，不脱敏
+
+
+def scrub_deep(v):
+    """消息对象（含嵌套消息、列表、lines、厂商原文）里的字符串逐个 scrub_text；code 与 t 不动，返回新对象。"""
+    if isinstance(v, str):
+        return scrub_text(v)
+    if isinstance(v, list):
+        return [scrub_deep(x) for x in v]
+    if isinstance(v, dict):
+        return {k: x if k in _KEEP_KEYS else scrub_deep(x) for k, x in v.items()}
+    return v
 
 
 def _clip(text: str) -> str:

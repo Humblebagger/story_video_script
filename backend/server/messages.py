@@ -5,7 +5,8 @@
 message 是中文兜底，给旧前端、日志与测试阅读。登记表导出到 messages_codes.json，前端测试核对。
 
 参数值允许：字符串、数字、列表、嵌套消息 {code, params}（内层原因）、
-金额 {"t":"money","cny":…}、代码引用 {"t":"ref","code":…}、厂商原文 {"t":"vendor","text":…}。
+金额 {"t":"money","cny":…}、代码引用 {"t":"ref","code":…}、厂商原文 {"t":"vendor","text":…}、
+逐条报告 {"t":"lines","items":[…]}。
 """
 import json
 import re
@@ -15,6 +16,7 @@ from typing import Any, Optional
 
 CODES_FILE = Path(__file__).with_name("messages_codes.json")
 VENDOR_MAX = 300
+LINES_MAX = 100          # lines 参数（逐条报告）最多几项；与按中文兜底累计的总长 REPORT_MAX 一起限制，超出的截掉，末尾补一项 common.more_lines
 REPORT_MAX = 6000        # 报告类原文（校验报告、质量门报告）作参数时的上限
 _PH = re.compile(r"\{(\w+)\}")
 _REG: dict = {}          # code → (参数名元组, 中文模板)
@@ -61,6 +63,8 @@ def _zh_value(v: Any) -> str:
             return _REG[v["code"]][1]
         if t == "vendor":
             return str(v.get("text", ""))
+        if t == "lines":
+            return "\n".join(_zh_value(x) for x in v.get("items") or [])
         if "code" in v:
             return v.get("message") or render_zh(v["code"], v.get("params") or {})
         return ""
@@ -79,6 +83,23 @@ def msg(code: str, /, **params) -> dict:
     if set(params) != want:
         raise ValueError(f"{code} 的参数应为 {sorted(want)}，实际 {sorted(params)}")  # i18n: internal
     return {"code": code, "params": params, "message": render_zh(code, params)}
+
+
+def lines_of(items, limit: int = LINES_MAX, budget: int = REPORT_MAX) -> dict:
+    """逐条报告参数：前端逐项渲染、换行连接（spec 子计划 5 C）。
+    消息对象压成 {code, params}；字符串与带类型的值（如厂商原文）原样。
+    超过 limit 项，或中文兜底累计超过 budget 字，就截止，末尾说还有几项（原来整份报告上限 6000 字，设计审查 I3）。
+    调用方把汇总放在第一项，截断时不会丢。"""
+    items = [compact(x) if isinstance(x, dict) and "code" in x and "t" not in x else x for x in items]
+    out, used = [], 0
+    for i, x in enumerate(items):
+        size = len(_zh_value(x)) + 1
+        if len(out) >= limit or used + size > budget:
+            out.append(compact(msg("common.more_lines", n=len(items) - i)))
+            break
+        out.append(x)
+        used += size
+    return {"t": "lines", "items": out}
 
 
 class UserError:
@@ -170,6 +191,7 @@ def dump_codes() -> dict:
 # ---------- 登记表（按域分组；改动后运行 python -m server.messages --write） ----------
 
 register("common.unknown", "{message}")
+register("common.more_lines", "…还有 {n} 行未显示")
 register("common.internal", "服务器出了点问题，请稍后重试；仍失败请联系管理员")
 
 # 控制台名与费率说明（厂商属性，前端按代码渲染）

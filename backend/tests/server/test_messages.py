@@ -146,6 +146,20 @@ def main() -> int:
     e = E2.from_msg(M.with_ref(M.msg("common.internal"), "K7Q2M9XD"))
     assert e.as_msg()["ref"] == "K7Q2M9XD" and "参考编号 K7Q2M9XD" in str(e)
     print("子计划 4：vendor 上限 / from_msg / recast ✓")
+    # 子计划 5：逐条报告参数 lines（spec 子计划 5 C）
+    L = M.lines_of([M.msg("common.unknown", message="a"), M.vendor("b"), "c"])
+    assert L == {"t": "lines", "items": [{"code": "common.unknown", "params": {"message": "a"}},
+                                         {"t": "vendor", "text": "b"}, "c"]}, "消息对象压成紧凑形，其余原样"
+    assert M.render_zh("common.unknown", {"message": L}) == "a\nb\nc", "中文兜底换行连接"
+    big = M.lines_of([M.msg("common.unknown", message=str(i)) for i in range(M.LINES_MAX + 7)])
+    assert len(big["items"]) == M.LINES_MAX + 1 == 101
+    assert big["items"][-1] == {"code": "common.more_lines", "params": {"n": 7}}
+    assert M.render_zh("common.more_lines", {"n": 7}) == "…还有 7 行未显示"
+    # 总长预算：按中文兜底累计，超过 REPORT_MAX 就截止（防止落盘的报告与中文兜底无界变大，设计审查 I3）
+    long = M.lines_of([M.msg("common.unknown", message="字" * 300)] * 30)
+    assert len(long["items"]) == 20 and long["items"][-1] == {"code": "common.more_lines", "params": {"n": 11}}, "每项 301 字（含换行），19 项后超预算"
+    assert len(M.render_zh("common.unknown", {"message": long})) <= M.REPORT_MAX + 100
+    print("子计划 5：lines_of / 条数与总长截断 / 中文兜底 ✓")
     print("\nALL PASS")
     return 0
 

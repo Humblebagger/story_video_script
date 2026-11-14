@@ -1361,7 +1361,7 @@ export const en: Messages = {
     unitMissing: '(not found: {id})',
   },
   srv: {
-    common: { image_too_big: 'The image is empty or larger than {mb} MB', unknown: '{message}', internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.' },
+    common: { more_lines: '…not shown: {n} more', image_too_big: 'The image is empty or larger than {mb} MB', unknown: '{message}', internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.' },
     console: { generic: 'the provider console', ark: 'the Volcengine Ark console', minimax: 'the MiniMax Open Platform' },
     rate: {
       fake: 'Fake provider: offline and free; amounts are for demo only',
