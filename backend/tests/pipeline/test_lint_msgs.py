@@ -183,6 +183,11 @@ def main() -> int:
     assert V.checker_lines(False, "ERROR 原文一条\n", None, True, "PASS") == V.tool_lines("ERROR 原文一条")
     assert V.checker_lines(False, "ERROR 原文一条\n", [], True, "PASS") == V.tool_lines("ERROR 原文一条")
     assert V.checker_lines(True, "PASS", None, False, fid_fail) == V.tool_lines(fid_fail)
+    for errs in (None, []):                        # 非结构化 lint 与保真同时失败：两段都列，保真的 FAIL 与差异行不被 ERROR 行挤掉（R8）
+        both = V.checker_lines(False, "ERROR 原文一条\n", errs, False, fid_fail)
+        assert both == V.tool_lines("ERROR 原文一条") + V.tool_lines(fid_fail), both
+        flat = json.dumps(both, ensure_ascii=False)
+        assert "原文一条" in flat and "FAIL 原文保真" in flat and "首个差异位置 3" in flat, flat
     print("7. checker_lines 的五种组合 ✓")
 
     # 8. 流水线：_check_batch 的逐条按规则翻译、报告仍是原文；重试耗尽时 ConversionError.lines 同样

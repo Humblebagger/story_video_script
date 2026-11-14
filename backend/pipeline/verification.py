@@ -453,15 +453,10 @@ def lint_lines(errors: list) -> list:
 def checker_lines(lint_ok: bool, lint_text: str, lint_errors: Optional[list],
                   fid_ok: bool, fid_text: str) -> list:
     """lint 与保真未过时给用户的逐条（批内校验与整章终检共用，spec 子计划 5b C）。
-    lint 有结构化错误就按条翻译；没有（崩溃、输出认不出、测试替身）就与保真输出一起按行拆分（tool_lines，同子计划 5）。"""
-    out, raw = [], []
+    lint 有结构化错误就按条翻译；没有（崩溃、输出认不出、测试替身）就按行拆分（tool_lines）；两段各拆各的，保真的 FAIL 与差异行不会被 lint 的 ERROR 行挤掉（R8）。"""
+    out = []
     if not lint_ok:
-        if lint_errors:
-            out.extend(lint_lines(lint_errors))
-        else:
-            raw.append(lint_text.strip())
+        out.extend(lint_lines(lint_errors) if lint_errors else tool_lines(lint_text.strip()))
     if not fid_ok:
-        raw.append(fid_text.strip())
-    if raw:
-        out.extend(tool_lines("\n".join(raw)))
+        out.extend(tool_lines(fid_text.strip()))
     return out
