@@ -1,5 +1,5 @@
 /** 后端消息对象的渲染：字符串原样、代码按语言、带类型参数、嵌套原因、缺译回落。跑法：npm test */
-import { formatMsg, itemError, errValue, failHead } from '../src/i18n/serverMsg'
+import { formatMsg, itemError, errValue, failHead, findingText } from '../src/i18n/serverMsg'
 import { ApiError, conflictCny } from '../src/api'
 import { zh } from '../src/i18n/zh'
 import { en } from '../src/i18n/en'
@@ -109,6 +109,26 @@ must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
   must(formatMsg(failed, 'zh') === '批 2 重试 3 次后仍未通过校验\nFAIL: E01 缺资产 C09', '中文整段')
   must(formatMsg(failed, 'en').endsWith('\nFAIL: E01 缺资产 C09') && !formatMsg(failed, 'en').startsWith('批'), '英文原因 + 报告原文')
   must(formatMsg(failHead(failed), 'zh') === '批 2 重试 3 次后仍未通过校验', '一行只取原因')
+}
+// 子计划 5：报告参数的 lines 类型（逐项渲染、换行连接）；验证报告一条的说明（spec 子计划 5 C）
+{
+  const wrapL = (items: unknown) => ({ code: 'common.unknown', params: { message: { t: 'lines', items } } })
+  must(formatMsg(wrapL([{ code: 'common.unknown', params: { message: 'a' } }, { t: 'vendor', text: 'b' }, 'c']) as never, 'en') === 'a\nb\nc',
+    'lines 逐项渲染、换行连接')
+  must(formatMsg(wrapL([]) as never, 'zh') === '', '空 lines 为空串')
+  must(formatMsg(wrapL('x') as never, 'zh') === '', 'items 不是数组时为空串')
+  must(formatMsg({ code: 'common.unknown', params: { message: { t: 'future', x: 1 } } } as never, 'en') === '', '不认识的 t 为空串（不崩）')
+  const reason = { code: 'job.batch_failed', params: { batch: 2, retries: 3 } }
+  const failed = { code: 'job.failed_report', params: { reason, report: { t: 'lines', items: [
+    { code: 'common.unknown', params: { message: 'L1' } }, { code: 'common.unknown', params: { message: 'L2' } }] } } }
+  must(formatMsg(failed, 'en') === en.srv.job.failed_report.replace('{reason}', formatMsg(reason, 'en')).replace('{report}', 'L1\nL2'),
+    'failed_report 里的 lines（英文）')
+  must(formatMsg(failed, 'zh') === `${zh.srv.job.batch_failed.replace('{batch}', '2').replace('{retries}', '3')}\nL1\nL2`, 'failed_report 里的 lines（中文）')
+  must(formatMsg(failHead(failed), 'zh') === formatMsg(reason, 'zh'), '一行显示仍只取原因')
+  must(findingText({ message: 'old' }) === 'old', '旧 finding（没有 msg）显示 message')
+  must(findingText({ message: 'old', msg: { code: 'x.not.registered', params: {} } }, 'en') === 'old', '缺译回落到 message，不显示代码名')
+  must(findingText({ message: 'old', msg: { code: 'common.unknown', params: { message: 'new' } } }, 'en') === 'new', '有 msg 按代码渲染')
+  console.log('子计划 5：lines / findingText ✓')
 }
 
 console.log('\nALL PASS')

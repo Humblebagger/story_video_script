@@ -247,6 +247,8 @@ export interface Finding {
   severity: Severity
   object_path: string
   message: string
+  /** 说明的消息对象（verify.rule.<rule_id>），界面按语言渲染；message 是回喂模型的原文。旧报告没有 */
+  msg?: ServerMsg
   unit_refs?: string[]
   evidence_quote?: string
   expected?: unknown

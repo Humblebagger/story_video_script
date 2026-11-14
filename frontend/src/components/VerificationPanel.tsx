@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { Finding, Storyboard, VerificationReport } from '../types'
 import { tr, useI18n } from '@/i18n/core'
+import { findingText } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 
 interface Props {
@@ -38,7 +39,7 @@ export function locate(path: string, doc?: Storyboard | null): string {
 }
 
 function FindingRow({ f, doc }: { f: Finding; doc?: Storyboard | null }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   return (
     <li className={`vf vf--${f.severity}`}>
       <div className="vf__head">
@@ -49,7 +50,7 @@ function FindingRow({ f, doc }: { f: Finding; doc?: Storyboard | null }) {
         <span className="vf__rule">{f.rule_id}</span>
         <code className="vf__at">{locate(f.object_path, doc)}</code>
       </div>
-      <p className="vf__msg">{f.message}</p>
+      <p className="vf__msg">{findingText(f, locale)}</p>
       {f.evidence_quote && <p className="vf__quote">{t('verify.quote', { q: f.evidence_quote })}</p>}
       {(f.expected !== undefined || f.actual !== undefined) && (
         <p className="vf__diff">

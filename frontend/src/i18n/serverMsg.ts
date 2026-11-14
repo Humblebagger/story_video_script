@@ -17,6 +17,7 @@ function value(v: unknown, l: Locale): string {
     if (v.t === 'money') return `¥${Number(v.cny).toFixed(2)}`
     if (v.t === 'ref') return render({ code: String(v.code) }, l)
     if (v.t === 'vendor') return String(v.text ?? '')
+    if (v.t === 'lines') return Array.isArray(v.items) ? v.items.map((x) => value(x, l)).join('\n') : ''
     if (isServerMsg(v)) return render(v, l)
     return ''
   }
@@ -70,4 +71,11 @@ export function failHead(m: MsgLike): MsgLike {
 /** 会话里的段、尝试、自由节点：有 error_msg 按代码，没有（旧数据、未改造的模块）原样显示 error */
 export function itemError(x: { error?: string | null; error_msg?: ServerMsg | null }, locale?: Locale): string {
   return x.error_msg ? formatMsg(x.error_msg, locale) : (x.error ?? '')
+}
+
+/** 验证报告一条的说明：有 msg（verify.rule.<rule_id>）按代码渲染，缺译回落到原 message；
+ *  旧报告没有 msg，显示 message（spec 子计划 5 C、F） */
+export function findingText(f: { message?: string; msg?: ServerMsg | null }, locale: Locale = currentLocale()): string {
+  if (!f.msg) return f.message ?? ''
+  return formatMsg({ ...f.msg, message: f.message ?? f.msg.message }, locale)
 }
