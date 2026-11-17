@@ -108,6 +108,8 @@ const clips = (doc_: Storyboard, film: FilmSession | null) =>
   eq(foldTags([]), { shown: [], more: 0 }, '空')
   must(!needsFold('字'.repeat(60)) && needsFold('字'.repeat(61)), '超过 60 字要展开按钮')
   must(!needsFold('a\nb\nc') && needsFold('a\nb\nc\nd'), '超过 3 行要展开按钮')
+  must(needsFold('字'.repeat(30) + '\n甲\n乙'), '长行自动折行加显式换行超过 3 行要展开按钮')
+  must(!needsFold('字'.repeat(20) + '\n' + '字'.repeat(20) + '\n' + '字'.repeat(20)), '三个满行不折叠')
   console.log('6. 折叠 ✓')
 }
 

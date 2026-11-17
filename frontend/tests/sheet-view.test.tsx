@@ -71,8 +71,10 @@ const film = {
 
 /* ---------- 桩后端：只有 E01-SH001 有关键帧 ---------- */
 const K = '/novels/n1/chapters/c1/versions/v1/keyframes'
-g.fetch = async (url: string) => {
+const requests: string[] = []
+g.fetch = async (url: string, init?: { method?: string }) => {
   const path = String(url).replace(/^\/api/, '')
+  requests.push(`${init?.method ?? 'GET'} ${path}`)
   if (path === K) return { ok: true, status: 200, json: async () => ({ shots: ['E01-SH001'] }) }
   if (path === `${K}/E01-SH001`) {
     return { ok: true, status: 200, blob: async () => new Blob(['x'], { type: 'image/png' }) }
@@ -128,6 +130,8 @@ must(eps.length === 2 && eps[0].includes('E01') && eps[0].includes('黎明') && 
 must(qa('tbody').length === 2 && qa('tbody')[0].querySelectorAll('tr[data-shot]').length === 4, '每集一个 tbody')
 must(qa('thead th').map((x) => x.textContent).join('|') === '镜号|关键帧|景别|运镜 / 角度|画面|台词 / 旁白|视频提示词', '七列表头')
 must(container.querySelector('.sheet__wrap')?.getAttribute('aria-label') === '拉片表', '滚动容器有名字')
+// 请求清单：只读一次关键帧清单与那一张图，不多发、不重复
+must(requests.join('|') === `GET ${K}|GET ${K}/E01-SH001`, `关键帧请求清单：${requests.join('|')}`)
 console.log('1. 行数与分组 ✓')
 
 // 2. 各列文字
@@ -184,6 +188,12 @@ await click(row('E01-SH003').querySelectorAll('td')[4])
 must(jumps.join() === 'E01-SH003', `点行跳到这一镜：${jumps.join()}`)
 await click(row('E01-SH002').querySelector('button.sheet__id')!)
 must(jumps.join() === 'E01-SH003,E01-SH002', `点镜号按钮只报一次：${jumps.join()}`)
+{
+  const btn = row('E01-SH003').querySelector('button.sheet__id') as unknown as HTMLButtonElement
+  must(!btn.disabled && btn.tabIndex === 0, '镜号按钮未禁用且在 Tab 顺序里')
+  btn.focus()
+  must(win.document.activeElement === (btn as unknown), '镜号按钮可聚焦')
+}
 console.log('6. 点行跳转 ✓')
 
 // 7. 没有出片会话、没有版本：每集一格未规划，全部无图
@@ -212,5 +222,6 @@ await act(async () => { root.render(sheet(film, null)) })
 setCurrentLocale('zh')
 console.log('8. 英文 ✓')
 
+must(requests.length === 2, `全程没有多余请求：${requests.join('|')}`)
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

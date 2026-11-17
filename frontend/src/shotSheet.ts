@@ -71,9 +71,13 @@ export function foldTags(tags: string[], max = TAG_MAX): { shown: string[]; more
   return { shown: tags.slice(0, max), more: Math.max(0, tags.length - max) }
 }
 
-export const PROMPT_FOLD_CHARS = 60
+/** 提示词列最窄时一行按 20 字估算；默认截到 3 行 */
+export const PROMPT_LINE_CHARS = 20
+export const PROMPT_FOLD_LINES = 3
 
-/** 提示词要不要「展开」按钮：超过 60 字或超过 3 行（不量 DOM，测试环境没有布局） */
+/** 提示词要不要「展开」按钮：按显式换行拆行，每行按 20 字折行估算，合计超过 3 行就要
+ *  （不量 DOM，测试环境没有布局；估算偏保守，被截断的提示词一定带按钮） */
 export function needsFold(text: string): boolean {
-  return text.length > PROMPT_FOLD_CHARS || text.split('\n').length > 3
+  const lines = text.split('\n').reduce((n, l) => n + Math.ceil(Math.max(l.length, 1) / PROMPT_LINE_CHARS), 0)
+  return lines > PROMPT_FOLD_LINES
 }

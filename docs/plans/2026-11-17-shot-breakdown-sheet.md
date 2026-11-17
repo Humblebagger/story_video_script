@@ -200,6 +200,8 @@ const clips = (doc_: Storyboard, film: FilmSession | null) =>
   eq(foldTags([]), { shown: [], more: 0 }, '空')
   must(!needsFold('字'.repeat(60)) && needsFold('字'.repeat(61)), '超过 60 字要展开按钮')
   must(!needsFold('a\nb\nc') && needsFold('a\nb\nc\nd'), '超过 3 行要展开按钮')
+  must(needsFold('字'.repeat(30) + '\n甲\n乙'), '长行自动折行加显式换行超过 3 行要展开按钮')
+  must(!needsFold('字'.repeat(20) + '\n' + '字'.repeat(20) + '\n' + '字'.repeat(20)), '三个满行不折叠')
   console.log('6. 折叠 ✓')
 }
 
@@ -304,11 +306,13 @@ export function foldTags(tags: string[], max = TAG_MAX): { shown: string[]; more
   return { shown: tags.slice(0, max), more: Math.max(0, tags.length - max) }
 }
 
-export const PROMPT_FOLD_CHARS = 60
+export const PROMPT_LINE_CHARS = 20
+export const PROMPT_FOLD_LINES = 3
 
-/** 提示词要不要「展开」按钮：超过 60 字或超过 3 行（不量 DOM，测试环境没有布局） */
+/** 提示词要不要「展开」按钮：按显式换行拆行、每行按 20 字折行估算，合计超过 3 行（不量 DOM，测试环境没有布局） */
 export function needsFold(text: string): boolean {
-  return text.length > PROMPT_FOLD_CHARS || text.split('\n').length > 3
+  const lines = text.split('\n').reduce((n, l) => n + Math.ceil(Math.max(l.length, 1) / PROMPT_LINE_CHARS), 0)
+  return lines > PROMPT_FOLD_LINES
 }
 ```
 
@@ -1504,7 +1508,7 @@ Expected:
 1. **测试框架**：任务说明里提到的 vitest + testing-library 在本仓库不存在。沿用现有的 `vite build --ssr` + node 脚本写法，不新增依赖。
 2. **`App.tsx` 不改**：`StoryboardView` 已经收到 `film`（`flow.film`）与 `version`，拉片表直接用。
 3. **未规划的相邻镜头也合并成一格**：没有出片会话时每集只有一格「未规划」，而不是每行一格。
-4. **展开按钮靠字数判定**（超过 60 字或超过 3 行），不量 DOM。
+4. **展开按钮靠估算行数判定**（按换行拆行、每行 20 字折行，合计超过 3 行），不量 DOM。
 5. **提示词格不参与点行跳转**：它可能跨多镜。
 6. **片段卡加高**：`CARD_H` 208 → 252，标签行最多两行。英文标签长（如 `SH003 Medium close-up·Push in`），一行放不下三个。
 7. **`+N` 不走文案表**：符号加数字，中英文相同。
