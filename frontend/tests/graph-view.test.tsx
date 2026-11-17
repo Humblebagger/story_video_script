@@ -339,6 +339,64 @@ console.log('7. 切回时间轴 ✓')
 await act(async () => { root.unmount() })
 console.log('graph-view integration: PASS')
 
+// ---------- 片段卡的镜头小标签：镜号、景别、运镜；超过 3 个折叠成 +N（NodeGraph 单独渲染） ----------
+{
+const { NodeGraph } = await import('../src/components/NodeGraph')
+const { I18nProvider } = await import('../src/i18n')
+const { setCurrentLocale } = await import('../src/i18n/core')
+
+const mk = (n: number, size: string, movement?: string) => ({
+  id: `E01-SH00${n}`, duration_sec: 3, shot_size: size, camera: movement ? { movement } : undefined, action: 'a',
+  source: { unit_refs: [], derivation: 'explicit' },
+})
+const tagDoc = { assets: {}, episodes: [{ id: 'E01', shots: [
+  mk(1, 'wide', 'static'), mk(2, 'close_up', 'push_in'), mk(3, 'medium'), mk(4, 'full', 'pan'),
+  mk(5, 'insert', 'track'), mk(6, 'extreme_close_up', 'follow'), mk(7, 'medium_close', 'handheld'),
+] }] } as unknown as Storyboard
+const mkClip = (id: string, shots: string[]) => ({
+  id, episode: 'E01', shots, duration: 5, truncated: false, prompt: 'p', refs: [],
+  dropped_refs: [], missing_refs: [], first_frame: null, frame_mode: null, fingerprint: 'fp', estimate_cny: 5,
+  attempts: [], chosen: null, mute_native: false, uncertain: false, error: null, state: 'planned',
+})
+const session = {
+  provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
+  confirm_over_cny: 20, spent_cny: 0, free: [], orphaned: [], counts: {}, reserved_cny: 0, uncertain_count: 0,
+  remaining_cny: 0,
+  clips: [
+    mkClip('E01-C1', ['E01-SH001', 'E01-SH002', 'E01-SH003']),
+    mkClip('E01-C2', ['E01-SH004', 'E01-SH005', 'E01-SH006', 'E01-SH007', 'E01-SH099']),
+    mkClip('E01-C3', []),
+  ],
+  options: { providers: ['fake'], models: {}, resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
+             max_refs: 3, audio_modes: ['tts_all'], rate_note: '' },
+} as unknown as FilmSession
+const film = { session, busy: false, error: null, files: {}, ensure: () => {}, createFree: async () => {} } as unknown as Film
+
+const container = win.document.createElement('div')
+win.document.body.appendChild(container)
+const root = createRoot(container as unknown as HTMLElement)
+const graph = <NodeGraph film={film} doc={tagDoc} styleUrl={null} kfUrls={{}}
+                         selected={null} blocked={null} onSelect={() => {}} onOpenAssets={() => {}} onOpenFilm={() => {}} />
+const tagsOf = (id: string) => container.querySelector(`[data-node="${id}"] [data-testid="clip-shots"]`)
+const texts = (id: string) => [...(tagsOf(id)?.querySelectorAll('.ngv__shot') ?? [])].map((x) => x.textContent)
+
+await act(async () => { root.render(graph) })
+must(texts('E01-C1').join('|') === 'SH001 远景·固定|SH002 特写·推|SH003 中景', `逐镜标签：${texts('E01-C1').join('|')}`)
+must(!tagsOf('E01-C1')?.querySelector('.ngv__shot--more'), '恰好 3 个不折叠')
+must(texts('E01-C2').join('|') === 'SH004 全景·摇|SH005 插入镜·移|SH006 大特写·跟|+2', `超过 3 个折叠：${texts('E01-C2').join('|')}`)
+must(tagsOf('E01-C2')?.getAttribute('title')
+     === 'SH004 全景·摇\nSH005 插入镜·移\nSH006 大特写·跟\nSH007 中近景·手持\nSH099', '悬停提示列出全部，找不到的镜头只写短镜号')
+must(!!container.querySelector('[data-node="E01-C3"]') && !tagsOf('E01-C3'), '没有镜头的段不显示标签行')
+console.log('片段卡镜头标签 ✓')
+
+await act(async () => { root.render(<I18nProvider initial="en">{graph}</I18nProvider>) })
+must(texts('E01-C1').join('|') === 'SH001 Wide·Static|SH002 Close-up·Push in|SH003 Medium', `英文标签：${texts('E01-C1').join('|')}`)
+await act(async () => { root.render(graph) })
+setCurrentLocale('zh')
+console.log('片段卡镜头标签（英文） ✓')
+await act(async () => { root.unmount() })
+}
+
 // ---------- Esc：没选中时放行给画布关闭，选中后第一下只取消选中（NodeGraph 单独渲染） ----------
 {
 const { NodeGraph } = await import('../src/components/NodeGraph')

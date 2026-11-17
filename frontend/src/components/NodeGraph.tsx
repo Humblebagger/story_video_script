@@ -10,6 +10,7 @@ import { formatMsg } from '@/i18n/serverMsg'
 import { cn } from '@/lib/utils'
 import { chosenAttempt, freeNodes } from '../film'
 import { edgePath, fitView, layoutGraph, related } from '../nodeGraph'
+import { clipShotTags, shotsById } from '../shotSheet'
 import type { Film } from '../useFilm'
 import type { Storyboard } from '../types'
 import { AssetCard, ClipCard, FreeCard } from './NodeCards'
@@ -35,6 +36,8 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   const assets = doc.assets
   const graph = useMemo(() => (s ? layoutGraph({ session: s, assets: assets ?? {}, hasStyle: !!styleUrl, styleUrl }) : null),
                         [s, assets, styleUrl])
+  /** 镜头 id → 镜头：片段卡上的镜头小标签用 */
+  const shots = useMemo(() => shotsById(doc), [doc])
   const [view, setView] = useState({ scale: 1, x: 24, y: 24 })
   const [focus, setFocus] = useState<string | null>(selected)
   const [hover, setHover] = useState<string | null>(null)
@@ -147,6 +150,7 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
               )}
               {n.kind === 'clip' && (
                 <ClipCard clip={n.clip} s={s} film={film} blocked={blocked} hot={hot}
+                          tags={clipShotTags(n.clip.shots, shots)}
                           fallback={frameOf(n.clip.first_frame)} onDerive={() => void film.createFree(n.clip.id)} />
               )}
               {n.kind === 'free' && (

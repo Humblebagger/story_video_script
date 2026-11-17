@@ -6,8 +6,8 @@ import type { Assets, FilmClip, FilmFreeNode, FilmSession } from './types'
 export const ASSET_W = 220
 export const ASSET_H = 88
 export const CARD_W = 260
-/** 剧本段卡高；自由节点卡带编辑项，更高 */
-export const CARD_H = 208
+/** 剧本段卡高（含最多两行镜头小标签）；自由节点卡带编辑项，更高 */
+export const CARD_H = 252
 export const FREE_H = 340
 export const EP_H = 28
 export const GAP = 24

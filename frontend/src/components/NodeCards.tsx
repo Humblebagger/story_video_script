@@ -13,6 +13,7 @@ import { FILM_STATE, label } from '../labels'
 import { chosenAttempt, copyIndex, inFlight, laneText, needsConfirm, slotsNeeded, tailSources } from '../film'
 import type { Film } from '../useFilm'
 import type { AssetRole } from '../nodeGraph'
+import { foldTags } from '../shotSheet'
 import type { FilmAttempt, FilmClip, FilmClipState, FilmFreeNode, FilmSession } from '../types'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
@@ -98,8 +99,10 @@ export function AssetCard({ role, name, image, usedBy, onOpen }: {
   )
 }
 
-export function ClipCard({ clip: c, s, film, blocked, hot, fallback, onDerive }: {
+export function ClipCard({ clip: c, s, film, blocked, hot, fallback, tags, onDerive }: {
   clip: FilmClip; s: FilmSession; film: Film; blocked: string | null; hot: boolean
+  /** 这一段每个镜头的小标签（「SH003 特写·推」），由 NodeGraph 按分镜算好 */
+  tags: string[]
   /** 没有结果时显示的首帧来源图（关键帧或上一段尾帧） */
   fallback: string | null
   onDerive: () => void
@@ -111,6 +114,7 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, onDerive }:
   const spent = c.attempts.reduce((n, a) => n + (a.cost_cny ?? 0), 0)
   const chosen = chosenAttempt(c)
   const redo = c.attempts.some((a) => a.state === 'succeeded')
+  const fold = foldTags(tags)
   return (
     <>
       <header className="ngv__head">
@@ -118,6 +122,12 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, onDerive }:
         <StatusPill tone={TONE[c.state]}>{inFlight(c) ? laneText(c, Date.now()) : label(FILM_STATE, c.state)}</StatusPill>
         {c.uncertain && <StatusPill tone="warn">{t('graph.uncertainTag')}</StatusPill>}
       </header>
+      {tags.length > 0 && (
+        <p className="ngv__shots" data-testid="clip-shots" title={tags.join('\n')}>
+          {fold.shown.map((x) => <span key={x} className="ngv__shot">{x}</span>)}
+          {fold.more > 0 && <span className="ngv__shot ngv__shot--more">+{fold.more}</span>}
+        </p>
+      )}
       <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} />
       {chosen?.free_id && <p className="ngv__dim">{t('graph.fromFree', { id: chosen.free_id })}</p>}
       <p className="ngv__prompt" title={c.prompt}>{c.prompt}</p>
