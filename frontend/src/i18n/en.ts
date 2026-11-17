@@ -723,7 +723,19 @@ export const en: Messages = {
     statNarrated: 'Narrated',
     statInferred: 'Added shots',
     viewsAria: 'Storyboard views',
-    tabs: { focus: 'Shots', cards: 'Cards', assets: 'Assets', source: 'Source', render: 'Render', json: 'JSON' },
+    tabs: { focus: 'Shots', cards: 'Cards', sheet: 'Breakdown', assets: 'Assets', source: 'Source', render: 'Render', json: 'JSON' },
+    sheet: {
+      aria: 'Shot breakdown',
+      col: {
+        shot: 'Shot', frame: 'Keyframe', size: 'Size', camera: 'Movement / Angle', action: 'Action',
+        voice: 'Lines / Narration', prompt: 'Video prompt',
+      },
+      noFrame: 'No image',
+      unplanned: 'Not planned',
+      more: 'Show more',
+      less: 'Show less',
+      jump: 'Open in Shots view',
+    },
     focus: {
       search: 'Search shots: ID / action / lines',
       listAria: 'Shot list',

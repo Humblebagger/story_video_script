@@ -717,7 +717,19 @@ export const zh = {
     statNarrated: '旁白占比',
     statInferred: '系统补充镜',
     viewsAria: '分镜视图',
-    tabs: { focus: '镜头', cards: '卡片', assets: '资产', source: '原文', render: '渲染', json: 'JSON' },
+    tabs: { focus: '镜头', cards: '卡片', sheet: '拉片表', assets: '资产', source: '原文', render: '渲染', json: 'JSON' },
+    sheet: {
+      aria: '拉片表',
+      col: {
+        shot: '镜号', frame: '关键帧', size: '景别', camera: '运镜 / 角度', action: '画面', voice: '台词 / 旁白',
+        prompt: '视频提示词',
+      },
+      noFrame: '无图',
+      unplanned: '未规划',
+      more: '展开',
+      less: '收起',
+      jump: '在镜头视图中打开',
+    },
     focus: {
       search: '搜索镜头：ID / 画面 / 台词',
       listAria: '镜头列表',

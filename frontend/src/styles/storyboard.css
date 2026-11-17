@@ -561,3 +561,63 @@
   cursor: pointer;
 }
 .chip__x:hover { color: var(--destructive); }
+
+/* ---------- 拉片表（ShotSheet.tsx）：每镜一行的只读总表 ----------
+ * 窄屏时表格在 .sheet__wrap 里横向滚动，页面本身不滚；表头在容器内吸顶。 */
+.sheet { min-width: 0; padding: 16px 20px 20px; }
+.sheet__wrap {
+  max-width: 100%;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius);
+  background: var(--card);
+}
+.sheet__table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 1.6; }
+.sheet__table th, .sheet__table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.sheet__table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--ui-muted); color: var(--ui-muted-foreground);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.sheet__col-shot { width: 108px; }
+.sheet__col-frame { width: 116px; }
+.sheet__col-size { width: 88px; }
+.sheet__col-camera { width: 124px; }
+.sheet__col-voice { width: 22%; }
+.sheet__col-prompt { width: 280px; }
+.sheet__ep th { background: var(--background); font-weight: 600; }
+.sheet__ep th > span + span { margin-left: 10px; }
+.sheet__ep-id { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sheet__ep-n { font-size: 12px; font-weight: 400; color: var(--ui-muted-foreground); }
+.sheet__row { cursor: pointer; }
+.sheet__row:hover > td:not(.sheet__promptcell) { background: var(--ui-muted); }
+.sheet__id {
+  display: block; border: 0; padding: 0; background: none; color: inherit; cursor: pointer;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap;
+}
+.sheet__id:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.sheet__dur, .sheet__clip {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ui-muted-foreground);
+}
+.sheet__thumb { display: block; width: 96px; border-radius: 4px; object-fit: cover; background: var(--ui-muted); }
+.sheet__thumb--tall { width: 54px; }
+.sheet__thumb--empty { display: grid; place-items: center; font-size: 11px; color: var(--ui-muted-foreground); }
+.sheet__action, .sheet__atmo, .sheet__line, .sheet__clip, .sheet__prompt { margin: 0; overflow-wrap: anywhere; }
+.sheet__atmo { margin-top: 2px; font-size: 12px; color: var(--ui-muted-foreground); }
+.sheet__line + .sheet__line { margin-top: 4px; }
+.sheet__line > b { margin-right: 6px; font-weight: 600; }
+.sheet__line > .chip { margin-right: 6px; vertical-align: middle; }
+.sheet__line--nar > b { font-size: 12px; font-weight: 500; color: var(--ui-muted-foreground); }
+.sheet__promptcell { cursor: default; border-left: 1px solid var(--border); }
+.sheet__prompt {
+  display: -webkit-box; overflow: hidden; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  font-size: 12px; white-space: pre-wrap;
+}
+.sheet__prompt.is-open { display: block; overflow: visible; -webkit-line-clamp: unset; }
+.sheet__more {
+  margin-top: 4px; border: 0; padding: 0; background: none; cursor: pointer;
+  font-size: 12px; color: var(--primary);
+}
+.sheet__more:hover { text-decoration: underline; }
+.sheet__none { font-size: 12px; color: var(--ui-muted-foreground); }
