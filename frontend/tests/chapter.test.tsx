@@ -262,7 +262,7 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
     await settle()
   }
   await mount()
-  must(qa('.tabs__btn').map((b) => b.textContent).join(' ') === '镜头 卡片 资产 原文 渲染 JSON', '六个页签')
+  must(qa('.tabs__btn').map((b) => b.textContent).join(' ') === '镜头 卡片 拉片表 资产 原文 渲染 JSON', '七个页签')
   must(qa('.focus').length > 0, '默认是镜头视图')
   must(qa('.shot').length === 1, '镜头视图里只有中栏一张卡')
   await act(async () => { qa('.tabs__btn')[1].dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event) })

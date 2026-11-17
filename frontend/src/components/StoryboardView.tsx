@@ -8,6 +8,7 @@ import type { FilmSession, Shot, Storyboard, VerificationReport, VersionRef } fr
 import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
 import { ShotFocusView } from './ShotFocusView'
+import { ShotSheet } from './ShotSheet'
 import { RenderView } from './RenderView'
 import { SourceView } from './SourceView'
 import type { Workbench } from './CanvasPanels'
@@ -17,9 +18,9 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/i18n/core'
 
-export type Tab = 'focus' | 'cards' | 'assets' | 'source' | 'render' | 'json'
+export type Tab = 'focus' | 'cards' | 'sheet' | 'assets' | 'source' | 'render' | 'json'
 
-const TABS: Tab[] = ['focus', 'cards', 'assets', 'source', 'render', 'json']
+const TABS: Tab[] = ['focus', 'cards', 'sheet', 'assets', 'source', 'render', 'json']
 
 function download(doc: Storyboard) {
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
@@ -247,6 +248,9 @@ export function StoryboardView({
             />
           ))}
         </div>
+      )}
+      {tab === 'sheet' && (
+        <ShotSheet doc={doc} idx={idx} film={film} version={version} imagesKey={imagesKey} onJump={jumpShot} />
       )}
       {tab === 'assets' && (
         <AssetsView assets={doc.assets ?? {}} editing={editing} onChange={changeAsset} />

@@ -37,6 +37,9 @@ eq(ch('/novels/n1/chapters/c1/review/canvas', '?view=timeline').fix, '/novels/n1
 eq(ch('/novels/n1/chapters/c1/review/canvas', '?view=zzz').fix, '/novels/n1/chapters/c1/review/canvas', '非法 view 去掉')
 eq(ch('/novels/n1/chapters/c1/review/other').loc, { kind: 'notFound' }, '画布位置只能是 canvas')
 eq(ch('/novels/n1/chapters/c1/review/canvas/x').loc, { kind: 'notFound' }, '画布下没有子路径')
+eq(ch('/novels/n1/chapters/c1/review', '?tab=sheet'),
+   { loc: { kind: 'chapter', nid: 'n1', cid: 'c1', step: 'review', tab: 'sheet', canvas: false, view: 'timeline' }, fix: null }, '拉片表页签')
+eq(ch('/novels/n1/chapters/c1/import', '?tab=sheet').fix, '/novels/n1/chapters/c1/import', '拉片表页签也只在 review/render/compose 有意义')
 console.log('3. 章节、步骤、页签、画布 ✓')
 
 // 4. 拼地址
@@ -50,6 +53,7 @@ eq(chapterPath('n1', 'c1', { step: 'download', tab: 'assets', canvas: true, view
 eq(chapterPath('a b', 'c/1'), '/novels/a%20b/chapters/c%2F1', 'id 要编码')
 eq(parseLocation('/novels/a%20b/chapters/c%2F1').loc,
    { kind: 'chapter', nid: 'a b', cid: 'c/1', step: null, tab: 'focus', canvas: false, view: 'timeline' }, 'id 要解码')
+eq(chapterPath('n1', 'c1', { step: 'render', tab: 'sheet' }), '/novels/n1/chapters/c1/render?tab=sheet', '拉片表页签写进地址')
 console.log('4. 拼地址 ✓')
 
 // 5. state 透传：replace 时去掉一次性的键

@@ -6,7 +6,7 @@ import { STEPS } from './workflow'
 import type { StepId } from './workflow'
 import type { Tab } from './components/StoryboardView'
 
-export const TABS = ['focus', 'cards', 'assets', 'source', 'render', 'json'] as const satisfies readonly Tab[]
+export const TABS = ['focus', 'cards', 'sheet', 'assets', 'source', 'render', 'json'] as const satisfies readonly Tab[]
 /** 画布只挂在这三步（StoryboardView 只在这三步挂载） */
 export const CANVAS_STEPS = ['review', 'render', 'compose'] as const satisfies readonly StepId[]
 export type CanvasView = 'timeline' | 'graph'

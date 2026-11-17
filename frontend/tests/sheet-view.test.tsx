@@ -224,4 +224,55 @@ console.log('8. 英文 ✓')
 
 must(requests.length === 2, `全程没有多余请求：${requests.join('|')}`)
 await act(async () => { root.unmount() })
+
+/* ---------- 接进分镜视图：页签、跳到镜头视图 ---------- */
+{
+  const { StoryboardView } = await import('../src/components/StoryboardView')
+  const box = win.document.createElement('div')
+  win.document.body.appendChild(box)
+  const q = (sel: string) => [...box.querySelectorAll(sel)] as unknown as HTMLElement[]
+  const tabOn = () => q('.tabs__btn').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+  const base = { doc, canSave: false, dirty: false, saving: false, film, version, onChange: () => {}, onSave: () => {} }
+
+  // 9. 非受控：页签顺序；点「拉片表」显示表；点行回到镜头视图并选中这一镜
+  const root1 = createRoot(box as unknown as HTMLElement)
+  await act(async () => { root1.render(<StoryboardView {...base} />) })
+  await settle()
+  must(q('.tabs__btn').map((b) => b.textContent).join(' ') === '镜头 卡片 拉片表 资产 原文 渲染 JSON', '拉片表在卡片与资产之间')
+  must(q('.sheet').length === 0 && q('.focus').length === 1, '默认还是镜头视图')
+  await click(q('.tabs__btn').find((b) => b.textContent === '拉片表')!)
+  must(tabOn() === '拉片表' && q('tr[data-shot]').length === 6 && q('.focus').length === 0, '点页签显示拉片表')
+  must(!!box.querySelector('tr[data-shot="E01-SH001"] img.sheet__thumb'), '拉片表里取到关键帧图')
+  must((box.querySelector('tr[data-shot="E01-SH001"] td.sheet__promptcell')?.textContent ?? '').includes('E01-C01'),
+       '出片会话传进了拉片表')
+  await click(box.querySelector('tr[data-shot="E01-SH003"]')!)
+  must(tabOn() === '镜头' && q('.sheet').length === 0 && q('.focus').length === 1, '点行回到镜头视图')
+  must(box.querySelector('.focus__item[aria-selected="true"]')?.getAttribute('data-shot') === 'E01-SH003',
+       '镜头视图选中这一镜')
+  await act(async () => { root1.unmount() })
+  console.log('9. 页签与跳转（非受控） ✓')
+
+  // 10. defaultTab=sheet 一开始就是拉片表；分批预览时也能看
+  const root2 = createRoot(box as unknown as HTMLElement)
+  await act(async () => { root2.render(<StoryboardView {...base} defaultTab="sheet" preview={{ done: 1, total: 2 }} />) })
+  await settle()
+  must(tabOn() === '拉片表' && q('tr[data-shot]').length === 6, '预览时拉片表照常显示')
+  await act(async () => { root2.unmount() })
+  console.log('10. defaultTab 与预览 ✓')
+
+  // 11. 受控：页签由上层给；点行只调用 onJumpShot，页签不自己变
+  const tabs: string[] = []
+  let jumped = 0
+  const root3 = createRoot(box as unknown as HTMLElement)
+  await act(async () => {
+    root3.render(<StoryboardView {...base} tab="sheet" onTab={(tb) => tabs.push(tb)} onJumpShot={() => { jumped += 1 }} />)
+  })
+  await settle()
+  must(tabOn() === '拉片表' && q('tr[data-shot]').length === 6, '受控时按上层给的页签显示拉片表')
+  await click(box.querySelector('tr[data-shot="E01-SH002"]')!)
+  must(jumped === 1 && tabs.length === 0 && tabOn() === '拉片表', `受控时只调用 onJumpShot：${jumped} / ${tabs.join()}`)
+  await act(async () => { root3.unmount() })
+  console.log('11. 跳转（受控） ✓')
+}
+
 console.log('\nALL PASS')

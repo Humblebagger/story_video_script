@@ -110,7 +110,7 @@ console.log(`挂卡规则 ok：40 个镜头 × ${idx.cardOptions.length} 张卡�
       </I18nProvider>)
   })
   const tabs = [...container.querySelectorAll('.tabs__btn')].map((b) => b.textContent).join(' ')
-  must(tabs === 'Shots Cards Assets Source Render JSON', `英文视图切换：${tabs}`)
+  must(tabs === 'Shots Cards Breakdown Assets Source Render JSON', `英文视图切换：${tabs}`)
   must((container.querySelector('.stats')?.textContent ?? '').includes('Coverage'), '英文统计卡有 Coverage')
   must([...container.querySelectorAll('.shot .chip')].some((c) => c.textContent === 'Wide'), '镜头卡景别标签是英文 Wide')
   must(!/[一-鿿]/.test(container.querySelector('.sb__head .stats')?.textContent ?? ''), '统计卡无中文')
