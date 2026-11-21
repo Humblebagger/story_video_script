@@ -496,6 +496,35 @@ def main() -> int:
         assert out == (text if want is None else want), out[:20]
     print("脱敏：自重叠密钥线性查找 ✓")
 
+    # 6. 通常时长：厂商给了用厂商的，没给用保守缺省；只是界面提示用的数字
+    assert base.typical_sec(fake) == [60, 180]
+    assert base.typical_sec(object()) == [60, 600]
+    print("通常时长 ✓")
+
+    # 7. 取消：厂商没有 cancel、cancel 抛异常都当「没取消成」，不往外抛，日志里没有密钥
+    assert base.try_cancel(object(), "t") is False
+
+    class Boom:
+        _key = "k-secret"
+
+        def cancel(self, task_id):
+            raise RuntimeError("k-secret 炸了")
+
+    with _LogGrab("render.providers.base") as g:
+        assert base.try_cancel(Boom(), "t") is False
+    assert g.lines and all("k-secret" not in x for x in g.lines), g.lines
+    # 假厂商：缺省取消不了（任务照常跑）；cancel_ok 时确认取消，之后查询是「任务已取消」
+    f2 = FakeVideo(polls_to_finish=3)
+    tid = f2.submit(base.ClipRequest(prompt="p", model="fake-1", duration=4, resolution="720p"))
+    assert base.try_cancel(f2, tid) is False and f2.poll(tid).status == "running"
+    f2.cancel_ok = True
+    assert base.try_cancel(f2, tid) is True
+    st = f2.poll(tid)
+    assert st.status == "failed" and st.error_msg["code"] == "film.provider.task_cancelled"
+    assert f2.cancel_calls == [tid, tid]
+    assert base.try_cancel(f2, "nope") is False
+    print("取消 ✓")
+
     print("\nALL PASS")
     return 0
 

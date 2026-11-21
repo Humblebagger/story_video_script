@@ -21,10 +21,11 @@ class FakeVideo:
     default_model = "fake-1"
     console_name = "console.generic"
     rate_note = {"code": "rate.fake", "params": {}}
+    typical_sec = (60, 180)
 
     def __init__(self, *, polls_to_finish: int = 1, fail_with: Optional[str] = None,
                  transient_submits: int = 0, max_refs: int = 3, frame_with_refs: bool = False,
-                 native_audio: bool = True):
+                 native_audio: bool = True, cancel_ok: bool = False):
         self.models = {"fake-1": {"label": "假厂商"}}
         self._caps = Caps(max_clip_sec=10, min_clip_sec=2, max_refs=max_refs, first_frame=True,
                           last_frame=False, returns_last_frame=True, native_audio=native_audio,
@@ -35,6 +36,8 @@ class FakeVideo:
         self.transient_submits = transient_submits
         self.submitted = []         # 依次提交的 ClipRequest
         self.tasks = {}
+        self.cancel_ok = cancel_ok  # True：取消一律成功（模拟任务还在厂商那边排队）；False：取消不了，任务照常跑
+        self.cancel_calls = []      # 依次被要求取消的任务 id
 
     def caps(self, model):
         if model not in self.models:
@@ -58,6 +61,9 @@ class FakeVideo:
         t = self.tasks.get(task_id)
         if t is None:
             raise ProviderError.of("film.fake.no_task", id=task_id)
+        if t.get("cancelled"):
+            m = msg("film.provider.task_cancelled")
+            return TaskState(task_id, "failed", error=m["message"], error_msg=compact(m))
         t["polls"] += 1
         if t["polls"] < self.polls_to_finish:
             return TaskState(task_id, "running")
@@ -81,6 +87,14 @@ class FakeVideo:
         if st.status != "succeeded":
             return 0.0
         return round(st.usage.get("seconds", 0) * self._caps.cny_per_sec.get(req.resolution, 0.0), 2)
+
+    def cancel(self, task_id):
+        self.cancel_calls.append(task_id)
+        t = self.tasks.get(task_id)
+        if not self.cancel_ok or t is None:
+            return False
+        t["cancelled"] = True
+        return True
 
 
 class FakeTts:

@@ -3,6 +3,7 @@
 主流程只用 caps / rewrite_prompt / submit / poll / download / cost。新增厂商 = 新文件 +
 在 providers/__init__.py 注册一行。厂商的提示词语法（如 Seedance 的 @图片n）只在厂商模块里。
 """
+import logging
 import math
 import os
 import re
@@ -13,7 +14,10 @@ from typing import Optional, Protocol
 
 from server.messages import UserError
 
+log = logging.getLogger("render.providers.base")
+
 REF_ROLES = ("character", "creature", "location", "prop", "first_frame", "style")
+DEFAULT_TYPICAL_SEC = (60, 600)     # 厂商没给「通常时长」时的保守区间（秒）
 
 
 class ProviderError(UserError, Exception):
@@ -84,6 +88,7 @@ class VideoProvider(Protocol):
     models: dict                    # 档位 id → {"label": ...}
     rate_note: dict     # 费率依据（消息对象 {code, params}）：如实写出处、是否经账单核对；出片确认框照抄
     console_name: str   # 厂商控制台名的代码，如 console.ark
+    typical_sec: tuple  # 一段通常要等多久（秒，下限与上限）：只给界面显示「通常 x–y 分钟」，不参与判定
 
     def caps(self, model: str) -> Caps: ...
     def rewrite_prompt(self, text: str) -> str: ...
@@ -91,6 +96,7 @@ class VideoProvider(Protocol):
     def poll(self, task_id: str) -> TaskState: ...
     def download(self, st: TaskState, dest: Path) -> dict: ...   # {"video": Path, "last_frame": Path | None}
     def cost(self, st: TaskState, req: ClipRequest) -> float: ...
+    def cancel(self, task_id: str) -> bool: ...                  # True = 厂商确认已取消且不计费；取消不了返回 False
 
 
 # ---- 密钥脱敏：三道规范化扫描 + 位置映射（验收 G1 第 4、5 轮）----
@@ -478,3 +484,22 @@ def is_playable_mp4(path: Path) -> bool:
     except OSError:
         return False
     return len(head) >= 8 and head[4:8] == b"ftyp"
+
+
+def typical_sec(provider) -> list:
+    """这家厂商一段通常要等多久（秒，[下限, 上限]）。厂商没给用 DEFAULT_TYPICAL_SEC。"""
+    lo, hi = getattr(provider, "typical_sec", None) or DEFAULT_TYPICAL_SEC
+    return [int(lo), int(hi)]
+
+
+def try_cancel(provider, task_id: str) -> bool:
+    """请厂商取消一个已提交的任务。True = 厂商确认已取消（不计费）；False = 没取消成（厂商没有取消接口、
+    任务已在生成、查询或取消出错）：调用方按「不等了」处理，任务可能照常完成并计费。绝不往外抛。"""
+    fn = getattr(provider, "cancel", None)
+    if fn is None:
+        return False
+    try:
+        return bool(fn(task_id))
+    except Exception as e:
+        log.warning("%s", scrub_secrets(f"取消任务出错：{type(e).__name__}", [getattr(provider, "_key", "")]))  # i18n: internal
+        return False
