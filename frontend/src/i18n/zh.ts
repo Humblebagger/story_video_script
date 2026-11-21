@@ -1357,6 +1357,7 @@ export const zh = {
     },
     jobs: {
       running: '运行中', failed: '近 7 天失败', refresh: '刷新',
+      filter: { label: '按状态筛选', all: '全部', running: '运行中', failed: '失败' },
       noRunning: '没有在跑的任务', noFailed: '没有失败的任务',
       debug: '调试日志', debugEmpty: '（没有调试日志）',
       runningCols: { user: '用户', novelChapter: '小说 / 章节', status: '状态', start: '开始', elapsed: '已运行', chars: '字数' },

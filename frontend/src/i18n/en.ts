@@ -1363,6 +1363,7 @@ export const en: Messages = {
     },
     jobs: {
       running: 'Running', failed: 'Failed in the last 7 days', refresh: 'Refresh',
+      filter: { label: 'Filter by status', all: 'All', running: 'Running', failed: 'Failed' },
       noRunning: 'No jobs running', noFailed: 'No failed jobs',
       runningCols: { user: 'User', novelChapter: 'Novel / chapter', status: 'Status', start: 'Started', elapsed: 'Elapsed', chars: 'Chars' },
       debug: 'Debug log', debugEmpty: '(no debug log)',

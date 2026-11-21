@@ -257,6 +257,46 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   console.log('3. 用户 / 错误 / 审计：标题行、刷新、读取失败 ✓')
 }
 
+// 4. 任务页：筛选（全部 / 运行中 / 失败）；可由外面控制，也可自己记
+{
+  const { JobsTab } = await import('../src/components/admin/JobsTab')
+  await remount(<JobsTab />)
+  must(container.querySelector('.adm__pagehead h2')?.textContent === '任务', '任务页标题行')
+  must(!!byId('jobs-running') && !!byId('jobs-failed') && button('全部').getAttribute('aria-pressed') === 'true', '默认两张表都在')
+  await click(button('失败'))
+  must(!byId('jobs-running') && !!byId('jobs-failed') && !text().includes('1:15'), '自己记筛选：只看失败')
+  await click(button('运行中'))
+  must(!!byId('jobs-running') && !byId('jobs-failed') && text().includes('1:15'), '自己记筛选：只看运行中')
+  // 受控：state 由外面给，点筛选只回调，不自己变
+  const asked: (string | null)[] = []
+  await remount(<JobsTab state="failed" onState={(s) => { asked.push(s) }} />)
+  must(!byId('jobs-running') && !!byId('jobs-failed') && button('失败').getAttribute('aria-pressed') === 'true', '受控：state=failed 只显示失败')
+  await click(button('运行中'))
+  await click(button('全部'))
+  must(asked.join() === 'running,' && asked[1] === null, `受控：点筛选回调 running 与 null，实为 ${JSON.stringify(asked)}`)
+  must(!byId('jobs-running'), '受控：外面不改 state，显示不变')
+  await remount(<JobsTab state={null} onState={() => {}} />)
+  must(!!byId('jobs-running') && !!byId('jobs-failed'), '受控：state=null 是全部')
+  console.log('4. 任务页筛选 ✓')
+}
+
+// 5. 用量页：分组与天数可由外面控制
+{
+  const { UsageTab } = await import('../src/components/admin/UsageTab')
+  const asked: string[] = []
+  calls.length = 0
+  await remount(<UsageTab group="model" days={7} onQuery={(group, days) => { asked.push(`${group}/${days}`) }} />)
+  must(container.querySelector('.adm__pagehead h2')?.textContent === '用量与花费', '用量页标题行')
+  must(calls.includes('GET /admin/usage?group=model&days=7') && !calls.includes('GET /admin/usage?group=user&days=30'),
+       `受控：按传入的分组与天数请求，实为 ${calls}`)
+  must(button('按模型').getAttribute('aria-pressed') === 'true' && button('7 天').getAttribute('aria-pressed') === 'true', '受控：选中项跟着传入值')
+  await click(button('按天'))
+  await click(button('90 天'))
+  must(asked.join() === 'day/7,model/90', `受控：改分组、改天数各回调一次，实为 ${asked}`)
+  must(button('按模型').getAttribute('aria-pressed') === 'true', '受控：外面不改就不变')
+  console.log('5. 用量页受控的分组与天数 ✓')
+}
+
 // ===== 追加点：后面的任务把新用例插在这一行上面 =====
 
 await act(async () => { root.unmount() })

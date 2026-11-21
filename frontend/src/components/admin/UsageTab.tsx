@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Download, Inbox, RefreshCw } from 'lucide-react'
-import { EmptyState } from '@/components/common/EmptyState'
+import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
 import { notice } from '@/lib/notice'
 import { adminPricing, adminSavePricing, adminUsage, adminUsageCsv } from '../../api'
+import { USAGE_DAYS, USAGE_GROUPS } from '../../paths'
+import type { UsageDays, UsageGroup } from '../../paths'
 import type { UsageGroupRow } from '../../types'
 import { errText, int, usd, usd4 } from './format'
-import { ErrorBar, Segmented, TableSkeleton } from './LoadState'
+import { Empty, ErrorBar, Segmented, TableSkeleton } from './LoadState'
+import { PageHead, RefreshButton } from './PageHead'
 import { useLoad } from './useLoad'
-
-type Group = 'user' | 'day' | 'model'
-const GROUPS: Group[] = ['user', 'day', 'model']
-const RANGES = [7, 30, 90]
 
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
@@ -29,11 +27,19 @@ const isUnpriced = (r: UsageGroupRow) => r.records > 0 && r.unpriced === r.recor
 /** 部分记录未定价：金额是已定价部分的合计。 */
 const partUnpriced = (r: UsageGroupRow) => r.unpriced > 0 && !isUnpriced(r)
 
-/** 用量：分组汇总、每千字成本、导出 CSV；下面是价格表。 */
-export function UsageTab() {
+/** 用量与花费：分组汇总、每千字成本、导出 CSV；下面是价格表。
+ *  group / days / onQuery 由外框从地址传入（?group=、?days=）；不传时是组件内状态。 */
+export function UsageTab(p: {
+  group?: UsageGroup; days?: UsageDays; onQuery?: (group: UsageGroup, days: UsageDays) => void
+} = {}) {
   const { t } = useI18n()
-  const [group, setGroup] = useState<Group>('user')
-  const [days, setDays] = useState(30)
+  const [own, setOwn] = useState<{ group: UsageGroup; days: UsageDays }>({ group: 'user', days: 30 })
+  const group = p.group ?? own.group
+  const days = p.days ?? own.days
+  const query = (g: UsageGroup, d: UsageDays) => {
+    if (p.onQuery) p.onQuery(g, d)
+    else setOwn({ group: g, days: d })
+  }
   const { data, error, reload } = useLoad(() => adminUsage(group, days), [group, days])
 
   const exportCsv = async () => {
@@ -49,17 +55,17 @@ export function UsageTab() {
 
   return (
     <section className="adm__sec">
-      <div className="adm__bar">
-        <Segmented items={GROUPS.map((g) => [g, t(`admin.usage.groups.${g}`)] as [Group, string])}
-                   value={group} onChange={setGroup} />
-        <Segmented items={RANGES.map((d) => [d, t('admin.usage.days', { n: d })] as [number, string])}
-                   value={days} onChange={setDays} />
+      <PageHead title={t('admin.nav.pages.usage')}>
         <Button size="sm" variant="outline" onClick={() => void exportCsv()}>
           <Download aria-hidden />{t('admin.usage.exportCsv')}
         </Button>
-        <Button size="sm" variant="outline" onClick={reload}>
-          <RefreshCw aria-hidden />{t('admin.usage.refresh')}
-        </Button>
+        <RefreshButton label={t('admin.usage.refresh')} onClick={reload} />
+      </PageHead>
+      <div className="adm__bar">
+        <Segmented items={USAGE_GROUPS.map((g) => [g, t(`admin.usage.groups.${g}`)] as [UsageGroup, string])}
+                   value={group} onChange={(g) => query(g, days)} />
+        <Segmented items={USAGE_DAYS.map((d) => [d, t('admin.usage.days', { n: d })] as [UsageDays, string])}
+                   value={days} onChange={(d) => query(group, d)} />
       </div>
       {error && <ErrorBar error={error} onRetry={reload} />}
       {!data && !error && <TableSkeleton />}
@@ -76,7 +82,7 @@ export function UsageTab() {
             </p>
           )}
           {data.rows.length === 0 ? (
-            <EmptyState icon={<Inbox aria-hidden />} title={t('admin.usage.empty')} />
+            <Empty title={t('admin.usage.empty')} />
           ) : (
             <table className="adm__table">
               <thead>
