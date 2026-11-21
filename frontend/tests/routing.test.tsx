@@ -132,7 +132,7 @@ let serverCancelKind: 'free' | 'paid' | null = null
 /** 巡检接口的人为延迟（毫秒）与同时在途的请求数 */
 let tasksDelay = 0
 let jobsDelay = 0
-const flight = { tasks: 0, tasksMax: 0, jobs: 0, jobsMax: 0, tasksCalls: 0, jobsCalls: 0 }
+const flight = { tasks: 0, tasksMax: 0, jobs: 0, jobsMax: 0, tasksCalls: 0, jobsCalls: 0, rawTasks: 0 }
 /** 出片会话桩：给了就返回（画布出片页能显示合成区）；读取次数用来断言画布被通知刷新 */
 let filmSession: unknown = null
 let sessionGets = 0
@@ -155,6 +155,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     const b = JSON.parse(init!.body!)
     return users[b.username] ? json({ token: `tok-${b.username}`, user: userOf(b.username) }) : err(401, '用户名或密码不正确')
   }
+  if (path === '/render/tasks') flight.rawTasks += 1     // 含未登录被拒的请求
   const h = init?.headers?.Authorization ?? ''
   const who = h.startsWith('Bearer tok-') ? h.slice(11) : null
   if (!who || !users[who]) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
@@ -1261,6 +1262,54 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
   must(flight.tasksCalls > before.tasks, '成功后任务列表重读')
   must(sessionGets > before.session, '成功后已打开的画布重读出片会话')
   await e.done()
+}
+
+
+{
+  const { pokeFilmTasks } = await import('../src/filmTasks')
+  // 已打开画布且会话已加载时点片段任务：state 同时带 focus 与 panelReq，两个一次性请求都要清掉（不互相写回）
+  const session = { provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+    confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
+    reserved_cny: 0, uncertain_count: 0,
+    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
+               cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
+               frame_with_refs: false, audio_modes: ['tts_all', 'silent'], rate_note: '假厂商', typical_sec: [180, 420] } }
+  const d = await boot('/novels/n1/overview', 'alice')
+  filmSession = session
+  await act(async () => { await d.router.navigate('/novels/n1/chapters/c1/render/canvas') })
+  await settle(400)
+  filmTasks = [{ id: 'v1:E01-C01', item_id: 'E01-C01', kind: 'clip', novel_id: 'n1', chapter_id: 'c1', version_id: 'v1',
+                 work_title: '药', chapter: '第一章', state: 'running', elapsed_sec: 5, typical_sec: [180, 420],
+                 ended_at: null, cost_cny: null, cancel: 'free', shot_ids: ['E01-SH001'] }]
+  await act(async () => { pokeFilmTasks() }); await settle(200)
+  await click(d.q('[data-testid="activity-bell"]')!)
+  const row = doc.body.querySelector('[data-testid="activity-film-running"]') as unknown as HTMLElement
+  await click(button(row, '查看')!)
+  await settle(400)
+  const st = d.router.state.location.state as { focus?: unknown; panelReq?: unknown } | null
+  must(!st?.focus && !st?.panelReq, `点片段任务后两个一次性请求都已清掉：${JSON.stringify(st)}`)
+  // 离开再返回（等同刷新/历史返回重新挂载）：不再带着请求
+  await act(async () => { await d.router.navigate('/novels/n1/overview') }); await settle(200)
+  await act(async () => { await d.router.navigate(-1) }); await settle(400)
+  const st2 = d.router.state.location.state as { focus?: unknown; panelReq?: unknown } | null
+  must(!st2?.focus && !st2?.panelReq, `返回后仍无残留请求：${JSON.stringify(st2)}`)
+  await d.done()
+}
+
+{
+  const { pokeFilmTasks } = await import('../src/filmTasks')
+  // 请求在途且有待补刷时退出登录：旧响应返回后不再发新请求
+  const f = await boot('/novels/n1/overview', 'alice')
+  tasksDelay = 600
+  await act(async () => { pokeFilmTasks() }); await settle(100)
+  await act(async () => { pokeFilmTasks() }); await settle(50)
+  await click(f.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
+  await settle(50)
+  const calls = flight.rawTasks
+  await settle(1200)
+  must(flight.rawTasks === calls, `退出后旧响应返回不应再补刷：${calls} -> ${flight.rawTasks}`)
+  tasksDelay = 0
+  await f.done()
 }
 
 

@@ -78,7 +78,7 @@ async function coalesce(
   try { await run() } finally {
     if (flight.current === mine) {
       flight.current = null
-      if (mine.again) void coalesce(flight, epoch, run)
+      if (mine.again && mine.ep === epoch.current) void coalesce(flight, epoch, run)
     }
   }
 }
@@ -776,19 +776,17 @@ export default function App() {
     }
   }
   openFilmRef.current = (tk, play) => void openFilmTask(tk, play)
-  /** 画布用完了聚焦请求：从当前这条历史记录里清掉 */
-  const clearFilmFocus = useCallback(() => {
+  /** 画布用完了一次性请求：按键名从当前这条历史记录里清掉。
+   *  聚焦与侧栏请求常在同一轮 effect 里连着清，所以每次 replace 前后都同步最新 state，
+   *  后一次基于前一次的结果，不会把已删的键写回 */
+  const clearNavKeys = useCallback((...keys: ('focus' | 'panelReq')[]) => {
     const rest = passState(navStateRef.current)
-    delete rest.focus
+    for (const k of keys) delete rest[k]
+    navStateRef.current = rest
     navigate(hereRef.current, { replace: true, state: rest })
   }, [navigate])
-
-  /** 画布用完了侧栏请求：同样从当前这条历史记录里清掉 */
-  const clearPanelReq = useCallback(() => {
-    const rest = passState(navStateRef.current)
-    delete rest.panelReq
-    navigate(hereRef.current, { replace: true, state: rest })
-  }, [navigate])
+  const clearFilmFocus = useCallback(() => clearNavKeys('focus'), [clearNavKeys])
+  const clearPanelReq = useCallback(() => clearNavKeys('panelReq'), [clearNavKeys])
 
   const openJob = (j: JobSummary) => {
     if (job?.id === j.id) return
