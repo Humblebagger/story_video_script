@@ -148,7 +148,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   }, [accept, fail, load])
 
   /** 取消排队或生成中的一段 / 一个自由节点：expect 是用户确认时的种类（free 不花钱 / paid 不等了）。
-   *  成功返回结局并重新读取会话（取消响应在服务商不可用时是降级视图，不能拿来覆盖会话）；
+   *  成功返回结局：先用响应里的会话（去掉 cancel_outcome）更新界面，再重新读取刷新（失败只显示读取错误）；
    *  服务端发现种类已变（409 kind_changed）返回 'changed'，调用方重新读取后以新种类重新确认；
    *  其他被拒记到操作错误（刷新成功也不清）并重读会话 */
   const cancelItem = useCallback(async (itemId: string, free: boolean, expect?: 'free' | 'paid'):
@@ -159,8 +159,12 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     try {
       const got = await cancelFilmItem(nid!, cid!, vid!, itemId, free, expect)
       if (gen.current !== mine) return null
+      // 先用响应里的会话立即更新（服务商不可用时是降级视图，结构完整，只是少了闸门信息）；
+      // 再重读刷新，重读失败只显示读取错误，不退回取消前的状态
+      const { cancel_outcome: outcome, ...next } = got
+      accept(next)
       await load()
-      return got.cancel_outcome ?? null
+      return outcome ?? null
     } catch (e) {
       if (gen.current !== mine) return null
       if (e instanceof ApiError && e.status === 409 && (e.detail as { code?: unknown } | null)?.code === 'film.cancel.kind_changed') {
@@ -172,7 +176,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     } finally {
       if (gen.current === mine) setBusy(false)
     }
-  }, [nid, cid, vid, fail, load])
+  }, [nid, cid, vid, accept, fail, load])
 
   /** 花钱的操作（确认框）：409 带了重算金额就放回确认框，等用户再确认 */
   const spend = async (fn: () => Promise<FilmSession>, again: (cny: number) => FilmConfirm) => {

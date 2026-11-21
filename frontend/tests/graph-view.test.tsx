@@ -38,6 +38,8 @@ const calls: string[] = []
 let clockSkew = 0
 let cancelRefused: unknown = null
 let lenientCancel = false
+/** 读取会话一律失败（模拟服务商不可用时普通 GET 也失败） */
+let getFails = false
 const serverNow = () => new Date(Date.now() - clockSkew).toISOString()
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
 
@@ -131,6 +133,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
              blob: async () => new Blob(['x'], { type: sub.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg' }) }
   }
   if (sub === '/session' && method === 'GET') {
+    if (getFails) return fail(500, '服务商暂不可用')
     return film ? ok({ ...film, gate: { ok: true, message: null }, server_now: serverNow() }) : fail(404, '还没有出片会话')
   }
   if (sub === '/session' && method === 'POST') {
@@ -187,7 +190,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
     if (outcome === 'abandoned') it.attempts[it.attempts.length - 1].state = 'abandoned'
     it.state = it.chosen === null ? 'planned' : 'done'
     film = recount(film!)
-    return ok(lenientCancel ? { ...film, options: { providers: ['fake'] }, cancel_outcome: outcome }
+    return ok(lenientCancel ? { ...film, options: { ...film!.options, models: {}, resolutions: [] }, cancel_outcome: outcome }
                             : { ...film, cancel_outcome: outcome })
   }
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
@@ -531,6 +534,31 @@ console.log('6c. 采用位置与无障碍 ✓')
   must(!!container.querySelector('[data-testid="node-graph"]') && has('假厂商'), '界面没被降级响应弄坏')
   lenientCancel = false
   console.log('6k. 取消后重读 ✓')
+}
+
+// 6l. 取消成功但随后读取也失败（服务商不可用）：先按响应里的会话更新界面，不停在取消前；读取错误照实显示
+{
+  const third = film!.clips[2].id
+  for (const c of film!.clips) if (IN_FLIGHT.includes(c.state)) Object.assign(c, { state: 'planned', attempts: [] })
+  for (const f of film!.free ?? []) if (IN_FLIGHT.includes(f.state)) Object.assign(f, { state: 'planned', attempts: [] })
+  Object.assign(clipOf(third), { state: 'queued', queued_at: new Date().toISOString(), attempts: [] })
+  film = recount(film!)
+  await refresh()
+  await click(tab('出片')!)
+  must(!!inCard(third, '取消') && has('有段在排队或生成中'), '前提：在排队、取消入口在、设置因在跑被挡')
+  lenientCancel = true
+  getFails = true
+  await click(inCard(third, '取消'))
+  await click(win.document.body.querySelector('[data-testid="confirm-ok"]')!)
+  await settle(300)
+  getFails = false
+  lenientCancel = false
+  const el = card(third)
+  must(![...el.querySelectorAll('button')].some((b) => b.textContent === '取消'), '取消入口消失')
+  must(!has('有段在排队或生成中'), '设置不再因在跑被挡')
+  must((container.querySelector('.ngv__err')?.textContent ?? '').includes('服务商暂不可用'), '显示读取错误')
+  await settle(100)
+  console.log('6l. 取消后读取失败不退回 ✓')
 }
 
 // 7. 切回时间轴：节点图收起
