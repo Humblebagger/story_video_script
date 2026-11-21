@@ -694,7 +694,7 @@ export interface PricingTable {
   currency: string
   note?: string
   updated_at: string | null
-  models: Record<string, { input: number; output: number; cache_read: number; cache_write: number }>
+  models: Record<string, { input: number; output: number; cache_read: number; cache_write: number; vendor?: string }>
 }
 
 /* ---------- 出片（视频生成会话，…/versions/{vid}/render/session） ---------- */

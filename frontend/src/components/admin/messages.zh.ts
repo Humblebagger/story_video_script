@@ -73,10 +73,16 @@ export const zhAdmin = {
     note: '金额按当前价格表估算。',
     empty: '这段时间没有用量',
     pricingTitle: '价格表（美元 / 每百万 token）',
-    savePricing: '保存价格表',
+    savePricing: '保存',
     saved: '已保存',
-    badJson: '不是合法的 JSON',
     badPrice: '单价必须是不小于 0 的有限数字',
+    pricing: {
+      unit: '单位：美元 / 百万 token。厂商为灰色的是按模型名推断的，保存时不会写入。',
+      name: '模型名称', vendor: '厂商', input: '输入', output: '输出', cacheRead: '缓存输入', cacheWrite: '缓存写入',
+      actions: '操作', edit: '编辑', add: '添加模型', remove: '删除', cancel: '取消',
+      nameEmpty: '名称不能为空', nameDup: '名称重复',
+      addUnpriced: '添加到价格表：{model}',
+    },
   },
   jobs: {
     running: '运行中', failed: '近 7 天失败', refresh: '刷新',

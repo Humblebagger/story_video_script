@@ -43,6 +43,7 @@ const users = [
     last_seen_at: null, has_password: false, monthly_cap_usd: null,
     novels: 1, chapters: 1, versions: 1, month_cost_usd: 9 },
 ]
+let failPut = false
 g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   const path = String(url).replace(/^\/api/, '')
   const method = init?.method ?? 'GET'
@@ -88,7 +89,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   if (path.startsWith('/admin/usage.csv')) return json('at,user_id\n')
   if (path.startsWith('/admin/usage')) {
     const group = new URL('http://x' + path).searchParams.get('group')
-    return json({ group, days: 30, per_k_chars: { n: 2, mean: 0.75, p90: 3 }, unpriced_models: [],
+    return json({ group, days: 30, per_k_chars: { n: 2, mean: 0.75, p90: 3 }, unpriced_models: ['mystery'],
       rows: [{ key: 'u-bob', label: group === 'user' ? 'bob' : group === 'model' ? 'claude-sonnet-5' : '2026-10-30',
                calls: 3, input: 1000, output: 2000, cache_read: 0, cache_write: 0, chars: 4000,
                cost_usd: 4.5, unpriced: 0, records: 1 },
@@ -132,6 +133,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     models: { 'claude-sonnet-5': { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 } } })
   if (path === '/admin/pricing' && method === 'PUT') {
     const t = JSON.parse(init!.body!)
+    if (failPut) return err(400, { code: 'admin.pricing.bad_row', params: { name: 'x' }, message: '模型 x 的单价格式不对' })
     return t.models ? json({ ...t, currency: 'USD', updated_at: 'now' }) : err(400, '价格表必须包含至少一个模型')
   }
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
@@ -154,6 +156,8 @@ const { setCurrentLocale } = await import('../src/i18n/core')
 import type { ReactNode } from 'react'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
+const eq = (a: unknown, b: unknown, msg: string) =>
+  must(JSON.stringify(a) === JSON.stringify(b), `${msg}\n  得到 ${JSON.stringify(a)}\n  期望 ${JSON.stringify(b)}`)
 const container = win.document.createElement('div')
 win.document.body.appendChild(container)
 let root = createRoot(container as unknown as HTMLElement)
@@ -266,40 +270,70 @@ await click(button('按模型'))
 must(calls.includes('GET /admin/usage?group=model&days=30') && text().includes('claude-sonnet-5'), '切到按模型')
 await click(button('7 天'))
 must(calls.includes('GET /admin/usage?group=model&days=7'), '切到 7 天')
-await click(button('保存价格表'))
-must(calls.some((c) => c.startsWith('PUT /admin/pricing')) && lastNotice().kind === 'ok' && lastNotice().msg === '已保存', '价格表保存')
-const area = container.querySelector('textarea')!
-await act(async () => {
-  const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
-  setter.call(area, '{not json')
-  area.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
-})
-await settle()
-await click(button('保存价格表'))
-must(text().includes('不是合法的 JSON'), '非法 JSON 提示')
-console.log('4. 用量：分组 / 范围 / 每千字成本 / 价格表保存与校验 ✓')
+console.log('4. 用量：分组 / 范围 / 每千字成本 ✓')
 
-// 4b. 价格表：非有限或负数的单价不发请求，并给出提示
-const setPricing = async (value: string) => {
-  await act(async () => {
-    const el = container.querySelector('textarea')!
-    const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value')!.set!
-    setter.call(el, value)
-    el.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
-  })
-  await settle()
-}
-const puts = () => calls.filter((c) => c.startsWith('PUT /admin/pricing')).length
-const putsBefore = puts()
-const priceHint = '单价必须是不小于 0 的有限数字'
-const badPrice = (n: string) => `{"models":{"m":{"input":${n},"output":1,"cache_read":0,"cache_write":0}}}`
-await setPricing(badPrice('-1'))
-await click(button('保存价格表'))
-must(puts() === putsBefore && text().includes(priceHint), '负数单价应拒绝并提示')
-await setPricing(badPrice('1e400'))
-await click(button('保存价格表'))
-must(puts() === putsBefore && text().includes(priceHint), '溢出为 Infinity 的单价应拒绝并提示')
-console.log('4b. 价格表：负数 / 溢出单价拒绝 ✓')
+// 4b. 价格表：只读表格、厂商显示、编辑-添加-删除-保存、校验、取消、服务端 400
+const pricingRows = () => [...container.querySelectorAll('table.adm__pricing tbody tr')]
+const cells = (tr: Element) => [...tr.querySelectorAll('td')].map((td) => td.textContent)
+const headers = () => [...container.querySelectorAll('table.adm__pricing thead th')].map((th) => th.textContent)
+const puts = () => calls.filter((c) => c.startsWith('PUT /admin/pricing'))
+must(headers().join('|') === '模型名称|厂商|输入|输出|缓存输入|缓存写入|操作', `表头，实为 ${headers()}`)
+must(text().includes('美元 / 百万 token'), '表头注明单位')
+must(pricingRows().length === 1 && cells(pricingRows()[0]).slice(0, 6).join('|') === 'claude-sonnet-5|Anthropic|2|10|0.2|2.5',
+     `只读行，实为 ${cells(pricingRows()[0])}`)
+must(!!pricingRows()[0].querySelector('.adm__dim'), '推断的厂商弱化显示')
+must(container.querySelector('table.adm__pricing input') === null && container.querySelector('textarea') === null, '只读态无输入框、无 JSON 文本框')
+must(button('添加到价格表：mystery') !== null, '未定价模型快捷按钮')
+const input = (row: Element, label: string) => row.querySelector(`input[aria-label="${label}"]`)!
+await click(button('编辑'))
+let r0 = pricingRows()[0]
+must((input(r0, '厂商') as unknown as HTMLInputElement).value === '' &&
+     (input(r0, '厂商') as unknown as HTMLInputElement).placeholder === 'Anthropic', '编辑态厂商留空、占位为推断值')
+// 校验：空名、负数
+await click(button('添加模型'))
+must(pricingRows().length === 2, '添加一行')
+await click(button('保存'))
+must(puts().length === 0 && text().includes('名称不能为空') && text().includes('单价必须是不小于 0 的有限数字'), '空行阻止保存并就地提示')
+const r1 = () => pricingRows()[1]
+await type(input(r1(), '模型名称'), 'claude-sonnet-5')
+for (const l of ['输入', '输出', '缓存输入', '缓存写入']) await type(input(r1(), l), '-1')
+await click(button('保存'))
+must(puts().length === 0 && text().includes('名称重复'), '重名阻止保存')
+await type(input(r1(), '模型名称'), 'deepseek-v3')
+await type(input(r1(), '厂商'), ' DeepSeek AI ')
+for (const [l, v] of [['输入', '0.27'], ['输出', '1.1'], ['缓存输入', '0.07'], ['缓存写入', '0']] as const) await type(input(r1(), l), v)
+// 再加一行后删除
+await click(button('添加模型'))
+must(pricingRows().length === 3, '再添加一行')
+await click(pricingRows()[2].querySelector('button')!)
+must(pricingRows().length === 2, '删除一行')
+await click(button('保存'))
+must(puts().length === 1, `应发出一次 PUT，实为 ${puts().length}`)
+const body = JSON.parse(puts()[0].replace('PUT /admin/pricing ', ''))
+eq(body, { models: {
+  'claude-sonnet-5': { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 },
+  'deepseek-v3': { input: 0.27, output: 1.1, cache_read: 0.07, cache_write: 0, vendor: 'DeepSeek AI' } } }, 'PUT 体：只含 models，推断厂商不写入')
+must(lastNotice().kind === 'ok' && lastNotice().msg === '已保存', '保存提示')
+must(container.querySelector('table.adm__pricing input') === null && pricingRows().length === 2 &&
+     cells(pricingRows()[1]).slice(0, 2).join('|') === 'deepseek-v3|DeepSeek AI', '保存后回到只读并显示服务端返回值')
+// 取消还原
+await click(button('编辑'))
+await type(input(pricingRows()[0], '模型名称'), 'changed')
+await click(button('取消'))
+must(cells(pricingRows()[0])[0] === 'claude-sonnet-5' && container.querySelector('table.adm__pricing input') === null, '取消还原')
+// 服务端 400 显示其文案并留在编辑态
+await click(button('编辑'))
+failPut = true
+await click(button('保存'))
+must(lastNotice().kind === 'err' && lastNotice().msg.includes('单价格式不对') && container.querySelector('table.adm__pricing input') !== null,
+     '服务端 400 显示文案、仍在编辑态')
+failPut = false
+await click(button('取消'))
+// 未定价快捷添加：进入编辑态并带上模型名
+await click(button('添加到价格表：mystery'))
+must(pricingRows().length === 3 && (input(pricingRows()[2], '模型名称') as unknown as HTMLInputElement).value === 'mystery', '快捷添加带入模型名')
+await click(button('取消'))
+console.log('4b. 价格表：只读 / 厂商 / 编辑添加删除保存 / 校验 / 取消 / 400 ✓')
 
 // 4c. 用量：刷新重新请求；整行未定价显示「未定价」而非 $0.00
 const usageReqs = () => calls.filter((c) => c.startsWith('GET /admin/usage?group=model&days=7')).length
@@ -314,6 +348,13 @@ const freeRow = [...container.querySelectorAll('tbody tr')].find((tr) => (tr.tex
 must(!!freeRow && freeRow.textContent!.includes('$0.00') && !freeRow.textContent!.includes('未定价'),
      '已定价但金额为 $0.00 的行应显示 $0.00 而非「未定价」')
 console.log('4c. 用量：刷新重新请求 / 整行未定价显示「未定价」✓')
+
+// 4b2. 价格表英文表头与按钮
+await remount(<I18nProvider initial="en"><UsageTab /></I18nProvider>)
+must(headers().join('|') === 'Model|Vendor|Input|Output|Cache read|Cache write|Actions', `英文表头，实为 ${headers()}`)
+must(text().includes('USD per million tokens') && !!button('Edit'), '英文单位与按钮')
+await remount(<I18nProvider initial="zh"><UsageTab /></I18nProvider>)
+console.log('4b2. 价格表英文表头 ✓')
 
 // 5. 任务：运行中与失败两表，报错可展开
 await remount(<JobsTab />)

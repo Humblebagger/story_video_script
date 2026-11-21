@@ -1,6 +1,7 @@
 /** 后台纯计算：近 7 天判断、用户与任务统计、按模型占比、导航计数（设计 docs/specs/2026-11-21-admin-console-redesign-design.md §5、§6）。 */
 import { badgeText, jobStats, modelShare, NAV_GROUPS, navCounts, sumLast, userStats, within } from '../src/components/admin/derive'
 import { monthDayTime } from '../src/components/admin/format'
+import { buildPayload, inferVendor, toDrafts, validateDrafts } from '../src/components/admin/pricing'
 import { ADMIN_PAGES } from '../src/paths'
 import type { AdminJobs, AdminOverview, AdminUserRow, ErrorRefRow, UsageGroupRow } from '../src/types'
 
@@ -85,5 +86,21 @@ for (const iso of ['2026-11-21T03:05:00Z', '2026-01-02T23:59:30+00:00', '2026-12
 eq(monthDayTime(null), '—', '缺失')
 eq(monthDayTime('不是时间'), '—', '解析不了')
 console.log('8. 最近一次时间格式 ✓')
+
+// 9. 价格表：厂商推断、草稿校验、保存体
+eq(['claude-sonnet-5', 'DeepSeek-V3', 'MiniMax-M2', 'doubao-pro', 'seedance-1', 'ark-x', 'gpt-5', 'o3-mini', 'o4', 'gemini-2', 'qwen-max', 'mystery']
+  .map(inferVendor),
+  ['Anthropic', 'DeepSeek', 'MiniMax', 'ByteDance', 'ByteDance', 'ByteDance', 'OpenAI', 'OpenAI', 'OpenAI', 'Google', 'Alibaba', null], '厂商推断')
+eq(inferVendor('  Claude-x '), 'Anthropic', '去空白、不分大小写')
+const P = { input: 1, output: 2, cache_read: 0.5, cache_write: 0 }
+const drafts = toDrafts({ a: { ...P, vendor: 'Acme' }, 'claude-x': P })
+eq(drafts.map((d) => [d.name, d.vendor, d.input, d.cache_write]), [['a', 'Acme', '1', '0'], ['claude-x', '', '1', '0']], '草稿：推断值不写入')
+eq(validateDrafts(drafts), {}, '合法草稿无错误')
+eq(buildPayload(drafts), { models: { a: { ...P, vendor: 'Acme' }, 'claude-x': P } }, '保存体：无 vendor 不带')
+const bad = [{ ...drafts[0], name: ' ' }, { ...drafts[1], name: 'x', input: '-1' }, { ...drafts[1], id: 7, name: 'x', output: '' },
+             { ...drafts[1], id: 8, name: 'y', cache_read: '1e400' }, { ...drafts[1], id: 9, name: 'z', cache_write: 'abc' }]
+eq(validateDrafts(bad), { 0: { name: 'empty' }, 1: { input: 'price' }, 7: { name: 'dup', output: 'price' },
+                          8: { cache_read: 'price' }, 9: { cache_write: 'price' } }, '校验：空名、重复、负数、空、溢出、非数字')
+console.log('9. 价格表纯计算 ✓')
 
 console.log('\nALL PASS')

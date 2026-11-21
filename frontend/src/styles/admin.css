@@ -135,3 +135,9 @@
 @media (prefers-reduced-motion: reduce) {
   .adm__card, .adm__row, .adm-side, .adm-nav__item { transition: none; }
 }
+
+/* 价格表：编辑态的输入框收窄，错误提示贴在格内；推断出的厂商弱化 */
+.adm__dim { color: var(--ui-muted-foreground); }
+.adm__pricing .adm__err { display: block; font-size: 12px; margin-top: 2px; }
+.adm__pricing input { min-width: 84px; height: 32px; }
+.adm__pricing .is-num input { text-align: right; }

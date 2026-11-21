@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
 import { notice } from '@/lib/notice'
-import { adminPricing, adminSavePricing, adminUsage, adminUsageCsv } from './api'
+import { adminUsage, adminUsageCsv } from './api'
 import { USAGE_DAYS, USAGE_GROUPS } from '../../paths'
 import type { UsageDays, UsageGroup } from '../../paths'
 import type { UsageGroupRow } from '../../types'
 import { errText, int, usd, usd4 } from './format'
 import { Empty, ErrorBar, Segmented, TableSkeleton } from './LoadState'
+import { PricingEditor } from './PricingEditor'
 import { PageHead, RefreshButton } from './PageHead'
 import { useLoad } from './useLoad'
 
@@ -111,64 +111,7 @@ export function UsageTab(p: {
           <p className="adm__note">{t('admin.usage.note')}</p>
         </>
       )}
-      <PricingEditor />
+      <PricingEditor unpriced={data?.unpriced_models} />
     </section>
-  )
-}
-
-/** 单价必须是有限的非负数：JSON 里的 1e400 会解析成 Infinity，序列化后变成 null。 */
-function hasBadPrice(table: unknown): boolean {
-  const models = (table as { models?: unknown } | null)?.models
-  if (!models || typeof models !== 'object') return false
-  return Object.values(models).some((m) => m && typeof m === 'object' &&
-    Object.values(m).some((v) => typeof v === 'number' && !(Number.isFinite(v) && v >= 0)))
-}
-
-function PricingEditor() {
-  const { t } = useI18n()
-  const [raw, setRaw] = useState('')
-  const [msg, setMsg] = useState<string | null>(null) // 跟输入框绑在一起的校验错误
-  const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    adminPricing().then((p) => setRaw(JSON.stringify({ models: p.models }, null, 2)))
-      .catch((e: unknown) => notice.err(errText(e)))
-  }, [])
-
-  const save = async () => {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      setMsg(t('admin.usage.badJson'))
-      return
-    }
-    if (hasBadPrice(parsed)) {
-      setMsg(t('admin.usage.badPrice'))
-      return
-    }
-    setBusy(true)
-    setMsg(null)
-    try {
-      const p = await adminSavePricing(parsed)
-      setRaw(JSON.stringify({ models: p.models }, null, 2))
-      notice.ok(t('admin.usage.saved'))
-    } catch (e) {
-      notice.err(errText(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="adm__sec">
-      <h3 className="text-base font-semibold">{t('admin.usage.pricingTitle')}</h3>
-      <Textarea className="adm__pricing min-h-[180px] font-mono text-[12.5px]" value={raw}
-                onChange={(e) => setRaw(e.target.value)} />
-      <div className="adm__acts">
-        <Button size="sm" disabled={busy} onClick={() => void save()}>{t('admin.usage.savePricing')}</Button>
-        {msg && <span className="adm__err">{msg}</span>}
-      </div>
-    </div>
   )
 }
