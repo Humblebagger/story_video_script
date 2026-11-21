@@ -199,7 +199,7 @@ for (const s of ['用户', '7 天活跃', '30 天 token', '30 天金额', '运�
 }
 must(text().includes('1,234,567') && text().includes('$13.50'), '数字与金额格式')
 must(text().includes('mystery'), '应提示未定价模型')
-must(container.querySelectorAll('.adm__chart circle').length === 30, '折线图 30 个点')
+must(container.querySelectorAll('.adm__chart circle').length === 14, '趋势图近 14 天，14 个点')
 console.log('1. 概览：卡片 / 格式 / 未定价提示 / 折线图 ✓')
 
 // 2. 用户：默认按注册时间倒序；点表头按本月金额排序；搜索

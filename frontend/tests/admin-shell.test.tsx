@@ -155,6 +155,81 @@ const remount = async (node: ReactNode) => {
   console.log('1. 公共小组件 ✓')
 }
 
+// 英文用例要用的语言工具（下面各组共用）
+const { I18nProvider } = await import('../src/i18n')
+const { setCurrentLocale } = await import('../src/i18n/core')
+
+// 2. 运营概览：卡片的副标题与行动链接、近 14 天趋势、分布卡片、未定价提醒可点
+{
+  const { Overview } = await import('../src/components/admin/Overview')
+  const { when } = await import('../src/components/admin/format')
+  await remount(<Overview />)
+  must(container.querySelector('h2')!.textContent === '运营概览', '页名')
+  must(textOf('stat-users')!.includes('近 7 天新增 1') && hrefOf('stat-users') === '/admin/users', `用户卡，实为 ${textOf('stat-users')}`)
+  must(textOf('stat-active')!.includes('占全部用户 67%'), `活跃卡，实为 ${textOf('stat-active')}`)
+  must(textOf('stat-cost')!.includes('$18.50') && textOf('stat-cost')!.includes('近 7 天 $7.00')
+       && !!byId('stat-cost')!.querySelector('[data-testid="sparkline"]') && hrefOf('stat-cost') === '/admin/usage',
+       `金额卡，实为 ${textOf('stat-cost')}`)
+  must(textOf('stat-failed')!.includes(`最近一次 ${when(ago(1))}`) && textOf('stat-failed')!.includes('去处理')
+       && hrefOf('stat-failed') === '/admin/jobs?state=failed', `失败卡，实为 ${textOf('stat-failed')} ${hrefOf('stat-failed')}`)
+  must(byId('stat-failed')!.querySelector('b')!.className.includes('text-destructive'), '有失败时数字标红')
+  must(textOf('stat-running')!.includes('其中排队 1') && hrefOf('stat-running') === '/admin/jobs?state=running', `运行中卡，实为 ${textOf('stat-running')}`)
+  must(textOf('stat-tokens')!.includes('1,234,567') && textOf('stat-tokens')!.includes('30 天调用 42 次'), `token 卡，实为 ${textOf('stat-tokens')}`)
+  must(byId('trend')!.querySelectorAll('.adm__chart circle').length === 14 && textOf('trend')!.includes('近 14 天每日金额'), '趋势图 14 个点')
+  must(['排队中1', '运行中1', '近 7 天失败3'].every((s) => textOf('dist-jobs')!.includes(s)), `任务状态分布，实为 ${textOf('dist-jobs')}`)
+  must(['正常2', '已停用1', '其中管理员 1 人'].every((s) => textOf('dist-users')!.includes(s)), `用户状态分布，实为 ${textOf('dist-users')}`)
+  must(['claude-sonnet-5$13.50', 'other-model$4.50', 'mystery未定价'].every((s) => textOf('dist-models')!.includes(s))
+       && hrefOf('dist-models') === '/admin/usage?group=model', `按模型分布，实为 ${textOf('dist-models')}`)
+  const alert = byId('unpriced-alert')!
+  must(alert.tagName === 'A' && alert.getAttribute('href') === '/admin/usage?group=model' && alert.textContent!.includes('mystery'),
+       '未定价提醒是指向用量页的链接')
+  console.log('2. 运营概览：副标题 / 行动链接 / 趋势 / 分布 / 未定价提醒 ✓')
+}
+
+// 2b. 拿不到就省略：某份数据取不到时，只少掉依赖它的副标题与分布卡片，其余照常
+{
+  const { Overview } = await import('../src/components/admin/Overview')
+  failing.add('/admin/users')
+  await remount(<Overview />)
+  must(!text().includes('近 7 天新增') && !byId('dist-users') && !!byId('dist-jobs') && !!byId('dist-models')
+       && textOf('stat-users')!.includes('3'), '用户列表取不到：没有新增副标题与用户分布')
+  failing.clear(); failing.add('/admin/jobs')
+  await remount(<Overview />)
+  must(!text().includes('最近一次') && !text().includes('其中排队') && !byId('dist-jobs') && !!byId('dist-users'),
+       '任务取不到：没有最近一次、排队数与任务分布')
+  failing.clear(); failing.add('/admin/usage')
+  await remount(<Overview />)
+  must(!text().includes('30 天调用') && !byId('dist-models') && !!byId('dist-users'), '按模型用量取不到：没有调用次数与模型分布')
+  failing.clear(); failing.add('/admin/users'); failing.add('/admin/jobs'); failing.add('/admin/usage')
+  await remount(<Overview />)
+  must(!container.querySelector('[data-testid^="dist-"]') && container.querySelectorAll('[data-testid^="stat-"]').length === 6,
+       '三份都取不到：没有分布区，六张数字卡仍在')
+  failing.clear()
+  ov.failed_7d = 0; ov.unpriced_models = []
+  await remount(<Overview />)
+  must(!byId('unpriced-alert') && !byId('stat-failed')!.querySelector('b')!.className.includes('text-destructive'),
+       '没有未定价模型就没有提醒条；没有失败不标红')
+  ov.failed_7d = 3; ov.unpriced_models = ['mystery']
+  console.log('2b. 拿不到就省略 ✓')
+}
+
+// 2c. 概览刷新按钮把四份数据都重新取一遍；英文文案
+{
+  const { Overview } = await import('../src/components/admin/Overview')
+  await remount(<Overview />)
+  calls.length = 0
+  await click(button('刷新'))
+  must(['GET /admin/overview', 'GET /admin/users', 'GET /admin/jobs', 'GET /admin/usage?group=model&days=30']
+    .every((c) => calls.includes(c)), `刷新应重新请求四份数据，实为 ${calls}`)
+  await remount(<I18nProvider initial="en"><Overview /></I18nProvider>)
+  must(container.querySelector('h2')!.textContent === 'Dashboard' && textOf('stat-users')!.includes('1 new in the last 7 days')
+       && textOf('stat-failed')!.includes('Review') && textOf('dist-users')!.includes('1 of them are admins'), `英文概览，实为 ${textOf('stat-users')}`)
+  await act(async () => { root.unmount() })
+  root = createRoot(container as unknown as HTMLElement)
+  setCurrentLocale('zh')
+  console.log('2c. 概览刷新 / 英文 ✓')
+}
+
 // ===== 追加点：后面的任务把新用例插在这一行上面 =====
 
 await act(async () => { root.unmount() })
