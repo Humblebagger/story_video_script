@@ -179,6 +179,12 @@ def main() -> int:
         r = c.post(R + f"/clips/{x}/cancel", headers=H)
         assert r.status_code == 200, r.text
         assert r.json()["cancel_outcome"] == "abandoned"
+        need = {"providers": list, "models": dict, "resolutions": list, "cny_per_sec": dict, "max_clip_sec": (int, float),
+                "max_refs": (int, float), "first_frame": bool, "frame_with_refs": bool, "audio_modes": list,
+                "rate_note": (str, dict), "typical_sec": list}
+        o = r.json()["options"]
+        assert all(isinstance(o.get(k), ty) for k, ty in need.items()) and "default_note" in o, o
+        assert o["models"] == {} and o["resolutions"] == []
         s = render_session.load(root)
         assert pick(s, x)["state"] == "done" and pick(s, x)["attempts"][-1]["state"] == "abandoned"
         assert runner.watching() == [root], "不等了的那次仍要盯"
@@ -188,10 +194,53 @@ def main() -> int:
         r = c.post(R + f"/clips/{x}/cancel", headers=H)
         assert r.status_code == 200 and r.json()["cancel_outcome"] == "dequeued", r.text
         assert pick(render_session.load(root), x)["state"] == "done" and runner.watching() == [root]
+        # 厂商未注册（配置指向不存在的厂商）：同样结构完整
+        with render_session.mutate(root) as ms:
+            ms["provider"] = "no-such-vendor"
+        v = render_session.view(render_session.load(root), True)
+        assert all(isinstance(v["options"].get(k), ty) for k, ty in need.items()), v["options"]
+        with render_session.mutate(root) as ms:
+            ms["provider"] = "fake"
     finally:
         providers.register("fake", lambda: FAKE)
     drain()
     print("8. 厂商建不起来时取消仍成功 ✓")
+
+    # 10. 取消种类校验（expect）：确认框打开期间状态迁移，服务端在锁内按实际种类判定，对不上 409 且什么都不动
+    calls = len(FAKE.cancel_calls)
+    c.post(R + f"/clips/{x}/run", headers=H, json={})                 # 排队中：可真取消
+    r = c.post(R + f"/clips/{x}/cancel", headers=H, json={"expect": "paid"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "film.cancel.kind_changed", r.text
+    assert pick(render_session.load(root), x)["state"] == "queued"
+    assert c.post(R + f"/clips/{x}/cancel", headers=H, json={"expect": "bogus"}).status_code == 422
+    runner.tick()                                                     # 确认框开着时：已提交、生成中
+    assert pick(c.get(R + "/session", headers=H).json(), x)["state"] == "running"
+    r = c.post(R + f"/clips/{x}/cancel", headers=H, json={"expect": "free"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "film.cancel.kind_changed", r.text
+    assert "厂商" not in r.text and "fake" not in r.text
+    s = render_session.load(root)
+    assert pick(s, x)["state"] == "running" and pick(s, x)["attempts"][-1]["state"] == "running"
+    assert len(FAKE.cancel_calls) == calls, "种类不符不得请厂商取消"
+    r = c.post(R + f"/clips/{x}/cancel", headers=H, json={"expect": "paid"})
+    assert r.status_code == 200 and r.json()["cancel_outcome"] == "abandoned", r.text
+    drain()
+    c.post(R + f"/clips/{x}/run", headers=H, json={})
+    r = c.post(R + f"/clips/{x}/cancel", headers=H, json={"expect": "free"})
+    assert r.status_code == 200 and r.json()["cancel_outcome"] == "dequeued", r.text
+    r = c.post(R + "/free/F01/cancel", headers=H, json={"expect": "paid"})   # 自由节点同一套（不在跑也先判 409）
+    assert r.status_code in (409,), r.text
+    c.post(R + "/free/F01/run", headers=H, json={})
+    r = c.post(R + "/free/F01/cancel", headers=H, json={"expect": "paid"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "film.cancel.kind_changed", r.text
+    assert c.post(R + "/free/F01/cancel", headers=H, json={"expect": "free"}).status_code == 200
+    print("10. 取消种类校验 ✓")
+
+    # 11. 服务端时间：会话视图与任务列表都带 server_now（带时区），供浏览器校准时钟
+    from datetime import datetime
+    for raw in (c.get(R + "/session", headers=H).json()["server_now"],
+                c.get("/render/tasks", headers=H).json()["server_now"]):
+        assert datetime.fromisoformat(raw).utcoffset() is not None, raw
+    print("11. server_now ✓")
 
     # 9. 任务列表不带厂商、档位、签名地址、密钥：在跑、完成、取消后才出结果三种响应都查，并核对字段白名单
     SENT = {"vendor": "zz-vendor-sentinel", "model": "zz-model-sentinel",

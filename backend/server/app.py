@@ -68,10 +68,10 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
-from typing import Optional
+from typing import Literal, Optional
 
 import anyio
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -1164,12 +1164,16 @@ def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]
     return _render_call(render_session.view, s)
 
 
-def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str) -> dict:
+class RenderCancelBody(BaseModel):
+    expect: Optional[Literal["free", "paid"]] = None    # 用户确认时的取消种类：free 不花钱 / paid 不等了
+
+
+def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str, expect: Optional[str] = None) -> dict:
     """取消排队或生成中的一段 / 一个自由节点。还没提交：本地取消，不花钱。已提交：先请厂商取消（只有还在厂商
     那边排队的才取消得了）；取消不了就是「不等了」——这一条立即放开，那次尝试留给出片线程在后台盯到有结果。
     厂商调用在会话锁之外；两步之间状态变了由 session.cancel 抛 409。"""
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
-    task_id, provider_name = _render_call(render_session.cancel_target, root, item_id)
+    task_id, provider_name = _render_call(render_session.cancel_target, root, item_id, expect)
     confirmed = False
     if task_id is not None:
         try:
@@ -1177,7 +1181,7 @@ def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str) -> dict
         except (KeyError, render_video_base.ProviderError):
             provider = None                     # 厂商建不起来（如密钥被撤）：按取消不了处理
         confirmed = provider is not None and render_video_base.try_cancel(provider, task_id)
-    s = _render_call(render_session.cancel, root, item_id, task_id, confirmed)
+    s = _render_call(render_session.cancel, root, item_id, task_id, confirmed, expect)
     _render_runner.watch(root)                  # 不等了的那次还要盯；没有要盯的，下一轮自己放下
     out = _render_call(render_session.view, s, True)     # 厂商建不起来也要把已落账的取消如实返回
     out["cancel_outcome"] = "dequeued" if task_id is None else "cancelled" if confirmed else "abandoned"
@@ -1185,10 +1189,12 @@ def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str) -> dict
 
 
 @app.post(_R + "/clips/{clip_id}/cancel")
-def render_clip_cancel(nid: str, cid: str, vid: str, clip_id: str, user: dict = Depends(novel_user)):
+def render_clip_cancel(nid: str, cid: str, vid: str, clip_id: str, body: Optional[RenderCancelBody] = None,
+                       user: dict = Depends(novel_user)):
     """取消这一段。响应是会话视图加 cancel_outcome：dequeued（还没提交）/ cancelled（厂商确认，不计费）/
-    abandoned（不等了，厂商可能照常完成并计费）。不在跑、正在提交、已在取回 → 409。"""
-    return _film_cancel(user, nid, cid, vid, clip_id)
+    abandoned（不等了，厂商可能照常完成并计费）。不在跑、正在提交、已在取回 → 409；
+    带 expect 而实际种类已变（排队中变成生成中等）→ 409 film.cancel.kind_changed，不动。"""
+    return _film_cancel(user, nid, cid, vid, clip_id, body.expect if body else None)
 
 
 @app.post(_R + "/clips/{clip_id}/run")
@@ -1282,9 +1288,10 @@ def render_free_run(nid: str, cid: str, vid: str, fid: str, body: Optional[Rende
 
 
 @app.post(_R + "/free/{fid}/cancel")
-def render_free_cancel(nid: str, cid: str, vid: str, fid: str, user: dict = Depends(novel_user)):
+def render_free_cancel(nid: str, cid: str, vid: str, fid: str, body: Optional[RenderCancelBody] = None,
+                       user: dict = Depends(novel_user)):
     """取消这个自由节点的生成（与取消一段同一套）。"""
-    return _film_cancel(user, nid, cid, vid, fid)
+    return _film_cancel(user, nid, cid, vid, fid, body.expect if body else None)
 
 
 @app.put(_R + "/free/{fid}/chosen")
@@ -1369,7 +1376,8 @@ def render_tasks(user: dict = Depends(novel_user)):
     """本人的出片任务（任务铃铛与动态面板用）。每项：id、item_id、kind（clip / free）、novel_id、chapter_id、
     version_id、work_title、chapter、state（queued / running / downloading / done / failed / cancelled / late）、
     elapsed_sec、typical_sec、ended_at、cost_cny（只有 late 有）。"""
-    return {"tasks": _film_tasks(user["id"])}
+    return {"tasks": _film_tasks(user["id"]),
+            "server_now": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 
 
 # ---------- 配音与合成：音色存在 session.json 的 voices，成片在 final/ ----------

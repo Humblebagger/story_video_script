@@ -401,6 +401,7 @@ def view(s: dict, lenient: bool = False) -> dict:
     for c in s["clips"]:
         counts[c["state"]] = counts.get(c["state"], 0) + 1
     out = {k: v for k, v in s.items() if k != "owner"}
+    out["server_now"] = _now()          # 浏览器据此校准自己的时钟（等待时长不能拿两台机器的时钟直接相减）
     # uncertain：厂商那边可能还有这一段的任务（提交中断、查询放弃），界面提示「请到控制台核对」
     out["clips"] = [dict(c, uncertain=bool(c.get("uncertain")), style_outdated=_style_outdated(c))
                     for c in s["clips"]]
@@ -416,7 +417,11 @@ def view(s: dict, lenient: bool = False) -> dict:
                    for n in s.get("free") or []]
     out["free_seq"] = int(s.get("free_seq") or 0)
     if provider is None:
-        out["options"] = {"providers": names()}
+        # 厂商不可用：结构仍完整（空值），界面读 models[...] / resolutions.map 不会崩；不为填充去初始化厂商
+        out["options"] = {"providers": names(), "models": {}, "resolutions": [], "cny_per_sec": {},
+                          "max_clip_sec": 0, "max_refs": 0, "first_frame": False, "frame_with_refs": False,
+                          "audio_modes": [], "rate_note": "", "typical_sec": list(base.DEFAULT_TYPICAL_SEC),
+                          "default_note": _default_note(s)}
         return out
     out["options"] = {"providers": names(), "models": provider.models,
                       "resolutions": caps.resolutions, "cny_per_sec": caps.cny_per_sec,
@@ -508,16 +513,26 @@ def _cancel_check(c: dict) -> Optional[str]:
     raise Conflict.of("film.cancel.not_running")
 
 
-def cancel_target(root, item_id: str) -> tuple:
-    """取消前看一眼（不改会话）：(任务 id 或 None, 厂商名)。调用方拿任务 id 在锁外请厂商取消，再调 cancel。"""
+def _check_kind(task_id: Optional[str], expect: Optional[str]) -> None:
+    """用户确认的取消种类（free 不花钱 / paid 不等了）与锁内实际种类不一致 → 409，什么都不动。"""
+    if expect is not None and expect != ("free" if task_id is None else "paid"):
+        raise Conflict.of("film.cancel.kind_changed")
+
+
+def cancel_target(root, item_id: str, expect: Optional[str] = None) -> tuple:
+    """取消前看一眼（不改会话）：(任务 id 或 None, 厂商名)。调用方拿任务 id 在锁外请厂商取消，再调 cancel。
+    expect 为用户确认时的取消种类，与实际不符就抛 Conflict（还没请厂商，不会误发取消）。"""
     with _lock(root):
         s = _read_existing(root)
         if s is None:
             raise NotFound.of("film.session.none")
-        return _cancel_check(_item(s, item_id)), s["provider"]
+        task_id = _cancel_check(_item(s, item_id))
+        _check_kind(task_id, expect)
+        return task_id, s["provider"]
 
 
-def cancel(root, item_id: str, task_id: Optional[str] = None, confirmed: bool = False) -> dict:
+def cancel(root, item_id: str, task_id: Optional[str] = None, confirmed: bool = False,
+           expect: Optional[str] = None) -> dict:
     """取消一段或一个自由节点，立即放开它（回到未出片 / 原来采用的那次）。
     task_id 是 cancel_target 看到的那个：对不上说明两步之间状态变了，抛 Conflict 让用户再试。
     - 还没提交（task_id=None）：什么都没发出去，不留尝试。
@@ -528,6 +543,7 @@ def cancel(root, item_id: str, task_id: Optional[str] = None, confirmed: bool = 
         c = _item(s, item_id)
         if _cancel_check(c) != task_id:
             raise Conflict.of("film.cancel.changed")
+        _check_kind(task_id, expect)
         if task_id is not None:
             a = c["attempts"][-1]
             a["cancelled_at"] = _now()
