@@ -1,5 +1,6 @@
 /** 后台纯计算：近 7 天判断、用户与任务统计、按模型占比、导航计数（设计 docs/specs/2026-11-21-admin-console-redesign-design.md §5、§6）。 */
 import { badgeText, jobStats, modelShare, NAV_GROUPS, navCounts, sumLast, userStats, within } from '../src/components/admin/derive'
+import { monthDayTime } from '../src/components/admin/format'
 import { ADMIN_PAGES } from '../src/paths'
 import type { AdminJobs, AdminOverview, AdminUserRow, ErrorRefRow, UsageGroupRow } from '../src/types'
 
@@ -74,5 +75,15 @@ console.log('6. 导航计数 ✓')
 eq(NAV_GROUPS.map((g) => g.id), ['overview', 'people', 'ops'], '三个分组')
 eq(NAV_GROUPS.flatMap((g) => g.pages).sort(), [...ADMIN_PAGES].sort(), '分组里的页 = 全部后台页')
 console.log('7. 导航分组 ✓')
+
+// 8. 「最近一次」时间：本地时区的 MM-DD HH:MM（期望值用 Date 本地 getter 独立拼出）
+const p2 = (n: number) => String(n).padStart(2, '0')
+for (const iso of ['2026-11-21T03:05:00Z', '2026-01-02T23:59:30+00:00', '2026-12-31T16:30:00Z']) {
+  const d = new Date(iso)
+  eq(monthDayTime(iso), `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`, `本地时间 ${iso}`)
+}
+eq(monthDayTime(null), '—', '缺失')
+eq(monthDayTime('不是时间'), '—', '解析不了')
+console.log('8. 最近一次时间格式 ✓')
 
 console.log('\nALL PASS')

@@ -8,7 +8,7 @@ import { adminPath } from '../../paths'
 import type { AdminOverview } from '../../types'
 import { AdminLink } from './AdminLink'
 import { jobStats, modelShare, sumLast, userStats } from './derive'
-import { int, usd, when } from './format'
+import { int, monthDayTime, usd } from './format'
 import { LineChart } from './LineChart'
 import { ErrorBar } from './LoadState'
 import { PageHead, RefreshButton } from './PageHead'
@@ -98,7 +98,7 @@ function OverviewBody({ data, error, reload }: Loaded<AdminOverview>) {
           <Sparkline values={data.daily.map((d) => d.cost_usd)} />
         </StatCard>
         <StatCard id="failed" label={t('admin.overview.failed7d')} value={int(data.failed_7d)} bad={data.failed_7d > 0}
-                  sub={js?.lastFailedAt ? t('admin.overview.lastFailed', { time: when(js.lastFailedAt) }) : null}
+                  sub={js?.lastFailedAt ? t('admin.overview.lastFailed', { time: monthDayTime(js.lastFailedAt) }) : null}
                   to={adminPath('jobs', { state: 'failed' })} action={t('admin.overview.goFailed')} />
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

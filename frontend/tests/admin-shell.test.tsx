@@ -163,7 +163,8 @@ const { setCurrentLocale } = await import('../src/i18n/core')
 // 2. 运营概览：卡片的副标题与行动链接、近 14 天趋势、分布卡片、未定价提醒可点
 {
   const { Overview } = await import('../src/components/admin/Overview')
-  const { when } = await import('../src/components/admin/format')
+  const lf = new Date(ago(1)), pad = (n: number) => String(n).padStart(2, '0')
+  const lastAt = `${pad(lf.getMonth() + 1)}-${pad(lf.getDate())} ${pad(lf.getHours())}:${pad(lf.getMinutes())}`
   await remount(<Overview />)
   must(container.querySelector('h2')!.textContent === '运营概览', '页名')
   must(textOf('stat-users')!.includes('近 7 天新增 1') && hrefOf('stat-users') === '/admin/users', `用户卡，实为 ${textOf('stat-users')}`)
@@ -171,7 +172,7 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   must(textOf('stat-cost')!.includes('$18.50') && textOf('stat-cost')!.includes('近 7 天 $7.00')
        && !!byId('stat-cost')!.querySelector('[data-testid="sparkline"]') && hrefOf('stat-cost') === '/admin/usage',
        `金额卡，实为 ${textOf('stat-cost')}`)
-  must(textOf('stat-failed')!.includes(`最近一次 ${when(ago(1))}`) && textOf('stat-failed')!.includes('去处理')
+  must(textOf('stat-failed')!.includes(`最近一次 ${lastAt}`) && textOf('stat-failed')!.includes('去处理')
        && hrefOf('stat-failed') === '/admin/jobs?state=failed', `失败卡，实为 ${textOf('stat-failed')} ${hrefOf('stat-failed')}`)
   must(byId('stat-failed')!.querySelector('b')!.className.includes('text-destructive'), '有失败时数字标红')
   must(textOf('stat-running')!.includes('其中排队 1') && hrefOf('stat-running') === '/admin/jobs?state=running', `运行中卡，实为 ${textOf('stat-running')}`)
