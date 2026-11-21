@@ -2,13 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把管理后台从「一排页签按钮、只有一个地址」改成「左侧分组导航 + 右侧内容、每页有自己的地址」的运营后台：总览换成带副标题与行动链接的数字卡片、近 14 天趋势图和分布小卡片，其余五页统一标题行与空 / 加载 / 错误的样子；功能不变。
+**Goal:** 把管理后台从「一排页签按钮、只有一个地址」改成「左侧分组导航 + 右侧内容、每页有自己的地址」的运营后台：总览换成带副标题与行动链接的数字卡片、近 14 天趋势图和分布小卡片，其余五页统一标题行与空 / 加载 / 错误的样子；功能不变。后台只对管理员透出：非管理员看不到、进不去，后台的代码、文案、接口函数、样式都不在首屏下发的文件里。
 
 **Architecture:**
 - 纯前端，不新增也不修改后端接口；所有数字来自 `frontend/src/api.ts` 里现有的 `admin*` 函数，拿不到的就不显示。
 - 地址仍由 `frontend/src/paths.ts` 的 `parseLocation` 解析（一条通配路由不变）：`Loc` 的后台分支带上页与筛选，新增 `adminPath` 拼规范地址。
 - 后台独立成一屏：`App.tsx` 在「地址是后台且用户是管理员」时渲染 `AdminView`，否则照旧渲染 `AppShell`（`AppShell.tsx` 不改）。`AdminView` 不碰路由，页与筛选从属性进来，跳转通过 `onNav(to, replace?)` 回调出去。
 - 计算与界面分开：`components/admin/derive.ts` 放纯函数（副标题、分布、导航计数），界面拆成小组件（`PageHead`、`StatCard`、`AdminNav`…）。
+- 只对管理员透出（Task 9）：`AdminView` 用 `React.lazy` 动态加载，只有「后台地址 + 角色已由 `me()` 确认 + 是管理员」才渲染；后台文案、接口函数、样式搬进后台那一块；浏览器标题由后台外框自己设。
 - 任务页的筛选、用量页的分组与天数做成「可受控」：外框传值就听外框的（写进地址），不传就用组件内状态（现有测试的用法不变）。
 
 **Tech Stack:** React 19、TypeScript、Vite 8、react-router 8（只在 `App.tsx` 用）、Tailwind 4 加 `styles/admin.css`、lucide-react、happy-dom；测试是 `vite build --ssr` 构建后交给 node 跑的脚本，断言用文件内的 `must` / `eq`（仓库**没有** vitest 和 testing-library，不要引入）。
@@ -19,7 +20,7 @@
 
 ## 全局约束（每个 Task 都必须遵守）
 
-- **只改本计划列出的文件**。不改后端（`backend/` 下任何文件）、不新增接口、不改 `frontend/src/api.ts`、`frontend/src/types.ts`、`frontend/src/components/shell/AppShell.tsx`。
+- **只改本计划列出的文件**。不改后端（`backend/` 下任何文件）、不新增接口、不改 `frontend/src/types.ts`、`frontend/src/components/shell/AppShell.tsx`；`frontend/src/api.ts` 只在 Task 9 按那里写的改（Task 1 – 8 不碰它）。
 - **不碰的文件与服务**：
   - 不读、不打印 `backend/.env`；
   - 不运行任何 smoke 脚本，不调用付费服务或真实大模型；
@@ -29,7 +30,7 @@
   - 只 `git add <具体文件>`，禁止 `git add -A`、`git commit -a`、`git add -N`、`git stash`；
   - 提交信息用中文、描述性写法，**不得带 `Co-Authored-By`、`Claude-Session` 等任何署名尾行**；
   - 不 push。
-- **每个 Task 提交前**：跑完该 Task 里列出的每一条命令并得到写明的结果，再在 `frontend/` 下跑一次 `npm run lint`，必须是 0 error、警告恰好是基线的 5 条（`VerificationPanel.tsx`、`CardPicker.tsx`、`timeline.ts`、`ParamsForm.tsx`、`App.tsx` 各一条），**不得增加**。整串 `npm test` 与 `npm run build` 放在 Task 9 跑（整串要几分钟）；Task 9 发现问题就修好后单独再提交一次。
+- **每个 Task 提交前**：跑完该 Task 里列出的每一条命令并得到写明的结果，再在 `frontend/` 下跑一次 `npm run lint`，必须是 0 error、警告恰好是基线的 5 条（`VerificationPanel.tsx`、`CardPicker.tsx`、`timeline.ts`、`ParamsForm.tsx`、`App.tsx` 各一条），**不得增加**。整串 `npm test` 放在 Task 10 跑（整串要几分钟）；Task 10 发现问题就修好后单独再提交一次。
 - **film.test 已知偶发卡死**：`tests/film.test.tsx` 在改动前就有小概率 CPU 自旋不退出，或报「✗ 预览窗里播视频」。遇到时单独重跑判定：`npx vite build --ssr tests/film.test.tsx --outDir .ssrout-x --logLevel error && timeout 60 node .ssrout-x/film.test.js`，然后删掉 `.ssrout-x`。单独重跑能 `ALL PASS` 就不算本任务失败，在报告里注明。本计划不修它。
 - **管理员才能看模型名**：后台是管理员页，用量页、用户详情、概览的未定价提醒与按模型分布照旧显示模型名。**不要**把这些内容带到产品外壳或任何普通用户能看到的界面。
 - **现有功能不变**：用户的停用 / 角色 / 上限 / 重置密码、用量的导出与价格表、任务的调试日志、错误的查找与详情、审计，行为与文案都不改，只换外框与排版。不顺手重构。
@@ -47,12 +48,15 @@
 - **文案**。`frontend/src/i18n/zh.ts` 与 `en.ts` 的键必须一一对应：`Messages` 类型从 `zh` 推出来，`en` 少键或多键 `npm run typecheck` 会报错。组件里用 `const { t } = useI18n()` 取文案，`t('admin.nav.pages.users')`；带变量写成 `t('admin.overview.newIn7d', { n: 3 })`，文案里用 `{n}` 占位。键是动态拼的（如 `` t(`admin.nav.pages.${id}`) ``）时，`id` 的类型必须是字面量联合，TypeScript 才认。
 - **后台现在的样子**。`frontend/src/components/admin/AdminView.tsx` 用一排按钮切六个页签（`Overview`、`Users`、`UsageTab`、`JobsTab`、`AuditTab`、`ErrorsTab`），渲染在产品外壳 `AppShell` 的内容区里；地址只有 `/admin`。各页用同目录的 `useLoad(fn, deps, everyMs?)` 取数，返回 `{ data, error, reload }`；`LoadState.tsx` 有 `TableSkeleton`、`ErrorBar`、`Segmented`；`format.ts` 有 `usd`、`int`、`when`、`day`。
 - **路由**。`frontend/src/routes.tsx` 只有一条通配路由，位置由 `App.tsx` 调 `parseLocation(location.pathname, location.search)` 得到 `{ loc, fix }`；`fix` 非空时 `App` 会 `replace` 到它（这段逻辑已有，不用改）。`App.tsx` 里的 `go(to, { replace })` 是带离开拦截的跳转函数。
+- **角色确认**。`App.tsx` 里 `roleConfirmed` 表示当前用户的角色已经由 `GET /auth/me` 确认过（本地缓存的角色不算数）；现有的后台守卫（非管理员回首页）就是等它为真才判定。Task 9 用它决定是否渲染后台。
+- **语言包**。`frontend/src/i18n/core.ts` 的 `lookupKey` 按点分路径在运行时逐层找文案，找不到回落成键名；键的类型 `MsgKey` 从语言包的类型推出来。Task 9 把后台文案改成后挂，靠的就是这两点。
 - **后台接口返回什么**（只读，不要改）：
   - `adminOverview()` → `{ users, active_7d, tokens_30d, cost_30d, running, failed_7d, daily: { day, cost_usd }[]（30 天，升序）, unpriced_models: string[] }`
   - `adminUsers()` → `AdminUserRow[]`（`created_at`、`role`、`disabled`…）
   - `adminJobs()` → `{ running: { status: 'queued' | 'running', … }[], failed: { created_at, … }[]（近 7 天，时间倒序） }`
   - `adminUsage(group, days)` → `{ rows: { label, calls, cost_usd, unpriced, records, … }[], … }`
   - `adminErrors()` → `ErrorRefRow[]`（最近 200 条，带 `at`）
+- **硬编码中文的静态检查**。`tests/foundation.test.tsx` 会扫 `src/` 下所有 `.ts` / `.tsx`：除中文语言包外，代码里（注释不算）不能出现中文和全角标点。所以组件里的文字一律走语言包，不要直接写中文字符串。
 - **lint**。`npm run lint` 用 oxlint；`react/only-export-components` 是警告：一个 `.tsx` 文件既导出组件又导出函数或非常量就会多一条警告。所以纯函数放 `.ts`（`derive.ts`、`navContext.ts`），`.tsx` 只导出组件与类型。数组里的 JSX 要有 `key`（`react/jsx-key`）。
 - **样式**。后台的类名规则在 `frontend/src/styles/admin.css`（`.adm__*`），其余用 Tailwind 工具类。颜色用现成的 CSS 变量：`--card`、`--border`、`--background`、`--foreground`、`--ui-muted`、`--ui-muted-foreground`、`--primary`、`--destructive`、`--warning`、`--ring`。
 
@@ -78,19 +82,24 @@
 | `frontend/src/components/admin/LoadState.tsx` | 改：统一空状态 `Empty`、错误条加卡片底 | 3 |
 | `frontend/src/styles/admin.css` | 改：外框、导航、卡片等样式 | 3、8 |
 | `frontend/src/components/admin/Overview.tsx` | 整份替换 | 4 |
-| `frontend/src/i18n/zh.ts`、`frontend/src/i18n/en.ts` | 改：文案 | 4、5、6、8 |
+| `frontend/src/i18n/zh.ts`、`frontend/src/i18n/en.ts` | 改：文案；Task 9 把整块 `admin` 文案搬走 | 4、5、6、8、9 |
 | `frontend/src/components/admin/Users.tsx`、`ErrorsTab.tsx` | 改：标题行、空状态 | 5 |
 | `frontend/src/components/admin/AuditTab.tsx` | 整份替换 | 5 |
 | `frontend/src/components/admin/JobsTab.tsx` | 整份替换：筛选 | 6 |
 | `frontend/src/components/admin/UsageTab.tsx` | 改：可受控的分组与天数 | 6 |
 | `frontend/src/components/admin/AdminNav.tsx` | 新：侧栏与窄屏顶栏 | 7 |
-| `frontend/src/components/admin/AdminView.tsx` | 整份替换：外框 | 8 |
-| `frontend/src/App.tsx` | 改：渲染外框、返回产品、标题 | 8 |
+| `frontend/src/components/admin/AdminView.tsx` | 整份替换：外框；Task 9 再加挂文案、引样式、设标题 | 8、9 |
+| `frontend/src/App.tsx` | 改：渲染外框、返回产品、标题；Task 9 改成动态加载并只对确认过的管理员渲染 | 8、9 |
+| `frontend/src/components/admin/api.ts`、`messages.zh.ts`、`messages.en.ts`、`i18n.ts`、`admin.css` | 新：后台的接口函数、文案、挂文案、样式入口（都只随后台那一块加载） | 9 |
+| `frontend/src/api.ts`、`frontend/src/i18n/core.ts`、`frontend/src/styles/app.css`、`frontend/src/components/admin/format.ts` | 改：配合上一行 | 9 |
+| `frontend/tests/admin-bundle.check.mjs` | 新：构建产物检查（不进 `npm test`） | 9 |
 | `frontend/tests/paths.test.ts` | 改 | 1 |
 | `frontend/tests/admin-derive.test.ts` | 新 | 2 |
-| `frontend/tests/admin-shell.test.tsx` | 新，之后每个 Task 追加 | 3 – 8 |
-| `frontend/tests/admin.test.tsx` | 改三处 | 4、8 |
-| `frontend/tests/routing.test.tsx`、`frontend/tests/flow.test.tsx` | 改 | 8 |
+| `frontend/tests/admin-shell.test.tsx` | 新，之后每个 Task 追加 | 3 – 9 |
+| `frontend/tests/admin.test.tsx` | 改几处 | 4、8、9 |
+| `frontend/tests/routing.test.tsx` | 改 | 8、9 |
+| `frontend/tests/flow.test.tsx` | 改 | 8 |
+| `frontend/tests/foundation.test.tsx` | 改：静态检查放行新的中文文案文件 | 9 |
 | `frontend/package.json` | 改：`test` 脚本末尾追加两个新测试 | 2、3 |
 
 ---
@@ -3242,7 +3251,1591 @@ git commit -m "运营后台外框接进应用：后台独立成一屏（左侧�
 
 ---
 
-### Task 9: 全量验收
+### Task 9: 后台只对管理员下发与显示
+
+**Files:**
+- 新建：`frontend/src/components/admin/api.ts`、`messages.zh.ts`、`messages.en.ts`、`i18n.ts`、`admin.css`（同目录）、`frontend/tests/admin-bundle.check.mjs`
+- 修改：`frontend/src/App.tsx`、`frontend/src/api.ts`、`frontend/src/i18n/core.ts`、`frontend/src/i18n/zh.ts`、`frontend/src/i18n/en.ts`、`frontend/src/styles/app.css`
+- 修改：`frontend/src/components/admin/` 下的 `AdminView.tsx`、`Overview.tsx`、`Users.tsx`、`UsageTab.tsx`、`JobsTab.tsx`、`ErrorsTab.tsx`、`AuditTab.tsx`、`format.ts`
+- 测试：`frontend/tests/routing.test.tsx`、`frontend/tests/admin.test.tsx`、`frontend/tests/admin-shell.test.tsx`、`frontend/tests/foundation.test.tsx`
+
+硬要求（spec §9）：运营后台不向非管理员透出。分四块做，全部做完再跑测试：
+
+- **显示**：只有「地址是后台、用户是管理员、角色已由 `me()` 确认（`App.tsx` 现有的 `roleConfirmed`）」三者同时成立才渲染后台；角色确认之前只显示一块不带字的骨架；浏览器标题改由后台外框自己设；普通用户被送回首页时不再弹「需要管理员权限」。
+- **代码**：`AdminView` 改成 `React.lazy` 动态加载，渲染到它才会去取后台那一块。
+- **文案、接口函数、样式**：从主包搬进后台那一块 —— 文案搬到 `components/admin/messages.*.ts` 并在加载时挂进语言包（类型照常参与键的检查）；`admin*` 接口函数搬到 `components/admin/api.ts`（`adminService` 留在 `src/api.ts`，产品外壳的账号菜单要用）；`admin.css` 改由后台外框引入。
+- **构建检查**：`tests/admin-bundle.check.mjs` 在 `npm run build` 之后断言首屏下发的文件里没有后台标识。
+
+「全局约束」里不改 `frontend/src/api.ts` 的那一条在本任务不适用：这里要把三个内部函数改成导出，并把后台的接口函数搬走。
+
+- [ ] **Step 1: 写失败的测试：`frontend/tests/routing.test.tsx` 追加一组**
+
+在 `frontend/tests/routing.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+console.log('后台各页独立地址 / 后退 / 筛选 / 规范化 / 返回产品 ✓')
+```
+
+整段替换为：
+
+```tsx
+console.log('后台各页独立地址 / 后退 / 筛选 / 规范化 / 返回产品 ✓')
+
+// 后台不向非管理员透出：未登录、普通用户、角色未确认时都没有后台的界面与标题，后台代码也不加载
+{
+  const adminDom = (x: { q: (sel: string) => HTMLElement | null }) =>
+    x.q('[data-testid="admin-shell"]') ?? x.q('.adm') ?? x.q('.adm-side') ?? x.q('.adm-top')
+  const clean = (x: { q: (sel: string) => HTMLElement | null; has: (s: string) => boolean }) =>
+    !adminDom(x) && !x.has('运营后台') && !x.has('运营概览') && !doc.title.includes('后台') && !doc.title.includes('任务 ·')
+  for (const url of ['/admin', '/admin/jobs?state=failed']) {
+    // 未登录：停在着陆页（弹登录框），没有后台
+    const a = await boot(url)
+    must(a.here() === url && clean(a) && !a.q('[data-testid="admin-loading"]'), `未登录打开 ${url}：没有后台界面，标题不含后台，实际标题 ${doc.title}`)
+    await a.done()
+    // 普通用户：me() 回来之前只有一块不带字的骨架；回来之后 replace 回首页，没有提示条泄露后台的存在
+    let release!: () => void
+    meGate = new Promise<void>((r) => { release = r })
+    const b = await boot(url, 'alice')
+    must(b.here() === url && clean(b) && !!b.q('[data-testid="admin-loading"]') && !b.q('[data-testid="app-shell"]'),
+         `普通用户打开 ${url}、角色未确认：只有骨架，实际标题 ${doc.title}`)
+    release(); meGate = null
+    await settle(300)
+    must(b.here() === '/' && b.router.state.historyAction === 'REPLACE' && clean(b) && !!b.q('[data-testid="app-shell"]'),
+         `普通用户打开 ${url}：replace 回首页且没有后台界面，实际 ${b.here()}`)
+    must(!doc.body.textContent!.includes('管理员'), '回首页时不提示「需要管理员权限」')
+    await b.done()
+  }
+  // 管理员：角色确认之前同样只有骨架、不设后台标题；确认后才出现后台
+  let release!: () => void
+  meGate = new Promise<void>((r) => { release = r })
+  const c = await boot('/admin/jobs?state=failed', 'root')
+  must(clean(c) && !!c.q('[data-testid="admin-loading"]'), `管理员角色未确认：只有骨架，实际标题 ${doc.title}`)
+  release(); meGate = null
+  await settle(300)
+  must(!!c.q('[data-testid="admin-shell"]') && !c.q('[data-testid="admin-loading"]') && doc.title === '任务 · 运营后台 — Inkreel',
+       `管理员确认后出现后台，实际标题 ${doc.title}`)
+  // 离开后台后标题跟着换回产品的
+  await click(c.q('[data-testid="admin-back"]')!)
+  await settle(150)
+  must(c.here() === '/' && !doc.title.includes('后台'), `返回产品后标题不再是后台的，实际 ${doc.title}`)
+  await c.done()
+  // 入口只给管理员：侧边栏的「管理」按钮与账号菜单里的「管理」项
+  const menuHas = async (x: Awaited<ReturnType<typeof boot>>) => {
+    await act(async () => {
+      x.q('[data-testid="account-menu"]')!.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event)
+    })
+    await settle()
+    return [...doc.body.querySelectorAll('[role="menuitem"]')].some((el) => (el.textContent ?? '').trim() === '管理')
+  }
+  const d = await boot('/', 'alice')
+  must(!button(d.container, '管理') && !d.q('[aria-label="管理"]'), '普通用户的侧边栏没有「管理」入口')
+  must(!(await menuHas(d)), '普通用户的账号菜单没有「管理」项')
+  await d.done()
+  const e = await boot('/', 'root')
+  must(!!button(e.container, '管理'), '管理员的侧边栏有「管理」入口')
+  must(await menuHas(e), '管理员的账号菜单有「管理」项')
+  await e.done()
+}
+console.log('后台不向非管理员透出：未登录 / 普通用户 / 角色未确认 / 入口可见性 ✓')
+```
+
+- [ ] **Step 2: 跑测试，确认失败**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npx vite build --ssr tests/routing.test.tsx --outDir .ssrout --logLevel error && node .ssrout/routing.test.js
+```
+
+Expected: FAIL —— 报 `✗ 未登录打开 /admin：没有后台界面，标题不含后台，实际标题 运营概览 · 运营后台 — Inkreel`（现在不管是谁都设后台标题）。
+
+**第一块：文案搬出主包。**
+
+- [ ] **Step 3: 新建后台的中文文案文件（内容就是 `zh.ts` 里 `admin` 那一块，少缩进一层）**
+
+新建 `frontend/src/components/admin/messages.zh.ts`，内容如下（整份文件）：
+
+```ts
+/** 运营后台的中文文案：只随后台代码一起加载（由 ./i18n.ts 挂进语言包），不在主包里。
+ *  键的结构以这里为准，英文包 messages.en.ts 必须一一对应。插值写 {name}。 */
+export const zhAdmin = {
+  title: '运营后台',
+  back: '返回产品',
+  nav: {
+    label: '后台导航', collapse: '收起导航', expand: '展开导航',
+    groups: { overview: '总览', people: '用户与用量', ops: '运行' },
+    pages: { overview: '运营概览', users: '用户', usage: '用量与花费', jobs: '任务', errors: '错误', audit: '审计' },
+    counts: { jobs: '近 7 天失败 {n} 个', usage: '{n} 个模型未定价', errors: '近 7 天 {n} 条错误记录' },
+  },
+  empty: '—',
+  deleted: '（已删除）',
+  overview: {
+    users: '用户', active7d: '7 天活跃', tokens30d: '30 天 token', cost30d: '30 天金额',
+    running: '运行中任务', failed7d: '7 天失败',
+    newIn7d: '近 7 天新增 {n}', activeShare: '占全部用户 {pct}%', cost7d: '近 7 天 {amount}',
+    lastFailed: '最近一次 {time}', queued: '其中排队 {n}', calls30d: '30 天调用 {n} 次',
+    goUsers: '查看用户', goUsage: '查看用量', goFailed: '去处理', goRunning: '查看任务', goModels: '查看全部',
+    unpriced: '未定价模型：{models}（不计入金额，点这里去「用量与花费」页编辑价格表）',
+    trend: '近 14 天每日金额',
+    refresh: '刷新',
+    note: '金额按当前价格表估算。',
+    dist: {
+      jobs: '任务状态', users: '用户状态', models: '30 天金额 · 按模型',
+      queued: '排队中', running: '运行中', failed: '近 7 天失败', normal: '正常', disabled: '已停用',
+      admins: '其中管理员 {n} 人', other: '其他 {n} 个模型', empty: '暂无数据',
+      jobsNote: '只统计排队、运行中与近 7 天失败的任务。',
+    },
+  },
+  chart: { label: '每日金额', empty: '暂无数据' },
+  users: {
+    search: '搜索用户名', refresh: '刷新',
+    cols: {
+      username: '用户名', role: '角色', status: '状态', created: '注册', lastSeen: '最近活跃',
+      novels: '小说', chapters: '章节', monthCost: '本月金额', cap: '月上限',
+    },
+    roleAdmin: '管理员', roleUser: '用户', disabled: '已停用', normal: '正常', unlimited: '不限',
+    userId: '用户 ID', passwordLogin: '密码登录', pwdSet: '已设置', pwdUnset: '未设置', versions: '版本数',
+    enable: '启用', disable: '停用', revokeAdmin: '取消管理员', makeAdmin: '设为管理员',
+    capPlaceholder: '月上限（美元，空 = 不限）', setCap: '设上限',
+    pwdPlaceholder: '新密码（至少 6 位）', resetPwd: '重置密码',
+    capInvalid: '请输入不小于 0 的金额，留空表示不限',
+    selfNote: '不能停用自己，也不能修改自己的角色。',
+    daily: '近 30 天每日金额', recent: '最近用量',
+    recentCols: {
+      time: '时间', purpose: '用途', novelChapter: '小说 / 章节', model: '模型', result: '结果',
+      tokens: 'token', cost: '金额',
+    },
+    mixedModels: '（含评审模型，按转换模型估算）',
+    ok: '成功', fail: '失败',
+    acts: {
+      disable: { label: '停用该账号', action: '停用', done: '已停用该账号' },
+      enable: { label: '启用该账号', action: '启用', done: '已启用该账号' },
+      revoke: { label: '取消管理员', action: '取消管理员', done: '已取消管理员' },
+      grant: { label: '设为管理员', action: '设为管理员', done: '已设为管理员' },
+      cap: { label: '修改月上限', done: '已修改月上限' },
+      reset: { label: '重置密码', action: '重置密码', done: '已重置密码' },
+    },
+  },
+  usage: {
+    groups: { user: '按用户', day: '按天', model: '按模型' },
+    groupCol: { user: '用户', day: '天', model: '模型' },
+    days: '{n} 天',
+    exportCsv: '导出 CSV', refresh: '刷新',
+    perK: '每千字成本：均值 {mean} · P90 {p90}（{n} 次成功转换）',
+    unpriced: '未定价模型：{models}（不计入金额）',
+    cols: {
+      calls: '调用', input: '输入', output: '输出', cacheRead: '缓存读', cacheWrite: '缓存写',
+      chars: '原文字数', cost: '金额',
+    },
+    unpricedCell: '未定价', partUnpriced: '（另有 {n} 条未定价）',
+    note: '金额按当前价格表估算。',
+    empty: '这段时间没有用量',
+    pricingTitle: '价格表（美元 / 每百万 token）',
+    savePricing: '保存价格表',
+    saved: '已保存',
+    badJson: '不是合法的 JSON',
+    badPrice: '单价必须是不小于 0 的有限数字',
+  },
+  jobs: {
+    running: '运行中', failed: '近 7 天失败', refresh: '刷新',
+    filter: { label: '按状态筛选', all: '全部', running: '运行中', failed: '失败' },
+    noRunning: '没有在跑的任务', noFailed: '没有失败的任务',
+    debug: '调试日志', debugEmpty: '（没有调试日志）',
+    runningCols: { user: '用户', novelChapter: '小说 / 章节', status: '状态', start: '开始', elapsed: '已运行', chars: '字数' },
+    failedCols: { user: '用户', novelChapter: '小说 / 章节', start: '开始', chars: '字数', attempts: '尝试', error: '报错' },
+  },
+  audit: {
+    refresh: '刷新',
+    empty: '还没有审计记录',
+    emptyHint: '管理操作会记在这里。',
+    cols: { time: '时间', admin: '管理员', action: '操作', target: '对象', before: '之前', after: '之后' },
+  },
+  errors: {
+    refresh: '刷新', lookup: '查找', placeholder: '输入用户报来的参考编号',
+    empty: '还没有错误记录', emptyHint: '意外失败会带参考编号记在这里（保留最近 1000 条）。', detail: '详情',
+    cols: { time: '时间', user: '用户', ref: '参考编号', what: '说明', where: '位置', detail: '详情' },
+  },
+  purpose: { convert: '转换', digest: '章后整理' },
+  action: {
+    disable: '停用', enable: '启用', set_cap: '设月上限', reset_password: '重置密码',
+    grant_admin: '设为管理员', revoke_admin: '取消管理员', update_pricing: '修改价格表', view_error_ref: '查看错误详情', view_job_debug: '查看调试日志',
+  },
+}
+```
+
+- [ ] **Step 4: 新建后台的英文文案文件**
+
+新建 `frontend/src/components/admin/messages.en.ts`，内容如下（整份文件）：
+
+```ts
+import type { AdminMessages } from '@/i18n/core'
+
+/** Admin console messages: loaded with the admin chunk only; must mirror messages.zh.ts key for key. */
+export const enAdmin: AdminMessages = {
+  title: 'Admin console',
+  back: 'Back to app',
+  nav: {
+    label: 'Admin navigation', collapse: 'Collapse navigation', expand: 'Expand navigation',
+    groups: { overview: 'Overview', people: 'Users & usage', ops: 'Operations' },
+    pages: { overview: 'Dashboard', users: 'Users', usage: 'Usage & cost', jobs: 'Jobs', errors: 'Errors', audit: 'Audit' },
+    counts: { jobs: '{n} failed in the last 7 days', usage: '{n} unpriced models', errors: '{n} errors in the last 7 days' },
+  },
+  empty: '—',
+  deleted: '(deleted)',
+  overview: {
+    users: 'Users', active7d: 'Active (7d)', tokens30d: 'Tokens (30d)', cost30d: 'Cost (30d)',
+    running: 'Running jobs', failed7d: 'Failed (7d)',
+    newIn7d: '{n} new in the last 7 days', activeShare: '{pct}% of all users', cost7d: 'Last 7 days: {amount}',
+    lastFailed: 'Latest: {time}', queued: '{n} queued', calls30d: '{n} calls in 30 days',
+    goUsers: 'View users', goUsage: 'View usage', goFailed: 'Review', goRunning: 'View jobs', goModels: 'View all',
+    unpriced: 'Unpriced models: {models} (not counted in cost; click to edit the price table under Usage & cost)',
+    trend: 'Daily cost, last 14 days',
+    refresh: 'Refresh',
+    note: 'Cost is estimated from the current price table.',
+    dist: {
+      jobs: 'Job status', users: 'User status', models: 'Cost by model (30d)',
+      queued: 'Queued', running: 'Running', failed: 'Failed (7d)', normal: 'Active', disabled: 'Disabled',
+      admins: '{n} of them are admins', other: '{n} other models', empty: 'No data yet',
+      jobsNote: 'Counts queued, running and last-7-day failed jobs only.',
+    },
+  },
+  chart: { label: 'Daily cost', empty: 'No data yet' },
+  users: {
+    search: 'Search username', refresh: 'Refresh',
+    cols: {
+      username: 'Username', role: 'Role', status: 'Status', created: 'Joined', lastSeen: 'Last active',
+      novels: 'Novels', chapters: 'Chapters', monthCost: 'Cost this month', cap: 'Monthly cap',
+    },
+    roleAdmin: 'Admin', roleUser: 'User', disabled: 'Disabled', normal: 'Active', unlimited: 'No limit',
+    userId: 'User ID', passwordLogin: 'Password login', pwdSet: 'Set', pwdUnset: 'Not set', versions: 'Versions',
+    enable: 'Enable', disable: 'Disable', revokeAdmin: 'Remove admin', makeAdmin: 'Make admin',
+    capPlaceholder: 'Monthly cap (USD, empty = no limit)', setCap: 'Set cap',
+    pwdPlaceholder: 'New password (6+ characters)', resetPwd: 'Reset password',
+    capInvalid: 'Enter an amount of 0 or more, or leave empty for no limit',
+    selfNote: 'You cannot disable yourself or change your own role.',
+    daily: 'Daily cost, last 30 days', recent: 'Recent usage',
+    recentCols: {
+      time: 'Time', purpose: 'Purpose', novelChapter: 'Novel / chapter', model: 'Model', result: 'Result',
+      tokens: 'Tokens', cost: 'Cost',
+    },
+    mixedModels: ' (includes review model, estimated at the generation model rate)',
+    ok: 'OK', fail: 'Failed',
+    acts: {
+      disable: { label: 'disable this account', action: 'Disable', done: 'Account disabled' },
+      enable: { label: 'enable this account', action: 'Enable', done: 'Account enabled' },
+      revoke: { label: 'remove admin rights', action: 'Remove admin', done: 'Admin rights removed' },
+      grant: { label: 'make this user an admin', action: 'Make admin', done: 'User is now an admin' },
+      cap: { label: 'change the monthly cap', done: 'Monthly cap updated' },
+      reset: { label: 'reset this password', action: 'Reset password', done: 'Password reset' },
+    },
+  },
+  usage: {
+    groups: { user: 'By user', day: 'By day', model: 'By model' },
+    groupCol: { user: 'User', day: 'Day', model: 'Model' },
+    days: '{n} days',
+    exportCsv: 'Export CSV', refresh: 'Refresh',
+    perK: 'Cost per 1k characters: mean {mean} · P90 {p90} ({n} successful generations)',
+    unpriced: 'Unpriced models: {models} (not counted in cost)',
+    cols: {
+      calls: 'Calls', input: 'Input', output: 'Output', cacheRead: 'Cache read', cacheWrite: 'Cache write',
+      chars: 'Source chars', cost: 'Cost',
+    },
+    unpricedCell: 'Unpriced', partUnpriced: ' ({n} more unpriced)',
+    note: 'Cost is estimated from the current price table.',
+    empty: 'No usage in this period',
+    pricingTitle: 'Price table (USD per million tokens)',
+    savePricing: 'Save price table',
+    saved: 'Saved',
+    badJson: 'Not valid JSON',
+    badPrice: 'Prices must be finite numbers of 0 or more',
+  },
+  jobs: {
+    running: 'Running', failed: 'Failed in the last 7 days', refresh: 'Refresh',
+    filter: { label: 'Filter by status', all: 'All', running: 'Running', failed: 'Failed' },
+    noRunning: 'No jobs running', noFailed: 'No failed jobs',
+    runningCols: { user: 'User', novelChapter: 'Novel / chapter', status: 'Status', start: 'Started', elapsed: 'Elapsed', chars: 'Chars' },
+    debug: 'Debug log', debugEmpty: '(no debug log)',
+    failedCols: { user: 'User', novelChapter: 'Novel / chapter', start: 'Started', chars: 'Chars', attempts: 'Attempts', error: 'Error' },
+  },
+  audit: {
+    refresh: 'Refresh',
+    empty: 'No audit records yet',
+    emptyHint: 'Admin actions will show up here.',
+    cols: { time: 'Time', admin: 'Admin', action: 'Action', target: 'Target', before: 'Before', after: 'After' },
+  },
+  errors: {
+    refresh: 'Refresh', lookup: 'Look up', placeholder: 'Reference reported by the user',
+    empty: 'No error records yet', emptyHint: 'Unexpected failures are logged here with a reference (latest 1,000 kept).', detail: 'Details',
+    cols: { time: 'Time', user: 'User', ref: 'Reference', what: 'What', where: 'Where', detail: 'Details' },
+  },
+  purpose: { convert: 'Generate', digest: 'Post-chapter digest' },
+  action: {
+    disable: 'Disable', enable: 'Enable', set_cap: 'Set monthly cap', reset_password: 'Reset password',
+    grant_admin: 'Make admin', revoke_admin: 'Remove admin', update_pricing: 'Edit price table', view_error_ref: 'View error details', view_job_debug: 'Viewed debug log',
+  },
+}
+```
+
+- [ ] **Step 5: 从 `frontend/src/i18n/zh.ts` 删掉 `admin` 那一整块（从 `  admin: {` 到与它对齐的 `  },`；注意文件靠后还有一个 `srv` 里的 `admin`，那个不动）**
+
+在 `frontend/src/i18n/zh.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+  admin: {
+    title: '运营后台',
+    back: '返回产品',
+    nav: {
+      label: '后台导航', collapse: '收起导航', expand: '展开导航',
+      groups: { overview: '总览', people: '用户与用量', ops: '运行' },
+      pages: { overview: '运营概览', users: '用户', usage: '用量与花费', jobs: '任务', errors: '错误', audit: '审计' },
+      counts: { jobs: '近 7 天失败 {n} 个', usage: '{n} 个模型未定价', errors: '近 7 天 {n} 条错误记录' },
+    },
+    empty: '—',
+    deleted: '（已删除）',
+    overview: {
+      users: '用户', active7d: '7 天活跃', tokens30d: '30 天 token', cost30d: '30 天金额',
+      running: '运行中任务', failed7d: '7 天失败',
+      newIn7d: '近 7 天新增 {n}', activeShare: '占全部用户 {pct}%', cost7d: '近 7 天 {amount}',
+      lastFailed: '最近一次 {time}', queued: '其中排队 {n}', calls30d: '30 天调用 {n} 次',
+      goUsers: '查看用户', goUsage: '查看用量', goFailed: '去处理', goRunning: '查看任务', goModels: '查看全部',
+      unpriced: '未定价模型：{models}（不计入金额，点这里去「用量与花费」页编辑价格表）',
+      trend: '近 14 天每日金额',
+      refresh: '刷新',
+      note: '金额按当前价格表估算。',
+      dist: {
+        jobs: '任务状态', users: '用户状态', models: '30 天金额 · 按模型',
+        queued: '排队中', running: '运行中', failed: '近 7 天失败', normal: '正常', disabled: '已停用',
+        admins: '其中管理员 {n} 人', other: '其他 {n} 个模型', empty: '暂无数据',
+        jobsNote: '只统计排队、运行中与近 7 天失败的任务。',
+      },
+    },
+    chart: { label: '每日金额', empty: '暂无数据' },
+    users: {
+      search: '搜索用户名', refresh: '刷新',
+      cols: {
+        username: '用户名', role: '角色', status: '状态', created: '注册', lastSeen: '最近活跃',
+        novels: '小说', chapters: '章节', monthCost: '本月金额', cap: '月上限',
+      },
+      roleAdmin: '管理员', roleUser: '用户', disabled: '已停用', normal: '正常', unlimited: '不限',
+      userId: '用户 ID', passwordLogin: '密码登录', pwdSet: '已设置', pwdUnset: '未设置', versions: '版本数',
+      enable: '启用', disable: '停用', revokeAdmin: '取消管理员', makeAdmin: '设为管理员',
+      capPlaceholder: '月上限（美元，空 = 不限）', setCap: '设上限',
+      pwdPlaceholder: '新密码（至少 6 位）', resetPwd: '重置密码',
+      capInvalid: '请输入不小于 0 的金额，留空表示不限',
+      selfNote: '不能停用自己，也不能修改自己的角色。',
+      daily: '近 30 天每日金额', recent: '最近用量',
+      recentCols: {
+        time: '时间', purpose: '用途', novelChapter: '小说 / 章节', model: '模型', result: '结果',
+        tokens: 'token', cost: '金额',
+      },
+      mixedModels: '（含评审模型，按转换模型估算）',
+      ok: '成功', fail: '失败',
+      acts: {
+        disable: { label: '停用该账号', action: '停用', done: '已停用该账号' },
+        enable: { label: '启用该账号', action: '启用', done: '已启用该账号' },
+        revoke: { label: '取消管理员', action: '取消管理员', done: '已取消管理员' },
+        grant: { label: '设为管理员', action: '设为管理员', done: '已设为管理员' },
+        cap: { label: '修改月上限', done: '已修改月上限' },
+        reset: { label: '重置密码', action: '重置密码', done: '已重置密码' },
+      },
+    },
+    usage: {
+      groups: { user: '按用户', day: '按天', model: '按模型' },
+      groupCol: { user: '用户', day: '天', model: '模型' },
+      days: '{n} 天',
+      exportCsv: '导出 CSV', refresh: '刷新',
+      perK: '每千字成本：均值 {mean} · P90 {p90}（{n} 次成功转换）',
+      unpriced: '未定价模型：{models}（不计入金额）',
+      cols: {
+        calls: '调用', input: '输入', output: '输出', cacheRead: '缓存读', cacheWrite: '缓存写',
+        chars: '原文字数', cost: '金额',
+      },
+      unpricedCell: '未定价', partUnpriced: '（另有 {n} 条未定价）',
+      note: '金额按当前价格表估算。',
+      empty: '这段时间没有用量',
+      pricingTitle: '价格表（美元 / 每百万 token）',
+      savePricing: '保存价格表',
+      saved: '已保存',
+      badJson: '不是合法的 JSON',
+      badPrice: '单价必须是不小于 0 的有限数字',
+    },
+    jobs: {
+      running: '运行中', failed: '近 7 天失败', refresh: '刷新',
+      filter: { label: '按状态筛选', all: '全部', running: '运行中', failed: '失败' },
+      noRunning: '没有在跑的任务', noFailed: '没有失败的任务',
+      debug: '调试日志', debugEmpty: '（没有调试日志）',
+      runningCols: { user: '用户', novelChapter: '小说 / 章节', status: '状态', start: '开始', elapsed: '已运行', chars: '字数' },
+      failedCols: { user: '用户', novelChapter: '小说 / 章节', start: '开始', chars: '字数', attempts: '尝试', error: '报错' },
+    },
+    audit: {
+      refresh: '刷新',
+      empty: '还没有审计记录',
+      emptyHint: '管理操作会记在这里。',
+      cols: { time: '时间', admin: '管理员', action: '操作', target: '对象', before: '之前', after: '之后' },
+    },
+    errors: {
+      refresh: '刷新', lookup: '查找', placeholder: '输入用户报来的参考编号',
+      empty: '还没有错误记录', emptyHint: '意外失败会带参考编号记在这里（保留最近 1000 条）。', detail: '详情',
+      cols: { time: '时间', user: '用户', ref: '参考编号', what: '说明', where: '位置', detail: '详情' },
+    },
+    purpose: { convert: '转换', digest: '章后整理' },
+    action: {
+      disable: '停用', enable: '启用', set_cap: '设月上限', reset_password: '重置密码',
+      grant_admin: '设为管理员', revoke_admin: '取消管理员', update_pricing: '修改价格表', view_error_ref: '查看错误详情', view_job_debug: '查看调试日志',
+    },
+  },
+```
+
+整段删掉。
+
+- [ ] **Step 6: 从 `frontend/src/i18n/en.ts` 删掉 `admin` 那一整块**
+
+在 `frontend/src/i18n/en.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+  admin: {
+    title: 'Admin console',
+    back: 'Back to app',
+    nav: {
+      label: 'Admin navigation', collapse: 'Collapse navigation', expand: 'Expand navigation',
+      groups: { overview: 'Overview', people: 'Users & usage', ops: 'Operations' },
+      pages: { overview: 'Dashboard', users: 'Users', usage: 'Usage & cost', jobs: 'Jobs', errors: 'Errors', audit: 'Audit' },
+      counts: { jobs: '{n} failed in the last 7 days', usage: '{n} unpriced models', errors: '{n} errors in the last 7 days' },
+    },
+    empty: '—',
+    deleted: '(deleted)',
+    overview: {
+      users: 'Users', active7d: 'Active (7d)', tokens30d: 'Tokens (30d)', cost30d: 'Cost (30d)',
+      running: 'Running jobs', failed7d: 'Failed (7d)',
+      newIn7d: '{n} new in the last 7 days', activeShare: '{pct}% of all users', cost7d: 'Last 7 days: {amount}',
+      lastFailed: 'Latest: {time}', queued: '{n} queued', calls30d: '{n} calls in 30 days',
+      goUsers: 'View users', goUsage: 'View usage', goFailed: 'Review', goRunning: 'View jobs', goModels: 'View all',
+      unpriced: 'Unpriced models: {models} (not counted in cost; click to edit the price table under Usage & cost)',
+      trend: 'Daily cost, last 14 days',
+      refresh: 'Refresh',
+      note: 'Cost is estimated from the current price table.',
+      dist: {
+        jobs: 'Job status', users: 'User status', models: 'Cost by model (30d)',
+        queued: 'Queued', running: 'Running', failed: 'Failed (7d)', normal: 'Active', disabled: 'Disabled',
+        admins: '{n} of them are admins', other: '{n} other models', empty: 'No data yet',
+        jobsNote: 'Counts queued, running and last-7-day failed jobs only.',
+      },
+    },
+    chart: { label: 'Daily cost', empty: 'No data yet' },
+    users: {
+      search: 'Search username', refresh: 'Refresh',
+      cols: {
+        username: 'Username', role: 'Role', status: 'Status', created: 'Joined', lastSeen: 'Last active',
+        novels: 'Novels', chapters: 'Chapters', monthCost: 'Cost this month', cap: 'Monthly cap',
+      },
+      roleAdmin: 'Admin', roleUser: 'User', disabled: 'Disabled', normal: 'Active', unlimited: 'No limit',
+      userId: 'User ID', passwordLogin: 'Password login', pwdSet: 'Set', pwdUnset: 'Not set', versions: 'Versions',
+      enable: 'Enable', disable: 'Disable', revokeAdmin: 'Remove admin', makeAdmin: 'Make admin',
+      capPlaceholder: 'Monthly cap (USD, empty = no limit)', setCap: 'Set cap',
+      pwdPlaceholder: 'New password (6+ characters)', resetPwd: 'Reset password',
+      capInvalid: 'Enter an amount of 0 or more, or leave empty for no limit',
+      selfNote: 'You cannot disable yourself or change your own role.',
+      daily: 'Daily cost, last 30 days', recent: 'Recent usage',
+      recentCols: {
+        time: 'Time', purpose: 'Purpose', novelChapter: 'Novel / chapter', model: 'Model', result: 'Result',
+        tokens: 'Tokens', cost: 'Cost',
+      },
+      mixedModels: ' (includes review model, estimated at the generation model rate)',
+      ok: 'OK', fail: 'Failed',
+      acts: {
+        disable: { label: 'disable this account', action: 'Disable', done: 'Account disabled' },
+        enable: { label: 'enable this account', action: 'Enable', done: 'Account enabled' },
+        revoke: { label: 'remove admin rights', action: 'Remove admin', done: 'Admin rights removed' },
+        grant: { label: 'make this user an admin', action: 'Make admin', done: 'User is now an admin' },
+        cap: { label: 'change the monthly cap', done: 'Monthly cap updated' },
+        reset: { label: 'reset this password', action: 'Reset password', done: 'Password reset' },
+      },
+    },
+    usage: {
+      groups: { user: 'By user', day: 'By day', model: 'By model' },
+      groupCol: { user: 'User', day: 'Day', model: 'Model' },
+      days: '{n} days',
+      exportCsv: 'Export CSV', refresh: 'Refresh',
+      perK: 'Cost per 1k characters: mean {mean} · P90 {p90} ({n} successful generations)',
+      unpriced: 'Unpriced models: {models} (not counted in cost)',
+      cols: {
+        calls: 'Calls', input: 'Input', output: 'Output', cacheRead: 'Cache read', cacheWrite: 'Cache write',
+        chars: 'Source chars', cost: 'Cost',
+      },
+      unpricedCell: 'Unpriced', partUnpriced: ' ({n} more unpriced)',
+      note: 'Cost is estimated from the current price table.',
+      empty: 'No usage in this period',
+      pricingTitle: 'Price table (USD per million tokens)',
+      savePricing: 'Save price table',
+      saved: 'Saved',
+      badJson: 'Not valid JSON',
+      badPrice: 'Prices must be finite numbers of 0 or more',
+    },
+    jobs: {
+      running: 'Running', failed: 'Failed in the last 7 days', refresh: 'Refresh',
+      filter: { label: 'Filter by status', all: 'All', running: 'Running', failed: 'Failed' },
+      noRunning: 'No jobs running', noFailed: 'No failed jobs',
+      runningCols: { user: 'User', novelChapter: 'Novel / chapter', status: 'Status', start: 'Started', elapsed: 'Elapsed', chars: 'Chars' },
+      debug: 'Debug log', debugEmpty: '(no debug log)',
+      failedCols: { user: 'User', novelChapter: 'Novel / chapter', start: 'Started', chars: 'Chars', attempts: 'Attempts', error: 'Error' },
+    },
+    audit: {
+      refresh: 'Refresh',
+      empty: 'No audit records yet',
+      emptyHint: 'Admin actions will show up here.',
+      cols: { time: 'Time', admin: 'Admin', action: 'Action', target: 'Target', before: 'Before', after: 'After' },
+    },
+    errors: {
+      refresh: 'Refresh', lookup: 'Look up', placeholder: 'Reference reported by the user',
+      empty: 'No error records yet', emptyHint: 'Unexpected failures are logged here with a reference (latest 1,000 kept).', detail: 'Details',
+      cols: { time: 'Time', user: 'User', ref: 'Reference', what: 'What', where: 'Where', detail: 'Details' },
+    },
+    purpose: { convert: 'Generate', digest: 'Post-chapter digest' },
+    action: {
+      disable: 'Disable', enable: 'Enable', set_cap: 'Set monthly cap', reset_password: 'Reset password',
+      grant_admin: 'Make admin', revoke_admin: 'Remove admin', update_pricing: 'Edit price table', view_error_ref: 'View error details', view_job_debug: 'Viewed debug log',
+    },
+  },
+```
+
+整段删掉。
+
+- [ ] **Step 7: `zh.ts`：删掉不再用的「需要管理员权限」**
+
+在 `frontend/src/i18n/zh.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+      adminOnly: '需要管理员权限',
+```
+
+整段删掉。
+
+- [ ] **Step 8: `zh.ts`：浏览器标题里的后台名也不留在主包**
+
+在 `frontend/src/i18n/zh.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+    title: { admin: '运营后台', canvas: '出片画布', notFound: '页面不存在' },
+```
+
+整段替换为：
+
+```ts
+    title: { canvas: '出片画布', notFound: '页面不存在' },
+```
+
+- [ ] **Step 9: `en.ts`：同上**
+
+在 `frontend/src/i18n/en.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+      adminOnly: 'Administrator access required',
+```
+
+整段删掉。
+
+- [ ] **Step 10: `en.ts`：同上**
+
+在 `frontend/src/i18n/en.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+    title: { admin: 'Admin', canvas: 'Film canvas', notFound: 'Page not found' },
+```
+
+整段替换为：
+
+```ts
+    title: { canvas: 'Film canvas', notFound: 'Page not found' },
+```
+
+- [ ] **Step 11: `en.ts`：类型改成主包那一部分**
+
+在 `frontend/src/i18n/en.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+import type { Messages } from './core'
+
+/** English messages: must mirror zh.ts key for key (the type checker enforces it). */
+export const en: Messages = {
+```
+
+整段替换为：
+
+```ts
+import type { BaseMessages } from './core'
+
+/** English messages: must mirror zh.ts key for key (the type checker enforces it). */
+export const en: BaseMessages = {
+```
+
+- [ ] **Step 12: `frontend/src/i18n/core.ts`（一）：文案类型 = 主包 + 后台（后台只引入类型，不进主包）**
+
+在 `frontend/src/i18n/core.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+import { en } from './en'
+import { zh } from './zh'
+
+type Widen<T> = { [K in keyof T]: T[K] extends string ? string : Widen<T[K]> }
+export type Messages = Widen<typeof zh>
+```
+
+整段替换为：
+
+```ts
+import { en } from './en'
+import { zh } from './zh'
+import type { zhAdmin } from '../components/admin/messages.zh'
+
+type Widen<T> = { [K in keyof T]: T[K] extends string ? string : Widen<T[K]> }
+/** 主包里的文案 */
+export type BaseMessages = Widen<typeof zh>
+/** 运营后台的文案：不在主包里（这里只引入类型），后台代码加载时用 registerAdminMessages 挂上 */
+export type AdminMessages = Widen<typeof zhAdmin>
+export type Messages = BaseMessages & { admin: AdminMessages }
+```
+
+- [ ] **Step 13: `frontend/src/i18n/core.ts`（二）：语言包可以后挂后台文案**
+
+在 `frontend/src/i18n/core.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+const PACKS: Record<Locale, Messages> = { zh, en }
+```
+
+整段替换为：
+
+```ts
+const PACKS: Record<Locale, BaseMessages & { admin?: AdminMessages }> = { zh: { ...zh }, en: { ...en } }
+/** 后台代码加载时调用一次（components/admin/i18n.ts）；没挂上之前 admin.* 的键取不到文案，回落成键名 */
+export function registerAdminMessages(zhPack: AdminMessages, enPack: AdminMessages) {
+  PACKS.zh.admin = zhPack
+  PACKS.en.admin = enPack
+}
+```
+
+- [ ] **Step 14: 新建挂文案的文件**
+
+新建 `frontend/src/components/admin/i18n.ts`，内容如下（整份文件）：
+
+```ts
+/** 把运营后台的文案挂进语言包。这个文件只有副作用：后台外框（AdminView）第一行就引入它，
+ *  所以文案跟着后台那一块代码一起加载，主包里没有。单独渲染后台某一页的测试要自己先引入它。 */
+import { registerAdminMessages } from '@/i18n/core'
+import { enAdmin } from './messages.en'
+import { zhAdmin } from './messages.zh'
+
+registerAdminMessages(zhAdmin, enAdmin)
+```
+
+- [ ] **Step 15: `format.ts`（一）：引入**
+
+在 `frontend/src/components/admin/format.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+import { localized } from '@/i18n/core'
+import { en } from '@/i18n/en'
+import { zh } from '@/i18n/zh'
+```
+
+整段替换为：
+
+```ts
+import { localized } from '@/i18n/core'
+import { enAdmin } from './messages.en'
+import { zhAdmin } from './messages.zh'
+```
+
+- [ ] **Step 16: `format.ts`（二）：枚举标签取自后台文案**
+
+在 `frontend/src/components/admin/format.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+export const PURPOSE: Record<string, string> = localized<string>(zh.admin.purpose, en.admin.purpose)
+export const ACTION: Record<string, string> = localized<string>(zh.admin.action, en.admin.action)
+```
+
+整段替换为：
+
+```ts
+export const PURPOSE: Record<string, string> = localized<string>(zhAdmin.purpose, enAdmin.purpose)
+export const ACTION: Record<string, string> = localized<string>(zhAdmin.action, enAdmin.action)
+```
+
+**第二块：接口函数与样式搬出主包。**
+
+- [ ] **Step 17: 新建后台的接口客户端（函数体与 `src/api.ts` 里原来的一字不差）**
+
+新建 `frontend/src/components/admin/api.ts`，内容如下（整份文件）：
+
+```ts
+/** 运营后台的接口客户端：只随后台代码一起加载，不在主包里。权限以后端为准（非管理员调用一律 403）。
+ *  账号菜单用的 adminService 留在 src/api.ts（产品外壳要用）。 */
+import { jsonPost, req, send } from '../../api'
+import type {
+  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
+} from '../../types'
+
+export function adminOverview() {
+  return req<AdminOverview>('/admin/overview')
+}
+
+export async function adminUsers(): Promise<AdminUserRow[]> {
+  return (await req<{ users: AdminUserRow[] }>('/admin/users')).users
+}
+
+export function adminUser(id: string) {
+  return req<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`)
+}
+
+export function adminPatchUser(id: string,
+  patch: { disabled: boolean } | { role: 'admin' | 'user' } | { monthly_cap_usd: number | null }) {
+  return req<AdminUserRow>(`/admin/users/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  })
+}
+
+export function adminResetPassword(id: string, password: string) {
+  return req<{ ok: boolean }>(`/admin/users/${encodeURIComponent(id)}/password`,
+    jsonPost({ password }))
+}
+
+export function adminUsage(group: 'user' | 'day' | 'model', days: number) {
+  return req<UsageReport>(`/admin/usage?group=${group}&days=${days}`)
+}
+
+export async function adminUsageCsv(days: number): Promise<string> {
+  return (await send(`/admin/usage.csv?days=${days}`)).text()
+}
+
+/** 一次转换的调试日志（管理员；每次查看写审计） */
+export const adminJobDebug = (vid: string, userId: string) =>
+  req<{ id: string; user_id: string; lines: string[] }>(
+    `/admin/jobs/${encodeURIComponent(vid)}/debug?user_id=${encodeURIComponent(userId)}`)
+
+export function adminJobs() {
+  return req<AdminJobs>('/admin/jobs')
+}
+
+export async function adminErrors(): Promise<ErrorRefRow[]> {
+  return (await req<{ errors: ErrorRefRow[] }>('/admin/errors')).errors
+}
+
+export function adminErrorRef(ref: string) {
+  return req<ErrorRefRow>(`/admin/errors/${encodeURIComponent(ref.trim())}`)
+}
+
+export async function adminAudit(): Promise<AuditEntry[]> {
+  return (await req<{ audit: AuditEntry[] }>('/admin/audit')).audit
+}
+
+export function adminPricing() {
+  return req<PricingTable>('/admin/pricing')
+}
+
+export function adminSavePricing(table: unknown) {
+  return req<PricingTable>('/admin/pricing', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
+  })
+}
+```
+
+- [ ] **Step 18: `frontend/src/api.ts`（一）：`send` 改成导出**
+
+在 `frontend/src/api.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+async function send(path: string, init?: RequestInit): Promise<Response> {
+```
+
+整段替换为：
+
+```ts
+export async function send(path: string, init?: RequestInit): Promise<Response> {
+```
+
+- [ ] **Step 19: `frontend/src/api.ts`（二）：`req` 改成导出**
+
+在 `frontend/src/api.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+async function req<T>(path: string, init?: RequestInit): Promise<T> {
+```
+
+整段替换为：
+
+```ts
+export async function req<T>(path: string, init?: RequestInit): Promise<T> {
+```
+
+- [ ] **Step 20: `frontend/src/api.ts`（三）：`jsonPost` 改成导出**
+
+在 `frontend/src/api.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+const jsonPost = (body: unknown): RequestInit => ({
+```
+
+整段替换为：
+
+```ts
+export const jsonPost = (body: unknown): RequestInit => ({
+```
+
+- [ ] **Step 21: `frontend/src/api.ts`（四）：类型引入只留 `AdminService`**
+
+在 `frontend/src/api.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+  AdminJobs, AdminOverview, AdminService, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
+```
+
+整段替换为：
+
+```ts
+  AdminService,
+```
+
+- [ ] **Step 22: `frontend/src/api.ts`（五）：「管理后台」小标题下面的函数只留 `adminService`**
+
+在 `frontend/src/api.ts` 里找到下面这段（这段在文件里只出现一次）：
+
+```ts
+
+export function adminOverview() {
+  return req<AdminOverview>('/admin/overview')
+}
+
+export async function adminUsers(): Promise<AdminUserRow[]> {
+  return (await req<{ users: AdminUserRow[] }>('/admin/users')).users
+}
+
+export function adminUser(id: string) {
+  return req<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`)
+}
+
+export function adminPatchUser(id: string,
+  patch: { disabled: boolean } | { role: 'admin' | 'user' } | { monthly_cap_usd: number | null }) {
+  return req<AdminUserRow>(`/admin/users/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  })
+}
+
+export function adminResetPassword(id: string, password: string) {
+  return req<{ ok: boolean }>(`/admin/users/${encodeURIComponent(id)}/password`,
+    jsonPost({ password }))
+}
+
+export function adminUsage(group: 'user' | 'day' | 'model', days: number) {
+  return req<UsageReport>(`/admin/usage?group=${group}&days=${days}`)
+}
+
+export async function adminUsageCsv(days: number): Promise<string> {
+  return (await send(`/admin/usage.csv?days=${days}`)).text()
+}
+
+export const adminService = () => req<AdminService>('/admin/service')
+
+/** 一次转换的调试日志（管理员；每次查看写审计） */
+export const adminJobDebug = (vid: string, userId: string) =>
+  req<{ id: string; user_id: string; lines: string[] }>(
+    `/admin/jobs/${encodeURIComponent(vid)}/debug?user_id=${encodeURIComponent(userId)}`)
+
+export function adminJobs() {
+  return req<AdminJobs>('/admin/jobs')
+}
+
+export async function adminErrors(): Promise<ErrorRefRow[]> {
+  return (await req<{ errors: ErrorRefRow[] }>('/admin/errors')).errors
+}
+
+export function adminErrorRef(ref: string) {
+  return req<ErrorRefRow>(`/admin/errors/${encodeURIComponent(ref.trim())}`)
+}
+
+export async function adminAudit(): Promise<AuditEntry[]> {
+  return (await req<{ audit: AuditEntry[] }>('/admin/audit')).audit
+}
+
+export function adminPricing() {
+  return req<PricingTable>('/admin/pricing')
+}
+
+export function adminSavePricing(table: unknown) {
+  return req<PricingTable>('/admin/pricing', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
+  })
+}
+```
+
+整段替换为：
+
+```ts
+/** 管理员的服务信息（账号菜单用）。后台其余接口在 components/admin/api.ts，只随后台代码加载 */
+export const adminService = () => req<AdminService>('/admin/service')
+```
+
+- [ ] **Step 23: `AdminView.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/AdminView.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminErrors, adminOverview } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminErrors, adminOverview } from './api'
+```
+
+- [ ] **Step 24: `Overview.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/Overview.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminJobs, adminOverview, adminUsage, adminUsers } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminJobs, adminOverview, adminUsage, adminUsers } from './api'
+```
+
+- [ ] **Step 25: `Users.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/Users.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminPatchUser, adminResetPassword, adminUser, adminUsers } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminPatchUser, adminResetPassword, adminUser, adminUsers } from './api'
+```
+
+- [ ] **Step 26: `UsageTab.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/UsageTab.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminPricing, adminSavePricing, adminUsage, adminUsageCsv } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminPricing, adminSavePricing, adminUsage, adminUsageCsv } from './api'
+```
+
+- [ ] **Step 27: `JobsTab.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/JobsTab.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminJobDebug, adminJobs } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminJobDebug, adminJobs } from './api'
+```
+
+- [ ] **Step 28: `ErrorsTab.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/ErrorsTab.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminErrorRef, adminErrors } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminErrorRef, adminErrors } from './api'
+```
+
+- [ ] **Step 29: `AuditTab.tsx` 的接口函数改从同目录的 `./api` 引入**
+
+在 `frontend/src/components/admin/AuditTab.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { adminAudit } from '../../api'
+```
+
+整段替换为：
+
+```tsx
+import { adminAudit } from './api'
+```
+
+- [ ] **Step 30: 新建后台的样式入口**
+
+新建 `frontend/src/components/admin/admin.css`，内容如下（整份文件）：
+
+```css
+/* 运营后台的样式入口：由后台外框引入，跟着后台那一块代码一起加载。
+ * 仍然放进 components 层（层序在 styles/app.css 开头声明），工具类照常能盖过它。 */
+@import "../../styles/admin.css" layer(components);
+```
+
+- [ ] **Step 31: `frontend/src/styles/app.css`：主样式不再引入后台样式**
+
+在 `frontend/src/styles/app.css` 里找到下面这段（这段在文件里只出现一次）：
+
+```css
+@import "./admin.css" layer(components);
+```
+
+整段删掉。
+
+**第三块：外框自己挂文案、引样式、设标题。**
+
+- [ ] **Step 32: `AdminView.tsx`（一）：引入**
+
+在 `frontend/src/components/admin/AdminView.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { useEffect, useState } from 'react'
+import { LangToggle } from '@/components/common/LangToggle'
+import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { cn } from '@/lib/utils'
+```
+
+整段替换为：
+
+```tsx
+// 文案与样式跟着这一块代码一起加载；挂文案必须排在最前面（下面的模块有的在加载时就读文案）
+import './i18n'
+import './admin.css'
+import { useEffect, useState } from 'react'
+import { LangToggle } from '@/components/common/LangToggle'
+import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { useI18n } from '@/i18n/core'
+import { cn } from '@/lib/utils'
+import { BRAND } from '../../brand'
+```
+
+- [ ] **Step 33: `AdminView.tsx`（二）：设浏览器标题**
+
+在 `frontend/src/components/admin/AdminView.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+export function AdminView(p: AdminViewProps) {
+```
+
+整段替换为：
+
+```tsx
+export function AdminView(p: AdminViewProps) {
+  const { t } = useI18n()
+  // 浏览器标题由后台自己设：只有后台真的渲染出来（确认是管理员）才会出现后台的名字
+  useEffect(() => {
+    document.title = `${t(`admin.nav.pages.${p.page}`)} · ${t('admin.title')} — ${BRAND.id}`
+  }, [p.page, t])
+```
+
+**第四块：`App.tsx` 只在确认是管理员后才加载并渲染后台。**
+
+- [ ] **Step 34: `App.tsx`（一）：引入 `lazy`、`Suspense`**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { useCallback, useEffect, useRef, useState } from 'react'
+```
+
+整段替换为：
+
+```tsx
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+```
+
+- [ ] **Step 35: `App.tsx`（二）：删掉对后台外框的静态引入**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+import { AdminView } from './components/admin/AdminView'
+```
+
+整段删掉。
+
+- [ ] **Step 36: `App.tsx`（三）：动态加载后台外框**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+const RUNNING = ['queued', 'running']
+```
+
+整段替换为：
+
+```tsx
+/** 运营后台单独成块：渲染到它才去取，而它只在确认是管理员之后才渲染（见下面的 adminShown） */
+const AdminView = lazy(() => import('./components/admin/AdminView').then((m) => ({ default: m.AdminView })))
+
+const RUNNING = ['queued', 'running']
+```
+
+- [ ] **Step 37: `App.tsx`（四）：普通用户静悄悄回首页；算出「是否显示后台」**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+    if (!user || !roleConfirmed || loc.kind !== 'admin' || isAdminUser) return
+    toast.error(fns.current.t('route.err.adminOnly'))
+    navigate('/', { replace: true, state: { force: true } })
+  }, [user, roleConfirmed, loc.kind, isAdminUser, navigate])
+```
+
+整段替换为：
+
+```tsx
+    if (!user || !roleConfirmed || loc.kind !== 'admin' || isAdminUser) return
+    navigate('/', { replace: true, state: { force: true } })
+  }, [user, roleConfirmed, loc.kind, isAdminUser, navigate])
+  /** 后台只对确认过的管理员渲染（代码也只在这时才加载） */
+  const adminShown = loc.kind === 'admin' && roleConfirmed && isAdminUser
+```
+
+- [ ] **Step 38: `App.tsx`（五）：标题不再由这里按后台的页名拼**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+  const adminPage = loc.kind === 'admin' ? loc.page : null
+```
+
+整段删掉。
+
+- [ ] **Step 39: `App.tsx`（六）：标题 effect**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+    let title = BRAND.title
+    if (adminPage) title = `${t(`admin.nav.pages.${adminPage}`)} · ${t('route.title.admin')} — ${brand}`
+    else if (loc.kind === 'notFound') title = `${t('route.title.notFound')} — ${brand}`
+```
+
+整段替换为：
+
+```tsx
+    // 后台的标题由后台外框自己设；后台地址但不显示后台（未登录、非管理员、角色未确认）时用缺省标题
+    if (adminShown) return
+    let title = BRAND.title
+    if (loc.kind === 'notFound') title = `${t('route.title.notFound')} — ${brand}`
+```
+
+- [ ] **Step 40: `App.tsx`（七）：标题 effect 的依赖**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+  }, [loc.kind, nid, cid, sectionKey, canvasKey, adminPage, novel, chapter, t])
+```
+
+整段替换为：
+
+```tsx
+  }, [loc.kind, nid, cid, sectionKey, canvasKey, adminShown, novel, chapter, t])
+```
+
+- [ ] **Step 41: `App.tsx`（八）：角色未确认时只有骨架；确认是管理员才渲染（并加载）后台**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+      {adminLoc && user.role === 'admin' ? (
+        <AdminView me={user} page={adminLoc.page} jobState={adminLoc.state}
+                   usageGroup={adminLoc.group} usageDays={adminLoc.days}
+                   onNav={(to, replace) => { go(to, { replace }) }} onBack={leaveAdmin} />
+      ) : (
+```
+
+整段替换为：
+
+```tsx
+      {adminLoc && !roleConfirmed ? adminLoading : adminLoc && adminShown ? (
+        <Suspense fallback={adminLoading}>
+          <AdminView me={user} page={adminLoc.page} jobState={adminLoc.state}
+                     usageGroup={adminLoc.group} usageDays={adminLoc.days}
+                     onNav={(to, replace) => { go(to, { replace }) }} onBack={leaveAdmin} />
+        </Suspense>
+      ) : (
+```
+
+- [ ] **Step 42: `App.tsx`（九）：占位骨架**
+
+在 `frontend/src/App.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+  return (
+    <>
+      {confirmUi}
+      <Tour />
+```
+
+整段替换为：
+
+```tsx
+  /** 后台地址上、角色还没确认或后台代码还在加载时的占位：不带任何文字 */
+  const adminLoading = (
+    <div className="flex min-h-screen flex-col gap-3 p-6" data-testid="admin-loading" aria-busy="true">
+      <Skeleton className="h-8 w-1/3" /><Skeleton className="h-40 w-full" />
+    </div>
+  )
+
+  return (
+    <>
+      {confirmUi}
+      <Tour />
+```
+
+**测试跟着改：单独渲染后台某一页的两个测试文件要先挂文案；引用 `zh.admin` / `en.admin` 的地方改用新文件。**
+
+- [ ] **Step 43: `frontend/tests/admin.test.tsx`（一）：先挂后台文案**
+
+在 `frontend/tests/admin.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+const { Overview } = await import('../src/components/admin/Overview')
+```
+
+整段替换为：
+
+```tsx
+await import('../src/components/admin/i18n')   // 后台文案不在主包里，单独渲染某一页要先挂上
+const { Overview } = await import('../src/components/admin/Overview')
+```
+
+- [ ] **Step 44: `frontend/tests/admin.test.tsx`（二）**
+
+在 `frontend/tests/admin.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+includes(zh.admin.jobs.debug))!
+```
+
+整段替换为：
+
+```tsx
+includes(zhAdmin.jobs.debug))!
+```
+
+- [ ] **Step 45: `frontend/tests/admin.test.tsx`（三）**
+
+在 `frontend/tests/admin.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+  must(zh.admin.action.view_job_debug === '查看调试日志' && en.admin.action.view_job_debug === 'Viewed debug log', '审计动作名登记')
+```
+
+整段替换为：
+
+```tsx
+  must(zhAdmin.action.view_job_debug === '查看调试日志' && enAdmin.action.view_job_debug === 'Viewed debug log', '审计动作名登记')
+```
+
+- [ ] **Step 46: `frontend/tests/admin.test.tsx`（四）：引入后台文案（`zh`、`en` 仍用于 `srv.*`）**
+
+在 `frontend/tests/admin.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
+  let setL: (l: 'zh' | 'en') => void = () => {}
+```
+
+整段替换为：
+
+```tsx
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
+  const { zhAdmin } = await import('../src/components/admin/messages.zh')
+  const { enAdmin } = await import('../src/components/admin/messages.en')
+  let setL: (l: 'zh' | 'en') => void = () => {}
+```
+
+- [ ] **Step 47: `frontend/tests/admin-shell.test.tsx`（一）：先挂后台文案**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+const { act } = await import('react')
+```
+
+整段替换为：
+
+```tsx
+await import('../src/components/admin/i18n')   // 后台文案不在主包里，单独渲染某一页要先挂上
+const { act } = await import('react')
+```
+
+- [ ] **Step 48: `frontend/tests/admin-shell.test.tsx`（二）：第 6 组改用后台文案文件**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
+```
+
+整段替换为：
+
+```tsx
+  const { zhAdmin } = await import('../src/components/admin/messages.zh')
+  const { enAdmin } = await import('../src/components/admin/messages.en')
+```
+
+- [ ] **Step 49: `frontend/tests/admin-shell.test.tsx`（三）**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+textContent === zh.admin.title, '左上角标题')
+```
+
+整段替换为：
+
+```tsx
+textContent === zhAdmin.title, '左上角标题')
+```
+
+- [ ] **Step 50: `frontend/tests/admin-shell.test.tsx`（四）**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+textContent === zh.admin.back && text().includes('工具')
+```
+
+整段替换为：
+
+```tsx
+textContent === zhAdmin.back && text().includes('工具')
+```
+
+- [ ] **Step 51: `frontend/tests/admin-shell.test.tsx`（五）**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+getAttribute('aria-label') === zh.admin.back
+```
+
+整段替换为：
+
+```tsx
+getAttribute('aria-label') === zhAdmin.back
+```
+
+- [ ] **Step 52: `frontend/tests/admin-shell.test.tsx`（六）**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+textContent === en.admin.back, '英文导航')
+```
+
+整段替换为：
+
+```tsx
+textContent === enAdmin.back, '英文导航')
+```
+
+- [ ] **Step 53: `frontend/tests/admin-shell.test.tsx`（七）：追加第 8 组用例**
+
+在 `frontend/tests/admin-shell.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+// ===== 追加点：后面的任务把新用例插在这一行上面 =====
+```
+
+整段替换为：
+
+```tsx
+// 8. 文案是后挂的：键的结构中英文一致；外框设浏览器标题
+{
+  const { zhAdmin } = await import('../src/components/admin/messages.zh')
+  const { enAdmin } = await import('../src/components/admin/messages.en')
+  const { zh } = await import('../src/i18n/zh')
+  const { translate } = await import('../src/i18n/core')
+  const { AdminView } = await import('../src/components/admin/AdminView')
+  const keys = (o: object, p = ''): string[] => Object.entries(o).flatMap(([k, v]) =>
+    (typeof v === 'string' ? [`${p}${k}`] : keys(v as object, `${p}${k}.`)))
+  must(keys(zhAdmin).sort().join() === keys(enAdmin).sort().join() && keys(zhAdmin).length > 100, '后台文案中英文的键一一对应')
+  must(!('admin' in zh), '主包的语言包里没有后台文案')
+  must(translate('zh', 'admin.title') === '运营后台' && translate('en', 'admin.nav.pages.usage') === 'Usage & cost', '挂上后按键取得到')
+  const me = { id: 'u-root', username: 'root', created_at: '', role: 'admin' as const }
+  await remount(<AdminView me={me} page="audit" jobState={null} usageGroup="user" usageDays={30} onNav={() => {}} onBack={() => {}} />)
+  must(win.document.title === '审计 · 运营后台 — Inkreel', `外框设浏览器标题，实为 ${win.document.title}`)
+  console.log('8. 后台文案后挂 / 外框设标题 ✓')
+}
+
+// ===== 追加点：后面的任务把新用例插在这一行上面 =====
+```
+
+- [ ] **Step 54: `frontend/tests/foundation.test.tsx`（一）：「源码里不许有硬编码中文」的静态检查要放行新的中文文案文件 —— 注释**
+
+在 `frontend/tests/foundation.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+// 静态检查：src/ 下全部 .ts / .tsx（中文语言包 i18n/zh.ts 除外）除注释外不许有中文与全角标点
+```
+
+整段替换为：
+
+```tsx
+// 静态检查：src/ 下全部 .ts / .tsx（中文语言包 i18n/zh.ts 与后台的中文文案 components/admin/messages.zh.ts 除外）除注释外不许有中文与全角标点
+```
+
+- [ ] **Step 55: `frontend/tests/foundation.test.tsx`（二）：放行名单**
+
+在 `frontend/tests/foundation.test.tsx` 里找到下面这段（这段在文件里只出现一次）：
+
+```tsx
+const I18N_FILES = walk('').filter((f) => f !== 'i18n/zh.ts')
+```
+
+整段替换为：
+
+```tsx
+const ZH_PACKS = ['i18n/zh.ts', 'components/admin/messages.zh.ts']
+const I18N_FILES = walk('').filter((f) => !ZH_PACKS.includes(f))
+```
+
+- [ ] **Step 56: 新建构建产物检查脚本**
+
+新建 `frontend/tests/admin-bundle.check.mjs`，内容如下（整份文件）：
+
+```
+/** 构建产物检查：运营后台的代码、文案、接口地址、样式不在首屏下发的文件里，只在按需加载的块里。
+ *  跑法（在 frontend/ 下，先 npm run build）：node tests/admin-bundle.check.mjs
+ *  不进 npm test（它依赖 dist）。 */
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const dist = new URL('../dist/', import.meta.url).pathname
+const read = (rel) => readFileSync(join(dist, rel), 'utf8')
+const must = (cond, msg) => { if (!cond) { console.error('✗ ' + msg); process.exit(1) } }
+
+// 首屏下发的文件：index.html 引用的脚本、预加载与样式，再加上这些脚本静态 import 的块（一路跟到底）
+const html = read('index.html')
+const eager = new Set([...html.matchAll(/(?:src|href)="\/?(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]))
+const queue = [...eager].filter((f) => f.endsWith('.js'))
+while (queue.length) {
+  const src = read(queue.pop())
+  for (const m of src.matchAll(/(?:from|import)\s*"\.\/([^"]+\.js)"/g)) {
+    const file = `assets/${m[1]}`
+    if (!eager.has(file)) { eager.add(file); queue.push(file) }
+  }
+}
+must([...eager].some((f) => f.endsWith('.js')) && [...eager].some((f) => f.endsWith('.css')), `index.html 应引用入口脚本与样式，实为 ${[...eager]}`)
+
+// 后台专属的标识：组件的类名与测试钩子、接口地址、中英文文案
+const MARKS = ['adm-nav', 'admin-shell', 'adm__pagehead', '/admin/overview', '/admin/audit', '运营概览', '返回产品', 'Usage & cost']
+for (const file of eager) {
+  const text = read(file)
+  for (const mark of MARKS) must(!text.includes(mark), `首屏文件 ${file} 里不应出现后台标识「${mark}」`)
+}
+
+// 这些标识确实存在于按需加载的块里（否则上面的检查是空转）
+const lazy = readdirSync(join(dist, 'assets')).map((f) => `assets/${f}`).filter((f) => /\.(js|css)$/.test(f) && !eager.has(f))
+must(lazy.length > 0, '应有按需加载的块')
+const lazyText = lazy.map(read).join('\n')
+for (const mark of MARKS) must(lazyText.includes(mark), `按需加载的块里应有后台标识「${mark}」`)
+
+console.log(`首屏文件 ${eager.size} 个，都不含后台标识；按需加载的块 ${lazy.length} 个，含全部 ${MARKS.length} 个标识`)
+console.log('\nALL PASS')
+```
+
+- [ ] **Step 57: 跑类型检查**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npm run typecheck
+```
+
+Expected: 无错误输出。
+
+- [ ] **Step 58: 跑路由集成测试，确认通过**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npx vite build --ssr tests/routing.test.tsx --outDir .ssrout --logLevel error && node .ssrout/routing.test.js
+```
+
+Expected: 打印 `后台不向非管理员透出：未登录 / 普通用户 / 角色未确认 / 入口可见性 ✓`，最后一行 `ALL PASS`，没有 `✗`。
+
+- [ ] **Step 59: 跑外框测试**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npx vite build --ssr tests/admin-shell.test.tsx --outDir .ssrout --logLevel error && node .ssrout/admin-shell.test.js
+```
+
+Expected: 打印到 `8. 后台文案后挂 / 外框设标题 ✓`，最后一行 `ALL PASS`。
+
+- [ ] **Step 60: 跑后台原有测试**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npx vite build --ssr tests/admin.test.tsx --outDir .ssrout --logLevel error && node .ssrout/admin.test.js
+```
+
+Expected: 最后一行 `ALL PASS`。
+
+- [ ] **Step 61: 跑主流程测试**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npx vite build --ssr tests/flow.test.tsx --outDir .ssrout --logLevel error && node .ssrout/flow.test.js
+```
+
+Expected: 打印 `12b. 管理入口 → 管理员进出后台 / 401 后换普通用户不落进后台 ✓`，最后一行 `ALL PASS`。
+
+- [ ] **Step 62: 跑基础测试（含硬编码中文的静态检查）**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npx vite build --ssr tests/foundation.test.tsx --outDir .ssrout --logLevel error && node .ssrout/foundation.test.js
+```
+
+Expected: 最后一行 `ALL PASS`（其中的静态检查会扫 `src/` 下所有文件：除两个中文文案文件外，代码里不能有中文 —— 注释不算）。
+
+- [ ] **Step 63: 构建并检查产物：首屏文件里没有后台标识**
+
+Run（在仓库根目录）：
+
+```bash
+cd frontend && npm run build && node tests/admin-bundle.check.mjs
+```
+
+Expected: 构建成功；检查脚本打印「首屏文件 N 个，都不含后台标识；按需加载的块 M 个，含全部 8 个标识」与 `ALL PASS`。
+
+- [ ] **Step 64: 提交**
+
+```bash
+git add frontend/src/components/admin/api.ts frontend/src/components/admin/messages.zh.ts frontend/src/components/admin/messages.en.ts frontend/src/components/admin/i18n.ts frontend/src/components/admin/admin.css frontend/src/components/admin/AdminView.tsx frontend/src/components/admin/Overview.tsx frontend/src/components/admin/Users.tsx frontend/src/components/admin/UsageTab.tsx frontend/src/components/admin/JobsTab.tsx frontend/src/components/admin/ErrorsTab.tsx frontend/src/components/admin/AuditTab.tsx frontend/src/components/admin/format.ts frontend/src/App.tsx frontend/src/api.ts frontend/src/i18n/core.ts frontend/src/i18n/zh.ts frontend/src/i18n/en.ts frontend/src/styles/app.css frontend/tests/routing.test.tsx frontend/tests/admin.test.tsx frontend/tests/admin-shell.test.tsx frontend/tests/foundation.test.tsx frontend/tests/admin-bundle.check.mjs
+git commit -m "运营后台只对管理员下发与显示：后台外框改为动态加载，只有地址是后台、角色已确认且是管理员才渲染并加载，确认前只有不带字的骨架；后台的文案、接口函数、样式搬出主包，跟后台那一块一起加载（文案加载时挂进语言包，类型照常检查键）；浏览器标题改由后台外框设，未登录与普通用户看不到后台名；普通用户打开后台地址静悄悄回首页，不再提示需要管理员权限；补路由集成测试（未登录、普通用户、角色未确认、入口可见性）与构建产物检查脚本"
+```
+
+---
+
+### Task 10: 全量验收
 
 **Files:**
 - 不改文件（除非这一步发现问题）
@@ -3267,15 +4860,15 @@ cd frontend && npm run lint
 
 Expected: 退出码 0，0 条 error，警告恰好是基线的 5 条（`VerificationPanel.tsx`、`CardPicker.tsx`、`ParamsForm.tsx` 的 `only-export-components`，`timeline.ts` 的 `no-control-regex`，`App.tsx` 的 `exhaustive-deps`）；多出任何一条都要回去修。
 
-- [ ] **Step 3: 跑构建**
+- [ ] **Step 3: 跑构建并检查产物**
 
 Run（在仓库根目录）：
 
 ```bash
-cd frontend && npm run build
+cd frontend && npm run build && node tests/admin-bundle.check.mjs
 ```
 
-Expected: 退出码 0，输出里有 `✓ built in …`。「Some chunks are larger than 500 kB」是既有提示，不算失败。
+Expected: 构建退出码 0，输出里有 `✓ built in …`，并且多出 `AdminView-….js`、`AdminView-….css` 两个单独的文件；检查脚本打印「首屏文件 2 个，都不含后台标识；按需加载的块 2 个，含全部 8 个标识」与 `ALL PASS`。「Some chunks are larger than 500 kB」是既有提示，不算失败。
 
 - [ ] **Step 4: 确认工作区干净**
 
@@ -3306,8 +4899,12 @@ Expected: 只剩一行 `?? docs/specs/2026-10-27-commercialization-design-contra
 | §5.1 – §5.3 概览布局、四份数据、每个数字的来源、行动链接、未定价提醒可点 | 2（计算）、4（界面） |
 | §5.4 拿不到就不显示；补充数据失败时省略 | 4（测试 2b 逐份验证） |
 | §6 组件与文件 | 见上面的「文件一览」 |
-| §7 测试 | 每个 Task 的测试步骤；Task 9 全量 |
+| §7 测试 | 每个 Task 的测试步骤；Task 10 全量 |
+| §9.1 – §9.2 三个条件才渲染、角色未确认只有骨架、普通用户静悄悄回首页、标题由外框设 | 9（`App.tsx`、`AdminView.tsx`、路由集成测试） |
+| §9.3 后台组件、文案、接口函数、样式不在主包 | 9（`React.lazy`、`messages.*.ts` 与 `i18n.ts`、`components/admin/api.ts`、`components/admin/admin.css`） |
+| §9.4 入口只给管理员 | 9（只补测试，`AppShell.tsx` 不改） |
+| §9.5 测试与构建产物检查 | 9（`routing.test.tsx`、`admin-shell.test.tsx` 第 8 组、`admin-bundle.check.mjs`）、10（再跑一次检查） |
 
 **占位符：** 没有 TBD / TODO / 「同上」之类的步骤；每个改代码的步骤都给了完整的原文与替换后的内容，每条命令都写了预期结果。
 
-**命名一致：** `AdminPage`、`JobState`、`UsageGroup`、`UsageDays`、`adminPath`（Task 1）在 Task 2、6、7、8 里用的是同一组名字；`AdminNavFn`、`AdminNavContext`（Task 3）在 Task 7、8 里一致；`AdminView` 的属性 `page`、`jobState`、`usageGroup`、`usageDays`、`onNav`、`onBack`（Task 8）与 `App.tsx`、三个测试文件里的用法一致；`JobsTab` 的 `state` / `onState`、`UsageTab` 的 `group` / `days` / `onQuery`（Task 6）与 Task 8 的 `AdminView` 一致；测试用的 `data-testid`（`stat-*`、`dist-*`、`trend`、`unpriced-alert`、`jobs-running`、`jobs-failed`、`admin-shell`、`admin-sidebar`、`admin-topnav`、`admin-nav-*`、`admin-count-*`、`admin-nav-toggle`、`admin-nav-select`、`admin-back`）在组件与测试里拼写一致。
+**命名一致：** `AdminPage`、`JobState`、`UsageGroup`、`UsageDays`、`adminPath`（Task 1）在 Task 2、6、7、8 里用的是同一组名字；`AdminNavFn`、`AdminNavContext`（Task 3）在 Task 7、8 里一致；`AdminView` 的属性 `page`、`jobState`、`usageGroup`、`usageDays`、`onNav`、`onBack`（Task 8）与 `App.tsx`、三个测试文件里的用法一致；`JobsTab` 的 `state` / `onState`、`UsageTab` 的 `group` / `days` / `onQuery`（Task 6）与 Task 8 的 `AdminView` 一致；`zhAdmin` / `enAdmin`、`AdminMessages`、`registerAdminMessages`、`adminShown`、`adminLoading`（Task 9）在 `core.ts`、`i18n.ts`、`format.ts`、`App.tsx` 与测试里一致；测试用的 `data-testid`（`stat-*`、`dist-*`、`trend`、`unpriced-alert`、`jobs-running`、`jobs-failed`、`admin-shell`、`admin-sidebar`、`admin-topnav`、`admin-nav-*`、`admin-count-*`、`admin-nav-toggle`、`admin-nav-select`、`admin-back`、`admin-loading`）在组件与测试里拼写一致。
