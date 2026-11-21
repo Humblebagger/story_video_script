@@ -120,6 +120,8 @@ let svcGate: Promise<void> | null = null
 let svcUnauth = false
 const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
+/** 本人的出片任务（GET /render/tasks 原样返回） */
+let filmTasks: unknown[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '').split('?')[0]
   const method = init?.method ?? 'GET'
@@ -144,6 +146,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (!who || !users[who]) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
   if (path === '/auth/me') { if (meGate) await meGate; return json(userOf(who)) }
   if (path === '/jobs') return json({ jobs: jobsList })
+  if (path === '/render/tasks') return json({ tasks: filmTasks })
   const jm = path.match(/^\/jobs\/([^/]+)$/)
   if (jm && method === 'GET') {
     if (jobGate) await jobGate
@@ -211,6 +214,7 @@ async function boot(path: string, who?: string, cached?: Record<string, unknown>
   win.localStorage.clear()
   clearSession()
   jobsList = []
+  filmTasks = []
   for (const k of Object.keys(jobsById)) delete jobsById[k]
   if (who) setSession(`tok-${who}`, (cached ?? userOf(who)) as ReturnType<typeof userOf>)
   const container = doc.createElement('div')
@@ -972,6 +976,83 @@ console.log('T9d. 旧会话迟到的 401 不影响新会话 ✓')
   await a.done()
 }
 console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
+
+// 出片任务：在跑的计入铃铛并列在动态面板；点「查看」到那一版的画布（节点图）并带上要选中的片段；
+// 结束时发一条能点的桌面通知，点它带着「播放」回到那一段
+{
+  const { pokeFilmTasks } = await import('../src/filmTasks')
+  const made: { title: string; body: string; tag: string; onclick: (() => void) | null }[] = []
+  class Granted {
+    static permission = 'granted'
+    static requestPermission = async () => 'granted'
+    onclick: (() => void) | null = null
+    title: string
+    body: string
+    tag: string
+    constructor(title: string, o: { body: string; tag: string }) {
+      this.title = title; this.body = o.body; this.tag = o.tag
+      made.push(this)
+    }
+    close() {}
+  }
+  const wn = win as unknown as Record<string, unknown>
+  const before = [g.Notification, wn.Notification, wn.focus]
+  g.Notification = Granted; wn.Notification = Granted; wn.focus = () => {}
+  const task = (over: Record<string, unknown> = {}) => ({
+    id: 'v1:E01-C01', item_id: 'E01-C01', kind: 'clip', novel_id: 'n1', chapter_id: 'c1', version_id: 'v1',
+    work_title: '药', chapter: '第一章', state: 'running', elapsed_sec: 245, typical_sec: [180, 420],
+    ended_at: null, cost_cny: null, ...over })
+  const poke = async () => { await act(async () => { pokeFilmTasks() }); await settle(150) }
+  const focusOf = (r: Router) => (r.state.location.state as { focus?: unknown; panel?: string } | null)
+
+  const a = await boot('/novels/n1/overview', 'alice')
+  must(!a.q('[data-testid="activity-count"]'), '没有任务：铃铛上没有数字')
+  filmTasks = [task()]
+  await poke()
+  must(a.q('[data-testid="activity-count"]')?.textContent === '1', '在跑的出片任务计入铃铛')
+  await click(a.q('[data-testid="activity-bell"]')!)
+  const row = doc.body.querySelector('[data-testid="activity-film-running"]') as unknown as HTMLElement | null
+  must(!!row && (row.textContent ?? '').includes('药 · 第一章 · E01-C01') && /已等 4 分 \d\d 秒 · 通常 3–7 分钟/.test(row.textContent ?? ''),
+       `动态面板里有这条：${row?.textContent}`)
+  must(made.length === 0, '在跑的不发通知')
+  await click(button(row!, '查看')!)
+  await settle(300)
+  must(a.here() === '/novels/n1/chapters/c1/render/canvas?view=graph', `点查看到画布的节点图，实际 ${a.here()}`)
+  must(JSON.stringify(focusOf(a.router)?.focus) === JSON.stringify({ vid: 'v1', id: 'E01-C01', play: false })
+       && focusOf(a.router)?.panel === 'film', `带上要选中的片段：${JSON.stringify(a.router.state.location.state)}`)
+
+  filmTasks = [task({ state: 'done', ended_at: '2026-11-21T03:00:00+00:00', elapsed_sec: 280 })]
+  await poke()
+  must(!a.q('[data-testid="activity-count"]'), '结束后铃铛数字消失')
+  must(made.length === 1 && made[0].title === '片段已生成' && made[0].body.includes('药 · 第一章 · E01-C01')
+       && made[0].tag === 'film-v1:E01-C01', `结束发一条通知：${JSON.stringify(made)}`)
+  must(!/minimax|seedance|fake/i.test(made[0].title + made[0].body), '通知里不出现厂商名')
+  await poke()
+  must(made.length === 1, '同一条不重复通知')
+  await act(async () => { made[0].onclick!() })
+  await settle(300)
+  must(a.here() === '/novels/n1/chapters/c1/render/canvas?view=graph', '点通知：还在这一章的画布')
+  must(JSON.stringify(focusOf(a.router)?.focus) === JSON.stringify({ vid: 'v1', id: 'E01-C01', play: true }),
+       `点通知带着播放：${JSON.stringify(a.router.state.location.state)}`)
+  await a.done()
+
+  // 登录后第一轮看到的已结束任务不播报（刷新页面不重弹）；取消后才出结果的要播报，带任务号
+  filmTasks = []
+  const b = await boot('/novels/n1/overview', 'alice')
+  must(made.length === 1, '第一轮不播报')
+  filmTasks = [task({ id: 'v1:E01-C02:t9', item_id: 'E01-C02', state: 'late', elapsed_sec: null,
+                      ended_at: '2026-11-21T03:09:00+00:00', cost_cny: 7.5 })]
+  await poke()
+  must(made.length === 2 && made[1].title === '已取消的片段仍生成完成' && made[1].body.includes('¥7.50'),
+       `取消后才出结果：${JSON.stringify(made[1])}`)
+  await act(async () => { made[1].onclick!() })
+  await settle(300)
+  must(JSON.stringify(focusOf(b.router)?.focus) === JSON.stringify({ vid: 'v1', id: 'E01-C02', play: true, taskId: 't9' }),
+       `点通知带着任务号：${JSON.stringify(b.router.state.location.state)}`)
+  await b.done()
+  ;[g.Notification, wn.Notification, wn.focus] = before
+}
+console.log('出片任务：铃铛、面板、跳转与通知 ✓')
 
 
 console.log('\nALL PASS')

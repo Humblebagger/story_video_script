@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   adminService, adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
-  getChapter, getJobPartial, getNovel, getVersion, health, listJobs, listNovels, me,
+  getChapter, getJobPartial, getNovel, getVersion, health, listFilmTasks, listJobs, listNovels, me,
   rerunDigest, saveVersion, updateChapter,
 } from './api'
 import { clearSession, getCachedUser, getToken, onUnauthorized } from './auth'
@@ -31,7 +31,9 @@ import { ActivityPanel } from './components/shell/ActivityPanel'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
 import { onTask } from './lib/assistantBridge'
 import { keepOnlyAssistant } from './lib/assistantSession'
-import type { DoneJob } from './components/shell/ActivityPanel'
+import type { DoneJob, FilmActivity } from './components/shell/ActivityPanel'
+import { diffFilmTasks, lateTaskId, onFilmPoke, taskName } from './filmTasks'
+import { cny } from './lib/fmt'
 import { ProjectNav } from './components/shell/ProjectNav'
 import { readLastChapter, writeLastChapter } from './lastChapter'
 import type { Section } from './section'
@@ -50,7 +52,7 @@ import { notice } from './lib/notice'
 import { UnsavedBar } from './components/workflow/UnsavedBar'
 import { notify, primeNotifications } from './notify'
 import type {
-  AdminService, Chapter, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
+  AdminService, Chapter, FilmFocus, FilmTask, Health, Job, JobSummary, NarrationMode, Novel, NovelSummary, Storyboard,
   VerificationReport,
 } from './types'
 import { useChapterFlow } from './useChapterFlow'
@@ -118,6 +120,8 @@ export default function App() {
   /** 右侧动态面板开关；recentDone 为最近完成的任务（只在内存，最多 20 条）；activityDot 为面板关着时的新完成提示 */
   const [activityOpen, setActivityOpen] = useState(false)
   const [recentDone, setRecentDone] = useState<DoneJob[]>([])
+  /** 本人的出片任务（在跑的、最近结束的）与取回时刻：铃铛数字与动态面板用 */
+  const [filmAct, setFilmAct] = useState<FilmActivity>({ live: [], ended: [], at: 0 })
   const [activityDot, setActivityDot] = useState(false)
   const [activityTab, setActivityTab] = useState<'activity' | 'assistant'>('activity')
   const activityOpenRef = useRef(false)
@@ -337,6 +341,46 @@ export default function App() {
     }
   }, [announce, refreshNovels, reloadOpen, bumpSummary])
 
+  /** 出片任务巡检：和转换任务并行。结束的各播报一次（桌面通知 + 页内提示，都能点回那一段）；
+   *  登录后的第一轮只记账。提示里只有小说、章节、片段，不带厂商或模型名 */
+  const filmSeen = useRef<Set<string>>(new Set())
+  const filmFirst = useRef(true)
+  const openFilmRef = useRef<(tk: FilmTask, play: boolean) => void>(() => {})
+  const watchFilm = useCallback(async () => {
+    const ep = epoch.current
+    try {
+      const { tasks } = await listFilmTasks()
+      if (epoch.current !== ep) return
+      const { live, ended, announce: fresh } = diffFilmTasks(tasks, filmSeen.current, filmFirst.current)
+      filmFirst.current = false
+      setFilmAct({ live, ended, at: Date.now() })
+      for (const tk of fresh) {
+        const who = taskName(tk)
+        const play = tk.state !== 'failed'
+        const open = () => openFilmRef.current(tk, play)
+        const action = { label: t(play ? 'activity.film.play' : 'flow.view'), onClick: open }
+        const tag = `film-${tk.id}`
+        if (tk.state === 'failed') {
+          notify(t('app.notify.filmFailed'), t('app.notify.filmFailedBody', { who }), { tag, onClick: open })
+          toast.error(t('app.notify.filmFailed'), { description: who, action })
+        } else if (tk.state === 'late') {
+          const body = t('app.notify.filmLateBody', { who, cost: cny(tk.cost_cny ?? 0) })
+          notify(t('app.notify.filmLate'), body, { tag, onClick: open })
+          toast.warning(t('app.notify.filmLate'), { description: body, action })
+        } else {
+          notify(t('app.notify.filmDone'), t('app.notify.filmDoneBody', { who }), { tag, onClick: open })
+          toast.success(t('app.notify.filmDone'), { description: who, action })
+        }
+      }
+      if (fresh.length) {
+        if (!activityOpenRef.current) setActivityDot(true)
+        bumpSummary()     // 出片花了钱：费用表重算
+      }
+    } catch {
+      /* 巡检失败静默重试，不打扰用户 */
+    }
+  }, [t, bumpSummary])
+
   // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
   // 监听只订阅一次，所以通过 ref 拿到最新的重置函数；和退出共用，保证换账号不残留上一个人的小说与产物
   const resetRef = useRef<() => void>(() => {})
@@ -483,6 +527,20 @@ export default function App() {
     return () => clearInterval(t)
   }, [user, running.length, watchJobs])
 
+  // 出片任务：登录后立刻取一轮；画布上发起或取消后马上再取；有在跑的 5 秒一轮，闲时 15 秒
+  const signedIn = !!user
+  useEffect(() => {
+    if (!signedIn) return
+    void watchFilm()
+    return onFilmPoke(() => void watchFilm())
+  }, [signedIn, watchFilm])
+  const filmLiveCount = filmAct.live.length
+  useEffect(() => {
+    if (!signedIn) return
+    const id = window.setInterval(() => void watchFilm(), filmLiveCount ? 5000 : 15000)
+    return () => clearInterval(id)
+  }, [signedIn, filmLiveCount, watchFilm])
+
   // 章后整理在后台跑（一次小调用）：跑着时盯一下，完了刷新小说页的待确认提议
   useEffect(() => {
     if (!novel || !chapter || chapter.digest?.status !== 'running') return
@@ -540,6 +598,7 @@ export default function App() {
   // （有就只提示，免得冲掉用户的修改）；各种操作都让小说概览重算
   useEffect(() => onTask((task) => {
     if (task.kind === 'job') void watchJobs()
+    if (task.kind === 'film') void watchFilm()
     if (task.kind === 'edit' && novel) {
       void reloadOpen(novel.id, chapter?.id ?? null)
       if (task.chapter_id && task.version_id && chapter?.id === task.chapter_id && docVid === task.version_id) {
@@ -548,7 +607,7 @@ export default function App() {
       }
     }
     bumpSummary()
-  }), [watchJobs, bumpSummary, novel, chapter?.id, docVid, dirty, reloadOpen, openVersion, t])
+  }), [watchJobs, watchFilm, bumpSummary, novel, chapter?.id, docVid, dirty, reloadOpen, openVersion, t])
 
   /** 打开章节（§5.4）：跨地址就导航，vid / jobId 作一次性 state；目标就是地址里这一章时不导航，直接执行动作 */
   const openChapter = async (cidT: string, nidT = nid ?? undefined, jobId?: string, vid?: string,
@@ -628,6 +687,34 @@ export default function App() {
       go(novelPath(target, novel.memory.lifecycle.some((e) => e.status === 'proposed') ? 'memory' : 'overview'))
     }
   }
+
+  /** 从任务列表、提示或通知回到出片任务所在的片段：打开那一版的画布（节点图、出片页）并选中它，play 时顺便播放。
+   *  要选中谁放在路由 state 的 focus 里；跨章节时版本号作一次性 state，章节加载时打开那一版（§5.4） */
+  const openFilmTask = async (tk: FilmTask, play: boolean) => {
+    const taskId = lateTaskId(tk)
+    const focus: FilmFocus = { vid: tk.version_id, id: tk.item_id, play, ...(taskId ? { taskId } : {}) }
+    if (tk.novel_id === nid && tk.chapter_id === cid) {
+      if (docVid !== tk.version_id) {
+        if (!(await confirmLeave())) return
+        void openVersion(tk.novel_id, tk.chapter_id, tk.version_id)
+      }
+      const to = chapterPath(tk.novel_id, tk.chapter_id, { step: boardStep(), tab: urlTab, canvas: true, view: 'graph' })
+      // 已经在这个地址：不导航，只把请求写进当前这条历史记录
+      if (!go(to, { state: { fromChapter: true, panel: 'film', focus } })) {
+        navigate(to, { replace: true, state: { ...passState(navStateRef.current), panel: 'film', focus } })
+      }
+      return
+    }
+    go(chapterPath(tk.novel_id, tk.chapter_id, { step: 'render', canvas: true, view: 'graph' }),
+       { state: { vid: tk.version_id, panel: 'film', focus } })
+  }
+  openFilmRef.current = (tk, play) => void openFilmTask(tk, play)
+  /** 画布用完了聚焦请求：从当前这条历史记录里清掉 */
+  const clearFilmFocus = useCallback(() => {
+    const rest = passState(navStateRef.current)
+    delete rest.focus
+    navigate(hereRef.current, { replace: true, state: rest })
+  }, [navigate])
 
   const openJob = (j: JobSummary) => {
     if (job?.id === j.id) return
@@ -912,6 +999,7 @@ export default function App() {
     setRunning([])
     setRecentDone([]); setActivityDot(false); setActivityOpen(false); setActivityTab('activity')
     prevRunning.current = new Set()
+    setFilmAct({ live: [], ended: [], at: 0 }); filmSeen.current = new Set(); filmFirst.current = true
   }
   resetRef.current = resetSignedOut
 
@@ -980,6 +1068,8 @@ export default function App() {
             canvasOpen: loc.canvas,
             onCanvas: (open: boolean) => { if (open) openCanvas(); else closeCanvas() },
             canvasPanel: navState?.panel,
+            canvasFocus: navState?.focus,
+            onCanvasFocusDone: clearFilmFocus,
             canvasView: loc.view,
             onCanvasView: (v: 'timeline' | 'graph') =>
               go(chapterPath(nid, cid, { step: boardStep(), tab: loc.tab, canvas: true, view: v }), { replace: true }),
@@ -1051,7 +1141,7 @@ export default function App() {
         ) : null}
         costMeter={shown
           ? <CostMeter data={summary.data} chapterId={chapter?.id ?? null} /> : null}
-        runningCount={running.length}
+        runningCount={running.length + filmAct.live.length}
         onOpenAssistant={shown
           ? () => { setActivityTab('assistant'); setActivityOpen(true) } : undefined}
         onToggleActivity={() => {
@@ -1063,6 +1153,7 @@ export default function App() {
         activityDot={activityDot && !activityOpen}
         activity={activityOpen ? (
           <ActivityPanel running={running} done={recentDone} onOpen={openJob}
+                         film={filmAct} onOpenFilm={(tk, play) => void openFilmTask(tk, play)}
                          tab={activityTab} onTab={setActivityTab}
                          assistant={shown ? (
                            <AssistantPanel novelId={shown.id}

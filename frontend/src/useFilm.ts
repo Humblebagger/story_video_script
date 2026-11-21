@@ -8,6 +8,7 @@ import {
   ApiError, cancelFilmItem, chooseFilmAttempt, chooseFreeAttempt, conflictCny, createFilm, createFreeNode,
   deleteFreeNode, filmFileUrl, getFilm, muteFilmClip, patchFilm, patchFreeNode, runFilmClip, runFilmRest, runFreeNode,
 } from './api'
+import { pokeFilmTasks } from './filmTasks'
 import { primeNotifications } from './notify'
 import { tr } from './i18n/core'
 import { errValue, formatMsg } from './i18n/serverMsg'
@@ -132,6 +133,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
       const got = await fn()
       if (gen.current !== mine) return { kind: 'stale' }
       accept(got, true)
+      pokeFilmTasks()
       return { kind: 'ok' }
     } catch (e) {
       if (gen.current !== mine) return { kind: 'stale' }
@@ -163,6 +165,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
       // 再重读刷新，重读失败只显示读取错误，不退回取消前的状态
       const { cancel_outcome: outcome, ...next } = got
       accept(next)
+      pokeFilmTasks()
       await load()
       return outcome ?? null
     } catch (e) {

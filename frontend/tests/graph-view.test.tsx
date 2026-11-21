@@ -23,7 +23,7 @@ g.requestAnimationFrame = (cb: (t: number) => void) =>
 g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 
 import type { Film } from '../src/useFilm'
-import type { FilmAttempt, FilmClip, FilmFreeNode, FilmSession, Storyboard } from '../src/types'
+import type { FilmAttempt, FilmClip, FilmFocus, FilmFreeNode, FilmSession, Storyboard } from '../src/types'
 
 const doc: Storyboard = JSON.parse(
   readFileSync('../backend/tests/real_text_yao/output_merged.json', 'utf8'))
@@ -245,11 +245,17 @@ const tab = (name: string) =>
   [...container.querySelectorAll('.tlc__tabs button')].find((b) => b.textContent === name)
 const refresh = () => click(button('刷新'))
 
+/** 测试用：给画布一个聚焦请求（从任务列表、提示、通知点过来）；focusDone 记画布回报了几次「用完了」 */
+let giveFocus: (f: FilmFocus | undefined) => void = () => {}
+let focusDone = 0
 function Host() {
   const [dirty, set] = useState(false)
+  const [focus, setFocus] = useState<FilmFocus | undefined>(undefined)
+  giveFocus = setFocus
   return <StoryboardView doc={doc} canSave dirty={dirty} saving={false}
                          version={{ nid: 'n1', cid: 'c1', vid: 'v1' }}
-                         onChange={() => set(true)} onSave={() => set(false)} />
+                         onChange={() => set(true)} onSave={() => set(false)}
+                         canvasFocus={focus} onCanvasFocusDone={() => { focusDone += 1; setFocus(undefined) }} />
 }
 
 // 0. 切到节点图：没会话时空状态，按钮打开出片页签；建会话后每段一张卡、缺图资产与连线
@@ -559,6 +565,41 @@ console.log('6c. 采用位置与无障碍 ✓')
   must((container.querySelector('.ngv__err')?.textContent ?? '').includes('服务商暂不可用'), '显示读取错误')
   await settle(100)
   console.log('6l. 取消后读取失败不退回 ✓')
+}
+
+// 6f. 聚焦请求：只认本版本的；选中那一段、停在出片页，要播放就打开播放窗口；点名任务号就播那一次；每个请求只执行一次
+{
+  const player = () => win.document.body.querySelector('[data-testid="clip-player"]')
+  const closePlayer = async () => {
+    await click(win.document.body.querySelector('[data-testid="clip-player"] [data-slot="dialog-close"]')!)
+    await settle(300)
+  }
+  const give = async (f: FilmFocus) => { await act(async () => { giveFocus(f) }); await settle() }
+  const second = film!.clips[1].id
+  await click(card(second))
+  await give({ vid: 'other', id: first, play: true })
+  must(!player() && focusDone === 0, '别的版本的请求：不动，留着等那一版')
+  await act(async () => { giveFocus(undefined) })
+  await give({ vid: 'v1', id: first, play: false })
+  must(!player() && focusDone === 1, '不要播放：只选中')
+  must(tab('出片')?.getAttribute('aria-pressed') === 'true'
+       && !!container.querySelector('[data-testid="clip-play"]'), '停在出片页，选中的是有结果的那一段')
+  const late = { ...attempt(first, 9, 7.5), task_id: 't-late', late: true }
+  clipOf(first).attempts.push(late)
+  film = recount(film!)
+  await refresh()
+  must(!!card(first).querySelector('[data-testid="ngv-late"]'), '卡片上提示有取消后才出的结果')
+  await give({ vid: 'v1', id: first, play: true, taskId: 't-late' })
+  must((player()?.textContent ?? '').includes(`${first} · 第 ${clipOf(first).attempts.length} 次`)
+       && (player()?.textContent ?? '').includes('取消后才出的结果') && focusDone === 2,
+       `点名任务号：播的是那一次：${player()?.textContent}`)
+  await closePlayer()
+  await give({ vid: 'v1', id: 'E99-C99', play: true })
+  must(!player() && focusDone === 3, '找不到的片段：不打开播放窗口，请求照样用掉')
+  clipOf(first).attempts.pop()
+  film = recount(film!)
+  await refresh()
+  console.log('6f. 聚焦请求 ✓')
 }
 
 // 7. 切回时间轴：节点图收起

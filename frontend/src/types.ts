@@ -827,6 +827,15 @@ export interface FilmTask {
   cost_cny: number | null
 }
 
+/** 让画布选中某一段 / 自由节点的请求（从任务列表、提示、通知点过来；放在路由 state 里）。
+ *  vid：属于哪一版（画布只认自己这一版的）；play：顺便打开播放窗口；taskId：点名播哪个任务出的那一次 */
+export interface FilmFocus {
+  vid: string
+  id: string
+  play: boolean
+  taskId?: string
+}
+
 export interface FilmSettings {
   provider?: string
   model?: string

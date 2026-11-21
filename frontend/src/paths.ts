@@ -5,6 +5,7 @@ import type { Section } from './section'
 import { STEPS } from './workflow'
 import type { StepId } from './workflow'
 import type { Tab } from './components/StoryboardView'
+import type { FilmFocus } from './types'
 
 export const TABS = ['focus', 'cards', 'sheet', 'assets', 'source', 'render', 'json'] as const satisfies readonly Tab[]
 /** 画布只挂在这三步（StoryboardView 只在这三步挂载） */
@@ -44,6 +45,8 @@ export interface NavState {
   fromChapter?: boolean
   /** 打开画布时停在哪个侧栏页（只有「出片」） */
   panel?: 'film'
+  /** 打开画布后选中哪一段（并可顺便播放）：画布用完由应用清掉，刷新、后退不会再来一次 */
+  focus?: FilmFocus
 }
 
 const enc = encodeURIComponent

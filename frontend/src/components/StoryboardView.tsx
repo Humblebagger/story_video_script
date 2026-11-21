@@ -4,7 +4,7 @@ import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
 import { buildIndex, pct } from '../resolve'
-import type { FilmSession, Shot, Storyboard, VerificationReport, VersionRef } from '../types'
+import type { FilmFocus, FilmSession, Shot, Storyboard, VerificationReport, VersionRef } from '../types'
 import { AssetsView } from './AssetsView'
 import { EpisodeView } from './EpisodeView'
 import { ShotFocusView } from './ShotFocusView'
@@ -69,6 +69,9 @@ interface Props {
   canvasPanel?: 'film'
   canvasView?: 'timeline' | 'graph'
   onCanvasView?: (v: 'timeline' | 'graph') => void
+  /** 画布的聚焦请求与「用完了」的回报（原样交给画布） */
+  canvasFocus?: FilmFocus
+  onCanvasFocusDone?: () => void
   /** 从画布跳回某个镜头（受控时由上层一次 replace 到 /:step，页签 focus）（§4.3） */
   onJumpShot?: () => void
   /** 小说风格参考图：画布关键帧区显示与下载 */
@@ -80,6 +83,7 @@ export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
   bench = null, openFilm, onCanvasClose, report = null, film = null, defaultTab, styleUrl = null, styleMime,
   tab: tabProp, onTab, canvasOpen, onCanvas, canvasPanel: canvasPanelProp, canvasView, onCanvasView, onJumpShot,
+  canvasFocus, onCanvasFocusDone,
 }: Props) {
   const { t } = useI18n()
   const [tabLocal, setTabLocal] = useState<Tab>(defaultTab ?? 'focus')
@@ -266,6 +270,7 @@ export function StoryboardView({
                         canSave={canSave && !preview} dirty={dirty} saving={saving} onSave={onSave}
                         onClose={closeCanvas} onJumpShot={jumpShot} initialPanel={canvasPanel}
                         view={onCanvasView ? canvasView : undefined} onView={onCanvasView}
+                        focus={canvasFocus} onFocusDone={onCanvasFocusDone}
                         styleUrl={styleUrl} styleMime={styleMime} />
       )}
     </div>

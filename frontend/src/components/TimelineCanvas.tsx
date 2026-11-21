@@ -31,7 +31,7 @@ import type { Workbench } from './CanvasPanels'
 import { ShotCard } from './ShotCard'
 import { SourceView } from './SourceView'
 import type { CharLane, Timeline } from '../timeline'
-import type { FilmSession, Storyboard, VersionRef } from '../types'
+import type { FilmFocus, FilmSession, Storyboard, VersionRef } from '../types'
 import { promptSheet, useKeyframes } from '../useKeyframes'
 
 interface Props {
@@ -57,6 +57,10 @@ interface Props {
   /** 画布视图（受控可选，§4.1）：给了就受控，不给用组件内状态 */
   view?: 'timeline' | 'graph'
   onView?: (v: 'timeline' | 'graph') => void
+  /** 聚焦请求（从任务列表、提示、通知点过来）：选中这一段、停在「出片」页，要播放就打开播放窗口。
+   *  只认本版本的；会话读到后执行一次，然后回报 onFocusDone（上层清掉请求） */
+  focus?: FilmFocus
+  onFocusDone?: () => void
 }
 
 /** 连续打字时把一串改动并成一步撤销 */
@@ -127,7 +131,7 @@ function downloadText(name: string, text: string) {
 export function TimelineCanvas({
   doc, onClose, onJumpShot, bench = null, version = null,
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
-  styleUrl = null, styleMime, view: viewProp, onView,
+  styleUrl = null, styleMime, view: viewProp, onView, focus, onFocusDone,
 }: Props) {
   const { t: tt, locale } = useI18n()
   const head = useContext(ChapterHeadContext)
@@ -172,6 +176,24 @@ export function TimelineCanvas({
       if (round < 3) await cancelItem(id, await film.load(), round + 1)
     } else if (outcome) notice.ok(tt(`film.cancel.${outcome}`))
   }
+  /** 聚焦请求：同一个请求只执行一次（按对象认，上层清掉之前可能再渲染几次） */
+  const focusSeen = useRef<FilmFocus | null>(null)
+  const filmSession = film.session
+  const focusReady = !!focus && focus.vid === version?.vid && !!filmSession
+  useEffect(() => {
+    if (!focus || !focusReady || !filmSession || focusSeen.current === focus) return
+    focusSeen.current = focus
+    const item = [...filmSession.clips, ...freeNodes(filmSession)].find((x) => x.id === focus.id)
+    if (item) {
+      setClipSel(focus.id)
+      setPanel('film')
+      if (focus.play) {
+        const at = focus.taskId ? item.attempts.findIndex((a) => a.task_id === focus.taskId) : -1
+        setPlayer({ id: focus.id, ...(at >= 0 ? { attempt: at } : {}) })
+      }
+    }
+    onFocusDone?.()
+  }, [focus, focusReady, filmSession, onFocusDone])
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
   const [filmMode, setFilmMode] = useState(true)
   /** 「生成中 · 已等 m:ss」每秒走一次 */
