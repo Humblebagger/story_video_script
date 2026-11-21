@@ -461,6 +461,17 @@ def _version_view(v: dict) -> dict:
     return out
 
 
+def _job_where(uid: str, j: dict) -> dict:
+    """任务队列里这条转换任务属于哪本小说、哪一章：名字取现在的（改名后跟着变）；小说或章节已删除时
+    留提交时的名字并标 deleted。旧接口提交的任务（没有小说）原样。"""
+    nid, cid = j.get("novel_id"), j.get("chapter_id")
+    if not nid:
+        return {"deleted": False}
+    title, chapter = novels.titles(uid, nid, cid)
+    return {"work_title": title or j.get("work_title"), "chapter": chapter or j.get("chapter"),
+            "deleted": title is None or (bool(cid) and chapter is None)}
+
+
 @app.get("/jobs")
 def list_jobs(user: dict = Depends(current_user)):
     """本人在跑/刚结束的任务摘要（不含分镜正文与日志）。
@@ -477,6 +488,9 @@ def list_jobs(user: dict = Depends(current_user)):
         "chars": j.get("chars"), "log_lines": len(j["log"]),
         "last_log": j["log"][-1] if j["log"] else None,   # 进度事件（消息对象）
         "progress": _progress_view(j),
+        "finished_at": j.get("finished_at"),
+        "error_msg": _public_error(j) if j["status"] == "failed" else None,
+        **_job_where(user["id"], j),
     } for j in sorted(jobs, key=lambda x: x.get("created_at") or "", reverse=True)]}
 
 
@@ -688,10 +702,13 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
         if _schedule_digest(user_id, nid, cid):
             note("job.event.digest_queued")
 
-    _execute(job, text, params, strict, seed,
-             lambda status, **f: novels.update_version_state(
-                 user_id, nid, cid, job["id"], status, **f),
-             after_success, numbering, context)
+    try:
+        _execute(job, text, params, strict, seed,
+                 lambda status, **f: novels.update_version_state(
+                     user_id, nid, cid, job["id"], status, **f),
+                 after_success, numbering, context)
+    finally:
+        job["finished_at"] = store.now_iso()     # 任务队列的「已结束」按它排序、显示
 
 
 def _digest_chat():
@@ -1312,7 +1329,43 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
     return FileResponse(target)
 
 
-FILM_RECENT_SEC = 600       # 任务列表里「最近结束」保留多久（秒）
+FILM_RECENT_SEC = 86400     # 任务列表里「已结束」保留多久（秒）：一天
+FILM_RECENT_MAX = 30        # 已结束的最多返回多少条（最新的在前）
+_VENDOR_WORDS = re.compile(r"minimax|seedance|hailuo|doubao|volc|\bark\b|方舟|海螺|豆包|火山", re.I)  # i18n: internal
+
+
+def _has_vendor_text(v) -> bool:
+    """消息参数里有没有厂商原话（vendor(...) 包过的值）。"""
+    if isinstance(v, dict):
+        return v.get("t") == "vendor" or any(_has_vendor_text(x) for x in v.values())
+    if isinstance(v, list):
+        return any(_has_vendor_text(x) for x in v)
+    return False
+
+
+def _public_error(obj: dict, *names) -> Optional[dict]:
+    """任务队列里给普通用户看的失败原因或步骤（消息对象，前端按语言渲染）。obj 带 error / error_msg。
+    带厂商原话、或文字里出现厂商名、模型名（names：这个会话的厂商与模型）的不给：队列里只写结局，
+    原因到任务所在的页面看。"""
+    m, text = obj.get("error_msg"), obj.get("error") or ""
+    if not m and not text:
+        return None
+    if _has_vendor_text((m or {}).get("params") or {}) or _VENDOR_WORDS.search(text):
+        return None
+    if any(n and str(n).lower() in text.lower() for n in names):
+        return None
+    return {"code": m["code"], "params": m.get("params") or {}, "message": text} if m else {"message": text}
+
+
+def _cancel_kind(c: dict) -> Optional[str]:
+    """在跑的一条现在能怎么取消：free = 还没提交，取消不花钱；paid = 已提交，取消不了就是不等了；None = 现在不能取消。
+    与 render_session._cancel_check 同一判断，只是不抛异常。"""
+    last = c["attempts"][-1] if c.get("attempts") else None
+    if c["state"] == "queued":
+        return None if last and last.get("state") == "submitting" else "free"
+    if c["state"] == "running" and last and last.get("task_id"):
+        return "paid"
+    return None
 
 
 def _iso_ts(value) -> Optional[float]:
@@ -1352,30 +1405,55 @@ def _film_tasks(uid: str) -> list:
                    "kind": "free" if render_session.is_free(c["id"]) else "clip",
                    "novel_id": o.get("nid"), "chapter_id": o.get("cid"), "version_id": o.get("vid"),
                    "work_title": title, "chapter": chapter, "typical_sec": typical,
-                   "ended_at": None, "elapsed_sec": None, "cost_cny": None}
+                   "ended_at": None, "elapsed_sec": None, "cost_cny": None,
+                   "cancel": None, "error": None, "step": None,
+                   "shot_ids": list(c.get("shots") or c.get("target_shots") or [])}
             queued, ended = _iso_ts(c.get("queued_at")), _iso_ts(c.get("ended_at"))
             if c["state"] in render_session.IN_FLIGHT:
-                out.append({**row, "state": c["state"],
+                out.append({**row, "state": c["state"], "cancel": _cancel_kind(c),
                             "elapsed_sec": max(0, round(now - queued)) if queued else None})
             elif ended is not None and ended >= since and c.get("ended_as"):
                 out.append({**row, "state": c["ended_as"], "ended_at": c["ended_at"],
-                            "elapsed_sec": max(0, round(ended - queued)) if queued else None})
+                            "elapsed_sec": max(0, round(ended - queued)) if queued else None,
+                            "error": (_public_error(c, s.get("provider"), s.get("model"))
+                                      if c["ended_as"] == "failed" else None)})
             for a in c.get("attempts") or []:
                 settled = _iso_ts(a.get("settled_at"))
                 if (a.get("late") and not a.get("free_id") and a.get("state") == "succeeded"
                         and settled is not None and settled >= since):
                     out.append({**row, "id": f'{row["id"]}:{a["task_id"]}', "state": "late",
                                 "ended_at": a["settled_at"], "cost_cny": a.get("cost_cny")})
+        # 成片合成：一个版本一条。合成中带当前步骤；没有进度百分比、没有通常时长，也不能取消
+        f = s.get("final") or {}
+        row = {"id": f'{o.get("vid")}:compose', "item_id": "compose", "kind": "compose",
+               "novel_id": o.get("nid"), "chapter_id": o.get("cid"), "version_id": o.get("vid"),
+               "work_title": title, "chapter": chapter, "typical_sec": None,
+               "ended_at": None, "elapsed_sec": None, "cost_cny": None,
+               "cancel": None, "error": None, "step": None, "shot_ids": []}
+        started, finished = _iso_ts(f.get("started_at")), _iso_ts(f.get("finished_at"))
+        names = (s.get("provider"), s.get("model"))
+        if f.get("state") in render_session.COMPOSE_BUSY:
+            out.append({**row, "state": f["state"],
+                        "step": _public_error({"error_msg": f.get("step_msg"), "error": f.get("step")}, *names),
+                        "elapsed_sec": max(0, round(now - started)) if started else None})
+        elif f.get("state") in ("done", "failed") and finished is not None and finished >= since:
+            out.append({**row, "state": f["state"], "ended_at": f["finished_at"],
+                        "elapsed_sec": max(0, round(finished - started)) if started else None,
+                        "error": _public_error(f, *names) if f["state"] == "failed" else None})
     live = [t for t in out if t["ended_at"] is None]
     past = sorted((t for t in out if t["ended_at"] is not None), key=lambda t: t["ended_at"], reverse=True)
-    return live + past
+    return live + past[:FILM_RECENT_MAX]
 
 
 @app.get("/render/tasks")
 def render_tasks(user: dict = Depends(novel_user)):
-    """本人的出片任务（任务铃铛与动态面板用）。每项：id、item_id、kind（clip / free）、novel_id、chapter_id、
-    version_id、work_title、chapter、state（queued / running / downloading / done / failed / cancelled / late）、
-    elapsed_sec、typical_sec、ended_at、cost_cny（只有 late 有）。"""
+    """本人的出片与合成任务（任务铃铛与任务面板用；转换任务在 /jobs）。在跑的在前，已结束的保留一天、最多
+    FILM_RECENT_MAX 条。每项：id、item_id、kind（clip / free / compose）、novel_id、chapter_id、version_id、
+    work_title、chapter、state（queued / running / downloading / done / failed / cancelled / late）、elapsed_sec、
+    typical_sec（合成没有）、ended_at、cost_cny（只有 late 有）、cancel（free / paid / null）、
+    error（失败原因，消息对象，不能给普通用户看的为 null）、step（合成的当前步骤）、shot_ids（这一段含哪些镜头；
+    自由节点为它挂靠的那一段的镜头，合成为空）。work_title、chapter 是现在的名字（改名后跟着变），读不到为 null。
+    不带厂商与档位。"""
     return {"tasks": _film_tasks(user["id"]),
             "server_now": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 

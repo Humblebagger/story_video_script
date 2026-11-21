@@ -245,6 +245,8 @@ def main() -> int:
     # 9. 任务列表不带厂商、档位、签名地址、密钥：在跑、完成、取消后才出结果三种响应都查，并核对字段白名单
     SENT = {"vendor": "zz-vendor-sentinel", "model": "zz-model-sentinel",
             "url": "https://cdn.example.test/v.mp4?X-Amz-Signature=zz-sig-sentinel", "key": "sk-zz-key-sentinel"}
+    orig = render_session.load(root)
+    orig = (orig["provider"], orig["model"])
     with render_session.mutate(root) as s:
         s["provider"] = SENT["vendor"]
         s["model"] = SENT["model"]
@@ -268,10 +270,119 @@ def main() -> int:
     for v in SENT.values():
         assert v not in raw, v
     allowed = {"id", "novel_id", "chapter_id", "version_id", "work_title", "chapter", "item_id", "kind", "state",
-               "elapsed_sec", "typical_sec", "ended_at", "cost_cny"}
+               "elapsed_sec", "typical_sec", "ended_at", "cost_cny", "cancel", "error", "step", "shot_ids"}
     for t in tasks():
         assert set(t) <= allowed, set(t) - allowed
     print("9. 任务列表不泄露厂商、地址、密钥 ✓")
+
+    # 以下几项接在哨兵测试之后：先把会话还原成正常的厂商与模型，去掉哨兵地址
+    with render_session.mutate(root) as s:
+        s["provider"], s["model"] = orig
+        s.pop("_secret", None)
+        for it in render_session.items(s):
+            for a in it["attempts"]:
+                a.pop("video_url", None)
+                a.pop("last_frame_url", None)
+            if it["state"] in render_session.IN_FLIGHT:
+                it["state"] = "planned"
+
+    # 12. 取消种类：还没提交是 free，已提交是 paid；结束的没有
+    z = c.get(R + "/session", headers=H).json()["clips"][2]["id"]
+    row = lambda iid: next(t for t in tasks() if t["id"] == f"v1:{iid}")  # noqa: E731
+    c.post(R + f"/clips/{z}/run", headers=H, json={})
+    assert row(z)["cancel"] == "free" and row(z)["error"] is None and row(z)["step"] is None
+    sess_z = pick(c.get(R + "/session", headers=H).json(), z)
+    assert row(z)["shot_ids"] == sess_z["shots"] and len(sess_z["shots"]) >= 1, "带上这一段含哪些镜头"
+    runner.tick()
+    assert row(z)["state"] == "running" and row(z)["cancel"] == "paid"
+    FAKE.cancel_ok = True
+    assert c.post(R + f"/clips/{z}/cancel", headers=H).json()["cancel_outcome"] == "cancelled"
+    FAKE.cancel_ok = False
+    assert row(z)["state"] == "cancelled" and row(z)["cancel"] is None
+    print("12. 取消种类 ✓")
+
+    # 13. 失败原因：能给普通用户看的才给；带厂商原话或厂商名的不给（列表里只写失败）
+    def fail_with(err):
+        with render_session.mutate(root) as ss:
+            cz = next(k for k in ss["clips"] if k["id"] == z)
+            cz["state"] = "failed"
+            render_session.set_error(cz, err)
+            render_session._ended(cz, "failed")
+        return row(z)
+
+    t = fail_with(msg("film.download.not_playable"))
+    assert t["state"] == "failed" and t["error"]["code"] == "film.download.not_playable" and t["error"]["message"]
+    assert fail_with("视频服务（MiniMax）超时")["error"] is None
+    assert fail_with("fake-1 不可用")["error"] is None, "会话的模型名也算"
+    with render_session.mutate(root) as ss:
+        cz = next(k for k in ss["clips"] if k["id"] == z)
+        cz["error_msg"] = {"code": "film.download.not_playable", "params": {"detail": {"t": "vendor", "text": "x"}}}
+        cz["error"] = "下载的文件不能播放"
+    assert row(z)["error"] is None, "带厂商原话的不给"
+    print("13. 失败原因 ✓")
+
+    # 14. 成片合成也在队列里：合成中带步骤、不能取消、没有通常时长；结束后带结局与失败原因；一个版本只有一条
+    render_session.begin_compose(root, fingerprint="fp", tts_cny=0.0, draft=True)
+    t = row("compose")
+    assert (t["kind"], t["item_id"], t["state"]) == ("compose", "compose", "running")
+    assert t["step"]["code"] == "compose.step.start" and t["cancel"] is None and t["typical_sec"] is None
+    assert isinstance(t["elapsed_sec"], int) and t["ended_at"] is None and tasks()[0]["id"] == "v1:compose"
+    assert t["shot_ids"] == [] and (t["work_title"], t["chapter"]) == ("药", "第一章")
+    assert tasks(HB) == []
+    render_session.compose_failed(root, msg("compose.interrupted"))
+    t = row("compose")
+    assert t["state"] == "failed" and t["ended_at"] and t["error"]["code"] == "compose.interrupted" and t["step"] is None
+    render_session.begin_compose(root, fingerprint="fp", tts_cny=0.0, draft=True)
+    render_session.compose_done(root, ["final/a.mp4"], "ok")
+    assert [(t["state"], t["error"]) for t in tasks() if t["kind"] == "compose"] == [("done", None)]
+    print("14. 成片合成 ✓")
+
+    # 15. 已结束的最多返回这么多条，最新的在前
+    ended = [t for t in tasks() if t["ended_at"]]
+    assert len(ended) >= 3 and [t["ended_at"] for t in ended] == sorted((t["ended_at"] for t in ended), reverse=True)
+    app_mod.FILM_RECENT_MAX = 2
+    assert [t["id"] for t in tasks() if t["ended_at"]] == [t["id"] for t in ended[:2]]
+    app_mod.FILM_RECENT_MAX = 30
+    print("15. 已结束的条数上限 ✓")
+
+    # 16. 转换任务（/jobs）带结束时间与失败原因；同样不带厂商名
+    job = {"id": "jb1", "user_id": alice, "status": "queued", "log": [], "progress": {}, "created_at": "2026-11-21T00:00:00+00:00"}
+
+    def boom(*_a, **_k):
+        job["status"] = "failed"
+        render_session.set_error(job, msg("compose.interrupted"))
+        raise RuntimeError("x")
+
+    saved = app_mod._execute
+    app_mod._execute = boom
+    try:
+        app_mod._run_version_job(job, alice, nid, cid, "原文", type("P", (), {"work_title": "药"})(), False)
+    except RuntimeError:
+        pass
+    finally:
+        app_mod._execute = saved
+    assert job.get("finished_at"), "转换结束（哪怕抛异常）都记结束时间"
+    app_mod._jobs["jb1"] = job
+    (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == "jb1"]
+    assert j["finished_at"] == job["finished_at"] and j["error_msg"]["code"] == "compose.interrupted"
+    render_session.set_error(job, "大模型（MiniMax）超时")
+    (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == "jb1"]
+    assert j["error_msg"] is None
+    print("16. 转换任务的结束时间与失败原因 ✓")
+
+    # 17. 名字取现在的：小说、章节改名后队列跟着变；章节删掉后转换任务留原名并标已删除，出片任务随会话一起消失
+    job.update(novel_id=nid, chapter_id=cid, work_title="旧书名", chapter="旧章名")
+    novels.update_novel(alice, nid, title="药（修订）")
+    novels.update_chapter(alice, nid, cid, title="第一章 华老栓")
+    (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == "jb1"]
+    assert (j["work_title"], j["chapter"], j["deleted"]) == ("药（修订）", "第一章 华老栓", False)
+    assert {(t["work_title"], t["chapter"]) for t in tasks()} == {("药（修订）", "第一章 华老栓")}
+    novels.delete_chapter(alice, nid, cid)
+    (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == "jb1"]
+    assert (j["work_title"], j["chapter"], j["deleted"]) == ("药（修订）", "旧章名", True)
+    assert tasks() == [], "章节删了，它的出片任务不再出现（不报错）"
+    del app_mod._jobs["jb1"]
+    print("17. 现在的名字与已删除 ✓")
 
     print("\nALL PASS")
     return 0
