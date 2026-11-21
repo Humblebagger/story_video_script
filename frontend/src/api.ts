@@ -13,7 +13,7 @@ import type {
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
   FilmSession, FilmSettings, FreePatch, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
-  AdminJobs, AdminOverview, AdminService, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
+  AdminService,
   AssistantEvent, AssistantMsg, AssistantTask, AssistantWhere,
 } from './types'
 
@@ -44,7 +44,7 @@ export class ApiError extends Error {
 const BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
 /** 带 token 发请求，统一处理 401 与错误 detail；成功时返回原始 Response */
-async function send(path: string, init?: RequestInit): Promise<Response> {
+export async function send(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken()
   const startedGen = sessionGen()
   const res = await fetch(`${BASE}${path}`, {
@@ -73,11 +73,11 @@ async function send(path: string, init?: RequestInit): Promise<Response> {
   return res
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return (await send(path, init)).json() as Promise<T>
 }
 
-const jsonPost = (body: unknown): RequestInit => ({
+export const jsonPost = (body: unknown): RequestInit => ({
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
@@ -502,70 +502,8 @@ export function deleteBgm(nid: string, cid: string, vid: string, episode: string
 
 /* ---------- 管理后台 ---------- */
 
-export function adminOverview() {
-  return req<AdminOverview>('/admin/overview')
-}
-
-export async function adminUsers(): Promise<AdminUserRow[]> {
-  return (await req<{ users: AdminUserRow[] }>('/admin/users')).users
-}
-
-export function adminUser(id: string) {
-  return req<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`)
-}
-
-export function adminPatchUser(id: string,
-  patch: { disabled: boolean } | { role: 'admin' | 'user' } | { monthly_cap_usd: number | null }) {
-  return req<AdminUserRow>(`/admin/users/${encodeURIComponent(id)}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
-  })
-}
-
-export function adminResetPassword(id: string, password: string) {
-  return req<{ ok: boolean }>(`/admin/users/${encodeURIComponent(id)}/password`,
-    jsonPost({ password }))
-}
-
-export function adminUsage(group: 'user' | 'day' | 'model', days: number) {
-  return req<UsageReport>(`/admin/usage?group=${group}&days=${days}`)
-}
-
-export async function adminUsageCsv(days: number): Promise<string> {
-  return (await send(`/admin/usage.csv?days=${days}`)).text()
-}
-
+/** 管理员的服务信息（账号菜单用）。后台其余接口在 components/admin/api.ts，只随后台代码加载 */
 export const adminService = () => req<AdminService>('/admin/service')
-
-/** 一次转换的调试日志（管理员；每次查看写审计） */
-export const adminJobDebug = (vid: string, userId: string) =>
-  req<{ id: string; user_id: string; lines: string[] }>(
-    `/admin/jobs/${encodeURIComponent(vid)}/debug?user_id=${encodeURIComponent(userId)}`)
-
-export function adminJobs() {
-  return req<AdminJobs>('/admin/jobs')
-}
-
-export async function adminErrors(): Promise<ErrorRefRow[]> {
-  return (await req<{ errors: ErrorRefRow[] }>('/admin/errors')).errors
-}
-
-export function adminErrorRef(ref: string) {
-  return req<ErrorRefRow>(`/admin/errors/${encodeURIComponent(ref.trim())}`)
-}
-
-export async function adminAudit(): Promise<AuditEntry[]> {
-  return (await req<{ audit: AuditEntry[] }>('/admin/audit')).audit
-}
-
-export function adminPricing() {
-  return req<PricingTable>('/admin/pricing')
-}
-
-export function adminSavePricing(table: unknown) {
-  return req<PricingTable>('/admin/pricing', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
-  })
-}
 
 // ---------- 助手 ----------
 

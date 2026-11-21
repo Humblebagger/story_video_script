@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/i18n/core'
-import { adminAudit } from '../../api'
+import { adminAudit } from './api'
 import { ACTION, when } from './format'
 import { Empty, ErrorBar, TableSkeleton } from './LoadState'
 import { PageHead, RefreshButton } from './PageHead'

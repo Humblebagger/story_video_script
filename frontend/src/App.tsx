@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   adminService, adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
   getChapter, getJobPartial, getNovel, getVersion, health, listJobs, listNovels, me,
@@ -10,7 +10,6 @@ import type { User } from './auth'
 import { AppShell } from './components/shell/AppShell'
 import { CostMeter } from './components/shell/CostMeter'
 import { ChapterCrumb, ProjectSwitcher } from './components/shell/ProjectSwitcher'
-import { AdminView } from './components/admin/AdminView'
 import { ChapterWorkflow } from './components/workflow/ChapterWorkflow'
 import type { StepId } from './workflow'
 import { JobPanel } from './components/JobPanel'
@@ -59,6 +58,9 @@ import { useNovelSummary } from './useNovelSummary'
 import { ART_STYLES } from './presets'
 import { useJob } from './useJob'
 import { DUR, EASE_OUT } from './motion'
+
+/** 运营后台单独成块：渲染到它才去取，而它只在确认是管理员之后才渲染（见下面的 adminShown） */
+const AdminView = lazy(() => import('./components/admin/AdminView').then((m) => ({ default: m.AdminView })))
 
 const RUNNING = ['queued', 'running']
 const msg = (e: unknown) => errText(e)
@@ -430,9 +432,10 @@ export default function App() {
   const roleConfirmed = !!user && roleOf === user.id
   useEffect(() => {
     if (!user || !roleConfirmed || loc.kind !== 'admin' || isAdminUser) return
-    toast.error(fns.current.t('route.err.adminOnly'))
     navigate('/', { replace: true, state: { force: true } })
   }, [user, roleConfirmed, loc.kind, isAdminUser, navigate])
+  /** 后台只对确认过的管理员渲染（代码也只在这时才加载） */
+  const adminShown = loc.kind === 'admin' && roleConfirmed && isAdminUser
 
   // 未登录打开非首页的地址：自动弹一次登录框（每个地址只弹一次，用户关掉后不再弹）（§6）
   const prompted = useRef(new Set<string>())
@@ -679,22 +682,22 @@ export default function App() {
   // 页面标题跟着位置走（§10）；加载中不显示上一本小说的名字
   const sectionKey = loc.kind === 'novel' ? loc.section : null
   const canvasKey = loc.kind === 'chapter' && loc.canvas
-  const adminPage = loc.kind === 'admin' ? loc.page : null
   useEffect(() => {
     const brand = BRAND.id
     const novelName = novel && novel.id === nid ? novel.title : null
     const chapterName = chapter && chapter.id === cid ? chapter.title : null
     const join = (head: string, tail: string | null) => (tail ? `${head} · ${tail} — ${brand}` : `${head} — ${brand}`)
+    // 后台的标题由后台外框自己设；后台地址但不显示后台（未登录、非管理员、角色未确认）时用缺省标题
+    if (adminShown) return
     let title = BRAND.title
-    if (adminPage) title = `${t(`admin.nav.pages.${adminPage}`)} · ${t('route.title.admin')} — ${brand}`
-    else if (loc.kind === 'notFound') title = `${t('route.title.notFound')} — ${brand}`
+    if (loc.kind === 'notFound') title = `${t('route.title.notFound')} — ${brand}`
     else if (loc.kind === 'novel') title = join(t(`nav.${sectionKey ?? 'overview'}` as MsgKey), novelName)
     else if (loc.kind === 'chapter') {
       title = canvasKey ? join(t('route.title.canvas'), chapterName)
         : chapterName ? join(chapterName, novelName) : brand
     }
     document.title = title
-  }, [loc.kind, nid, cid, sectionKey, canvasKey, adminPage, novel, chapter, t])
+  }, [loc.kind, nid, cid, sectionKey, canvasKey, adminShown, novel, chapter, t])
 
   const newNovel = async () => {
     setActivityTab('activity')
@@ -996,6 +999,13 @@ export default function App() {
     </>
   )
 
+  /** 后台地址上、角色还没确认或后台代码还在加载时的占位：不带任何文字 */
+  const adminLoading = (
+    <div className="flex min-h-screen flex-col gap-3 p-6" data-testid="admin-loading" aria-busy="true">
+      <Skeleton className="h-8 w-1/3" /><Skeleton className="h-40 w-full" />
+    </div>
+  )
+
   return (
     <>
       {confirmUi}
@@ -1011,10 +1021,12 @@ export default function App() {
           e.target.value = ''
         }}
       />
-      {adminLoc && user.role === 'admin' ? (
-        <AdminView me={user} page={adminLoc.page} jobState={adminLoc.state}
-                   usageGroup={adminLoc.group} usageDays={adminLoc.days}
-                   onNav={(to, replace) => { go(to, { replace }) }} onBack={leaveAdmin} />
+      {adminLoc && !roleConfirmed ? adminLoading : adminLoc && adminShown ? (
+        <Suspense fallback={adminLoading}>
+          <AdminView me={user} page={adminLoc.page} jobState={adminLoc.state}
+                     usageGroup={adminLoc.group} usageDays={adminLoc.days}
+                     onNav={(to, replace) => { go(to, { replace }) }} onBack={leaveAdmin} />
+        </Suspense>
       ) : (
       <AppShell
         username={user.username}

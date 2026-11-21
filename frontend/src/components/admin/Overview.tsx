@@ -1,5 +1,5 @@
 import { ArrowRight } from 'lucide-react'
-import { adminJobs, adminOverview, adminUsage, adminUsers } from '../../api'
+import { adminJobs, adminOverview, adminUsage, adminUsers } from './api'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n/core'

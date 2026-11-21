@@ -271,7 +271,7 @@ must(!bad.length, `英文包含中文：${bad.slice(0, 5).map(([k]) => k).join('
 }
 console.log('6. 新手引导 ✓')
 
-// 静态检查：src/ 下全部 .ts / .tsx（中文语言包 i18n/zh.ts 除外）除注释外不许有中文与全角标点
+// 静态检查：src/ 下全部 .ts / .tsx（中文语言包 i18n/zh.ts 与后台的中文文案 components/admin/messages.zh.ts 除外）除注释外不许有中文与全角标点
 const fs = await import('node:fs')
 const path = await import('node:path')
 const SRC = path.resolve(import.meta.dirname ?? '.', '../src')
@@ -279,7 +279,8 @@ const walk = (d: string): string[] => fs.readdirSync(path.join(SRC, d), { withFi
   const rel = d ? `${d}/${e.name}` : e.name
   return e.isDirectory() ? walk(rel) : /\.tsx?$/.test(e.name) ? [rel] : []
 })
-const I18N_FILES = walk('').filter((f) => f !== 'i18n/zh.ts')
+const ZH_PACKS = ['i18n/zh.ts', 'components/admin/messages.zh.ts']
+const I18N_FILES = walk('').filter((f) => !ZH_PACKS.includes(f))
 must(I18N_FILES.length > 60 && I18N_FILES.includes('components/ui/dialog.tsx'), `全量扫描源文件（${I18N_FILES.length}）`)
 const cjkWide = /[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/
 // src/ 下不许再有含独立单词 btn 的 className（旧按钮类已换成 Button）

@@ -139,6 +139,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
 
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
+await import('../src/components/admin/i18n')   // 后台文案不在主包里，单独渲染某一页要先挂上
 const { Overview } = await import('../src/components/admin/Overview')
 const { Users } = await import('../src/components/admin/Users')
 const { UsageTab } = await import('../src/components/admin/UsageTab')
@@ -399,6 +400,8 @@ console.log('12. 任务页失败原因 ✓')
 {
   const { zh } = await import('../src/i18n/zh')
   const { en } = await import('../src/i18n/en')
+  const { zhAdmin } = await import('../src/components/admin/messages.zh')
+  const { enAdmin } = await import('../src/components/admin/messages.en')
   let setL: (l: 'zh' | 'en') => void = () => {}
   const Cp = () => { setL = useI18n().setLocale; return null }
   setCurrentLocale('zh')
@@ -426,7 +429,7 @@ console.log('12. 任务页失败原因 ✓')
   await act(async () => { setL('zh') })
   await settle()
   // 调试日志：运行中与失败行都有按钮
-  const dbtn = (tr: Element) => [...tr.querySelectorAll('button')].find((b) => (b.textContent ?? '').includes(zh.admin.jobs.debug))!
+  const dbtn = (tr: Element) => [...tr.querySelectorAll('button')].find((b) => (b.textContent ?? '').includes(zhAdmin.jobs.debug))!
   calls.length = 0
   const runRow = [...container.querySelectorAll('tbody tr')].find((tr) => (tr.textContent ?? '').includes('bob'))!
   await click(dbtn(runRow))
@@ -444,7 +447,7 @@ console.log('12. 任务页失败原因 ✓')
   failDebug = false
   await act(async () => { setL('zh') })
   await settle()
-  must(zh.admin.action.view_job_debug === '查看调试日志' && en.admin.action.view_job_debug === 'Viewed debug log', '审计动作名登记')
+  must(zhAdmin.action.view_job_debug === '查看调试日志' && enAdmin.action.view_job_debug === 'Viewed debug log', '审计动作名登记')
   console.log('12b. 任务页调试日志 ✓')
 }
 

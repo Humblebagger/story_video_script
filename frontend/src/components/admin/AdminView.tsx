@@ -1,8 +1,13 @@
+// 文案与样式跟着这一块代码一起加载；挂文案必须排在最前面（下面的模块有的在加载时就读文案）
+import './i18n'
+import './admin.css'
 import { useEffect, useState } from 'react'
 import { LangToggle } from '@/components/common/LangToggle'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
-import { adminErrors, adminOverview } from '../../api'
+import { BRAND } from '../../brand'
+import { adminErrors, adminOverview } from './api'
 import type { User } from '../../auth'
 import { adminPath } from '../../paths'
 import type { AdminPage, JobState, UsageDays, UsageGroup } from '../../paths'
@@ -53,6 +58,11 @@ const readCollapsed = () => {
 
 /** 运营后台的外框：左侧分组导航（窄屏为顶部下拉）+ 右侧内容。只给管理员看；权限以后端为准。 */
 export function AdminView(p: AdminViewProps) {
+  const { t } = useI18n()
+  // 浏览器标题由后台自己设：只有后台真的渲染出来（确认是管理员）才会出现后台的名字
+  useEffect(() => {
+    document.title = `${t(`admin.nav.pages.${p.page}`)} · ${t('admin.title')} — ${BRAND.id}`
+  }, [p.page, t])
   // 概览数据放在外框：导航计数与概览页共用一份，每 30 秒刷新
   const overview = useLoad(adminOverview, [], 30000)
   const errors = useLoad(adminErrors, [], 60000)

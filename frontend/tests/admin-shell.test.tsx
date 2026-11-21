@@ -82,6 +82,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
 }
 
+await import('../src/components/admin/i18n')   // 后台文案不在主包里，单独渲染某一页要先挂上
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 import type { ReactNode } from 'react'
@@ -301,8 +302,8 @@ const { setCurrentLocale } = await import('../src/i18n/core')
 {
   const { AdminNavContext } = await import('../src/components/admin/navContext')
   const { AdminSidebar, AdminTopNav } = await import('../src/components/admin/AdminNav')
-  const { zh } = await import('../src/i18n/zh')
-  const { en } = await import('../src/i18n/en')
+  const { zhAdmin } = await import('../src/components/admin/messages.zh')
+  const { enAdmin } = await import('../src/components/admin/messages.en')
   const log: string[] = []
   const nav = (to: string) => { log.push(to) }
   const counts = { jobs: 3, errors: 120, usage: 1 }
@@ -312,7 +313,7 @@ const { setCurrentLocale } = await import('../src/i18n/core')
                     collapsed={collapsed} onToggle={() => { log.push('toggle') }} />
     </AdminNavContext.Provider>)
   await remount(side(false))
-  must(container.querySelector('h1')!.textContent === zh.admin.title, '左上角标题')
+  must(container.querySelector('h1')!.textContent === zhAdmin.title, '左上角标题')
   must([...container.querySelectorAll('.adm-nav__title')].map((e) => e.textContent).join() === '总览,用户与用量,运行', '三个分组')
   const links = () => [...container.querySelectorAll('.adm-nav__item')]
   must(links().map((a) => a.getAttribute('href')).join() === '/admin,/admin/users,/admin/usage,/admin/jobs,/admin/errors,/admin/audit',
@@ -328,11 +329,11 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   await click(byId('admin-back')!)
   await click(byId('admin-nav-toggle')!)
   must(log.join() === '/admin/users,back,toggle', `点导航项、返回产品、收起，实为 ${log}`)
-  must(byId('admin-back')!.textContent === zh.admin.back && text().includes('工具'), '返回产品链接与工具区')
+  must(byId('admin-back')!.textContent === zhAdmin.back && text().includes('工具'), '返回产品链接与工具区')
   await remount(side(true))
   must(!container.querySelector('h1') && container.querySelectorAll('.adm-nav__title').length === 0, '收起：不显示标题与分组名')
   must(links().length === 6 && links().every((a) => !a.querySelector('span:not(.adm-nav__badge)')), '收起：导航项只剩图标')
-  must(byId('admin-nav-errors')!.getAttribute('aria-label') === '错误' && byId('admin-back')!.getAttribute('aria-label') === zh.admin.back
+  must(byId('admin-nav-errors')!.getAttribute('aria-label') === '错误' && byId('admin-back')!.getAttribute('aria-label') === zhAdmin.back
        && byId('admin-nav-toggle')!.getAttribute('aria-label') === '展开导航', '收起：图标带名字')
   must(textOf('admin-count-jobs') === '3', '收起：计数还在')
   // 窄屏：顶部一条 + 下拉
@@ -353,7 +354,7 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   must(log.join() === 'page audit,back', `下拉换页与返回，实为 ${log}`)
   await remount(<I18nProvider initial="en">{side(false)}</I18nProvider>)
   must(links().map((a) => a.querySelector('span')!.textContent).join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Audit'
-       && byId('admin-back')!.textContent === en.admin.back, '英文导航')
+       && byId('admin-back')!.textContent === enAdmin.back, '英文导航')
   await act(async () => { root.unmount() })
   root = createRoot(container as unknown as HTMLElement)
   setCurrentLocale('zh')
@@ -474,6 +475,24 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   root = createRoot(container as unknown as HTMLElement)
   setCurrentLocale('zh')
   console.log('7d. 英文外框 ✓')
+}
+
+// 8. 文案是后挂的：键的结构中英文一致；外框设浏览器标题
+{
+  const { zhAdmin } = await import('../src/components/admin/messages.zh')
+  const { enAdmin } = await import('../src/components/admin/messages.en')
+  const { zh } = await import('../src/i18n/zh')
+  const { translate } = await import('../src/i18n/core')
+  const { AdminView } = await import('../src/components/admin/AdminView')
+  const keys = (o: object, p = ''): string[] => Object.entries(o).flatMap(([k, v]) =>
+    (typeof v === 'string' ? [`${p}${k}`] : keys(v as object, `${p}${k}.`)))
+  must(keys(zhAdmin).sort().join() === keys(enAdmin).sort().join() && keys(zhAdmin).length > 100, '后台文案中英文的键一一对应')
+  must(!('admin' in zh), '主包的语言包里没有后台文案')
+  must(translate('zh', 'admin.title') === '运营后台' && translate('en', 'admin.nav.pages.usage') === 'Usage & cost', '挂上后按键取得到')
+  const me = { id: 'u-root', username: 'root', created_at: '', role: 'admin' as const }
+  await remount(<AdminView me={me} page="audit" jobState={null} usageGroup="user" usageDays={30} onNav={() => {}} onBack={() => {}} />)
+  must(win.document.title === '审计 · 运营后台 — Inkreel', `外框设浏览器标题，实为 ${win.document.title}`)
+  console.log('8. 后台文案后挂 / 外框设标题 ✓')
 }
 
 // ===== 追加点：后面的任务把新用例插在这一行上面 =====

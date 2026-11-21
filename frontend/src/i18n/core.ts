@@ -2,9 +2,14 @@ import { createContext, useContext } from 'react'
 /** 语言包的纯部分：类型、translate、detectLocale（无组件，供 index.tsx 与测试使用） */
 import { en } from './en'
 import { zh } from './zh'
+import type { zhAdmin } from '../components/admin/messages.zh'
 
 type Widen<T> = { [K in keyof T]: T[K] extends string ? string : Widen<T[K]> }
-export type Messages = Widen<typeof zh>
+/** 主包里的文案 */
+export type BaseMessages = Widen<typeof zh>
+/** 运营后台的文案：不在主包里（这里只引入类型），后台代码加载时用 registerAdminMessages 挂上 */
+export type AdminMessages = Widen<typeof zhAdmin>
+export type Messages = BaseMessages & { admin: AdminMessages }
 type Paths<T, P extends string = ''> = {
   [K in keyof T & string]: T[K] extends string ? `${P}${K}` : Paths<T[K], `${P}${K}.`>
 }[keyof T & string]
@@ -12,7 +17,12 @@ export type MsgKey = Paths<Messages>
 export type Locale = 'zh' | 'en'
 export const LOCALES: { id: Locale; label: string }[] = [{ id: 'zh', label: '中文' }, { id: 'en', label: 'English' }]
 
-const PACKS: Record<Locale, Messages> = { zh, en }
+const PACKS: Record<Locale, BaseMessages & { admin?: AdminMessages }> = { zh: { ...zh }, en: { ...en } }
+/** 后台代码加载时调用一次（components/admin/i18n.ts）；没挂上之前 admin.* 的键取不到文案，回落成键名 */
+export function registerAdminMessages(zhPack: AdminMessages, enPack: AdminMessages) {
+  PACKS.zh.admin = zhPack
+  PACKS.en.admin = enPack
+}
 export const KEY = 'inkreel.locale'
 
 /** 按点分路径取文案（不存在返回 undefined）；serverMsg 用它判断缺译 */

@@ -369,6 +369,64 @@ console.log('6. 非管理员 /admin → 回首页 ✓')
 }
 console.log('后台各页独立地址 / 后退 / 筛选 / 规范化 / 返回产品 ✓')
 
+// 后台不向非管理员透出：未登录、普通用户、角色未确认时都没有后台的界面与标题，后台代码也不加载
+{
+  const adminDom = (x: { q: (sel: string) => HTMLElement | null }) =>
+    x.q('[data-testid="admin-shell"]') ?? x.q('.adm') ?? x.q('.adm-side') ?? x.q('.adm-top')
+  const clean = (x: { q: (sel: string) => HTMLElement | null; has: (s: string) => boolean }) =>
+    !adminDom(x) && !x.has('运营后台') && !x.has('运营概览') && !doc.title.includes('后台') && !doc.title.includes('任务 ·')
+  for (const url of ['/admin', '/admin/jobs?state=failed']) {
+    // 未登录：停在着陆页（弹登录框），没有后台
+    const a = await boot(url)
+    must(a.here() === url && clean(a) && !a.q('[data-testid="admin-loading"]'), `未登录打开 ${url}：没有后台界面，标题不含后台，实际标题 ${doc.title}`)
+    await a.done()
+    // 普通用户：me() 回来之前只有一块不带字的骨架；回来之后 replace 回首页，没有提示条泄露后台的存在
+    let release!: () => void
+    meGate = new Promise<void>((r) => { release = r })
+    const b = await boot(url, 'alice')
+    must(b.here() === url && clean(b) && !!b.q('[data-testid="admin-loading"]') && !b.q('[data-testid="app-shell"]'),
+         `普通用户打开 ${url}、角色未确认：只有骨架，实际标题 ${doc.title}`)
+    release(); meGate = null
+    await settle(300)
+    must(b.here() === '/' && b.router.state.historyAction === 'REPLACE' && clean(b) && !!b.q('[data-testid="app-shell"]'),
+         `普通用户打开 ${url}：replace 回首页且没有后台界面，实际 ${b.here()}`)
+    must(!doc.body.textContent!.includes('管理员'), '回首页时不提示「需要管理员权限」')
+    await b.done()
+  }
+  // 管理员：角色确认之前同样只有骨架、不设后台标题；确认后才出现后台
+  let release!: () => void
+  meGate = new Promise<void>((r) => { release = r })
+  const c = await boot('/admin/jobs?state=failed', 'root')
+  must(clean(c) && !!c.q('[data-testid="admin-loading"]'), `管理员角色未确认：只有骨架，实际标题 ${doc.title}`)
+  release(); meGate = null
+  await settle(300)
+  must(!!c.q('[data-testid="admin-shell"]') && !c.q('[data-testid="admin-loading"]') && doc.title === '任务 · 运营后台 — Inkreel',
+       `管理员确认后出现后台，实际标题 ${doc.title}`)
+  // 离开后台后标题跟着换回产品的
+  await click(c.q('[data-testid="admin-back"]')!)
+  await settle(150)
+  must(c.here() === '/' && !doc.title.includes('后台'), `返回产品后标题不再是后台的，实际 ${doc.title}`)
+  await c.done()
+  // 入口只给管理员：侧边栏的「管理」按钮与账号菜单里的「管理」项
+  const menuHas = async (x: Awaited<ReturnType<typeof boot>>) => {
+    await act(async () => {
+      x.q('[data-testid="account-menu"]')!.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event)
+    })
+    await settle()
+    return [...doc.body.querySelectorAll('[role="menuitem"]')].some((el) => (el.textContent ?? '').trim() === '管理')
+  }
+  const d = await boot('/', 'alice')
+  must(!button(d.container, '管理') && !d.q('[aria-label="管理"]'), '普通用户的侧边栏没有「管理」入口')
+  must(!(await menuHas(d)), '普通用户的账号菜单没有「管理」项')
+  await d.done()
+  const e = await boot('/', 'root')
+  must(!!button(e.container, '管理'), '管理员的侧边栏有「管理」入口')
+  must(await menuHas(e), '管理员的账号菜单有「管理」项')
+  await e.done()
+}
+console.log('后台不向非管理员透出：未登录 / 普通用户 / 角色未确认 / 入口可见性 ✓')
+
 // §12.3-1（章节部分）深链接到章节的某一步
 {
   const a = await boot('/novels/n1/chapters/c1/review', 'alice')

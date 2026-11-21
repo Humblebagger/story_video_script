@@ -1,0 +1,3 @@
+/* 运营后台的样式入口：由后台外框引入，跟着后台那一块代码一起加载。
+ * 仍然放进 components 层（层序在 styles/app.css 开头声明），工具类照常能盖过它。 */
+@import "../../styles/admin.css" layer(components);
