@@ -53,6 +53,20 @@ def main() -> int:
     assert must_raise(pricing.PricingError, pricing.save, {"models": {}}).code == "admin.pricing.empty"
     e = must_raise(pricing.PricingError, pricing.save, {"models": {"m": "x"}})
     assert e.code == "admin.pricing.bad_row" and e.params == {"name": "m"}
+    # vendor：往返保存、去空白、空串视为未填；非字符串、超长被拒；无 vendor 的旧表照常
+    p4 = {"input": 1, "output": 2, "cache_read": 0, "cache_write": 0}
+    out = pricing.save({"models": {"a": {**p4, "vendor": "  Acme  "}, "b": {**p4, "vendor": "  "},
+                                   "c": dict(p4)}})
+    assert out["models"]["a"]["vendor"] == "Acme"
+    assert "vendor" not in out["models"]["b"] and "vendor" not in out["models"]["c"]
+    assert pricing.load()["models"]["a"]["vendor"] == "Acme"
+    for bad_vendor in (5, None, ["x"], "v" * 41):
+        e = must_raise(pricing.PricingError, pricing.save, {"models": {"m": {**p4, "vendor": bad_vendor}}})
+        assert e.code == "admin.pricing.bad_row" and e.params == {"name": "m"}, bad_vendor
+    assert pricing.save({"models": {"m": {**p4, "vendor": "v" * 40}}})["models"]["m"]["vendor"] == "v" * 40
+    assert abs(pricing.cost({"model": "a", **tok(1_000_000)}, pricing.save(
+        {"models": {"a": {**p4, "vendor": "X"}}})) - 1.0) < 1e-9
+    assert all(m.get("vendor") == "Anthropic" for m in pricing.DEFAULT["models"].values())
     saved = pricing.save({"models": {"claude-sonnet-5": {"input": 3, "output": 15,
                                                          "cache_read": 0.3, "cache_write": 3.75}}})
     assert saved["currency"] == "USD" and saved["updated_at"]

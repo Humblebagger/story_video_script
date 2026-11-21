@@ -18,16 +18,17 @@ class PricingError(UserError, ValueError):
 
 PRICING_FILE = DATA_DIR / "pricing.json"
 KEYS = ("input", "output", "cache_read", "cache_write")
+VENDOR_MAX = 40
 
 DEFAULT = {
     "currency": "USD",
     "note": "每百万 token 单价（美元）",
     "updated_at": None,
     "models": {
-        "claude-sonnet-5": {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 2.5},
-        "claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 2.5},
-        "claude-opus-5-5": {"input": 4.0, "output": 20.0, "cache_read": 0.2, "cache_write": 5.0},
-        "claude-haiku-5-5": {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125},
+        "claude-sonnet-5": {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 2.5, "vendor": "Anthropic"},
+        "claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 2.5, "vendor": "Anthropic"},
+        "claude-opus-5-5": {"input": 4.0, "output": 20.0, "cache_read": 0.2, "cache_write": 5.0, "vendor": "Anthropic"},
+        "claude-haiku-5-5": {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125, "vendor": "Anthropic"},
     },
 }
 
@@ -56,6 +57,12 @@ def _validate(table: dict) -> dict:
                     or not math.isfinite(v) or v < 0):
                 raise PricingError.of("admin.pricing.bad_price", name=name, key=k)
             row[k] = float(v)
+        vendor = price.get("vendor")
+        if "vendor" in price:
+            if not isinstance(vendor, str) or len(vendor.strip()) > VENDOR_MAX:
+                raise PricingError.of("admin.pricing.bad_row", name=name)
+            if vendor.strip():
+                row["vendor"] = vendor.strip()
         clean[name.strip()] = row
     return clean
 
