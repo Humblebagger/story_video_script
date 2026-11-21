@@ -47,7 +47,8 @@ SESSIONS_GLOB = "users/*/novels/*/chapters/*/render/*/session.json"   # 数据�
 class Runner:
     def __init__(self, request_builder, *, poll_sec: float = 10.0, max_parallel: int = 2,
                  retries: int = 3, sleep=time.sleep, clock=time.monotonic,
-                 poll_give_up_sec: float = 6 * 3600, download_give_up_sec: float = 20 * 3600):
+                 poll_give_up_sec: float = 6 * 3600, download_give_up_sec: float = 20 * 3600,
+                 abandoned_give_up_sec: float = 3600):
         """request_builder(root, session, item) → (ClipRequest, 实际首帧来源)；item 是剧本段或自由节点。
         分镜改了抛 compose.Stale；自由节点复查不过抛 compose.FreeInvalid。"""
         self.request_builder = request_builder
@@ -58,6 +59,7 @@ class Runner:
         self.clock = clock
         self.poll_give_up_sec = poll_give_up_sec
         self.download_give_up_sec = download_give_up_sec
+        self.abandoned_give_up_sec = abandoned_give_up_sec    # 用户不等了的那次：查询一直出错多久后放弃
         self._first_fail: dict = {}
         self._roots: set = set()
         self._guard = threading.RLock()
@@ -153,6 +155,21 @@ class Runner:
                     if self._isolate(root, e):
                         break
 
+        # 用户不等了的那些尝试：接着查到有结果为止（不占并发名额，不动所在段的状态）
+        for root in roots:
+            try:
+                s = sess.load(root)
+                pending = sess.abandoned(s) if s is not None else []
+            except Exception as e:
+                self._isolate(root, e)
+                continue
+            for h, a in pending:
+                try:
+                    self._track_abandoned(root, h, a)
+                except Exception as e:
+                    if self._isolate(root, e):
+                        break
+
         loaded = []
         for root in roots:
             try:
@@ -191,7 +208,7 @@ class Runner:
                 s = sess.load(root)
             except Exception:
                 s = None
-            if s is None or not sess.any_in_flight(s):
+            if s is None or not sess.needs_runner(s):
                 self._roots.discard(Path(root))
 
     def _transient(self, kind, root, c, task_id, e, give_up) -> bool:
@@ -254,6 +271,46 @@ class Runner:
             sess.download_failed(root, c["id"], msg("film.download.not_playable"), cost)
             return
         sess.downloaded(root, c["id"], files, cost)
+
+    def _track_abandoned(self, root, h, a) -> None:
+        """用户不等了的那次：查到厂商给出终态为止。成功 → 下载、记费、留作可采用的一次；失败或取消照实记。
+        厂商、档位、分辨率、时长都用那次提交时记下的（billing），不看会话现在的设置。"""
+        b = a.get("billing") or {}
+        provider = get_video(b.get("provider"))
+        tid = a["task_id"]
+        key = ("abandoned", str(root), h["id"], tid)
+        try:
+            st = self._retry(lambda: provider.poll(tid))
+        except (base.TransientError, base.ProviderError):
+            first = self._first_fail.setdefault(key, self.clock())
+            if self.clock() - first >= self.abandoned_give_up_sec:
+                self._first_fail.pop(key, None)
+                log.warning("%s", _scrub_secrets(f'已取消的任务查询放弃 root={root} item={h["id"]} task={tid}', provider))  # i18n: internal
+                sess.settle_abandoned(root, tid, "failed", error=msg("film.cancel.lost"))
+            return
+        self._first_fail.pop(key, None)
+        if st.status not in ("succeeded", "failed"):
+            return                                  # 还在排队或生成：下一轮再查
+        req = base.ClipRequest(prompt="", model=b.get("model"), duration=b.get("duration") or 0.0,
+                               resolution=b.get("resolution"), images=a.get("images"))
+        cost = provider.cost(st, req)
+        if st.status == "failed":
+            gone = (st.error_msg or {}).get("code") == "film.provider.task_cancelled"
+            err = ({"code": st.error_msg["code"], "params": st.error_msg.get("params") or {}, "message": st.error}
+                   if st.error_msg else (st.error or msg("film.provider.failed")))
+            sess.settle_abandoned(root, tid, "cancelled" if gone else "failed", cost=cost, error=err)
+            return
+        try:
+            files = self._retry(lambda: provider.download(st, sess.clip_dest(root, h["id"], tid)))
+        except base.TransientError:
+            return                                  # 下一轮重查、重下
+        except base.ProviderError as e:
+            sess.settle_abandoned(root, tid, "failed", cost=cost, error=e)
+            return
+        if not base.is_playable_mp4(files["video"]):
+            sess.settle_abandoned(root, tid, "failed", cost=cost, error=msg("film.download.not_playable"))
+            return
+        sess.settle_abandoned(root, tid, "succeeded", cost=cost, files=files)
 
     def _submit(self, root, provider, s, c) -> bool:
         snap = sess.begin_submit(root, c["id"])
