@@ -1307,7 +1307,7 @@ export const zh = {
     },
     chart: { label: '每日金额', empty: '暂无数据' },
     users: {
-      search: '搜索用户名',
+      search: '搜索用户名', refresh: '刷新',
       cols: {
         username: '用户名', role: '角色', status: '状态', created: '注册', lastSeen: '最近活跃',
         novels: '小说', chapters: '章节', monthCost: '本月金额', cap: '月上限',

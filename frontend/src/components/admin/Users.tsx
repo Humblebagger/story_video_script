@@ -12,6 +12,7 @@ import type { AdminUserRow } from '../../types'
 import { day, errText, int, PURPOSE, usd, when } from './format'
 import { LineChart } from './LineChart'
 import { ErrorBar, TableSkeleton } from './LoadState'
+import { PageHead, RefreshButton } from './PageHead'
 import { useLoad } from './useLoad'
 
 type Key = 'username' | 'created_at' | 'last_seen_at' | 'novels' | 'month_cost_usd'
@@ -32,8 +33,13 @@ export function Users({ me }: { me: User }) {
   const [open, setOpen] = useState<string | null>(null)
   const { t } = useI18n()
 
-  if (error) return <ErrorBar error={error} onRetry={reload} />
-  if (!data) return <section className="adm__sec"><TableSkeleton /></section>
+  const pageHead = (
+    <PageHead title={t('admin.nav.pages.users')}>
+      <RefreshButton label={t('admin.users.refresh')} onClick={reload} />
+    </PageHead>
+  )
+  if (error) return <section className="adm__sec">{pageHead}<ErrorBar error={error} onRetry={reload} /></section>
+  if (!data) return <section className="adm__sec">{pageHead}<TableSkeleton /></section>
 
   const needle = q.trim().toLowerCase()
   const rows = data
@@ -58,6 +64,7 @@ export function Users({ me }: { me: User }) {
 
   return (
     <section className="adm__sec">
+      {pageHead}
       <div className="relative max-w-[260px]">
         <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input className="adm__search h-9 pl-8" placeholder={t('admin.users.search')} value={q}

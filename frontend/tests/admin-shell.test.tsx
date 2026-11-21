@@ -230,6 +230,33 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   console.log('2c. 概览刷新 / 英文 ✓')
 }
 
+// 3. 用户、错误、审计三页：统一的标题行（页名 + 刷新）与空状态
+{
+  const { Users } = await import('../src/components/admin/Users')
+  const { ErrorsTab } = await import('../src/components/admin/ErrorsTab')
+  const { AuditTab } = await import('../src/components/admin/AuditTab')
+  const me = { id: 'u-root', username: 'root', created_at: '', role: 'admin' as const }
+  const pages: [string, string, () => ReactNode][] = [
+    ['用户', 'GET /admin/users', () => <Users me={me} />],
+    ['错误', 'GET /admin/errors', () => <ErrorsTab />],
+    ['审计', 'GET /admin/audit', () => <AuditTab />],
+  ]
+  for (const [name, req, page] of pages) {
+    await remount(page())
+    must(container.querySelector('.adm__pagehead h2')?.textContent === name, `「${name}」页的标题行`)
+    const n = calls.filter((c) => c === req).length
+    await click(button('刷新'))
+    must(calls.filter((c) => c === req).length === n + 1, `「${name}」页的刷新应重新请求`)
+    // 读取失败：标题行还在，下面是错误条
+    failing.add(req.slice(4))
+    await remount(page())
+    must(container.querySelector('.adm__pagehead h2')?.textContent === name && text().includes('服务器出了点问题')
+         && !!container.querySelector('.adm__errbar'), `「${name}」页读取失败时标题行仍在`)
+    failing.clear()
+  }
+  console.log('3. 用户 / 错误 / 审计：标题行、刷新、读取失败 ✓')
+}
+
 // ===== 追加点：后面的任务把新用例插在这一行上面 =====
 
 await act(async () => { root.unmount() })

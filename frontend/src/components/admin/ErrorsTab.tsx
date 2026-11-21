@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react'
-import { Inbox, RefreshCw, Search } from 'lucide-react'
-import { EmptyState } from '@/components/common/EmptyState'
+import { Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
@@ -9,7 +8,8 @@ import type { MsgLike } from '@/i18n/serverMsg'
 import { adminErrorRef, adminErrors } from '../../api'
 import type { ErrorRefRow } from '../../types'
 import { when } from './format'
-import { ErrorBar, TableSkeleton } from './LoadState'
+import { Empty, ErrorBar, TableSkeleton } from './LoadState'
+import { PageHead, RefreshButton } from './PageHead'
 import { useLoad } from './useLoad'
 
 /** 展开时才取 detail：单条接口每次查看都写审计，列表不带 detail */
@@ -64,15 +64,17 @@ export function ErrorsTab() {
   let body
   if (error) body = <ErrorBar error={error} onRetry={reload} />
   else if (!data) body = <TableSkeleton />
-  else if (!data.length) body = <EmptyState icon={<Inbox aria-hidden />} title={t('admin.errors.empty')} hint={t('admin.errors.emptyHint')} />
+  else if (!data.length) body = <Empty title={t('admin.errors.empty')} hint={t('admin.errors.emptyHint')} />
   else body = <table className="adm__table">{head}<tbody>{data.map(row)}</tbody></table>
   return (
     <section className="adm__sec">
+      <PageHead title={t('admin.nav.pages.errors')}>
+        <RefreshButton label={t('admin.errors.refresh')} onClick={reload} />
+      </PageHead>
       <form className="adm__bar" onSubmit={(e) => { e.preventDefault(); void lookup() }}>
         <Input className="adm__search h-9 w-64" value={q} onChange={(e) => setQ(e.target.value)}
                placeholder={t('admin.errors.placeholder')} aria-label={t('admin.errors.lookup')} />
         <Button size="sm" type="submit"><Search aria-hidden />{t('admin.errors.lookup')}</Button>
-        <Button size="sm" variant="outline" type="button" onClick={reload}><RefreshCw aria-hidden />{t('admin.errors.refresh')}</Button>
       </form>
       {miss && <p role="alert" className="text-sm text-destructive">{formatMsg(miss, locale)}</p>}
       {hit && <table className="adm__table">{head}<tbody>{row(hit)}</tbody></table>}

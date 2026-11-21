@@ -1313,7 +1313,7 @@ export const en: Messages = {
     },
     chart: { label: 'Daily cost', empty: 'No data yet' },
     users: {
-      search: 'Search username',
+      search: 'Search username', refresh: 'Refresh',
       cols: {
         username: 'Username', role: 'Role', status: 'Status', created: 'Joined', lastSeen: 'Last active',
         novels: 'Novels', chapters: 'Chapters', monthCost: 'Cost this month', cap: 'Monthly cap',
