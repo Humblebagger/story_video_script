@@ -93,6 +93,8 @@
 .film__attempts tr.is-chosen { font-weight: 600; }
 .film__rows { display: block; max-height: 30vh; overflow: auto; }
 .film__video { width: 100%; max-height: 40vh; background: #000; border-radius: 12px; }
+.film__video--big { max-height: 70vh; }
+.film__play { align-self: flex-start; }
 
 /* ---------- 配音与合成 ---------- */
 

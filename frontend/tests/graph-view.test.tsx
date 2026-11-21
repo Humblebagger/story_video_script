@@ -11,7 +11,7 @@ const g = globalThis as Record<string, unknown>
 for (const k of ['window', 'document', 'navigator', 'location', 'HTMLElement',
                  'Element', 'Node', 'Event', 'CustomEvent', 'KeyboardEvent', 'getComputedStyle',
                  'localStorage', 'sessionStorage', 'PointerEvent', 'MouseEvent', 'matchMedia', 'ResizeObserver', 'DOMRect',
-                 'MutationObserver']) {
+                 'MutationObserver', 'NodeFilter']) {
   Object.defineProperty(g, k, {
     value: (win as unknown as Record<string, unknown>)[k],
     writable: true, configurable: true,
@@ -69,7 +69,7 @@ function makeSession(): FilmSession {
     options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
                frame_with_refs: false, audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'],
-               rate_note: '假厂商：不联网、不花钱' },
+               rate_note: '假厂商：不联网、不花钱', typical_sec: [180, 420] },
   })
 }
 
@@ -171,6 +171,15 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
     Object.assign(n, { state: 'queued', queued_at: new Date().toISOString() })
     film = recount(film!)
     return ok(film)
+  }
+  m = sub.match(/^\/(clips|free)\/([^/]+)\/cancel$/)
+  if (m && method === 'POST') {
+    const it = m[1] === 'free' ? freeOf(m[2]) : clipOf(decodeURIComponent(m[2]))
+    const outcome = it.state === 'queued' ? 'dequeued' : 'abandoned'
+    if (outcome === 'abandoned') it.attempts[it.attempts.length - 1].state = 'abandoned'
+    it.state = it.chosen === null ? 'planned' : 'done'
+    film = recount(film!)
+    return ok({ ...film, cancel_outcome: outcome })
   }
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
 }
@@ -330,6 +339,71 @@ must(container.querySelector('[data-testid="node-graph"]')?.getAttribute('role')
      && container.querySelector('[data-testid="node-graph"]')?.getAttribute('aria-label') === '画布视图',
      '节点图容器是带名字的 region')
 console.log('6c. 采用位置与无障碍 ✓')
+
+// 6d. 在跑的卡片：已等多久 · 通常多久，不带厂商名；还没提交的取消先确认、不花钱
+{
+  const third = film!.clips[2].id
+  const waitText = () => card(third).querySelector('[data-testid="ngv-wait"]')?.textContent ?? ''
+  const dialogText = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')?.textContent ?? ''
+  const answer = (ok: boolean) =>
+    click(win.document.body.querySelector(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)!)
+  const cancelCalls = () => calls.filter((c) => c === `POST /clips/${third}/cancel`).length
+  Object.assign(clipOf(third), { state: 'queued', queued_at: new Date(Date.now() - 65000).toISOString() })
+  film = recount(film!)
+  await refresh()
+  must(/已等 1 分 0\d 秒 · 通常 3–7 分钟/.test(waitText()), `等待一行：${waitText()}`)
+  must(!/minimax|seedance|fake|假厂商/i.test(card(third).textContent ?? ''), '卡片上不出现厂商名')
+  await click(inCard(third, '取消'))
+  must(dialogText().includes(`取消 ${third}？`) && dialogText().includes('现在取消不花钱') && cancelCalls() === 0,
+       `还没提交：先确认，说明不花钱：${dialogText()}`)
+  await answer(true)
+  must(cancelCalls() === 1 && clipOf(third).state === 'planned', '确认后取消')
+  must(!card(third).querySelector('[data-testid="ngv-wait"]'), '取消后不再显示等待')
+
+  // 已提交、等得比通常久：换说法；「不等了」的确认框写明可能仍扣费；点「取消」不发请求，确认才发
+  Object.assign(clipOf(third), { state: 'running', queued_at: new Date(Date.now() - 500000).toISOString(),
+    attempts: [{ ...attempt(third, 1, 0), state: 'running', file: null, last_frame: null }] })
+  film = recount(film!)
+  await refresh()
+  must(waitText().includes('比通常久，仍在处理'), `超过通常上限：${waitText()}`)
+  await click(inCard(third, '不等了'))
+  must(dialogText().includes('服务商可能仍会生成并扣费'), `已提交：确认框写明可能仍扣费：${dialogText()}`)
+  await answer(false)
+  must(cancelCalls() === 1 && clipOf(third).state === 'running', '确认框里点取消：不发请求')
+  await click(inCard(third, '不等了'))
+  await answer(true)
+  must(cancelCalls() === 2 && clipOf(third).attempts[0].state === 'abandoned', '确认后不等了')
+  const { notice } = await import('../src/lib/notice')
+  must(notice.log.some((x) => x.msg.includes('已取消，没有花钱'))
+       && notice.log.some((x) => x.msg.includes('已停止等待')), '两种结局各有提示')
+  console.log('6d. 等待与取消 ✓')
+}
+
+// 6e. 出完的卡片有明显的播放按钮：点开是带控制条、不静音的播放窗口；侧栏选中段也能点开
+{
+  const player = () => win.document.body.querySelector('[data-testid="clip-player"]')
+  const closePlayer = async () => {
+    await click(win.document.body.querySelector('[data-testid="clip-player"] [data-slot="dialog-close"]')!)
+    await settle(300)
+  }
+  const playBtn = card(first).querySelector('[data-testid="ngv-play"]')
+  must(!!playBtn && (playBtn.textContent ?? '').includes('播放'), '出完的卡片有播放按钮')
+  must(!card(film!.clips[2].id).querySelector('[data-testid="ngv-play"]'), '没有结果的卡片没有播放按钮')
+  await click(playBtn!)
+  const video = player()?.querySelector('video')
+  must(!!video && video.hasAttribute('controls') && !video.hasAttribute('muted') && !video.hasAttribute('loop'),
+       '播放窗口：有控制条、不静音、不循环')
+  must((player()?.textContent ?? '').includes(`${first} · 第 ${clipOf(first).chosen! + 1} 次`), '标题写明哪一段第几次')
+  await closePlayer()
+  must(!player(), '关掉播放窗口')
+  await click(card(first))
+  const side = container.querySelector('[data-testid="clip-play"]')
+  must(!!side, '侧栏选中段有播放按钮')
+  await click(side!)
+  must(!!player()?.querySelector('video[controls]'), '侧栏也能点开播放窗口')
+  await closePlayer()
+  console.log('6e. 播放 ✓')
+}
 
 // 7. 切回时间轴：节点图收起
 await click(exact('时间轴'))

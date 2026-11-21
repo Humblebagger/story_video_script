@@ -17,7 +17,7 @@ import { AssetCard, ClipCard, FreeCard } from './NodeCards'
 
 const ZOOM = { min: 0.3, max: 1.5 }
 
-export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSelect, onOpenAssets, onOpenFilm }: {
+export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSelect, onOpenAssets, onOpenFilm, onPlay, onCancel }: {
   film: Film
   doc: Storyboard
   styleUrl: string | null
@@ -30,6 +30,9 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   onSelect: (id: string) => void
   onOpenAssets: () => void
   onOpenFilm: () => void
+  /** 播放某一段 / 自由节点采用的那次；取消它的生成（画布弹播放窗口与确认框） */
+  onPlay?: (id: string) => void
+  onCancel?: (id: string) => void
 }) {
   const { t, locale } = useI18n()
   const s = film.session
@@ -151,11 +154,13 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
               {n.kind === 'clip' && (
                 <ClipCard clip={n.clip} s={s} film={film} blocked={blocked} hot={hot}
                           tags={clipShotTags(n.clip.shots, shots)}
-                          fallback={frameOf(n.clip.first_frame)} onDerive={() => void film.createFree(n.clip.id)} />
+                          fallback={frameOf(n.clip.first_frame)} onDerive={() => void film.createFree(n.clip.id)}
+                          onPlay={onPlay && (() => onPlay(n.id))} onCancel={onCancel && (() => onCancel(n.id))} />
               )}
               {n.kind === 'free' && (
                 <FreeCard node={n.node} s={s} film={film} blocked={blocked} hot={hot}
-                          fallback={frameOf(n.node.first_frame)} kfShots={kfShots} assetOptions={assetOptions} />
+                          fallback={frameOf(n.node.first_frame)} kfShots={kfShots} assetOptions={assetOptions}
+                          onPlay={onPlay && (() => onPlay(n.id))} onCancel={onCancel && (() => onCancel(n.id))} />
               )}
             </div>
           )

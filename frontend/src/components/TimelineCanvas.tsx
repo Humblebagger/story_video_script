@@ -10,9 +10,15 @@ import { MOOD, MOOD_HUE, SHOT_SIZE, label } from '../labels'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { buildIndex } from '../resolve'
-import { chosenAttempt, clipOffset, clipSpans, laneKind, laneText, laneTitle, spanAt } from '../film'
+import {
+  cancelKind, chosenAttempt, clipOffset, clipSpans, freeNodes, laneKind, laneText, laneTitle, spanAt,
+} from '../film'
 import { useFilm } from '../useFilm'
 import { onTask } from '@/lib/assistantBridge'
+import { notice } from '@/lib/notice'
+import { useConfirm } from '@/components/common/ConfirmDialog'
+import { ClipPlayer } from './ClipPlayer'
+import type { PlayTarget } from './ClipPlayer'
 import { FilmPanel } from './FilmPanel'
 import { NodeGraph } from './NodeGraph'
 import { ChapterHeadContext } from './workflow/chapterHead'
@@ -142,6 +148,27 @@ export function TimelineCanvas({
   const film = useFilm(version, { active: shown === 'film' || view === 'graph' })
   /** 「成片」泳道上选中的段 */
   const [clipSel, setClipSel] = useState<string | null>(null)
+  /** 播放窗口正在播的那一段 / 自由节点（null 为关着） */
+  const [player, setPlayer] = useState<PlayTarget | null>(null)
+  const [ask, confirmUi] = useConfirm()
+  /** 取消排队或生成中的一条：先过确认框。已提交的那种要说明服务商可能仍会扣费 */
+  const cancelItem = async (id: string) => {
+    const s = film.session
+    const free = !!s && freeNodes(s).some((n) => n.id === id)
+    const item = s ? [...s.clips, ...freeNodes(s)].find((x) => x.id === id) : undefined
+    const kind = item ? cancelKind(item) : null
+    if (!kind) return
+    const paid = kind === 'paid'
+    const sure = await ask({
+      title: tt(paid ? 'film.cancel.paidTitle' : 'film.cancel.freeTitle', { id }),
+      body: tt(paid ? 'film.cancel.paidBody' : 'film.cancel.freeBody'),
+      action: tt(paid ? 'film.cancel.paidAction' : 'film.cancel.freeAction'),
+      danger: paid,
+    })
+    if (!sure) return
+    const outcome = await film.cancelItem(id, free)
+    if (outcome) notice.ok(tt(`film.cancel.${outcome}`))
+  }
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
   const [filmMode, setFilmMode] = useState(true)
   /** 「生成中 · 已等 m:ss」每秒走一次 */
@@ -930,8 +957,11 @@ export function TimelineCanvas({
                    blocked={dirty ? tt('film.panel.blockedDirty')
                      : film.gate ? tt('film.panel.blockedGate', { gate: formatMsg(film.gate, locale) }) : null}
                    onSelect={(id) => { setClipSel(id); setPanel('film') }}
-                   onOpenAssets={() => setPanel('assets')} onOpenFilm={() => setPanel('film')} />
+                   onOpenAssets={() => setPanel('assets')} onOpenFilm={() => setPanel('film')}
+                   onPlay={(id) => setPlayer({ id })} onCancel={(id) => void cancelItem(id)} />
       )}
+      {confirmUi}
+      {film.enabled && <ClipPlayer film={film} target={player} onClose={() => setPlayer(null)} />}
 
       </div>
 
@@ -967,7 +997,8 @@ export function TimelineCanvas({
         )}
         {shown === 'novel' && bench && <NovelPanel bench={bench} />}
         {shown === 'film' && film.enabled && (
-          <FilmPanel film={film} selected={clipSel} onPickShot={selectShot} dirty={dirty} />
+          <FilmPanel film={film} selected={clipSel} onPickShot={selectShot} dirty={dirty}
+                     onPlay={(id) => setPlayer({ id })} onCancel={(id) => void cancelItem(id)} />
         )}
         {shown === 'tasks' && bench && <TaskPanel bench={bench} dirty={dirty} />}
         {shown === 'shot' && cur && <>

@@ -3,15 +3,17 @@
  *  花钱的按钮上都写着金额；批量和超过确认线的单段先弹确认（useFilm 决定发不发请求）。
  *  有未保存的改动或完整性检查没过时，所有出片按钮禁用并写明原因。 */
 import { useEffect, useRef, useState } from 'react'
+import { Play } from 'lucide-react'
 import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, label } from '../labels'
 import { Button } from '@/components/ui/button'
 import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
 import { formatMsg, itemError } from '@/i18n/serverMsg'
-import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, precheck } from '../film'
+import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, playableAttempt, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
+import { WaitRow } from './NodeCards'
 import type { AudioMode, FilmClip, FilmFreeNode, FilmSession, FilmSettings } from '../types'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
@@ -31,9 +33,12 @@ interface Props {
   onPickShot: (shotId: string) => void
   /** 有未保存的改动：出片只认已保存的版本 */
   dirty: boolean
+  /** 点「播放」（画布弹播放窗口）；点取消（画布弹确认框） */
+  onPlay?: (id: string) => void
+  onCancel?: (id: string) => void
 }
 
-export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
+export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel }: Props) {
   const { t, locale } = useI18n()
   const s = film.session
   if (film.status === 'loading') return <p className="tlc__kfnote">{t('film.panel.loading')}</p>
@@ -60,7 +65,8 @@ export function FilmPanel({ film, selected, onPickShot, dirty }: Props) {
           <Precheck s={s} gateOk={!film.gate} />
           <Overview s={s} film={film} selected={selected} blocked={blocked} />
           {clip
-            ? <ClipDetail key={clip.id} c={clip} film={film} blocked={blocked} onPickShot={onPickShot} />
+            ? <ClipDetail key={clip.id} c={clip} s={s} film={film} blocked={blocked} onPickShot={onPickShot}
+                          onPlay={onPlay} onCancel={onCancel} />
             : freeSel ? <FreeDetail key={freeSel.id} n={freeSel} film={film} />
             : <p className="tlc__kfnote">{t('film.panel.pickClip')}</p>}
           <ComposePanel film={film} dirty={dirty} />
@@ -214,8 +220,10 @@ function Overview({ s, film, selected, blocked }: {
 }
 
 /** 选中段详情：所含镜头、提示词（只读）、参考图、首帧来源、尝试记录（播放、★ 采用）、重做、原声静音 */
-function ClipDetail({ c, film, blocked, onPickShot }: {
-  c: FilmClip; film: Film; blocked: string | null; onPickShot: (shotId: string) => void
+function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
+  c: FilmClip; s: FilmSession; film: Film; blocked: string | null; onPickShot: (shotId: string) => void
+  onPlay?: (id: string) => void
+  onCancel?: (id: string) => void
 }) {
   const { t, locale } = useI18n()
   const sep = t('common.listSep')
@@ -231,6 +239,15 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
         <b><i className={`film__dot film__dot--${c.state}`} aria-hidden="true" />{c.id}</b>
         <span>{t('film.panel.clipMeta', { state: label(FILM_STATE, c.state), dur: c.duration, cost: yuan(c.estimate_cny) })}{c.truncated ? t('film.panel.clipCut') : ''}</span>
       </header>
+      {flying && (
+        <WaitRow item={c} typical={s.options.typical_sec} disabled={film.busy}
+                 onCancel={onCancel && (() => onCancel(c.id))} />
+      )}
+      {onPlay && playableAttempt(c) && (
+        <Button size="sm" variant="secondary" className="film__play" data-testid="clip-play" onClick={() => onPlay(c.id)}>
+          <Play aria-hidden />{t('film.play.open')}
+        </Button>
+      )}
       <div className="film__shots">
         {c.shots.map((id) => (
           <button key={id} className="tlc__unit" title={t('film.panel.pickShot')} onClick={() => onPickShot(id)}>
@@ -269,7 +286,7 @@ function ClipDetail({ c, film, blocked, onPickShot }: {
               <tr key={i} className={i === c.chosen ? 'is-chosen' : ''}>
                 <td>{t('film.panel.attemptN', { n: i + 1 })}</td>
                 <td>{when(a.at)}</td>
-                <td>{label(ATTEMPT_STATE, a.state)}</td>
+                <td>{label(ATTEMPT_STATE, a.state)}{a.late ? ` · ${t('film.lateTag')}` : ''}</td>
                 <td>{yuan(a.cost_cny)}</td>
                 <td>
                   {a.state === 'succeeded' && a.file && (

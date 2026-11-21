@@ -5,14 +5,15 @@
  *  服务端重算的金额对不上（409）就把新金额放回 confirm 让用户再确认。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ApiError, chooseFilmAttempt, chooseFreeAttempt, conflictCny, createFilm, createFreeNode, deleteFreeNode,
-  filmFileUrl, getFilm, muteFilmClip, patchFilm, patchFreeNode, runFilmClip, runFilmRest, runFreeNode,
+  ApiError, cancelFilmItem, chooseFilmAttempt, chooseFreeAttempt, conflictCny, createFilm, createFreeNode,
+  deleteFreeNode, filmFileUrl, getFilm, muteFilmClip, patchFilm, patchFreeNode, runFilmClip, runFilmRest, runFreeNode,
 } from './api'
+import { primeNotifications } from './notify'
 import { tr } from './i18n/core'
 import { errValue, formatMsg } from './i18n/serverMsg'
 import type { MsgLike } from './i18n/serverMsg'
 import { needsConfirm, pollDelay } from './film'
-import type { FilmClip, FilmSession, FilmSettings, FreePatch, VersionRef } from './types'
+import type { CancelOutcome, FilmClip, FilmSession, FilmSettings, FreePatch, VersionRef } from './types'
 
 export type FilmConfirm =
   | { kind: 'clip'; clipId: string; cny: number; changed: boolean; uncertain?: boolean }
@@ -113,6 +114,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const runPaid = useCallback(async (fn: () => Promise<FilmSession>):
       Promise<{ kind: 'ok' | 'stale' | 'failed' } | { kind: 'revised'; cny: number }> => {
     const mine = gen.current
+    primeNotifications()     // 出片要等几分钟：趁这次点击申请通知权限，出完好提醒
     setBusy(true)
     setError(null)
     try {
@@ -133,6 +135,26 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
       if (gen.current === mine) setBusy(false)
     }
   }, [accept, fail, load])
+
+  /** 取消排队或生成中的一段 / 一个自由节点：成功返回结局（调用方据此提示）；被拒（409 等）记到 error 并重读会话 */
+  const cancelItem = useCallback(async (itemId: string, free: boolean): Promise<CancelOutcome | null> => {
+    const mine = gen.current
+    setBusy(true)
+    setError(null)
+    try {
+      const got = await cancelFilmItem(nid!, cid!, vid!, itemId, free)
+      if (gen.current !== mine) return null
+      accept(got)
+      return got.cancel_outcome ?? null
+    } catch (e) {
+      if (gen.current !== mine) return null
+      fail(e)
+      void load()
+      return null
+    } finally {
+      if (gen.current === mine) setBusy(false)
+    }
+  }, [nid, cid, vid, accept, fail, load])
 
   /** 花钱的操作（确认框）：409 带了重算金额就放回确认框，等用户再确认 */
   const spend = async (fn: () => Promise<FilmSession>, again: (cny: number) => FilmConfirm) => {
@@ -203,6 +225,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     choose: (clipId: string, attempt: number) =>
       apply(() => chooseFilmAttempt(nid!, cid!, vid!, clipId, attempt)),
     mute: (clipId: string, mute: boolean) => apply(() => muteFilmClip(nid!, cid!, vid!, clipId, mute)),
+    cancelItem,
     /** 节点图卡片：确认过金额后直接出这一段 */
     runClipNow: (clipId: string, cny: number) => spendInline(() => runFilmClip(nid!, cid!, vid!, clipId, cny)),
     createFree: (fromClip?: string) => apply(() => createFreeNode(nid!, cid!, vid!, fromClip)),
