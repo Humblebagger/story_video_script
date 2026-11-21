@@ -120,8 +120,11 @@ export const en: BaseMessages = {
     col: { no: 'No.', title: 'Title', chars: 'Chars', versions: 'Versions', step: 'Step' },
   },
   activity: {
-    tab: 'Jobs', close: 'Close', running: 'Running', done: 'Recently finished', view: 'View',
+    tab: 'Jobs', close: 'Close', running: 'In progress', done: 'Finished', view: 'View',
     empty: 'No running jobs', emptyHint: 'Progress shows up here once a conversion or render starts',
+    deleted: 'Deleted', deletedTag: ' (deleted)', failedHint: 'Open it to see why',
+    kind: { compose: 'Final cut' },
+    compose: { running: 'Composing', done: 'Composed', failed: 'Compose failed' },
     film: {
       play: 'Play',
       late: 'The provider charged {cost}; you can adopt it on the clip',
@@ -271,6 +274,10 @@ export const en: BaseMessages = {
       filmFailedBody: '{who} — open it to see why',
       filmLate: 'A cancelled clip finished anyway',
       filmLateBody: '{who}: the provider charged {cost}; the result can be adopted',
+      composeDone: 'Final cut composed',
+      composeDoneBody: '{who} is composed. Open it to view.',
+      composeFailed: 'Composing the final cut failed',
+      composeFailedBody: '{who} — open it to see why',
     },
     err: {
       preview: 'Could not load the preview: {msg}',

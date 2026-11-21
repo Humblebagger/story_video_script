@@ -341,6 +341,12 @@ export interface JobSummary {
   progress?: JobProgress | null
   novel_id?: string | null
   chapter_id?: string | null
+  /** 结束时间（在跑的没有） */
+  finished_at?: string | null
+  /** 失败原因；不能给普通用户看的为 null */
+  error_msg?: ServerMsg | { message: string } | null
+  /** 所属的小说或章节已删除（名字是提交时的） */
+  deleted?: boolean
 }
 
 export interface Health {
@@ -805,12 +811,12 @@ export interface FreePatch {
 /** 取消接口的结局：dequeued 还没提交 / cancelled 服务商确认取消 / abandoned 不等了（可能仍扣费） */
 export type CancelOutcome = 'dequeued' | 'cancelled' | 'abandoned'
 
-/** 本人的一条出片任务（GET /render/tasks）：在跑的，或最近结束的。不带厂商与档位 */
+/** 本人任务队列里的一条出片或合成任务（GET /render/tasks）：进行中的，或一天内结束的。不带厂商与档位 */
 export interface FilmTask {
-  /** <版本>:<段或节点 id>；late 的再加 :<任务 id> */
+  /** <版本>:<段或节点 id>；late 的再加 :<任务 id>；合成是 <版本>:compose */
   id: string
   item_id: string
-  kind: 'clip' | 'free'
+  kind: 'clip' | 'free' | 'compose'
   novel_id: string
   chapter_id: string
   version_id: string
@@ -820,11 +826,20 @@ export interface FilmTask {
   state: 'queued' | 'running' | 'downloading' | 'done' | 'failed' | 'cancelled' | 'late'
   /** 服务端算的已等秒数（结束的为总共等了多久）；late 没有 */
   elapsed_sec: number | null
-  typical_sec: [number, number]
+  /** 合成没有通常时长 */
+  typical_sec: [number, number] | null
   /** 在跑的为 null */
   ended_at: string | null
   /** 只有 late 有 */
   cost_cny: number | null
+  /** 现在能怎么取消：free 还没提交（不花钱）、paid 已提交（可能已计费）、null 不能取消 */
+  cancel?: 'free' | 'paid' | null
+  /** 失败原因（消息对象）；不能给普通用户看的为 null，界面写「点开查看原因」 */
+  error?: ServerMsg | { message: string } | null
+  /** 合成的当前步骤 */
+  step?: ServerMsg | { message: string } | null
+  /** 这一段含哪些镜头（自由节点为它挂靠的那一段的；合成为空） */
+  shot_ids?: string[]
 }
 
 /** 让画布选中某一段 / 自由节点的请求（从任务列表、提示、通知点过来；放在路由 state 里）。

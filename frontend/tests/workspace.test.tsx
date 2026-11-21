@@ -418,7 +418,7 @@ const novels: NS[] = [
   const runs = qa('[data-testid="activity-running"]')
   must(runs.length === 2, '在跑 2 项')
   const r0 = runs[0].textContent ?? ''
-  must(r0.includes('雾港 · 第1章') && r0.includes('第 2 批校验中') && r0.includes('3 分'), '在跑项内容：' + r0)
+  must(r0.includes('雾港 › 第1章') && r0.includes('第 2 批校验中') && r0.includes('3 分'), '在跑项内容：' + r0)
   must(!!runs[0].querySelector('[role="progressbar"]'), '进度条')
   await click(runs[1].querySelector('button'))
   must(opened.join() === '2', '查看')

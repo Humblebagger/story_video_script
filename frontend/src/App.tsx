@@ -1,7 +1,7 @@
 import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  adminService, adoptVersion, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
+  adminService, adoptVersion, cancelFilmItem, convertChapter, createChapter, createNovel, deleteChapter, deleteVersion,
   getChapter, getJobPartial, getNovel, getVersion, health, listFilmTasks, listJobs, listNovels, me,
   rerunDigest, saveVersion, updateChapter,
 } from './api'
@@ -29,10 +29,10 @@ import { NovelPage } from './components/NovelPage'
 import { NovelSidebar } from './components/NovelSidebar'
 import { ActivityPanel } from './components/shell/ActivityPanel'
 import { AssistantPanel } from './components/assistant/AssistantPanel'
-import { onTask } from './lib/assistantBridge'
+import { notifyTask, onTask } from './lib/assistantBridge'
 import { keepOnlyAssistant } from './lib/assistantSession'
 import type { DoneJob, FilmActivity } from './components/shell/ActivityPanel'
-import { diffFilmTasks, lateTaskId, onFilmPoke, taskName } from './filmTasks'
+import { diffFilmTasks, lateTaskId, mergeDoneJobs, onFilmPoke, taskName } from './filmTasks'
 import { cny } from './lib/fmt'
 import { ProjectNav } from './components/shell/ProjectNav'
 import { readLastChapter, writeLastChapter } from './lastChapter'
@@ -329,6 +329,8 @@ export default function App() {
           if (!activityOpenRef.current) setActivityDot(true)
         }
       }
+      // 已结束的：/jobs 里带结束时间的并进来（刷新页面后还在），已有的补上结束时间与失败原因
+      setRecentDone((r) => mergeDoneJobs(r, jobs))
       prevRunning.current = liveIds
       if (finished) {
         void refreshNovels()
@@ -356,20 +358,21 @@ export default function App() {
       setFilmAct({ live, ended, at: Date.now() })
       for (const tk of fresh) {
         const who = taskName(tk)
-        const play = tk.state !== 'failed'
+        const kind = tk.kind === 'compose' ? 'compose' : 'film'
+        const play = kind === 'film' && tk.state !== 'failed'
         const open = () => openFilmRef.current(tk, play)
         const action = { label: t(play ? 'activity.film.play' : 'flow.view'), onClick: open }
         const tag = `film-${tk.id}`
         if (tk.state === 'failed') {
-          notify(t('app.notify.filmFailed'), t('app.notify.filmFailedBody', { who }), { tag, onClick: open })
-          toast.error(t('app.notify.filmFailed'), { description: who, action })
+          notify(t(`app.notify.${kind}Failed`), t(`app.notify.${kind}FailedBody`, { who }), { tag, onClick: open })
+          toast.error(t(`app.notify.${kind}Failed`), { description: who, action })
         } else if (tk.state === 'late') {
           const body = t('app.notify.filmLateBody', { who, cost: cny(tk.cost_cny ?? 0) })
           notify(t('app.notify.filmLate'), body, { tag, onClick: open })
           toast.warning(t('app.notify.filmLate'), { description: body, action })
         } else {
-          notify(t('app.notify.filmDone'), t('app.notify.filmDoneBody', { who }), { tag, onClick: open })
-          toast.success(t('app.notify.filmDone'), { description: who, action })
+          notify(t(`app.notify.${kind}Done`), t(`app.notify.${kind}DoneBody`, { who }), { tag, onClick: open })
+          toast.success(t(`app.notify.${kind}Done`), { description: who, action })
         }
       }
       if (fresh.length) {
@@ -691,22 +694,58 @@ export default function App() {
   /** 从任务列表、提示或通知回到出片任务所在的片段：打开那一版的画布（节点图、出片页）并选中它，play 时顺便播放。
    *  要选中谁放在路由 state 的 focus 里；跨章节时版本号作一次性 state，章节加载时打开那一版（§5.4） */
   const openFilmTask = async (tk: FilmTask, play: boolean) => {
+    // 合成任务：到这一章画布的出片页（时间轴），没有要选中的片段
+    const compose = tk.kind === 'compose'
     const taskId = lateTaskId(tk)
-    const focus: FilmFocus = { vid: tk.version_id, id: tk.item_id, play, ...(taskId ? { taskId } : {}) }
+    const focus: FilmFocus | undefined = compose ? undefined
+      : { vid: tk.version_id, id: tk.item_id, play, ...(taskId ? { taskId } : {}) }
+    const st: NavState = { panel: 'film', ...(focus ? { focus } : {}) }
+    const view = compose ? null : 'graph'
     if (tk.novel_id === nid && tk.chapter_id === cid) {
       if (docVid !== tk.version_id) {
         if (!(await confirmLeave())) return
         void openVersion(tk.novel_id, tk.chapter_id, tk.version_id)
       }
-      const to = chapterPath(tk.novel_id, tk.chapter_id, { step: boardStep(), tab: urlTab, canvas: true, view: 'graph' })
+      const to = chapterPath(tk.novel_id, tk.chapter_id, { step: boardStep(), tab: urlTab, canvas: true, view })
       // 已经在这个地址：不导航，只把请求写进当前这条历史记录
-      if (!go(to, { state: { fromChapter: true, panel: 'film', focus } })) {
-        navigate(to, { replace: true, state: { ...passState(navStateRef.current), panel: 'film', focus } })
+      if (!go(to, { state: { fromChapter: true, ...st } })) {
+        navigate(to, { replace: true, state: { ...passState(navStateRef.current), ...st } })
       }
       return
     }
-    go(chapterPath(tk.novel_id, tk.chapter_id, { step: 'render', canvas: true, view: 'graph' }),
-       { state: { vid: tk.version_id, panel: 'film', focus } })
+    go(chapterPath(tk.novel_id, tk.chapter_id, { step: 'render', canvas: true, view }),
+       { state: { vid: tk.version_id, ...st } })
+  }
+  /** 在任务面板里取消一条进行中的出片任务：确认框与画布上同一套，请求带上用户确认的种类；
+   *  服务端发现种类已变（状态在确认框开着时变了）就重读任务列表，以新种类重新确认；取消后让任务列表与开着的画布都重读 */
+  const cancelFilmTask = async (from: FilmTask, round = 0): Promise<void> => {
+    const kind = from.kind === 'compose' ? null : from.cancel
+    if (!kind) return
+    const paid = kind === 'paid'
+    const sure = await ask({
+      title: t(paid ? 'film.cancel.paidTitle' : 'film.cancel.freeTitle', { id: from.item_id }),
+      body: t(paid ? 'film.cancel.paidBody' : 'film.cancel.freeBody'),
+      action: t(paid ? 'film.cancel.paidAction' : 'film.cancel.freeAction'),
+      danger: paid,
+    })
+    if (!sure) return
+    try {
+      const got = await cancelFilmItem(from.novel_id, from.chapter_id, from.version_id, from.item_id, from.kind === 'free', kind)
+      if (got.cancel_outcome) notice.ok(t(`film.cancel.${got.cancel_outcome}`))
+      notifyTask({ kind: 'film', chapter_id: from.chapter_id, version_id: from.version_id })
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409
+          && (e.detail as { code?: unknown } | null)?.code === 'film.cancel.kind_changed' && round < 3) {
+        try {
+          const { tasks } = await listFilmTasks()
+          const fresh = tasks.find((x) => x.id === from.id)
+          void watchFilm()
+          if (fresh) { await cancelFilmTask(fresh, round + 1); return }
+        } catch { /* 重读失败：按下面的错误提示 */ }
+      }
+      notice.err(msg(e))
+      void watchFilm()
+    }
   }
   openFilmRef.current = (tk, play) => void openFilmTask(tk, play)
   /** 画布用完了聚焦请求：从当前这条历史记录里清掉 */
@@ -1154,6 +1193,7 @@ export default function App() {
         activity={activityOpen ? (
           <ActivityPanel running={running} done={recentDone} onOpen={openJob}
                          film={filmAct} onOpenFilm={(tk, play) => void openFilmTask(tk, play)}
+                         onCancelFilm={(tk) => void cancelFilmTask(tk)}
                          tab={activityTab} onTab={setActivityTab}
                          assistant={shown ? (
                            <AssistantPanel novelId={shown.id}

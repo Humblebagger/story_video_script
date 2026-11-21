@@ -122,6 +122,8 @@ const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
 /** 本人的出片任务（GET /render/tasks 原样返回） */
 let filmTasks: unknown[] = []
+/** 收到的取消请求（路径） */
+const cancelCalls: string[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '').split('?')[0]
   const method = init?.method ?? 'GET'
@@ -147,6 +149,10 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (path === '/auth/me') { if (meGate) await meGate; return json(userOf(who)) }
   if (path === '/jobs') return json({ jobs: jobsList })
   if (path === '/render/tasks') return json({ tasks: filmTasks })
+  if (method === 'POST' && /\/render\/(clips|free)\/[^/]+\/cancel$/.test(path)) {
+    cancelCalls.push(path)
+    return json({ cancel_outcome: 'abandoned', clips: [], free: [] })
+  }
   const jm = path.match(/^\/jobs\/([^/]+)$/)
   if (jm && method === 'GET') {
     if (jobGate) await jobGate
@@ -1007,14 +1013,24 @@ console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
 
   const a = await boot('/novels/n1/overview', 'alice')
   must(!a.q('[data-testid="activity-count"]'), '没有任务：铃铛上没有数字')
-  filmTasks = [task()]
+  filmTasks = [task({ cancel: 'paid', shot_ids: ['E01-SH001', 'E01-SH002'] })]
   await poke()
   must(a.q('[data-testid="activity-count"]')?.textContent === '1', '在跑的出片任务计入铃铛')
   await click(a.q('[data-testid="activity-bell"]')!)
   const row = doc.body.querySelector('[data-testid="activity-film-running"]') as unknown as HTMLElement | null
-  must(!!row && (row.textContent ?? '').includes('药 · 第一章 · E01-C01') && /已等 4 分 \d\d 秒 · 通常 3–7 分钟/.test(row.textContent ?? ''),
-       `动态面板里有这条：${row?.textContent}`)
+  must(!!row && (row.textContent ?? '').includes('药 › 第一章 › E01-C01 · SH001–SH002') && /已等 4 分 \d\d 秒 · 通常 3–7 分钟/.test(row.textContent ?? ''),
+       `任务面板里有这条，定位到小说、章节、片段与镜号：${row?.textContent}`)
   must(made.length === 0, '在跑的不发通知')
+  // 面板里直接取消：先过确认框（写明可能仍扣费），确认才发请求，然后按结局提示
+  const confirmBtn = (ok: boolean) => doc.body.querySelector(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`) as unknown as HTMLElement
+  await click(row!.querySelector('[data-testid="activity-film-cancel"]') as unknown as HTMLElement)
+  must((doc.body.querySelector('[data-testid="confirm-dialog"]')?.textContent ?? '').includes('服务商可能仍会生成并扣费')
+       && cancelCalls.length === 0, '面板里取消：先确认')
+  await click(confirmBtn(false))
+  must(cancelCalls.length === 0, '确认框里点取消：不发请求')
+  await click(row!.querySelector('[data-testid="activity-film-cancel"]') as unknown as HTMLElement)
+  await click(confirmBtn(true))
+  must(cancelCalls.join() === '/novels/n1/chapters/c1/versions/v1/render/clips/E01-C01/cancel', `确认后发取消请求：${cancelCalls}`)
   await click(button(row!, '查看')!)
   await settle(300)
   must(a.here() === '/novels/n1/chapters/c1/render/canvas?view=graph', `点查看到画布的节点图，实际 ${a.here()}`)
@@ -1049,6 +1065,16 @@ console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
   await settle(300)
   must(JSON.stringify(focusOf(b.router)?.focus) === JSON.stringify({ vid: 'v1', id: 'E01-C02', play: true, taskId: 't9' }),
        `点通知带着任务号：${JSON.stringify(b.router.state.location.state)}`)
+  // 成片合成也播报；点开到这一章的画布（出片页），不带要选中的片段
+  filmTasks = [task({ id: 'v1:compose', item_id: 'compose', kind: 'compose', state: 'done', typical_sec: null,
+                      elapsed_sec: 40, ended_at: '2026-11-21T03:12:00+00:00' })]
+  await poke()
+  must(made.length === 3 && made[2].title === '成片已合成' && made[2].body.includes('药 · 第一章 · 成片合成'),
+       `合成完成的通知：${JSON.stringify(made[2])}`)
+  await act(async () => { made[2].onclick!() })
+  await settle(300)
+  must(b.here() === '/novels/n1/chapters/c1/render/canvas' && !focusOf(b.router)?.focus && focusOf(b.router)?.panel === 'film',
+       `点合成的通知：到画布的出片页，实际 ${b.here()} ${JSON.stringify(b.router.state.location.state)}`)
   await b.done()
   ;[g.Notification, wn.Notification, wn.focus] = before
 }

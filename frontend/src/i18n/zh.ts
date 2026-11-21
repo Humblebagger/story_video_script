@@ -118,8 +118,11 @@ export const zh = {
     col: { no: '编号', title: '标题', chars: '字数', versions: '版本', step: '步骤' },
   },
   activity: {
-    tab: '任务', close: '关闭', running: '在跑', done: '最近完成', view: '查看',
+    tab: '任务', close: '关闭', running: '进行中', done: '已结束', view: '查看',
     empty: '没有在跑的任务', emptyHint: '开始转换或出片后，进度会出现在这里',
+    deleted: '已删除', deletedTag: '（已删除）', failedHint: '点开查看原因',
+    kind: { compose: '成片合成' },
+    compose: { running: '合成中', done: '已合成', failed: '合成失败' },
     film: {
       play: '播放',
       late: '服务商已计费 {cost}，可在片段里采用',
@@ -269,6 +272,10 @@ export const zh = {
       filmFailedBody: '{who}——点开查看原因',
       filmLate: '已取消的片段仍生成完成',
       filmLateBody: '{who}：服务商已计费 {cost}，结果可以采用',
+      composeDone: '成片已合成',
+      composeDoneBody: '{who} 已合成，点开查看',
+      composeFailed: '成片合成失败',
+      composeFailedBody: '{who}——点开查看原因',
     },
     err: {
       preview: '预览加载失败：{msg}',

@@ -1,4 +1,5 @@
-/** 右侧面板：两个页签：动态、助手。动态为在跑的任务（任意小说）与最近完成的结果；助手页签只在进了小说后出现。
+/** 右侧面板：两个页签：任务、助手。任务页是本人的任务队列（任意小说）：进行中的与已结束的，
+ *  转换、出片片段、成片合成都在这里；助手页签只在进了小说后出现。
  *  宽屏时挤压主区，窄屏（< 1100px）盖在主区上方（样式见 workspace.css）。Esc 或「关闭」收起。 */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -14,12 +15,12 @@ import { formatMsg } from '@/i18n/serverMsg'
 import { DUR, EASE_OUT } from '@/motion'
 import { useReducedMotion } from 'motion/react'
 import { fmtEta, JOB_STATUS, label } from '@/labels'
-import { taskName, taskWait } from '@/filmTasks'
+import { clockText, endedItems, jobWhere, taskWait, taskWhere } from '@/filmTasks'
 import { cny } from '@/lib/fmt'
 import type { MsgKey } from '@/i18n/core'
 import type { FilmTask, JobStatus, JobSummary } from '@/types'
 
-/** 最近完成的一条（只存在内存） */
+/** 已结束的一条转换任务：刚结束的由应用记下，其余来自 /jobs（带结束时间与失败原因） */
 export interface DoneJob {
   id: string
   status: JobStatus
@@ -27,6 +28,11 @@ export interface DoneJob {
   chapter: string | null
   novel_id?: string | null
   chapter_id?: string | null
+  finished_at?: string | null
+  /** 失败原因（消息对象或文字）；不能给普通用户看的为 null */
+  error_msg?: unknown
+  /** 所属的小说或章节已删除 */
+  deleted?: boolean
 }
 
 const TONE: Partial<Record<JobStatus, Tone>> = {
@@ -36,19 +42,23 @@ const FILM_TONE: Record<FilmTask['state'], Tone> = {
   queued: 'live', running: 'live', downloading: 'live', done: 'ok', failed: 'err', cancelled: 'idle', late: 'warn',
 }
 
-/** 本人的出片任务：在跑的、最近结束的，以及这份列表是什么时候取回的（毫秒时间戳，等待时长从它接着走） */
+/** 本人的出片与合成任务：进行中的、已结束的，以及这份列表是什么时候取回的（毫秒时间戳，等待时长从它接着走） */
 export interface FilmActivity { live: FilmTask[]; ended: FilmTask[]; at: number }
 
-export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab = 'activity', onTab, assistant, film, onOpenFilm }: {
+export function ActivityPanel({
+  running, done, onOpen, onOpenDone, onClose, tab = 'activity', onTab, assistant, film, onOpenFilm, onCancelFilm,
+}: {
   running: JobSummary[]
   done: DoneJob[]
-  /** 出片任务（没有就不显示）；点一条回到画布上的那一段，play 为 true 时顺便打开播放 */
+  /** 出片与合成任务（没有就不显示）；点一条回到它所在的位置，play 为 true 时顺便打开播放 */
   film?: FilmActivity
   onOpenFilm?: (t: FilmTask, play: boolean) => void
+  /** 取消一条进行中的出片任务（确认框由上层弹）；不给就没有取消入口 */
+  onCancelFilm?: (t: FilmTask) => void
   onOpen: (j: JobSummary) => void
   onOpenDone?: (j: DoneJob) => void
   onClose: () => void
-  /** 当前页签；没有 assistant 时只显示「动态」 */
+  /** 当前页签；没有 assistant 时只显示「任务」 */
   tab?: 'activity' | 'assistant'
   onTab?: (t: 'activity' | 'assistant') => void
   /** 助手页签的内容（进了小说才有） */
@@ -58,11 +68,9 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
   const reduced = !!useReducedMotion()
   const ref = useRef<HTMLElement>(null)
   useEffect(() => { ref.current?.focus({ preventScroll: true }) }, [])
-  const name = (j: { work_title: string | null; chapter: string | null }) =>
-    [j.work_title || t('shell.shelf.converting'), j.chapter].filter(Boolean).join(' · ')
   const showAssistant = tab === 'assistant' && !!assistant
   const filmLive = film?.live ?? []
-  const filmEnded = film?.ended ?? []
+  const ended = endedItems(done, film?.ended ?? [])
   /** 有出片任务在跑时每秒走一次，等待时长跟着动 */
   const [now, setNow] = useState(() => Date.now())
   const ticking = filmLive.length > 0
@@ -72,7 +80,30 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
   }, [ticking])
-  const filmState = (tk: FilmTask) => t(`activity.film.state.${tk.state}` as MsgKey)
+  /** 状态药丸上的字：合成有自己的说法，其余按出片的状态 */
+  const filmState = (tk: FilmTask) => (tk.kind === 'compose' && tk.state !== 'queued'
+    ? t(`activity.compose.${tk.state === 'done' ? 'done' : tk.state === 'failed' ? 'failed' : 'running'}`)
+    : t(`activity.film.state.${tk.state}` as MsgKey))
+  /** 定位行：小说 › 章节 › 片段与镜号。窄了截断，悬停看全称 */
+  const where = (text: string, strong = false) => (
+    <p className={`truncate text-sm${strong ? ' font-medium' : ''}`} title={text} data-testid="activity-where">{text}</p>
+  )
+  const endedAt = (iso: string | null | undefined) => {
+    const text = clockText(iso)
+    return text ? <span className="text-xs tabular-nums text-muted-foreground">{text}</span> : null
+  }
+  const reason = (failed: boolean, err: unknown) =>
+    (failed ? <p className="activity__log" data-testid="activity-reason">{err ? formatMsg(err, locale) : t('activity.failedHint')}</p> : null)
+  const jobBody = (j: DoneJob) => (
+    <>
+      {where(jobWhere(j))}
+      <div className="flex items-center justify-between gap-2">
+        <StatusPill tone={TONE[j.status] ?? 'idle'}>{label(JOB_STATUS, j.status)}</StatusPill>
+        {endedAt(j.finished_at)}
+      </div>
+      {reason(j.status === 'failed', j.error_msg)}
+    </>
+  )
   return (
     <motion.aside ref={ref} tabIndex={-1} data-testid="activity-panel" className={`activity${showAssistant ? ' activity--wide' : ''}`}
                   aria-label={t('shell.activity')}
@@ -98,28 +129,11 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
       </div>
       <div className="activity__body">
         {showAssistant ? assistant : (<>
-        {!running.length && !done.length && !filmLive.length && !filmEnded.length && (
+        {!running.length && !filmLive.length && !ended.length && (
           <EmptyState icon={<BellRing className="size-5" />} title={t('activity.empty')} hint={t('activity.emptyHint')} />
         )}
-        {!!filmLive.length && (
-          <section>
-            {!running.length && <h3 className="activity__title">{t('activity.running')}</h3>}
-            <ul className="space-y-2">
-              {filmLive.map((tk) => (
-                <li key={tk.id} data-testid="activity-film-running" className="activity__item">
-                  <p className="truncate text-sm font-medium">{taskName(tk)}</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <StatusPill tone={FILM_TONE[tk.state]}>{filmState(tk)}</StatusPill>
-                    <Button variant="outline" size="sm" onClick={() => onOpenFilm?.(tk, false)}>{t('activity.view')}</Button>
-                  </div>
-                  <p className="text-xs tabular-nums text-muted-foreground">{taskWait(tk, film?.at ?? now, now)}</p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {!!running.length && (
-          <section>
+        {(!!running.length || !!filmLive.length) && (
+          <section data-testid="queue-running">
             <h3 className="activity__title">{t('activity.running')}</h3>
             <ul className="space-y-2">
               {running.map((j) => {
@@ -127,7 +141,7 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
                 const pct = p ? Math.min(100, Math.round((p.done_chars / (p.total_chars || 1)) * 100)) : 0
                 return (
                   <li key={j.id} data-testid="activity-running" className="activity__item">
-                    <p className="truncate text-sm font-medium">{name(j)}</p>
+                    {where(jobWhere(j), true)}
                     <Progress value={pct} className="h-1" />
                     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span className="font-mono tabular-nums">
@@ -139,48 +153,61 @@ export function ActivityPanel({ running, done, onOpen, onOpenDone, onClose, tab 
                   </li>
                 )
               })}
-            </ul>
-          </section>
-        )}
-        {!!filmEnded.length && (
-          <section>
-            {!done.length && <h3 className="activity__title">{t('activity.done')}</h3>}
-            <ul className="space-y-2">
-              {filmEnded.map((tk) => (
-                <li key={tk.id} data-testid="activity-film-done" className="activity__item activity__item--click">
-                  <button type="button" className="block w-full text-left"
-                          onClick={() => onOpenFilm?.(tk, tk.state === 'done' || tk.state === 'late')}>
-                    <p className="truncate text-sm">{taskName(tk)}</p>
-                    <div><StatusPill tone={FILM_TONE[tk.state]}>{filmState(tk)}</StatusPill></div>
-                    {tk.state === 'late' && tk.cost_cny != null && (
-                      <p className="text-xs text-muted-foreground">{t('activity.film.late', { cost: cny(tk.cost_cny) })}</p>
-                    )}
-                  </button>
+              {filmLive.map((tk) => (
+                <li key={tk.id} data-testid="activity-film-running" className="activity__item">
+                  {where(taskWhere(tk), true)}
+                  <div className="flex items-center justify-between gap-2">
+                    <StatusPill tone={FILM_TONE[tk.state]}>{filmState(tk)}</StatusPill>
+                    <span className="flex items-center gap-1">
+                      {tk.cancel && onCancelFilm && (
+                        <Button variant="ghost" size="sm" data-testid="activity-film-cancel" onClick={() => onCancelFilm(tk)}>
+                          {t(tk.cancel === 'free' ? 'film.cancel.free' : 'film.cancel.paid')}
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => onOpenFilm?.(tk, false)}>{t('activity.view')}</Button>
+                    </span>
+                  </div>
+                  <p className="text-xs tabular-nums text-muted-foreground">{taskWait(tk, film?.at ?? now, now)}</p>
+                  {!!tk.step && <p className="activity__log">{formatMsg(tk.step, locale)}</p>}
                 </li>
               ))}
             </ul>
           </section>
         )}
-        {!!done.length && (
-          <section>
+        {!!ended.length && (
+          <section data-testid="queue-ended">
             <h3 className="activity__title">{t('activity.done')}</h3>
             <ul className="space-y-2">
-              {done.map((j) => (
-                <li key={j.id} data-testid="activity-done"
-                    className={`activity__item${onOpenDone ? ' activity__item--click' : ''}`}>
-                  {onOpenDone ? (
-                    <button type="button" className="block w-full text-left" onClick={() => onOpenDone(j)}>
-                      <p className="truncate text-sm">{name(j)}</p>
-                      <div><StatusPill tone={TONE[j.status] ?? 'idle'}>{label(JOB_STATUS, j.status)}</StatusPill></div>
+              {ended.map((it) => {
+                if (it.job) {
+                  const j = it.job
+                  return (
+                    <li key={`job-${j.id}`} data-testid="activity-done"
+                        className={`activity__item${onOpenDone ? ' activity__item--click' : ''}`}>
+                      {onOpenDone
+                        ? <button type="button" className="block w-full text-left" onClick={() => onOpenDone(j)}>{jobBody(j)}</button>
+                        : jobBody(j)}
+                    </li>
+                  )
+                }
+                const tk = it.task
+                const play = tk.kind !== 'compose' && (tk.state === 'done' || tk.state === 'late')
+                return (
+                  <li key={`task-${tk.id}`} data-testid="activity-film-done" className="activity__item activity__item--click">
+                    <button type="button" className="block w-full text-left" onClick={() => onOpenFilm?.(tk, play)}>
+                      {where(taskWhere(tk))}
+                      <div className="flex items-center justify-between gap-2">
+                        <StatusPill tone={FILM_TONE[tk.state]}>{filmState(tk)}</StatusPill>
+                        {endedAt(tk.ended_at)}
+                      </div>
+                      {tk.state === 'late' && tk.cost_cny != null && (
+                        <p className="text-xs text-muted-foreground">{t('activity.film.late', { cost: cny(tk.cost_cny) })}</p>
+                      )}
+                      {reason(tk.state === 'failed', tk.error)}
                     </button>
-                  ) : (
-                    <>
-                      <p className="truncate text-sm">{name(j)}</p>
-                      <div><StatusPill tone={TONE[j.status] ?? 'idle'}>{label(JOB_STATUS, j.status)}</StatusPill></div>
-                    </>
-                  )}
-                </li>
-              ))}
+                  </li>
+                )
+              })}
             </ul>
           </section>
         )}
