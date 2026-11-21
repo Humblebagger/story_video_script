@@ -707,18 +707,20 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
                  lambda status, **f: novels.update_version_state(
                      user_id, nid, cid, job["id"], status, **f),
                  after_success, numbering, context)
-    except Exception as e:      # 到不了 _execute（前置读取失败）：置失败、写原因；_execute 自己不会抛
-        if job.get("status") not in ("queued",):
+    except Exception as e:      # 前置读取失败（仍是 queued），或 _execute 初始化阶段抛出（已置 running）
+        was_queued = job.get("status") == "queued"      # 没进 _execute：吞掉；进了 _execute：收尾后照旧上抛
+        if job.get("status") in ("queued", "running"):    # 仍是活动状态才收尾；已形成的终态不覆盖
+            job["status"] = "failed"
+            m = (e.as_msg() if error_refs.expected(e) else
+                 error_refs.unexpected(e, "job.crashed", user_id=user_id, where=f"convert {nid}/{cid}/{job['id']}"))
+            render_session.set_error(job, m)
+            try:    # 章节或小说已删就没有版本记录可写；get_version 先查，不会重建目录
+                novels.update_version_state(user_id, nid, cid, job["id"], "failed",
+                                            error=job["error"], error_msg=job["error_msg"])
+            except (OSError, ValueError, LookupError):
+                pass
+        if not was_queued:
             raise
-        job["status"] = "failed"
-        m = (e.as_msg() if error_refs.expected(e) else
-             error_refs.unexpected(e, "job.crashed", user_id=user_id, where=f"convert {nid}/{cid}/{job['id']}"))
-        render_session.set_error(job, m)
-        try:    # 章节或小说已删就没有版本记录可写；get_version 先查，不会重建目录
-            novels.update_version_state(user_id, nid, cid, job["id"], "failed",
-                                        error=job["error"], error_msg=job["error_msg"])
-        except (OSError, ValueError, LookupError):
-            pass
     finally:
         job["finished_at"] = store.now_iso()     # 任务队列的「已结束」按它排序、显示
 

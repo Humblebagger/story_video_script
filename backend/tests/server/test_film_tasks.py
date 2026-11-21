@@ -408,7 +408,9 @@ def main() -> int:
         assert any(t["id"] == f"v1:{z}" for t in tasks()) is shown, f"片段结束 {age} 秒前"
         set_late(ago(age))
         assert bool(late_row()) is shown, f"迟到结果 {age} 秒前"
-    # 旧文件修改时间：会话文件一天前就没改过、也没人盯着 → 整个会话不读
+    # 旧文件修改时间：先留一条 700 秒前结束、应当可见的记录；会话文件一天前就没改过、也没人盯着 → 整个会话不读
+    set_clip(z, state="failed", ended_as="failed", ended_at=ago(700))
+    assert any(t["id"] == f"v1:{z}" for t in tasks()), "700 秒前结束的应当可见"
     app_mod._render_runner._forget(root)
     os.utime(root / "session.json", (time.time() - 90000, time.time() - 90000))
     assert app_mod._render_runner.watching() == [] and not any(t["item_id"] == z for t in tasks())
@@ -492,6 +494,42 @@ def main() -> int:
             assert not novels._novel_dir(alice, n2).exists()
         del app_mod._jobs[jq["id"]]
     print("18. 排队期间删除章节或小说 ✓")
+
+    # 18b. 真实 _execute 的初始化失败（置 running 之后、进 try 之前）：任务也要收尾为失败，不能停在进行中
+    for what in ("deleted", "settings"):
+        n2 = novels.create_novel(alice, "初始化" + what)["id"]
+        c2 = novels.create_chapter(alice, n2, "第一章", text="原文")["id"]
+        novels.create_version(alice, n2, c2, "ji-" + what, {}, "原文")
+        ji = {"id": "ji-" + what, "user_id": alice, "status": "queued", "log": [], "debug_log": [], "progress": {},
+              "created_at": "2026-11-21T00:00:02+00:00", "novel_id": n2, "chapter_id": c2,
+              "work_title": "初始化" + what, "chapter": "第一章"}
+        app_mod._jobs[ji["id"]] = ji
+        real_ctx, real_ls = novels.novel_context, app_mod.load_settings
+        if what == "deleted":      # 前置读取都完成后、首次状态落盘前，章节被删 → persist 抛 NotFound
+            def ctx_then_delete(*a, **k):
+                r = real_ctx(*a, **k)
+                novels.delete_chapter(alice, n2, c2)
+                return r
+            novels.novel_context = ctx_then_delete
+        else:                      # 配置解析异常
+            def bad_settings(*a, **k):
+                raise ValueError("配置坏了")
+            app_mod.load_settings = bad_settings
+        try:
+            try:
+                app_mod._run_version_job(ji, alice, n2, c2, "原文", type("P", (), {"work_title": "x"})(), False)
+            except Exception:
+                pass
+        finally:
+            novels.novel_context, app_mod.load_settings = real_ctx, real_ls
+        (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == ji["id"]]
+        assert j["status"] == "failed" and j["finished_at"] and j["error_msg"] and j["error_msg"]["code"], (what, j)
+        assert not [x for x in c.get("/jobs", headers=H).json()["jobs"]
+                    if x["status"] in ("queued", "running") and x["id"] == ji["id"]], "不计入进行中"
+        if what == "deleted":
+            assert not novels._chapter_dir(alice, n2, c2).exists(), "不重建已删除的目录"
+        del app_mod._jobs[ji["id"]]
+    print("18b. 初始化失败也收尾为失败 ✓")
 
     print("\nALL PASS")
     return 0
