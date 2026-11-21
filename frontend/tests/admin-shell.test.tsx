@@ -297,6 +297,69 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   console.log('5. 用量页受控的分组与天数 ✓')
 }
 
+// 6. 导航组件：分组、当前页、计数徽标、收起形态、窄屏下拉
+{
+  const { AdminNavContext } = await import('../src/components/admin/navContext')
+  const { AdminSidebar, AdminTopNav } = await import('../src/components/admin/AdminNav')
+  const { zh } = await import('../src/i18n/zh')
+  const { en } = await import('../src/i18n/en')
+  const log: string[] = []
+  const nav = (to: string) => { log.push(to) }
+  const counts = { jobs: 3, errors: 120, usage: 1 }
+  const side = (collapsed: boolean) => (
+    <AdminNavContext.Provider value={nav}>
+      <AdminSidebar page="jobs" counts={counts} onBack={() => { log.push('back') }} tools={<i>工具</i>}
+                    collapsed={collapsed} onToggle={() => { log.push('toggle') }} />
+    </AdminNavContext.Provider>)
+  await remount(side(false))
+  must(container.querySelector('h1')!.textContent === zh.admin.title, '左上角标题')
+  must([...container.querySelectorAll('.adm-nav__title')].map((e) => e.textContent).join() === '总览,用户与用量,运行', '三个分组')
+  const links = () => [...container.querySelectorAll('.adm-nav__item')]
+  must(links().map((a) => a.getAttribute('href')).join() === '/admin,/admin/users,/admin/usage,/admin/jobs,/admin/errors,/admin/audit',
+       `六个导航项的地址，实为 ${links().map((a) => a.getAttribute('href'))}`)
+  must(links().map((a) => a.querySelector('span')!.textContent).join() === '运营概览,用户,用量与花费,任务,错误,审计', '导航项名字')
+  must(links().filter((a) => a.getAttribute('aria-current') === 'page').length === 1
+       && byId('admin-nav-jobs')!.getAttribute('aria-current') === 'page' && byId('admin-nav-jobs')!.className.includes('is-on'), '当前页高亮')
+  must(textOf('admin-count-jobs') === '3' && textOf('admin-count-errors') === '99+' && textOf('admin-count-usage') === '1'
+       && !byId('admin-count-users') && !byId('admin-count-overview') && !byId('admin-count-audit'), '计数徽标：有数才显示，超过 99 写 99+')
+  must(byId('admin-count-jobs')!.getAttribute('title') === '近 7 天失败 3 个'
+       && byId('admin-count-usage')!.className.includes('is-warn'), '计数的说明与提醒色')
+  await click(byId('admin-nav-users')!)
+  await click(byId('admin-back')!)
+  await click(byId('admin-nav-toggle')!)
+  must(log.join() === '/admin/users,back,toggle', `点导航项、返回产品、收起，实为 ${log}`)
+  must(byId('admin-back')!.textContent === zh.admin.back && text().includes('工具'), '返回产品链接与工具区')
+  await remount(side(true))
+  must(!container.querySelector('h1') && container.querySelectorAll('.adm-nav__title').length === 0, '收起：不显示标题与分组名')
+  must(links().length === 6 && links().every((a) => !a.querySelector('span:not(.adm-nav__badge)')), '收起：导航项只剩图标')
+  must(byId('admin-nav-errors')!.getAttribute('aria-label') === '错误' && byId('admin-back')!.getAttribute('aria-label') === zh.admin.back
+       && byId('admin-nav-toggle')!.getAttribute('aria-label') === '展开导航', '收起：图标带名字')
+  must(textOf('admin-count-jobs') === '3', '收起：计数还在')
+  // 窄屏：顶部一条 + 下拉
+  log.length = 0
+  await remount(
+    <AdminTopNav page="jobs" counts={counts} onBack={() => { log.push('back') }} tools={<i>工具</i>}
+                 onPage={(id) => { log.push(`page ${id}`) }} />)
+  const select = byId('admin-nav-select') as unknown as HTMLSelectElement
+  must(select.value === 'jobs', '下拉选中当前页')
+  must([...select.querySelectorAll('optgroup')].map((o) => o.getAttribute('label')).join() === '总览,用户与用量,运行', '下拉按分组')
+  must([...select.querySelectorAll('option')].map((o) => o.textContent).join() === '运营概览,用户,用量与花费（1）,任务（3）,错误（99+）,审计',
+       `下拉选项带计数，实为 ${[...select.querySelectorAll('option')].map((o) => o.textContent)}`)
+  await act(async () => {
+    select.value = 'audit'
+    select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
+  })
+  await click(byId('admin-back')!)
+  must(log.join() === 'page audit,back', `下拉换页与返回，实为 ${log}`)
+  await remount(<I18nProvider initial="en">{side(false)}</I18nProvider>)
+  must(links().map((a) => a.querySelector('span')!.textContent).join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Audit'
+       && byId('admin-back')!.textContent === en.admin.back, '英文导航')
+  await act(async () => { root.unmount() })
+  root = createRoot(container as unknown as HTMLElement)
+  setCurrentLocale('zh')
+  console.log('6. 导航组件：分组 / 当前页 / 计数 / 收起 / 窄屏下拉 / 英文 ✓')
+}
+
 // ===== 追加点：后面的任务把新用例插在这一行上面 =====
 
 await act(async () => { root.unmount() })
