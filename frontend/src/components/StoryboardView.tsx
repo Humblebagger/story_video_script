@@ -72,6 +72,9 @@ interface Props {
   /** 画布的聚焦请求与「用完了」的回报（原样交给画布） */
   canvasFocus?: FilmFocus
   onCanvasFocusDone?: () => void
+  /** 侧栏页请求（可重复消费，见 NavState.panelReq）与「用完了」的回报 */
+  canvasPanelReq?: { panel: 'film'; n: number }
+  onCanvasPanelReqDone?: () => void
   /** 从画布跳回某个镜头（受控时由上层一次 replace 到 /:step，页签 focus）（§4.3） */
   onJumpShot?: () => void
   /** 小说风格参考图：画布关键帧区显示与下载 */
@@ -83,7 +86,7 @@ export function StoryboardView({
   doc, canSave, runId = null, dirty, saving, onChange, onSave, preview = null, version = null,
   bench = null, openFilm, onCanvasClose, report = null, film = null, defaultTab, styleUrl = null, styleMime,
   tab: tabProp, onTab, canvasOpen, onCanvas, canvasPanel: canvasPanelProp, canvasView, onCanvasView, onJumpShot,
-  canvasFocus, onCanvasFocusDone,
+  canvasFocus, onCanvasFocusDone, canvasPanelReq, onCanvasPanelReqDone,
 }: Props) {
   const { t } = useI18n()
   const [tabLocal, setTabLocal] = useState<Tab>(defaultTab ?? 'focus')
@@ -271,6 +274,7 @@ export function StoryboardView({
                         onClose={closeCanvas} onJumpShot={jumpShot} initialPanel={canvasPanel}
                         view={onCanvasView ? canvasView : undefined} onView={onCanvasView}
                         focus={canvasFocus} onFocusDone={onCanvasFocusDone}
+                        panelReq={canvasPanelReq} onPanelReqDone={onCanvasPanelReqDone}
                         styleUrl={styleUrl} styleMime={styleMime} />
       )}
     </div>

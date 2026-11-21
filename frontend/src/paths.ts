@@ -47,6 +47,9 @@ export interface NavState {
   panel?: 'film'
   /** 打开画布后选中哪一段（并可顺便播放）：画布用完由应用清掉，刷新、后退不会再来一次 */
   focus?: FilmFocus
+  /** 对已打开的画布发「切到某个侧栏页」的请求：n 每次递增，画布按对象认、执行一次，用完由应用清掉
+   *  （panel 只管打开时停在哪页，已挂载的画布不会因它变化而切页） */
+  panelReq?: { panel: 'film'; n: number }
 }
 
 const enc = encodeURIComponent

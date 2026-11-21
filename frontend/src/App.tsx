@@ -65,6 +65,23 @@ import { DUR, EASE_OUT } from './motion'
 const AdminView = lazy(() => import('./components/admin/entry'))
 
 const RUNNING = ['queued', 'running']
+
+/** 单请求在途 + 合并补刷：同一路同时最多一个请求；在途期间来的触发只记一个待补刷标记，当前请求结束后立刻再发一次。
+ *  账号切换（epoch 变了）时在途的不再挡路，它的结果由 run 自己按 epoch 作废 */
+async function coalesce(
+  flight: { current: { ep: number; again: boolean } | null }, epoch: { current: number }, run: () => Promise<void>,
+): Promise<void> {
+  const cur = flight.current
+  if (cur && cur.ep === epoch.current) { cur.again = true; return }
+  const mine = { ep: epoch.current, again: false }
+  flight.current = mine
+  try { await run() } finally {
+    if (flight.current === mine) {
+      flight.current = null
+      if (mine.again) void coalesce(flight, epoch, run)
+    }
+  }
+}
 const msg = (e: unknown) => errText(e)
 
 type AlertKey = 'app.err.preview' | 'app.err.version' | 'app.err.chapter' | 'app.err.createNovel' | 'app.err.novel' | 'app.versionFailed' | 'app.versionEmpty' | 'app.savedInvalid'
@@ -310,7 +327,9 @@ export default function App() {
   const prevRunning = useRef<Set<string>>(new Set())
   /** 巡检请求的序号：只接受最新一次发出的请求的响应，先发后到的过期响应不得覆盖新的结果 */
   const jobsSeq = useRef(0)
-  const watchJobs = useCallback(async () => {
+  /** 单请求在途 + 合并补刷：在途期间再来的触发只记一个待补刷标记，请求结束后立刻再取一次（慢响应不会被后发的请求饿死） */
+  const jobsFlight = useRef<{ ep: number; again: boolean } | null>(null)
+  const watchJobsOnce = useCallback(async () => {
     const ep = epoch.current
     const seq = ++jobsSeq.current
     try {
@@ -345,6 +364,7 @@ export default function App() {
       /* 巡检失败静默重试，不打扰用户 */
     }
   }, [announce, refreshNovels, reloadOpen, bumpSummary])
+  const watchJobs = useCallback(() => coalesce(jobsFlight, epoch, watchJobsOnce), [watchJobsOnce])
 
   /** 出片任务巡检：和转换任务并行。结束的各播报一次（桌面通知 + 页内提示，都能点回那一段）；
    *  登录后的第一轮只记账。提示里只有小说、章节、片段，不带厂商或模型名 */
@@ -352,7 +372,8 @@ export default function App() {
   const filmFirst = useRef(true)
   const openFilmRef = useRef<(tk: FilmTask, play: boolean) => void>(() => {})
   const filmSeq = useRef(0)      // 同 jobsSeq：过期响应不更新列表、首轮标记与播报状态
-  const watchFilm = useCallback(async () => {
+  const filmFlight = useRef<{ ep: number; again: boolean } | null>(null)
+  const watchFilmOnce = useCallback(async () => {
     const ep = epoch.current
     const seq = ++filmSeq.current
     try {
@@ -388,6 +409,7 @@ export default function App() {
       /* 巡检失败静默重试，不打扰用户 */
     }
   }, [t, bumpSummary])
+  const watchFilm = useCallback(() => coalesce(filmFlight, epoch, watchFilmOnce), [watchFilmOnce])
 
   // 登录态失效（token 过期或被撤销）→ 回首页并打开登录框
   // 监听只订阅一次，所以通过 ref 拿到最新的重置函数；和退出共用，保证换账号不残留上一个人的小说与产物
@@ -698,13 +720,14 @@ export default function App() {
 
   /** 从任务列表、提示或通知回到出片任务所在的片段：打开那一版的画布（节点图、出片页）并选中它，play 时顺便播放。
    *  要选中谁放在路由 state 的 focus 里；跨章节时版本号作一次性 state，章节加载时打开那一版（§5.4） */
+  const panelNonce = useRef(0)
   const openFilmTask = async (tk: FilmTask, play: boolean) => {
     // 合成任务：到这一章画布的出片页（时间轴），没有要选中的片段
     const compose = tk.kind === 'compose'
     const taskId = lateTaskId(tk)
     const focus: FilmFocus | undefined = compose ? undefined
       : { vid: tk.version_id, id: tk.item_id, play, ...(taskId ? { taskId } : {}) }
-    const st: NavState = { panel: 'film', ...(focus ? { focus } : {}) }
+    const st: NavState = { panel: 'film', panelReq: { panel: 'film', n: ++panelNonce.current }, ...(focus ? { focus } : {}) }
     const view = compose ? null : 'graph'
     if (tk.novel_id === nid && tk.chapter_id === cid) {
       if (docVid !== tk.version_id) {
@@ -757,6 +780,13 @@ export default function App() {
   const clearFilmFocus = useCallback(() => {
     const rest = passState(navStateRef.current)
     delete rest.focus
+    navigate(hereRef.current, { replace: true, state: rest })
+  }, [navigate])
+
+  /** 画布用完了侧栏请求：同样从当前这条历史记录里清掉 */
+  const clearPanelReq = useCallback(() => {
+    const rest = passState(navStateRef.current)
+    delete rest.panelReq
     navigate(hereRef.current, { replace: true, state: rest })
   }, [navigate])
 
@@ -1113,6 +1143,8 @@ export default function App() {
             onCanvas: (open: boolean) => { if (open) openCanvas(); else closeCanvas() },
             canvasPanel: navState?.panel,
             canvasFocus: navState?.focus,
+            canvasPanelReq: navState?.panelReq,
+            onCanvasPanelReqDone: clearPanelReq,
             onCanvasFocusDone: clearFilmFocus,
             canvasView: loc.view,
             onCanvasView: (v: 'timeline' | 'graph') =>

@@ -61,6 +61,9 @@ interface Props {
    *  只认本版本的；会话读到后执行一次，然后回报 onFocusDone（上层清掉请求） */
   focus?: FilmFocus
   onFocusDone?: () => void
+  /** 侧栏页请求：已挂载的画布也切过去（按对象认，只执行一次），然后回报 onPanelReqDone */
+  panelReq?: { panel: PanelTab; n: number }
+  onPanelReqDone?: () => void
 }
 
 /** 连续打字时把一串改动并成一步撤销 */
@@ -131,7 +134,7 @@ function downloadText(name: string, text: string) {
 export function TimelineCanvas({
   doc, onClose, onJumpShot, bench = null, version = null,
   onChange, canSave = false, dirty = false, saving = false, onSave, initialPanel,
-  styleUrl = null, styleMime, view: viewProp, onView, focus, onFocusDone,
+  styleUrl = null, styleMime, view: viewProp, onView, focus, onFocusDone, panelReq, onPanelReqDone,
 }: Props) {
   const { t: tt, locale } = useI18n()
   const head = useContext(ChapterHeadContext)
@@ -200,6 +203,13 @@ export function TimelineCanvas({
     }
     onFocusDone?.()
   }, [focus, focusReady, filmSession, onFocusDone, reread, reloadForFocus])
+  const panelSeen = useRef<unknown>(null)
+  useEffect(() => {
+    if (!panelReq || panelSeen.current === panelReq) return
+    panelSeen.current = panelReq
+    setPanel(panelReq.panel)
+    onPanelReqDone?.()
+  }, [panelReq, onPanelReqDone])
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
   const [filmMode, setFilmMode] = useState(true)
   /** 「生成中 · 已等 m:ss」每秒走一次 */

@@ -126,6 +126,16 @@ let filmTasks: unknown[] = []
 const tasksHold: (Promise<void> | undefined)[] = []
 /** 收到的取消请求（路径） */
 const cancelCalls: string[] = []
+/** 取消请求体（expect）；服务端此刻认为这条是什么种类（与 expect 不符回 409 film.cancel.kind_changed；null = 不校验） */
+const cancelBodies: unknown[] = []
+let serverCancelKind: 'free' | 'paid' | null = null
+/** 巡检接口的人为延迟（毫秒）与同时在途的请求数 */
+let tasksDelay = 0
+let jobsDelay = 0
+const flight = { tasks: 0, tasksMax: 0, jobs: 0, jobsMax: 0, tasksCalls: 0, jobsCalls: 0 }
+/** 出片会话桩：给了就返回（画布出片页能显示合成区）；读取次数用来断言画布被通知刷新 */
+let filmSession: unknown = null
+let sessionGets = 0
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
   const path = String(url).replace(/^\/api/, '').split('?')[0]
   const method = init?.method ?? 'GET'
@@ -149,15 +159,27 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   const who = h.startsWith('Bearer tok-') ? h.slice(11) : null
   if (!who || !users[who]) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
   if (path === '/auth/me') { if (meGate) await meGate; return json(userOf(who)) }
-  if (path === '/jobs') return json({ jobs: jobsList })
+  if (path === '/jobs') {
+    const snap = jobsList
+    flight.jobsCalls += 1; flight.jobs += 1; flight.jobsMax = Math.max(flight.jobsMax, flight.jobs)
+    try { if (jobsDelay) await new Promise((r) => setTimeout(r, jobsDelay)) } finally { flight.jobs -= 1 }
+    return json({ jobs: snap })
+  }
   if (path === '/render/tasks') {
     const snap = filmTasks      // 请求发出时的快照；可控完成顺序的测试靠 tasksHold 让它晚点返回
-    const hold = tasksHold.shift()
-    if (hold) await hold
+    flight.tasksCalls += 1; flight.tasks += 1; flight.tasksMax = Math.max(flight.tasksMax, flight.tasks)
+    try {
+      const hold = tasksHold.shift()
+      if (hold) await hold
+      if (tasksDelay) await new Promise((r) => setTimeout(r, tasksDelay))
+    } finally { flight.tasks -= 1 }
     return json({ tasks: snap })
   }
   if (method === 'POST' && /\/render\/(clips|free)\/[^/]+\/cancel$/.test(path)) {
     cancelCalls.push(path)
+    const body = init?.body ? JSON.parse(init.body) : null
+    cancelBodies.push(body)
+    if (serverCancelKind && body?.expect !== serverCancelKind) return err(409, { code: 'film.cancel.kind_changed', params: {} })
     return json({ cancel_outcome: 'abandoned', clips: [], free: [] })
   }
   const jm = path.match(/^\/jobs\/([^/]+)$/)
@@ -198,6 +220,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     if (!v) return err(404, '版本不存在')
     if (!rest) return json({ ...v, novel_id: nid, chapter_id: cid, params: {}, quality_report: null })
     if (rest === '/keyframes') return json({ shots: [] })
+    if (rest === '/render/session' && filmSession) { sessionGets += 1; return json(filmSession) }
     return err(404, 'stub')                                              // 出片会话等：还没建
   }
   unhandled.add(`${method} ${path}`)
@@ -228,6 +251,7 @@ async function boot(path: string, who?: string, cached?: Record<string, unknown>
   clearSession()
   jobsList = []
   filmTasks = []
+  filmSession = null; serverCancelKind = null; tasksDelay = 0; jobsDelay = 0
   for (const k of Object.keys(jobsById)) delete jobsById[k]
   if (who) setSession(`tok-${who}`, (cached ?? userOf(who)) as ReturnType<typeof userOf>)
   const container = doc.createElement('div')
@@ -1080,8 +1104,9 @@ console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
     filmTasks = [running]
     await poke()                      // A：快照是在跑，卡住
     filmTasks = [{ ...running, state: 'cancelled', ended_at: '2026-11-21T03:10:00+00:00', cancel: null }]
-    await poke()                      // B：已取消，立刻返回
-    must(!b.q('[data-testid="activity-count"]'), 'B 先返回：铃铛归零')
+    flight.tasksMax = 0
+    await poke()                      // B：已取消；A 还在途，B 只记待补刷、不同时发出
+    must(flight.tasksMax <= 1 && !b.q('[data-testid="activity-count"]'), `A 在途时 B 不叠发：${flight.tasksMax}`)
     await act(async () => { release() })
     await settle(150)
     must(!b.q('[data-testid="activity-count"]'), '过期的 A 后返回：铃铛不回退')
@@ -1103,6 +1128,140 @@ console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
   ;[g.Notification, wn.Notification, wn.focus] = before
 }
 console.log('出片任务：铃铛、面板、跳转与通知 ✓')
+
+{
+  const { pokeFilmTasks } = await import('../src/filmTasks')
+  // 巡检在慢网络下仍有进展：每次响应都比轮询间隔慢，同一路也只有一个请求在途（间隔缩小 20 倍跑）
+  const wsi = win as unknown as { setInterval: (fn: () => void, ms?: number, ...r: unknown[]) => number }
+  const origSI = wsi.setInterval.bind(win)
+  wsi.setInterval = (fn, ms, ...r) => origSI(fn, Math.max(20, (ms ?? 0) / 20), ...r)
+  const task = (over: Record<string, unknown> = {}) => ({
+    id: 'v1:E01-C01', item_id: 'E01-C01', kind: 'clip', novel_id: 'n1', chapter_id: 'c1', version_id: 'v1',
+    work_title: '药', chapter: '第一章', state: 'running', elapsed_sec: 245, typical_sec: [180, 420],
+    ended_at: null, cost_cny: null, ...over })
+  const countOf = (r: { q: (s: string) => Element | null }) => r.q('[data-testid="activity-count"]')?.textContent ?? null
+  {
+    const c = await boot('/novels/n1/overview', 'alice')
+    tasksDelay = 700; flight.tasksMax = 0
+    filmTasks = [task()]
+    await settle(2600)
+    must(countOf(c) === '1', `出片巡检：响应比间隔慢也要更新（在跑 1），实际 ${countOf(c)}`)
+    filmTasks = [task({ state: 'cancelled', ended_at: '2026-11-21T03:10:00+00:00' })]
+    await settle(2600)
+    must(countOf(c) === null, `出片巡检：慢响应下结束的任务也会显示，实际 ${countOf(c)}`)
+    must(flight.tasksMax === 1, `出片巡检：同一时刻最多一个请求在途，实际 ${flight.tasksMax}`)
+    // 操作触发（poke）连发：只合并成一次补刷，仍然最多一个在途，状态最终更新
+    tasksDelay = 400; flight.tasksMax = 0; flight.tasksCalls = 0
+    filmTasks = [task({ id: 'v1:E01-C05', item_id: 'E01-C05' })]
+    for (let i = 0; i < 8; i++) { await act(async () => { pokeFilmTasks() }); await settle(40) }
+    await settle(1800)
+    must(countOf(c) === '1' && flight.tasksMax === 1, `连发触发：最终更新且不叠发，${countOf(c)} ${flight.tasksMax}`)
+    tasksDelay = 0
+    await c.done()
+  }
+  {
+    const c = await boot('/novels/n1/overview', 'alice')
+    jobsDelay = 700; flight.jobsMax = 0
+    jobsList = [{ id: 'j9', status: 'running', novel_id: 'n1', chapter_id: 'c1', work_title: '药', chapter: '第一章' }]
+    await settle(2600)
+    must(countOf(c) === '1', `转换巡检：响应比间隔慢也要更新（在跑 1），实际 ${countOf(c)}`)
+    jobsList = []
+    await settle(2600)
+    must(countOf(c) === null, `转换巡检：慢响应下结束也会更新，实际 ${countOf(c)}`)
+    must(flight.jobsMax === 1, `转换巡检：同一时刻最多一个请求在途，实际 ${flight.jobsMax}`)
+    jobsDelay = 0
+    await c.done()
+  }
+  wsi.setInterval = origSI
+}
+
+{
+  const { pokeFilmTasks } = await import('../src/filmTasks')
+  // 合成任务点开：画布已打开、侧栏停在别的页签、路由 state 已是 panel:'film' 时，再点一次仍切到「出片」并显示合成区
+  const session = { provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+    confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
+    reserved_cny: 0, uncertain_count: 0,
+    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
+               cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
+               frame_with_refs: false, audio_modes: ['tts_all', 'silent'], rate_note: '假厂商', typical_sec: [180, 420] } }
+  const d = await boot('/novels/n1/overview', 'alice')
+  filmSession = session
+  await act(async () => { await d.router.navigate('/novels/n1/chapters/c1/render/canvas') })
+  await settle(400)
+  const tab = (name: string) => [...doc.body.querySelectorAll('.tlc__tabs button')]
+    .find((x) => (x.textContent ?? '').trim() === name) as unknown as HTMLElement | undefined
+  must(!!tab('出片') && tab('出片')!.getAttribute('aria-pressed') === 'false', '画布打开，侧栏不在出片页')
+  filmTasks = [{ id: 'v1:compose', item_id: 'compose', kind: 'compose', novel_id: 'n1', chapter_id: 'c1', version_id: 'v1',
+                 work_title: '药', chapter: '第一章', state: 'running', elapsed_sec: 10, typical_sec: null,
+                 ended_at: null, cost_cny: null, cancel: null }]
+  await act(async () => { pokeFilmTasks() }); await settle(200)
+  const openCompose = async () => {
+    if (!doc.body.querySelector('[data-testid="activity-panel"]')) await click(d.q('[data-testid="activity-bell"]')!)
+    const row = doc.body.querySelector('[data-testid="activity-film-running"]') as unknown as HTMLElement
+    await click(button(row, '查看')!)
+    await settle(300)
+  }
+  await openCompose()
+  must(tab('出片')!.getAttribute('aria-pressed') === 'true' && !!doc.body.querySelector('.compose'),
+       `点合成任务：画布已开也切到出片页并显示合成区 ${tab('出片')?.getAttribute('aria-pressed')} ${!!doc.body.querySelector('.compose')} ${doc.body.querySelector('.tlc__panel')?.textContent?.slice(0, 200)} ${d.here()}`)
+  await click(tab('本镜')!)
+  must(tab('出片')!.getAttribute('aria-pressed') === 'false' && !doc.body.querySelector('.compose'), '手动切走')
+  must((d.router.state.location.state as { panel?: string } | null)?.panel === 'film', '地址 state 里仍留着 panel:film')
+  await openCompose()
+  must(tab('出片')!.getAttribute('aria-pressed') === 'true' && !!doc.body.querySelector('.compose'),
+       '切走后再点合成任务：再次切到出片页并显示合成区')
+  await d.done()
+}
+
+{
+  const { pokeFilmTasks } = await import('../src/filmTasks')
+  // 面板取消：带用户确认的种类；服务端已转成扣费种类回 409 → 重读后重新确认，确认前不发第二次
+  const e = await boot('/novels/n1/overview', 'alice')
+  filmSession = { provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'silent', budget_cny: 100000,
+    confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
+    reserved_cny: 0, uncertain_count: 0,
+    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['720p'],
+               cny_per_sec: { '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
+               frame_with_refs: false, audio_modes: ['silent'], rate_note: '假厂商', typical_sec: [180, 420] } }
+  await act(async () => { await e.router.navigate('/novels/n1/chapters/c1/render/canvas') })
+  await settle(400)
+  const mk = (cancel: 'free' | 'paid') => [{ id: 'v1:E01-C01', item_id: 'E01-C01', kind: 'clip', novel_id: 'n1', chapter_id: 'c1',
+    version_id: 'v1', work_title: '药', chapter: '第一章', state: 'running', elapsed_sec: 5, typical_sec: [180, 420],
+    ended_at: null, cost_cny: null, cancel, shot_ids: ['E01-SH001'] }]
+  const confirmBtn = (ok: boolean) => doc.body.querySelector(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`) as unknown as HTMLElement
+  const dlg = () => doc.body.querySelector('[data-testid="confirm-dialog"]')?.textContent ?? ''
+  const startCancel = async () => {
+    if (!doc.body.querySelector('[data-testid="activity-panel"]')) await click(e.q('[data-testid="activity-bell"]')!)
+    await click(doc.body.querySelector('[data-testid="activity-film-cancel"]') as unknown as HTMLElement)
+  }
+  filmTasks = mk('free'); serverCancelKind = 'paid'
+  await act(async () => { pokeFilmTasks() }); await settle(200)
+  cancelCalls.length = 0; cancelBodies.length = 0
+  await startCancel()
+  must(!dlg().includes('服务商可能仍会生成并扣费') && cancelCalls.length === 0, '首次确认的是免费种类，还没发请求')
+  filmTasks = mk('paid')           // 确认框开着时，服务端已转成扣费种类
+  await click(confirmBtn(true))
+  must(cancelCalls.length === 1 && JSON.stringify(cancelBodies[0]) === '{"expect":"free"}', `首次带 expect:free：${JSON.stringify(cancelBodies)}`)
+  must(dlg().includes('服务商可能仍会生成并扣费'), '重读后弹出扣费风险确认')
+  must(cancelCalls.length === 1, '重新确认之前不发第二次')
+  await click(confirmBtn(false))
+  must(cancelCalls.length === 1, '拒绝重新确认：不再发请求')
+  // 再来一遍，这次确认：带 expect:paid，成功后任务列表与画布都重读
+  filmTasks = mk('free')
+  await act(async () => { pokeFilmTasks() }); await settle(200)
+  await startCancel()
+  filmTasks = mk('paid')
+  await click(confirmBtn(true))
+  must(dlg().includes('服务商可能仍会生成并扣费') && cancelCalls.length === 2, `又一次重新确认前只发了首次：${cancelCalls.length}`)
+  const before = { tasks: flight.tasksCalls, session: sessionGets }
+  serverCancelKind = null
+  await click(confirmBtn(true))
+  await settle(300)
+  must(cancelCalls.length === 3 && JSON.stringify(cancelBodies[2]) === '{"expect":"paid"}', `确认后带 expect:paid：${JSON.stringify(cancelBodies)}`)
+  must(flight.tasksCalls > before.tasks, '成功后任务列表重读')
+  must(sessionGets > before.session, '成功后已打开的画布重读出片会话')
+  await e.done()
+}
 
 
 console.log('\nALL PASS')
