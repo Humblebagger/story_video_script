@@ -9,6 +9,8 @@ import json
 import os
 import sys
 import tempfile
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -24,7 +26,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"     # 不起后台线程，测试里手动 tick
 
 from fastapi.testclient import TestClient  # noqa: E402
-from server.messages import msg  # noqa: E402
+from server.messages import msg, with_ref  # noqa: E402
 from render import providers, session as render_session  # noqa: E402
 from render.providers import base as render_video_base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
@@ -370,6 +372,88 @@ def main() -> int:
     assert j["error_msg"] is None
     print("16. 转换任务的结束时间与失败原因 ✓")
 
+    # 16b. 参考编号：通过筛选的消息保留合法的顶层 ref，其它内部字段不放行（/jobs 与 /render/tasks 都是）
+    job["status"] = "failed"
+    render_session.set_error(job, with_ref(msg("compose.interrupted"), "AB12CD"))
+    job["error_msg"]["internal_path"] = "/srv/x"
+    (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == "jb1"]
+    assert j["error_msg"]["ref"] == "AB12CD" and "internal_path" not in j["error_msg"], j["error_msg"]
+    with render_session.mutate(root) as ss:
+        cz = next(k for k in ss["clips"] if k["id"] == z)
+        render_session.set_error(cz, with_ref(msg("film.download.not_playable"), "EF34GH"))
+        cz["error_msg"]["internal_path"] = "/srv/y"
+    assert row(z)["error"]["ref"] == "EF34GH" and "internal_path" not in row(z)["error"], row(z)["error"]
+    print("16b. 失败原因保留参考编号 ✓")
+
+    # 16c. 保留窗口：超过十分钟但不足一天的还在，超过一天的不在（片段、迟到结果、合成都一样）
+    def ago(sec):
+        return (datetime.now(timezone.utc) - timedelta(seconds=sec)).isoformat(timespec="seconds")
+
+    def set_clip(iid, **kv):
+        with render_session.mutate(root) as ss:
+            next(k for k in ss["clips"] + ss["free"] if k["id"] == iid).update(kv)
+
+    def late_row():
+        return [t for t in tasks() if t["state"] == "late"]
+
+    def set_late(settled):
+        with render_session.mutate(root) as ss:
+            att = next(k for k in ss["clips"] if k["id"] == x)["attempts"]
+            for a in att:
+                if a.get("late"):
+                    a["settled_at"] = settled
+
+    for age, shown in ((700, True), (86400 - 60, True), (86400 + 60, False)):
+        set_clip(z, state="failed", ended_as="failed", ended_at=ago(age))
+        assert any(t["id"] == f"v1:{z}" for t in tasks()) is shown, f"片段结束 {age} 秒前"
+        set_late(ago(age))
+        assert bool(late_row()) is shown, f"迟到结果 {age} 秒前"
+    # 旧文件修改时间：会话文件一天前就没改过、也没人盯着 → 整个会话不读
+    app_mod._render_runner._forget(root)
+    os.utime(root / "session.json", (time.time() - 90000, time.time() - 90000))
+    assert app_mod._render_runner.watching() == [] and not any(t["item_id"] == z for t in tasks())
+    set_clip(z, state="failed", ended_as="failed", ended_at=ago(700))   # 重新写会话，文件时间刷新
+    assert any(t["id"] == f"v1:{z}" for t in tasks())
+    print("16c. 保留窗口（片段、迟到结果、旧文件时间）✓")
+
+    # 合成：步骤文字里的厂商名过滤；结束后同一窗口
+    with render_session.mutate(root) as ss:
+        ss["final"] = {}
+    render_session.begin_compose(root, fingerprint="fp2", tts_cny=0.0, draft=True)
+    assert row("compose")["step"]["code"] == "compose.step.start"
+    with render_session.mutate(root) as ss:
+        ss["final"]["step"], ss["final"]["step_msg"] = "正在向 MiniMax 提交", None
+    assert row("compose")["state"] == "running" and row("compose")["step"] is None, "步骤里的厂商名不给"
+    with render_session.mutate(root) as ss:
+        ss["final"]["step"] = "视频服务 fake-1 合成"
+    assert row("compose")["step"] is None, "会话的模型名也算"
+    render_session.compose_done(root, ["final/a.mp4"], "ok")
+    for age, shown in ((700, True), (86400 + 60, False)):
+        with render_session.mutate(root) as ss:
+            ss["final"]["finished_at"] = ago(age)
+        assert any(t["id"] == "v1:compose" for t in tasks()) is shown, f"合成结束 {age} 秒前"
+    print("16d. 合成的保留窗口与步骤过滤 ✓")
+
+    # 16e. 列表里的取消种类：提交中、下载中为 null；已提交为 paid；自由节点同一套
+    set_clip(z, state="queued", ended_at=None, ended_as=None, queued_at=ago(5), attempts=[{"state": "submitting"}])
+    assert row(z)["cancel"] is None, "提交中不能取消"
+    set_clip(z, state="downloading", attempts=[{"state": "running", "task_id": "t1"}])
+    assert row(z)["state"] == "downloading" and row(z)["cancel"] is None, "下载中不能取消"
+    set_clip(z, state="running", attempts=[{"state": "running", "task_id": "t1"}])
+    assert row(z)["cancel"] == "paid"
+    set_clip(z, state="planned", attempts=[])
+    assert any(k["id"] == "F01" for k in render_session.load(root)["free"])
+    set_clip("F01", state="queued", queued_at=ago(5), ended_at=None, ended_as=None, attempts=[])
+    assert row("F01")["kind"] == "free" and row("F01")["cancel"] == "free"
+    set_clip("F01", state="queued", attempts=[{"state": "submitting"}])
+    assert row("F01")["cancel"] is None
+    set_clip("F01", state="downloading", attempts=[{"state": "running", "task_id": "t2"}])
+    assert row("F01")["cancel"] is None
+    set_clip("F01", state="running", attempts=[{"state": "running", "task_id": "t2"}])
+    assert row("F01")["cancel"] == "paid"
+    set_clip("F01", state="planned", attempts=[])
+    print("16e. 列表里的取消种类 ✓")
+
     # 17. 名字取现在的：小说、章节改名后队列跟着变；章节删掉后转换任务留原名并标已删除，出片任务随会话一起消失
     job.update(novel_id=nid, chapter_id=cid, work_title="旧书名", chapter="旧章名")
     novels.update_novel(alice, nid, title="药（修订）")
@@ -383,6 +467,31 @@ def main() -> int:
     assert tasks() == [], "章节删了，它的出片任务不再出现（不报错）"
     del app_mod._jobs["jb1"]
     print("17. 现在的名字与已删除 ✓")
+
+    # 18. 转换执行前的读取失败（排队期间章节或小说被删）：任务转为失败、带登记过的原因与结束时间，不重建已删除的目录
+    for what in ("chapter", "novel"):
+        n2 = novels.create_novel(alice, "书" + what)["id"]
+        c2 = novels.create_chapter(alice, n2, "第一章", text="原文")["id"]
+        novels.create_version(alice, n2, c2, "jq-" + what, {}, "原文")
+        jq = {"id": "jq-" + what, "user_id": alice, "status": "queued", "log": [], "debug_log": [], "progress": {},
+              "created_at": "2026-11-21T00:00:01+00:00", "novel_id": n2, "chapter_id": c2,
+              "work_title": "书" + what, "chapter": "第一章"}
+        app_mod._jobs[jq["id"]] = jq
+        if what == "chapter":
+            novels.delete_chapter(alice, n2, c2)
+        else:
+            novels.delete_novel(alice, n2)
+        app_mod._run_version_job(jq, alice, n2, c2, "原文", type("P", (), {"work_title": "x"})(), False)
+        (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == jq["id"]]
+        assert j["status"] == "failed" and j["finished_at"] and j["deleted"] is True, (what, j)
+        assert j["error_msg"] and j["error_msg"]["code"] and j["error_msg"]["code"].endswith("not_found"), j["error_msg"]
+        assert not [x for x in c.get("/jobs", headers=H).json()["jobs"]
+                    if x["status"] in ("queued", "running") and x["id"] == jq["id"]], "不计入进行中"
+        assert not novels._chapter_dir(alice, n2, c2).exists(), "不重建已删除的目录"
+        if what == "novel":
+            assert not novels._novel_dir(alice, n2).exists()
+        del app_mod._jobs[jq["id"]]
+    print("18. 排队期间删除章节或小说 ✓")
 
     print("\nALL PASS")
     return 0

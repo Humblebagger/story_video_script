@@ -679,19 +679,6 @@ def chapters_delete(nid: str, cid: str, user: dict = Depends(novel_user)):
 def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
                      params: ConvertParams, strict: bool) -> None:
     """新接口：转换某章，产物落成该章的一个版本；本章还没有采用版时自动采用。"""
-    seed = novels.seed_assets(user_id, nid)
-    if seed:
-        _job_note(job, "job.event.seed_assets", title=params.work_title, n=sum(len(v) for v in seed.values()))
-    numbering = novels.start_numbering(user_id, nid, cid)
-    if numbering:
-        _job_note(job, "job.event.numbering", unit=f"u{numbering['next_unit']:04d}",
-                  episode=f"E{numbering['next_episode']:02d}")
-    context = novels.novel_context(user_id, nid, cid)
-    if not context.empty():
-        _job_note(job, "job.event.memory", lifecycle=len(context.lifecycle), synopses=len(context.synopses),
-                  outline=ref("job.event.with_outline") if context.outline else "",
-                  constraints=len(context.constraints))
-
     def after_success(job, note):
         chapter = novels.get_chapter(user_id, nid, cid)
         if chapter.get("adopted_version"):
@@ -703,10 +690,35 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
             note("job.event.digest_queued")
 
     try:
+        # 前置读取也在保护里：排队期间章节或小说被删，这里会抛 NotFound，不能让任务永远停在进行中
+        seed = novels.seed_assets(user_id, nid)
+        if seed:
+            _job_note(job, "job.event.seed_assets", title=params.work_title, n=sum(len(v) for v in seed.values()))
+        numbering = novels.start_numbering(user_id, nid, cid)
+        if numbering:
+            _job_note(job, "job.event.numbering", unit=f"u{numbering['next_unit']:04d}",
+                      episode=f"E{numbering['next_episode']:02d}")
+        context = novels.novel_context(user_id, nid, cid)
+        if not context.empty():
+            _job_note(job, "job.event.memory", lifecycle=len(context.lifecycle), synopses=len(context.synopses),
+                      outline=ref("job.event.with_outline") if context.outline else "",
+                      constraints=len(context.constraints))
         _execute(job, text, params, strict, seed,
                  lambda status, **f: novels.update_version_state(
                      user_id, nid, cid, job["id"], status, **f),
                  after_success, numbering, context)
+    except Exception as e:      # 到不了 _execute（前置读取失败）：置失败、写原因；_execute 自己不会抛
+        if job.get("status") not in ("queued",):
+            raise
+        job["status"] = "failed"
+        m = (e.as_msg() if error_refs.expected(e) else
+             error_refs.unexpected(e, "job.crashed", user_id=user_id, where=f"convert {nid}/{cid}/{job['id']}"))
+        render_session.set_error(job, m)
+        try:    # 章节或小说已删就没有版本记录可写；get_version 先查，不会重建目录
+            novels.update_version_state(user_id, nid, cid, job["id"], "failed",
+                                        error=job["error"], error_msg=job["error_msg"])
+        except (OSError, ValueError, LookupError):
+            pass
     finally:
         job["finished_at"] = store.now_iso()     # 任务队列的「已结束」按它排序、显示
 
@@ -1354,7 +1366,12 @@ def _public_error(obj: dict, *names) -> Optional[dict]:
         return None
     if any(n and str(n).lower() in text.lower() for n in names):
         return None
-    return {"code": m["code"], "params": m.get("params") or {}, "message": text} if m else {"message": text}
+    if not m:
+        return {"message": text}
+    out = {"code": m["code"], "params": m.get("params") or {}, "message": text}
+    if isinstance(m.get("ref"), str) and re.fullmatch(r"[0-9A-Z]{1,16}", m["ref"]):
+        out["ref"] = m["ref"]       # 参考编号：排障用，唯一放行的其它字段
+    return out
 
 
 def _cancel_kind(c: dict) -> Optional[str]:
