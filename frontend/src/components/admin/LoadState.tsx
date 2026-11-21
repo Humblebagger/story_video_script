@@ -1,4 +1,6 @@
-/** 后台各页共用的加载骨架与错误条。 */
+/** 后台各页共用的加载骨架、错误条与空状态。 */
+import { Inbox } from 'lucide-react'
+import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n/core'
@@ -17,9 +19,18 @@ export function TableSkeleton() {
 export function ErrorBar({ error, onRetry }: { error: MsgLike; onRetry: () => void }) {
   const { t, locale } = useI18n()
   return (
-    <div className="flex items-center gap-3 py-3 text-sm text-destructive">
+    <div className="adm__errbar flex items-center gap-3 px-4 py-3 text-sm text-destructive">
       <span className="adm__err">{formatMsg(error, locale)}</span>
       <Button size="sm" variant="outline" onClick={onRetry}>{t('common.retry')}</Button>
+    </div>
+  )
+}
+
+/** 空状态：各页统一用这一个（收件箱图标 + 一句话 + 可选的说明），带卡片底。 */
+export function Empty({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="adm__emptycard">
+      <EmptyState icon={<Inbox aria-hidden />} title={title} hint={hint} />
     </div>
   )
 }
