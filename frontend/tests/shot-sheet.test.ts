@@ -78,6 +78,13 @@ const clips = (doc_: Storyboard, film: FilmSession | null) =>
   const film = session([clip('E01-C01', ['E01-SH001']), clip('E01-C02', ['E01-SH001', 'E01-SH002'])])
   eq(clips(doc, film)[0], ['E01-C01', 'E01-C02', null, null], '取第一段')
   eq(sheetGroups({} as unknown as Storyboard, film), [], '没有集')
+  eq(sheetGroups({ episodes: [] } as unknown as Storyboard, film), [], 'episodes 为空数组')
+  const noShots = { episodes: [{ id: 'E09', shots: [] }] } as unknown as Storyboard
+  const g = sheetGroups(noShots, film)
+  eq(g.length, 1, '集内没有镜头仍保留分组')
+  eq(g[0].rows, [], '集内没有镜头 rows 为空')
+  eq(sheetGroups(doc, session([])).map((x) => x.rows.map((r) => [r.clip, r.span])),
+     sheetGroups(doc, null).map((x) => x.rows.map((r) => [r.clip, r.span])), '会话 clips 为空与无会话一致')
   console.log('4. 重复与空 ✓')
 }
 
@@ -115,11 +122,20 @@ const clips = (doc_: Storyboard, film: FilmSession | null) =>
 
 // 7. 英文
 {
+  const idx = shotsById(doc)
+  eq(clipShotTags(['E01-SH002'], idx), ['SH002 特写·推'], '索引先中文')
   setCurrentLocale('en')
+  eq(clipShotTags(['E01-SH002'], idx), ['SH002 Close-up·Push in'], '同一索引切英文')
   eq(cameraText(s1), 'Static / High angle', '英文运镜 / 角度')
   eq(shotTag(s2), 'SH002 Close-up·Push in', '英文小标签')
   setCurrentLocale('zh')
   eq(shotTag(s2), 'SH002 特写·推', '切回中文')
+  const byId = shotsById(doc)
+  const ids = ['E01-SH002', 'E01-SH099']
+  setCurrentLocale('en')
+  eq(clipShotTags(ids, byId), ['SH002 Close-up·Push in', 'SH099'], '同一索引英文')
+  setCurrentLocale('zh')
+  eq(clipShotTags(ids, byId), ['SH002 特写·推', 'SH099'], '同一索引切回中文')
   console.log('7. 英文 ✓')
 }
 

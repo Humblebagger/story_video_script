@@ -123,10 +123,14 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, tags, onDer
         {c.uncertain && <StatusPill tone="warn">{t('graph.uncertainTag')}</StatusPill>}
       </header>
       {tags.length > 0 && (
-        <p className="ngv__shots" data-testid="clip-shots" title={tags.join('\n')}>
-          {fold.shown.map((x) => <span key={x} className="ngv__shot">{x}</span>)}
-          {fold.more > 0 && <span className="ngv__shot ngv__shot--more">+{fold.more}</span>}
-        </p>
+        <div className="ngv__shots" data-testid="clip-shots" title={tags.join('\n')}>
+          {fold.shown.map((x, i) => (
+            <div key={i} className="ngv__shot-row">
+              <span className="ngv__shot">{x}</span>
+              {i === fold.shown.length - 1 && fold.more > 0 && <span className="ngv__shot ngv__shot--more">+{fold.more}</span>}
+            </div>
+          ))}
+        </div>
       )}
       <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} />
       {chosen?.free_id && <p className="ngv__dim">{t('graph.fromFree', { id: chosen.free_id })}</p>}

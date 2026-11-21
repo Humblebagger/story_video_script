@@ -387,6 +387,29 @@ must(texts('E01-C2').join('|') === 'SH004 全景·摇|SH005 插入镜·移|SH006
 must(tagsOf('E01-C2')?.getAttribute('title')
      === 'SH004 全景·摇\nSH005 插入镜·移\nSH006 大特写·跟\nSH007 中近景·手持\nSH099', '悬停提示列出全部，找不到的镜头只写短镜号')
 must(!!container.querySelector('[data-node="E01-C3"]') && !tagsOf('E01-C3'), '没有镜头的段不显示标签行')
+const rowsOf = (id: string) => [...(tagsOf(id)?.querySelectorAll('.ngv__shot-row') ?? [])]
+must(rowsOf('E01-C1').length === 3 && rowsOf('E01-C1').every((r) => r.querySelectorAll('.ngv__shot').length === 1),
+     '三个标签各占一行，一行一个')
+{
+  const rows = rowsOf('E01-C2')
+  must(rows.length === 3, `折叠后最多 3 行：${rows.length}`)
+  must(rows.slice(0, 2).every((r) => r.querySelectorAll('.ngv__shot').length === 1), '前两行只有一个标签')
+  must(rows[2].querySelectorAll('.ngv__shot').length === 2 && rows[2].lastElementChild?.textContent === '+2'
+       && rows[2].firstElementChild?.textContent === 'SH006 大特写·跟', '+N 与第 3 个标签同在第 3 行末尾')
+}
+{
+  const errs: string[] = []
+  const orig = console.error
+  console.error = (...a: unknown[]) => { errs.push(a.map(String).join(' ')); }
+  const dup = { ...session, clips: [mkClip('E01-C1', ['E01-SH001', 'E01-SH001'])] } as unknown as FilmSession
+  const dupFilm = { ...film, session: dup } as unknown as Film
+  await act(async () => { root.render(<NodeGraph film={dupFilm} doc={tagDoc} styleUrl={null} kfUrls={{}}
+    selected={null} blocked={null} onSelect={() => {}} onOpenAssets={() => {}} onOpenFilm={() => {}} />) })
+  console.error = orig
+  must(texts('E01-C1').join('|') === 'SH001 远景·固定|SH001 远景·固定', `重复镜头渲染两个标签：${texts('E01-C1').join('|')}`)
+  must(!errs.some((e) => /same key|unique "key"/i.test(e)), `不报重复 key：${errs.join(';')}`)
+  await act(async () => { root.render(graph) })
+}
 console.log('片段卡镜头标签 ✓')
 
 await act(async () => { root.render(<I18nProvider initial="en">{graph}</I18nProvider>) })

@@ -50,8 +50,10 @@
 .ngv__ask { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; overflow-wrap: anywhere; }
 .ngv__empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 8px; }
 
-/* 片段卡的镜头小标签：最多两行（英文标签长，会折行），再多就藏起来；全部写在这一行的 title 里 */
-.ngv__shots { display: flex; flex: none; flex-wrap: wrap; gap: 4px; max-height: 40px; margin: 0; overflow: hidden; }
+/* 片段卡的镜头小标签：每个标签独占一行、超长省略，最多 3 行；有折叠时 +N 在第 3 行末尾；全部写在整块的 title 里 */
+.ngv__shots { display: flex; flex: none; flex-direction: column; gap: 3px; margin: 0; }
+.ngv__shot-row { display: flex; min-width: 0; align-items: center; gap: 4px; }
+.ngv__shot--more { flex: none; }
 .ngv__shot {
   min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: 0 6px; border-radius: 999px; background: var(--ui-muted); color: var(--ui-muted-foreground);

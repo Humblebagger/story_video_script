@@ -103,7 +103,7 @@
 - 最多显示 3 个；超出的折叠成一个 `+N` 标签。
 - 整行的 `title` 是全部标签，一行一个，悬停可见。
 - 片段没有镜头时不渲染这一行。
-- 标签行最多占两行高度（英文标签较长时会折到第二行），超出部分隐藏；为此剧本段卡片高度 `CARD_H` 由 208 调到 252。自由节点卡不变。
+- 每个标签独占一行（单行、超长省略号），最多 3 行；有折叠时 `+N` 放在第 3 行末尾、与第 3 个标签同一行并始终可见；为此剧本段卡片高度 `CARD_H` 由 208 调到 276。自由节点卡不变。
 
 ## 5. 组件与数据流
 
@@ -126,7 +126,7 @@
 | `frontend/src/styles/storyboard.css` | `.sheet*` 样式 |
 | `frontend/src/components/NodeGraph.tsx` | 用 `doc` 建镜头索引，把标签传给 `ClipCard` |
 | `frontend/src/components/NodeCards.tsx` | `ClipCard` 新增 `tags` 属性并渲染 |
-| `frontend/src/nodeGraph.ts` | `CARD_H` 208 → 252 |
+| `frontend/src/nodeGraph.ts` | `CARD_H` 208 → 276 |
 | `frontend/src/styles/nodegraph.css` | `.ngv__shots`、`.ngv__shot` |
 | `frontend/package.json` | `test` 脚本串加两个新测试 |
 | `frontend/tests/paths.test.ts`、`chapter.test.tsx`、`real-doc.test.tsx`、`graph-view.test.tsx` | 页签清单断言更新、新用例 |
