@@ -982,7 +982,7 @@ export const zh = {
     animaticTip: '静帧预演：按播放头显示当前镜头的关键帧图',
     filmModeOn: '播成片',
     filmModeOff: '播关键帧',
-    filmModeTip: '预览窗播已出的成片（采用的那一次）；未出片的段显示关键帧',
+    filmModeTip: '预览窗默认播已出的成片（采用的那一次）；未出片的段显示关键帧或脚本。点此切到只播关键帧',
     kfCount: '关键帧 {n}/{total}',
     kfCountTip: '已上传关键帧图的镜头数',
     styleDownload: '下载风格图',

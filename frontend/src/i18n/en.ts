@@ -988,7 +988,7 @@ export const en: BaseMessages = {
     animaticTip: 'Animatic: show the keyframe image of the current shot at the playhead',
     filmModeOn: 'Play clips',
     filmModeOff: 'Play keyframes',
-    filmModeTip: 'The preview plays rendered clips (the chosen take); clips not rendered yet show keyframes',
+    filmModeTip: 'The preview plays rendered clips by default (the chosen take); clips not rendered yet show keyframes or the script. Click to play keyframes only',
     kfCount: 'Keyframes {n}/{total}',
     kfCountTip: 'Shots with an uploaded keyframe image',
     styleDownload: 'Download style image',

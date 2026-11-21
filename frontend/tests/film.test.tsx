@@ -589,16 +589,59 @@ console.log('10c. 出错后轮询不断 ✓')
   await settle()
 }
 
-// 11. 播成片：有已出的段才有开关；切到「播成片」后播放，预览窗里是采用那次的视频
-await click(button('播关键帧'))
-must(!!button('播成片'), '切到播成片')
+// 播放中视频的 blob 才落地时，act 会一直等 rAF 循环收不了场：播放期间的点击与等待不套 act（临时关掉 act 环境）
+const actEnv = globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+const rawWait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const idle = async () => { await rawWait(60); actEnv.IS_REACT_ACT_ENVIRONMENT = true; await settle() }
+const tap = async (el: Element, ms = 80) => {
+  actEnv.IS_REACT_ACT_ENVIRONMENT = false
+  el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event)
+  await rawWait(ms)
+}
+// 11. 有成片优先播成片：有已出的段时不点开关直接播放，预览窗就是采用那次的视频；切到「播关键帧」后是关键帧 / 脚本
 await click(bar(first))
-await click(container.querySelector('.tlc__play')!)
-await settle(150)
-must(!!container.querySelector('.tlc__pip video'), '预览窗里播视频')
+await tap(container.querySelector('.tlc__play')!)
+await rawWait(300)
+must(!!button('播成片'), '默认就是播成片（开关显示「播成片」）')
+must(!!container.querySelector('.tlc__pip video'), '不点开关，预览窗里直接播视频')
 must(calls.includes(`GET /files/clips/${first}.t1.mp4`), '取的是采用那次（第 1 次）的视频')
-await click(container.querySelector('.tlc__play')!)
-console.log('11. 播成片 ✓')
+must(!container.querySelector('.tlc__pipnote'), '有视频的段不挂「未出片」')
+// 播放中点开关切到「播关键帧」：预览窗换成关键帧 / 脚本
+await tap(button('播成片'))
+must(!!button('播关键帧'), '点开关切到播关键帧')
+must(!container.querySelector('.tlc__pip video'), '切到播关键帧后预览窗没有视频')
+must(!!container.querySelector('.tlc__pip img, .tlc__pip .tlc__pipph'), '切到播关键帧后预览窗是关键帧或脚本')
+await tap(container.querySelector('.tlc__play')!)
+await tap(button('播关键帧'))
+await idle()
+console.log('11. 有成片优先播成片 ✓')
+
+// 11b. 没出片的段显示脚本：一段都没出片时没有「未出片」角标；有段已出片时播到未出片的段带角标
+{
+  const gone = film!.clips.find((c) => c.chosen !== null)!
+  const savedChosen = gone.chosen
+  const other = film!.clips.find((c) => c !== gone && c.chosen === null)!
+  for (const c of film!.clips) c.chosen = null
+  await refresh()
+  await click(bar(other.id))
+  await tap(container.querySelector('.tlc__play')!)
+  await rawWait(150)
+  must(!container.querySelector('.tlc__pip video'), '一段都没出片：预览窗没有视频')
+  must(!!container.querySelector('.tlc__pip img, .tlc__pip .tlc__pipph'), '一段都没出片：预览窗显示关键帧或脚本')
+  must(!container.querySelector('.tlc__pipnote'), '一段都没出片：没有「未出片」角标')
+  await tap(container.querySelector('.tlc__play')!)
+  await idle()
+  gone.chosen = savedChosen
+  await refresh()
+  await click(bar(other.id))
+  await tap(container.querySelector('.tlc__play')!)
+  await rawWait(150)
+  must(!container.querySelector('.tlc__pip video'), '有段已出片、播到未出片的段：显示脚本而不是视频')
+  must(!!container.querySelector('.tlc__pipnote'), '有段已出片、播到未出片的段：带「未出片」角标')
+  await tap(container.querySelector('.tlc__play')!)
+  await idle()
+  console.log('11b. 未出片的段显示脚本、角标只在部分出片时出现 ✓')
+}
 
 // 12. 卡片内确认（runClipNow）：409 带新金额时返回新金额，不弹确认框；成功返回 null
 {

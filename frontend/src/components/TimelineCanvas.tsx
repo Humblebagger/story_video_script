@@ -143,7 +143,7 @@ export function TimelineCanvas({
   /** 「成片」泳道上选中的段 */
   const [clipSel, setClipSel] = useState<string | null>(null)
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
-  const [filmMode, setFilmMode] = useState(false)
+  const [filmMode, setFilmMode] = useState(true)
   /** 「生成中 · 已等 m:ss」每秒走一次 */
   const [now, setNow] = useState(() => Date.now())
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -358,8 +358,10 @@ export function TimelineCanvas({
   const current = shotIndexAt(tl, t)
   const cur = tl.shots[current]
   const curPrompt = cur ? kf.promptOf(cur.id) : undefined
-  /** 播成片：播放头所在段采用的视频（没有就退回关键帧，标「未出片」） */
-  const curSpan = filmMode ? spanAt(spans, t) : undefined
+  /** 默认播成片：播放头所在段采用的视频（没有就退回关键帧 / 脚本；已有出片的段时标「未出片」）；开关可手动切到只播关键帧 */
+  const anyChosen = spans.some((sp) => chosenAttempt(sp.clip))
+  // 只在预览窗开着（播放中）时才取视频：默认就是播成片，不能一打开画布就把采用的视频拉下来
+  const curSpan = filmMode && playing && animatic ? spanAt(spans, t) : undefined
   const curVideo = curSpan ? (chosenAttempt(curSpan.clip)?.file ?? undefined) : undefined
   useEffect(() => { ensure(curVideo) }, [curVideo, ensure])
   // 视频跟着播放头走：偏差超过 0.3 秒才拖，免得每帧都打断解码
@@ -565,7 +567,7 @@ export function TimelineCanvas({
                 title={tt('canvas.animaticTip')} onClick={() => setAnimatic((v) => !v)}>
           {tt('canvas.animatic')}
         </Button>
-        {animatic && spans.some((sp) => chosenAttempt(sp.clip)) && (
+        {animatic && anyChosen && (
           <Button variant={filmMode ? 'secondary' : 'ghost'} size="sm" aria-pressed={filmMode}
                   title={tt('canvas.filmModeTip')}
                   onClick={() => setFilmMode((v) => !v)}>
@@ -898,7 +900,7 @@ export function TimelineCanvas({
               : (
                 <div className="tlc__pipph"><p>{cur.shot.action}</p></div>
               )}
-          {filmMode && !curVideo && <span className="tlc__pipnote">{tt('canvas.notRendered')}</span>}
+          {filmMode && !curVideo && anyChosen && <span className="tlc__pipnote">{tt('canvas.notRendered')}</span>}
           <div className="tlc__subs">
             {speechAt(tl, t).map((sp, i) => (
               <p key={i} className={`tlc__sub tlc__sub--${sp.kind}`}>
