@@ -122,6 +122,14 @@ export const en: BaseMessages = {
   activity: {
     tab: 'Jobs', close: 'Close', running: 'Running', done: 'Recently finished', view: 'View',
     empty: 'No running jobs', emptyHint: 'Progress shows up here once a conversion or render starts',
+    film: {
+      play: 'Play',
+      late: 'The provider charged {cost}; you can adopt it on the clip',
+      state: {
+        queued: 'Queued', running: 'Generating', downloading: 'Fetching', done: 'Generated', failed: 'Failed',
+        cancelled: 'Cancelled', late: 'Finished after cancelling',
+      },
+    },
   },
   assistant: {
     target: { outline: 'Book synopsis', synopsis: '{chapter} synopsis' },
@@ -257,6 +265,12 @@ export const en: BaseMessages = {
       done: 'Generation finished',
       doneWarn: 'Generation finished (quality warnings)',
       doneBody: '{who} is ready. Open it to review.',
+      filmDone: 'Clip generated',
+      filmDoneBody: '{who} is ready. Open it to play.',
+      filmFailed: 'Clip generation failed',
+      filmFailedBody: '{who} — open it to see why',
+      filmLate: 'A cancelled clip finished anyway',
+      filmLateBody: '{who}: the provider charged {cost}; the result can be adopted',
     },
     err: {
       preview: 'Could not load the preview: {msg}',
@@ -696,7 +710,10 @@ export const en: BaseMessages = {
       planned: 'Not rendered', queued: 'Queued', running: 'Generating', downloading: 'Downloading',
       done: 'Done', failed: 'Failed', stale: 'Edited since',
     },
-    attemptState: { submitting: 'Submitting', running: 'Generating', succeeded: 'Succeeded', failed: 'Failed' },
+    attemptState: {
+      submitting: 'Submitting', running: 'Generating', succeeded: 'Succeeded', failed: 'Failed',
+      cancelled: 'Cancelled', abandoned: 'Cancelled · waiting for the provider',
+    },
   },
   board: {
     untitled: 'Untitled',
@@ -1142,6 +1159,33 @@ export const en: BaseMessages = {
     tail: 'Last frame of {id}',
     gateFailed: 'The storyboard did not pass the integrity check',
     readClipFailed: 'Could not read the clip file: {error}',
+    wait: 'Waited {wait} · usually {lo}–{hi} min',
+    waitOver: 'Waited {wait} · longer than usual, still working',
+    waitOnly: 'Waited {wait}',
+    waitMin: '{m}m {s}s',
+    lateTag: 'Finished after cancelling',
+    lateHint: 'A result arrived after cancelling; switch takes to adopt it',
+    cancel: {
+      free: 'Cancel',
+      paid: 'Stop waiting',
+      freeTitle: 'Cancel {id}?',
+      freeBody: 'It has not been sent to the generation service yet, so cancelling now costs nothing.',
+      freeAction: 'Cancel generation',
+      paidTitle: 'Stop waiting for {id}?',
+      paidBody: 'This clip has already been sent to the generation service. We will try to cancel it first; if that is not possible, the provider may still generate it and charge for it — the result will stay in this clip\'s attempts and can be adopted later.',
+      paidAction: 'Stop waiting',
+      dequeued: 'Cancelled; nothing was spent',
+      cancelled: 'Cancelled; the provider did not charge',
+      abandoned: 'Stopped waiting. If the provider still finishes it you will be charged as usual, and the result will stay in the attempts',
+    },
+    play: {
+      open: 'Play',
+      aria: 'Play {id}',
+      title: '{id} · take {n}',
+      loading: 'Loading video…',
+      none: 'This clip has no playable result yet',
+      desc: 'Player with sound and a progress bar',
+    },
     style: {
       used: 'Style image ✓',
       full: 'Not used: reference slots are full',

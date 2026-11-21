@@ -49,6 +49,50 @@ export function chosenAttempt(c: { chosen: number | null; attempts: FilmAttempt[
   return a && a.state === 'succeeded' && a.file ? a : null
 }
 
+/** 要播的那一次：点名第几次就播它；否则播采用的那次；没有采用就播最近成功的一次。没有可播的为 null */
+export function playableAttempt(c: { chosen: number | null; attempts: FilmAttempt[] },
+                                index?: number): { attempt: FilmAttempt; index: number } | null {
+  const playable = (i: number | null | undefined) => {
+    const a = i == null ? undefined : c.attempts[i]
+    return a && a.state === 'succeeded' && a.file ? { attempt: a, index: i as number } : null
+  }
+  if (index !== undefined) return playable(index)
+  const picked = playable(c.chosen)
+  if (picked) return picked
+  for (let i = c.attempts.length - 1; i >= 0; i--) {
+    const hit = playable(i)
+    if (hit) return hit
+  }
+  return null
+}
+
+/** 已等时长：「4 分 05 秒」 */
+export function fmtWait(sec: number): string {
+  const n = Math.max(0, Math.floor(sec))
+  return tr('film.waitMin', { m: Math.floor(n / 60), s: String(n % 60).padStart(2, '0') })
+}
+
+/** 生成中那一行：已等多久 + 通常要多久（分钟：下限向下、上限向上取整）；超过上限换说法。只有时间，不带厂商或模型名 */
+export function waitLine(sec: number, typical?: number[] | null): string {
+  const wait = fmtWait(sec)
+  if (!typical || typical.length < 2) return tr('film.waitOnly', { wait })
+  const [lo, hi] = typical
+  if (sec > hi) return tr('film.waitOver', { wait })
+  return tr('film.wait', { wait, lo: Math.max(1, Math.floor(lo / 60)), hi: Math.max(1, Math.ceil(hi / 60)) })
+}
+
+/** 已等秒数：从排队那一刻算；now 为毫秒时间戳 */
+export const waitedSec = (c: { queued_at?: string }, now: number) =>
+  (c.queued_at ? Math.max(0, (now - Date.parse(c.queued_at)) / 1000) : 0)
+
+/** 能不能取消：free 还没提交（不花钱）；paid 已提交（服务商可能仍扣费）；null 不能（不在跑、正在提交、已在取回） */
+export function cancelKind(c: { state: FilmClipState; attempts: FilmAttempt[] }): 'free' | 'paid' | null {
+  const last = c.attempts[c.attempts.length - 1]
+  if (c.state === 'queued') return last?.state === 'submitting' ? null : 'free'
+  if (c.state === 'running') return last?.task_id ? 'paid' : null
+  return null
+}
+
 export type LaneKind = 'planned' | 'busy' | 'done' | 'failed' | 'stale'
 
 /** 横条样式：未出片 / 排队与生成中（含下载）/ 已完成 / 失败 / 过期 */

@@ -120,6 +120,14 @@ export const zh = {
   activity: {
     tab: '任务', close: '关闭', running: '在跑', done: '最近完成', view: '查看',
     empty: '没有在跑的任务', emptyHint: '开始转换或出片后，进度会出现在这里',
+    film: {
+      play: '播放',
+      late: '服务商已计费 {cost}，可在片段里采用',
+      state: {
+        queued: '排队中', running: '生成中', downloading: '取回中', done: '已生成', failed: '生成失败',
+        cancelled: '已取消', late: '取消后仍生成完成',
+      },
+    },
   },
   assistant: {
     target: { outline: '全书梗概', synopsis: '{chapter} 梗概' },
@@ -255,6 +263,12 @@ export const zh = {
       done: '转换完成',
       doneWarn: '转换完成（质量告警）',
       doneBody: '{who} 已生成，点开即可审阅',
+      filmDone: '片段已生成',
+      filmDoneBody: '{who} 已生成，点开播放',
+      filmFailed: '片段生成失败',
+      filmFailedBody: '{who}——点开查看原因',
+      filmLate: '已取消的片段仍生成完成',
+      filmLateBody: '{who}：服务商已计费 {cost}，结果可以采用',
     },
     err: {
       preview: '预览加载失败：{msg}',
@@ -690,7 +704,10 @@ export const zh = {
       planned: '未出片', queued: '排队中', running: '生成中', downloading: '下载中',
       done: '已完成', failed: '失败', stale: '内容改过',
     },
-    attemptState: { submitting: '提交中', running: '生成中', succeeded: '成功', failed: '失败' },
+    attemptState: {
+      submitting: '提交中', running: '生成中', succeeded: '成功', failed: '失败',
+      cancelled: '已取消', abandoned: '已取消 · 等服务商结束',
+    },
   },
   board: {
     untitled: '未命名',
@@ -1136,6 +1153,33 @@ export const zh = {
     tail: '{id} 的尾帧',
     gateFailed: '分镜没通过完整性检查',
     readClipFailed: '读取片段文件失败：{error}',
+    wait: '已等 {wait} · 通常 {lo}–{hi} 分钟',
+    waitOver: '已等 {wait} · 比通常久，仍在处理',
+    waitOnly: '已等 {wait}',
+    waitMin: '{m} 分 {s} 秒',
+    lateTag: '取消后才出的结果',
+    lateHint: '有取消后才出的结果，可以切换采用',
+    cancel: {
+      free: '取消',
+      paid: '不等了',
+      freeTitle: '取消 {id}？',
+      freeBody: '还没有提交给生成服务，现在取消不花钱。',
+      freeAction: '取消生成',
+      paidTitle: '不等 {id} 了？',
+      paidBody: '这一段已经提交给生成服务。我们会先尝试取消；取消不了的话，服务商可能仍会生成并扣费——结果会留在这一段的尝试记录里，之后还可以采用。',
+      paidAction: '不等了',
+      dequeued: '已取消，没有花钱',
+      cancelled: '已取消，服务商没有扣费',
+      abandoned: '已停止等待。服务商如果仍然生成完成会照常扣费，结果会留在尝试记录里',
+    },
+    play: {
+      open: '播放',
+      aria: '播放 {id}',
+      title: '{id} · 第 {n} 次',
+      loading: '读取视频…',
+      none: '这一段还没有可播放的结果',
+      desc: '带声音与进度条的播放窗口',
+    },
     style: {
       used: '风格图 ✓',
       full: '未带上：参考位已满',

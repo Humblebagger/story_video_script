@@ -3,10 +3,13 @@
 import { readFileSync } from 'node:fs'
 import { buildTimeline } from '../src/timeline'
 import {
-  anyInFlight, batchSummary, chosenAttempt, clipOffset, clipSpans, copyIndex, firstFrameText, laneKind, laneText,
-  laneTitle, mainAction, needsConfirm, pollDelay, POLL_FAST_MS, POLL_SLOW_MS, precheck, slotsNeeded, spanAt,
-  tailSources,
+  anyInFlight, batchSummary, cancelKind, chosenAttempt, clipOffset, clipSpans, copyIndex, firstFrameText, fmtWait,
+  laneKind, laneText, laneTitle, mainAction, needsConfirm, playableAttempt, pollDelay, POLL_FAST_MS, POLL_SLOW_MS,
+  precheck, slotsNeeded, spanAt, tailSources, waitedSec, waitLine,
 } from '../src/film'
+import { setCurrentLocale } from '../src/i18n/core'
+import { en } from '../src/i18n/en'
+import { zh } from '../src/i18n/zh'
 import type { FilmAttempt, FilmClip, FilmFreeNode, FilmSession, Storyboard } from '../src/types'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
@@ -138,6 +141,50 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
   must(copyIndex(att, n({ target: 'C1' }), { ...ok, task_id: 't9' }) === 1, '找到复制进段里的那次')
   must(copyIndex(att, n({ target: 'C1' }), ok) === -1 && copyIndex(att, n(), ok) === -1, '找不到为 -1')
   console.log('6. 自由节点 ✓')
+}
+
+// 7. 等待与取消：已等时长、通常区间（分钟：下限向下、上限向上取整）、超过上限换说法；能不能取消；播哪一次
+{
+  must(fmtWait(245.9) === '4 分 05 秒' && fmtWait(0) === '0 分 00 秒' && fmtWait(-3) === '0 分 00 秒', '已等时长')
+  must(waitLine(245, [180, 420]) === '已等 4 分 05 秒 · 通常 3–7 分钟', `等待一行：${waitLine(245, [180, 420])}`)
+  must(waitLine(30, [100, 130]) === '已等 0 分 30 秒 · 通常 1–3 分钟', '下限向下、上限向上取整到分钟')
+  must(waitLine(421, [180, 420]) === '已等 7 分 01 秒 · 比通常久，仍在处理', '超过上限换说法')
+  must(waitLine(10, null) === '已等 0 分 10 秒' && waitLine(10) === '已等 0 分 10 秒', '没有通常区间只说已等')
+  must(waitedSec({ queued_at: new Date(1000).toISOString() }, 6000) === 5 && waitedSec({}, 6000) === 0, '从排队那一刻算')
+  setCurrentLocale('en')
+  must(waitLine(245, [180, 420]) === 'Waited 4m 05s · usually 3–7 min', `英文等待一行：${waitLine(245, [180, 420])}`)
+  must(waitLine(421, [180, 420]) === 'Waited 7m 01s · longer than usual, still working', '英文超过上限')
+  setCurrentLocale('zh')
+
+  const sub = { ...ok, state: 'submitting' as const, task_id: null, file: null }
+  const run = { ...ok, state: 'running' as const, file: null }
+  must(cancelKind(clip('C1', [], { state: 'queued' })) === 'free', '还没提交：取消不花钱')
+  must(cancelKind(clip('C1', [], { state: 'queued', attempts: [sub] })) === null, '正在提交：先不给取消')
+  must(cancelKind(clip('C1', [], { state: 'running', attempts: [run] })) === 'paid', '已提交：可能仍扣费')
+  must(cancelKind(clip('C1', [], { state: 'downloading', attempts: [run] })) === null
+       && cancelKind(clip('C1', [], { state: 'done', attempts: [ok], chosen: 0 })) === null
+       && cancelKind(clip('C1', [])) === null, '在取回、已结束、没出过：不能取消')
+
+  const late = { ...ok, task_id: 't2', file: 'clips/x.t2.mp4', late: true }
+  const bad = { ...ok, task_id: 't3', state: 'failed' as const, file: null }
+  must(playableAttempt(clip('C1', [], { attempts: [ok, late], chosen: 0 }))?.index === 0, '默认播采用的那次')
+  must(playableAttempt(clip('C1', [], { attempts: [ok, late], chosen: 0 }), 1)?.index === 1, '点名播哪次就播哪次')
+  must(playableAttempt(clip('C1', [], { attempts: [bad, late], chosen: null }))?.index === 1, '没有采用：播最近成功的一次')
+  must(playableAttempt(clip('C1', [], { attempts: [bad] })) === null
+       && playableAttempt(clip('C1', [], { attempts: [ok], chosen: 0 }), 5) === null, '没有可播的')
+
+  // 等待、取消、播放、任务列表、通知的文案：两种语言都不出现厂商或模型的名字
+  const vendor = /minimax|seedance|hailuo|ark\b|方舟|海螺|豆包|火山/i
+  const flat = (node: unknown): string[] =>
+    (typeof node === 'string' ? [node] : Object.values(node as Record<string, unknown>).flatMap(flat))
+  for (const pack of [zh, en]) {
+    const texts = [pack.film.wait, pack.film.waitOver, pack.film.waitOnly, pack.film.waitMin, pack.film.lateTag,
+                   pack.film.lateHint,
+                   ...flat(pack.film.cancel), ...flat(pack.film.play), ...flat(pack.activity), ...flat(pack.app.notify),
+                   ...flat(pack.enums.attemptState)]
+    must(texts.length > 30 && texts.every((x) => !vendor.test(x)), `文案里不出现厂商名：${texts.find((x) => vendor.test(x))}`)
+  }
+  console.log('7. 等待、取消与播放 ✓')
 }
 
 console.log('\nALL PASS')

@@ -705,7 +705,8 @@ export type AudioMode = 'tts_all' | 'dialogue_native' | 'all_native' | 'silent'
 /** 一段的一次出片尝试 */
 export interface FilmAttempt {
   task_id: string | null
-  state: 'submitting' | 'running' | 'succeeded' | 'failed'
+  /** cancelled：服务商确认已取消（不计费）；abandoned：用户不等了，服务商那边可能还在跑，后台盯到有结果 */
+  state: 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abandoned'
   cost_cny: number
   /** 会话目录下的相对路径，用 filmFileUrl 取 */
   file: string | null
@@ -720,6 +721,9 @@ export interface FilmAttempt {
   style_ref?: string | null
   /** 自由节点生成后复制进剧本段的那次：来自哪个节点（花费记在节点上，这里为 0） */
   free_id?: string
+  /** 用户不等了之后才出结果的那次：已计费、可采用，不会自动采用 */
+  late?: boolean
+  cancelled_at?: string
 }
 
 export interface FilmClip {
@@ -749,6 +753,9 @@ export interface FilmClip {
   error_msg?: ServerMsg | null
   state: FilmClipState
   queued_at?: string
+  /** 最近一次结束的时间与结局（任务列表用） */
+  ended_at?: string
+  ended_as?: 'done' | 'failed' | 'cancelled'
   /** 风格图：used 已带上 / full 参考位已满 / first_frame 本段用首帧 / null 没有风格图 */
   style?: 'used' | 'full' | 'first_frame' | null
   style_hash?: string | null
@@ -780,6 +787,8 @@ export interface FilmFreeNode {
   chosen: number | null
   created_at: string
   queued_at?: string
+  ended_at?: string
+  ended_as?: 'done' | 'failed' | 'cancelled'
   /** 参考位超出当前厂商上限：删减之前不能生成 */
   over_refs: boolean
 }
@@ -791,6 +800,31 @@ export interface FreePatch {
   first_frame?: string | null
   duration?: number
   target?: string | null
+}
+
+/** 取消接口的结局：dequeued 还没提交 / cancelled 服务商确认取消 / abandoned 不等了（可能仍扣费） */
+export type CancelOutcome = 'dequeued' | 'cancelled' | 'abandoned'
+
+/** 本人的一条出片任务（GET /render/tasks）：在跑的，或最近结束的。不带厂商与档位 */
+export interface FilmTask {
+  /** <版本>:<段或节点 id>；late 的再加 :<任务 id> */
+  id: string
+  item_id: string
+  kind: 'clip' | 'free'
+  novel_id: string
+  chapter_id: string
+  version_id: string
+  work_title: string | null
+  chapter: string | null
+  /** late：取消后服务商仍生成完成（已计费，可采用） */
+  state: 'queued' | 'running' | 'downloading' | 'done' | 'failed' | 'cancelled' | 'late'
+  /** 服务端算的已等秒数（结束的为总共等了多久）；late 没有 */
+  elapsed_sec: number | null
+  typical_sec: [number, number]
+  /** 在跑的为 null */
+  ended_at: string | null
+  /** 只有 late 有 */
+  cost_cny: number | null
 }
 
 export interface FilmSettings {
@@ -829,6 +863,8 @@ export interface FilmSession {
   uncertain_count: number
   /** 可按新风格图重出的段数 */
   style_outdated_count?: number
+  /** 只有取消接口的响应带 */
+  cancel_outcome?: CancelOutcome
   /** 验证门：只有读取时带；没有就当已通过（建会话、出片这几个接口本身过门） */
   /** 兼容：message 在后端子计划 4 之前是字符串 */
   gate?: { ok: boolean; message: MsgLike }
@@ -845,6 +881,8 @@ export interface FilmSession {
     audio_modes: AudioMode[]
     /** 费率说明：消息对象（按界面语言渲染）；旧数据是字符串 */
     rate_note: MsgLike
+    /** 一段通常要等多久（秒，[下限, 上限]）：只用于显示「通常 x–y 分钟」 */
+    typical_sec?: [number, number]
     /** 缺省厂商回落到 Seedance 的原因代码（文案走 i18n）；没有回落为 null */
     default_note: 'minimax_key_missing' | null
   }

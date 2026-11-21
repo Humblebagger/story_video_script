@@ -11,7 +11,7 @@ import type { ServerMsg } from './i18n/serverMsg'
 import type {
   Chapter, Constraint, NovelSummaryData, Health, Job, JobPartial, JobStatus, JobSummary, LifecycleEntry,
   KeyframePrompt, LifecycleType, Novel, NovelMemory, NovelParams, NovelSummary, RenderPack, Storyboard,
-  FilmSession, FilmSettings, FreePatch, StyleImageMeta, ComposePreview, VoicesInfo,
+  FilmSession, FilmSettings, FilmTask, FreePatch, StyleImageMeta, ComposePreview, VoicesInfo,
   VerificationReport, VersionRecord,
   AdminService,
   AssistantEvent, AssistantMsg, AssistantTask, AssistantWhere,
@@ -419,6 +419,17 @@ export function runFreeNode(nid: string, cid: string, vid: string, fid: string,
 export function chooseFreeAttempt(nid: string, cid: string, vid: string, fid: string,
                                   attempt: number): Promise<FilmSession> {
   return req(`${filmPath(nid, cid, vid)}/free/${enc(fid)}/chosen`, jsonBody('PUT', { attempt }))
+}
+
+/** 取消排队或生成中的一段 / 一个自由节点；响应带 cancel_outcome。不在跑、正在提交、已在取回 → 409 */
+export function cancelFilmItem(nid: string, cid: string, vid: string, itemId: string,
+                               free: boolean): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/${free ? 'free' : 'clips'}/${enc(itemId)}/cancel`, { method: 'POST' })
+}
+
+/** 本人的出片任务：在跑的与最近结束的（任务铃铛与动态面板用） */
+export function listFilmTasks(): Promise<{ tasks: FilmTask[] }> {
+  return req<{ tasks: FilmTask[] }>('/render/tasks')
 }
 
 /** 取会话目录下的文件（片段视频、尾帧）。<video>/<image> 带不了 token，转成 blob URL（用完要 revoke） */
