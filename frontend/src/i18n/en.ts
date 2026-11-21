@@ -1161,6 +1161,7 @@ export const en: BaseMessages = {
     readClipFailed: 'Could not read the clip file: {error}',
     wait: 'Waited {wait} · usually {lo}–{hi} min',
     waitOver: 'Waited {wait} · longer than usual, still working',
+    waitUnknown: 'In progress',
     waitOnly: 'Waited {wait}',
     waitMin: '{m}m {s}s',
     lateTag: 'Finished after cancelling',
@@ -1448,6 +1449,7 @@ export const en: BaseMessages = {
         finished: 'This clip has finished generating and is being fetched; nothing to cancel',
         not_running: 'This clip is not queued or generating',
         changed: 'The status just changed; please try again',
+        kind_changed: 'The status just changed and this clip is now cancelled differently; please confirm again',
         lost: 'No result could be found for this cancelled attempt, so it is unclear whether it was billed',
       },
       submit: {

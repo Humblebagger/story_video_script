@@ -5,7 +5,7 @@ import { buildTimeline } from '../src/timeline'
 import {
   anyInFlight, batchSummary, cancelKind, chosenAttempt, clipOffset, clipSpans, copyIndex, firstFrameText, fmtWait,
   laneKind, laneText, laneTitle, mainAction, needsConfirm, playableAttempt, pollDelay, POLL_FAST_MS, POLL_SLOW_MS,
-  precheck, slotsNeeded, spanAt, tailSources, waitedSec, waitLine,
+  precheck, slotsNeeded, spanAt, tailSources, waitedSec, waitLine, clockOffset,
 } from '../src/film'
 import { setCurrentLocale } from '../src/i18n/core'
 import { en } from '../src/i18n/en'
@@ -150,7 +150,7 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
   must(waitLine(30, [100, 130]) === '已等 0 分 30 秒 · 通常 1–3 分钟', '下限向下、上限向上取整到分钟')
   must(waitLine(421, [180, 420]) === '已等 7 分 01 秒 · 比通常久，仍在处理', '超过上限换说法')
   must(waitLine(10, null) === '已等 0 分 10 秒' && waitLine(10) === '已等 0 分 10 秒', '没有通常区间只说已等')
-  must(waitedSec({ queued_at: new Date(1000).toISOString() }, 6000) === 5 && waitedSec({}, 6000) === 0, '从排队那一刻算')
+  must(waitedSec({ queued_at: new Date(1000).toISOString() }, 6000) === 5 && waitedSec({}, 6000) === null, '从排队那一刻算；缺字段为 null')
   setCurrentLocale('en')
   must(waitLine(245, [180, 420]) === 'Waited 4m 05s · usually 3–7 min', `英文等待一行：${waitLine(245, [180, 420])}`)
   must(waitLine(421, [180, 420]) === 'Waited 7m 01s · longer than usual, still working', '英文超过上限')
@@ -158,6 +158,23 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
 
   const sub = { ...ok, state: 'submitting' as const, task_id: null, file: null }
   const run = { ...ok, state: 'running' as const, file: null }
+  // 非法时间与区间：只显示安全降级文案，不出现 NaN / Infinity
+  const nanLines = [waitLine(waitedSec({ queued_at: 'not-a-date' }, 6000), [180, 420]), waitLine(waitedSec({}, 6000), [180, 420]),
+               waitLine(NaN, [180, 420]), waitLine(10, [NaN, 420]), waitLine(10, [180, Infinity]),
+               waitLine(10, [180] as unknown as number[]), waitLine(10, ['a', 'b'] as unknown as number[]),
+               waitLine(10, [420, 180]), fmtWait(NaN), fmtWait(Infinity)]
+  must(nanLines.every((x) => !/NaN|Infinity|undefined/.test(x)), `不显示 NaN：${nanLines.join(' | ')}`)
+  must(waitedSec({ queued_at: 'not-a-date' }, 6000) === null && waitedSec({ queued_at: new Date(1000).toISOString() }, NaN) === null,
+       '非法时间得 null')
+  must(waitLine(10, [NaN, 420]) === '已等 0 分 10 秒' && waitLine(null, [180, 420]) === '生成中', `降级：${waitLine(10, [NaN, 420])}`)
+  // 时钟偏差：偏差 = 服务端时间 − 本地时间；本地时间加偏差再减排队时刻
+  const q = Date.parse('2026-11-21T10:00:00Z')
+  const srvNow = '2026-11-21T10:01:05Z'
+  for (const skew of [10 * 60000, -10 * 60000]) {
+    const local = Date.parse(srvNow) + skew
+    must(waitedSec({ queued_at: '2026-11-21T10:00:00Z' }, local + clockOffset(srvNow, local)) === 65, `客户端偏 ${skew}ms 仍得 65 秒`)
+  }
+  must(clockOffset(undefined, 5) === 0 && clockOffset('坏', 5) === 0 && q > 0, '没有或非法的服务端时间：不校准')
   must(cancelKind(clip('C1', [], { state: 'queued' })) === 'free', '还没提交：取消不花钱')
   must(cancelKind(clip('C1', [], { state: 'queued', attempts: [sub] })) === null, '正在提交：先不给取消')
   must(cancelKind(clip('C1', [], { state: 'running', attempts: [run] })) === 'paid', '已提交：可能仍扣费')

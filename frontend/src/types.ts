@@ -865,6 +865,8 @@ export interface FilmSession {
   style_outdated_count?: number
   /** 只有取消接口的响应带 */
   cancel_outcome?: CancelOutcome
+  /** 服务端此刻（ISO，带时区）：浏览器据此校准自己的时钟 */
+  server_now?: string
   /** 验证门：只有读取时带；没有就当已通过（建会话、出片这几个接口本身过门） */
   /** 兼容：message 在后端子计划 4 之前是字符串 */
   gate?: { ok: boolean; message: MsgLike }

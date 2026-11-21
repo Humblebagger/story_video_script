@@ -34,6 +34,11 @@ const IN_FLIGHT = ['queued', 'running', 'downloading']
 let film: FilmSession | null = null
 let seq = 0
 const calls: string[] = []
+/** 模拟浏览器时钟与服务端的偏差（毫秒，本地 − 服务端）；强制取消失败；取消响应是不带选项的降级视图 */
+let clockSkew = 0
+let cancelRefused: unknown = null
+let lenientCancel = false
+const serverNow = () => new Date(Date.now() - clockSkew).toISOString()
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
 
 function recount(s: FilmSession): FilmSession {
@@ -126,7 +131,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
              blob: async () => new Blob(['x'], { type: sub.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg' }) }
   }
   if (sub === '/session' && method === 'GET') {
-    return film ? ok({ ...film, gate: { ok: true, message: null } }) : fail(404, '还没有出片会话')
+    return film ? ok({ ...film, gate: { ok: true, message: null }, server_now: serverNow() }) : fail(404, '还没有出片会话')
   }
   if (sub === '/session' && method === 'POST') {
     film = makeSession()
@@ -175,11 +180,15 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
   m = sub.match(/^\/(clips|free)\/([^/]+)\/cancel$/)
   if (m && method === 'POST') {
     const it = m[1] === 'free' ? freeOf(m[2]) : clipOf(decodeURIComponent(m[2]))
+    if (cancelRefused) return fail(409, cancelRefused)
+    const kind = it.state === 'queued' ? 'free' : 'paid'
+    if (body?.expect && body.expect !== kind) return fail(409, { code: 'film.cancel.kind_changed', params: {} })
     const outcome = it.state === 'queued' ? 'dequeued' : 'abandoned'
     if (outcome === 'abandoned') it.attempts[it.attempts.length - 1].state = 'abandoned'
     it.state = it.chosen === null ? 'planned' : 'done'
     film = recount(film!)
-    return ok({ ...film, cancel_outcome: outcome })
+    return ok(lenientCancel ? { ...film, options: { providers: ['fake'] }, cancel_outcome: outcome }
+                            : { ...film, cancel_outcome: outcome })
   }
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
 }
@@ -347,7 +356,7 @@ console.log('6c. 采用位置与无障碍 ✓')
   const dialogText = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')?.textContent ?? ''
   const answer = (ok: boolean) =>
     click(win.document.body.querySelector(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)!)
-  const cancelCalls = () => calls.filter((c) => c === `POST /clips/${third}/cancel`).length
+  const cancelCalls = () => calls.filter((c) => c.startsWith(`POST /clips/${third}/cancel`)).length
   Object.assign(clipOf(third), { state: 'queued', queued_at: new Date(Date.now() - 65000).toISOString() })
   film = recount(film!)
   await refresh()
@@ -403,6 +412,125 @@ console.log('6c. 采用位置与无障碍 ✓')
   must(!!player()?.querySelector('video[controls]'), '侧栏也能点开播放窗口')
   await closePlayer()
   console.log('6e. 播放 ✓')
+}
+
+// 6f. 取消种类竞态：确认框开着时状态从「排队」迁到「生成中」，确认带上 expect，服务端 409 后重新读取并以新种类重新确认
+{
+  const third = film!.clips[2].id
+  const dialogText = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')?.textContent ?? ''
+  const answer = (ok: boolean) =>
+    click(win.document.body.querySelector(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)!)
+  const sent = () => calls.filter((c) => c.startsWith(`POST /clips/${third}/cancel`))
+  Object.assign(clipOf(third), { state: 'queued', queued_at: new Date().toISOString(), attempts: [] })
+  film = recount(film!)
+  await refresh()
+  const n0 = sent().length
+  await click(inCard(third, '取消'))
+  must(dialogText().includes('现在取消不花钱'), '先是不花钱的确认')
+  Object.assign(clipOf(third), { state: 'running',
+    attempts: [{ ...attempt(third, 1, 0), state: 'running', file: null, last_frame: null }] })     // 确认框开着时已提交
+  film = recount(film!)
+  await answer(true)
+  must(sent().length === n0 + 1 && sent()[n0].includes('"expect":"free"'), `确认时带上用户确认的种类：${sent()[n0]}`)
+  must(clipOf(third).state === 'running' && clipOf(third).attempts[0].state === 'running', '服务端拒绝：什么都没动')
+  must(dialogText().includes('服务商可能仍会生成并扣费'), `以新种类重新确认：${dialogText()}`)
+  await answer(false)
+  must(sent().length === n0 + 1 && clipOf(third).state === 'running', '重新确认里点取消：不再发请求')
+  await click(inCard(third, '不等了'))
+  await answer(true)
+  must(sent()[n0 + 1].includes('"expect":"paid"') && clipOf(third).attempts[0].state === 'abandoned', '重新确认后按新种类执行')
+  console.log('6f. 取消种类竞态 ✓')
+}
+
+// 6g. 浏览器时钟快或慢 10 分钟：等待时长按服务端时间算
+{
+  const third = film!.clips[2].id
+  const waitText = () => card(third).querySelector('[data-testid="ngv-wait"]')?.textContent ?? ''
+  for (const skew of [10 * 60000, -10 * 60000]) {
+    clockSkew = skew
+    Object.assign(clipOf(third), { state: 'queued', attempts: [], queued_at: new Date(Date.now() - skew - 65000).toISOString() })
+    film = recount(film!)
+    await refresh()
+    must(/已等 1 分 0\d 秒 · 通常 3–7 分钟/.test(waitText()), `客户端偏 ${skew / 60000} 分钟：${waitText()}`)
+  }
+  clockSkew = 0
+  console.log('6g. 时钟偏差 ✓')
+}
+
+// 6h. 取消后才出的结果（没有采用）：卡片仍有播放按钮，能打开播放器；封面不是它
+{
+  const id = film!.clips[3].id
+  Object.assign(clipOf(id), { state: 'planned', chosen: null, attempts: [{ ...attempt(id, 1, 5), late: true }] })
+  film = recount(film!)
+  await refresh()
+  const btn = card(id).querySelector('[data-testid="ngv-play"]')
+  must(!!btn, '没有采用、只有迟到的成功结果：也有播放按钮')
+  await click(btn!)
+  const pl = win.document.body.querySelector('[data-testid="clip-player"]')
+  must(!!pl?.querySelector('video[controls]') && (pl?.textContent ?? '').includes('取消后才出的结果'), '能打开播放器并标明是迟到结果')
+  await click(win.document.body.querySelector('[data-testid="clip-player"] [data-slot="dialog-close"]')!)
+  await settle(300)
+  console.log('6h. 迟到结果可播 ✓')
+}
+
+// 6i. 选中节点时打开播放器：一次 Escape 就关；关闭后焦点回到播放按钮
+{
+  const id = film!.clips[3].id
+  await click(card(id))
+  must(card(id).classList.contains('is-on'), '节点已选中')
+  const btn = card(id).querySelector('[data-testid="ngv-play"]') as unknown as HTMLElement
+  await click(btn)
+  const pl = () => win.document.body.querySelector('[data-testid="clip-player"]')
+  must(!!pl(), '播放器开着')
+  await act(async () => {
+    pl()!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }) as unknown as Event)
+  })
+  await settle(300)
+  must(!pl(), '一次 Escape 关闭播放器')
+  must(card(id).classList.contains('is-on'), '这一下没有同时取消节点选中')
+  must(win.document.activeElement === (card(id).querySelector('[data-testid="ngv-play"]') as unknown), '关闭后焦点回到播放按钮')
+  console.log('6i. 播放器键盘 ✓')
+}
+
+// 6j. 取消被拒（409）后刷新成功：错误提示仍在，直到用户关掉
+{
+  const third = film!.clips[2].id
+  Object.assign(clipOf(third), { state: 'running', queued_at: new Date().toISOString(),
+    attempts: [{ ...attempt(third, 1, 0), state: 'running', file: null, last_frame: null }] })
+  film = recount(film!)
+  await refresh()
+  cancelRefused = { code: 'film.cancel.finished', params: {} }
+  await click(inCard(third, '不等了'))
+  await click(win.document.body.querySelector('[data-testid="confirm-ok"]')!)
+  await settle(200)
+  const err = () => container.querySelector('.ngv__err')?.textContent ?? ''
+  must(err().includes('正在取回'), `取消被拒后提示在：${err()}`)
+  await refresh()
+  await settle(200)
+  must(err().includes('正在取回'), '刷新成功后提示仍在')
+  await click(container.querySelector('[data-testid="film-error-dismiss"]')!)
+  must(err() === '', '用户关闭后消失')
+  cancelRefused = null
+  console.log('6j. 取消错误保留 ✓')
+}
+
+// 6k. 取消成功后不用响应覆盖会话（降级视图缺选项）：重新读取
+{
+  const third = film!.clips[2].id
+  Object.assign(clipOf(third), { state: 'queued', attempts: [] })
+  film = recount(film!)
+  await refresh()
+  lenientCancel = true
+  const at = calls.length
+  await click(inCard(third, '取消'))
+  await click(win.document.body.querySelector('[data-testid="confirm-ok"]')!)
+  await settle(200)
+  const after = calls.slice(at)
+  const i = after.findIndex((c) => c.startsWith(`POST /clips/${third}/cancel`))
+  must(i >= 0 && after.slice(i + 1).includes('GET /session'), `取消后重新读取会话：${after.join(' | ')}`)
+  must(!!container.querySelector('[data-testid="node-graph"]') && has('假厂商'), '界面没被降级响应弄坏')
+  lenientCancel = false
+  console.log('6k. 取消后重读 ✓')
 }
 
 // 7. 切回时间轴：节点图收起

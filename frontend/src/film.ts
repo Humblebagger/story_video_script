@@ -66,24 +66,39 @@ export function playableAttempt(c: { chosen: number | null; attempts: FilmAttemp
   return null
 }
 
-/** 已等时长：「4 分 05 秒」 */
+/** 已等时长：「4 分 05 秒」；非有限数当 0 */
 export function fmtWait(sec: number): string {
-  const n = Math.max(0, Math.floor(sec))
+  const n = Number.isFinite(sec) ? Math.max(0, Math.floor(sec)) : 0
   return tr('film.waitMin', { m: Math.floor(n / 60), s: String(n % 60).padStart(2, '0') })
 }
 
-/** 生成中那一行：已等多久 + 通常要多久（分钟：下限向下、上限向上取整）；超过上限换说法。只有时间，不带厂商或模型名 */
-export function waitLine(sec: number, typical?: number[] | null): string {
+/** 通常区间合法才用：两个有限数、0 ≤ 下限 ≤ 上限 */
+const validTypical = (typical: unknown): typical is number[] =>
+  Array.isArray(typical) && typical.length >= 2 && typical.slice(0, 2).every((x) => typeof x === 'number' && Number.isFinite(x))
+  && typical[0] >= 0 && typical[0] <= typical[1]
+
+/** 生成中那一行：已等多久 + 通常要多久（分钟：下限向下、上限向上取整）；超过上限换说法。只有时间，不带厂商或模型名。
+ *  已等时长未知（时间缺失或非法）、区间非法时只说能说的，不显示 NaN */
+export function waitLine(sec: number | null, typical?: number[] | null): string {
+  if (sec === null || !Number.isFinite(sec)) return tr('film.waitUnknown')
   const wait = fmtWait(sec)
-  if (!typical || typical.length < 2) return tr('film.waitOnly', { wait })
+  if (!validTypical(typical)) return tr('film.waitOnly', { wait })
   const [lo, hi] = typical
   if (sec > hi) return tr('film.waitOver', { wait })
   return tr('film.wait', { wait, lo: Math.max(1, Math.floor(lo / 60)), hi: Math.max(1, Math.ceil(hi / 60)) })
 }
 
-/** 已等秒数：从排队那一刻算；now 为毫秒时间戳 */
-export const waitedSec = (c: { queued_at?: string }, now: number) =>
-  (c.queued_at ? Math.max(0, (now - Date.parse(c.queued_at)) / 1000) : 0)
+/** 服务端时钟与本地时钟的偏差（毫秒）：服务端 server_now 减本地 Date.now()，每次收到响应时重算；没有或非法为 0 */
+export function clockOffset(serverNow: string | null | undefined, localNow: number): number {
+  const t = serverNow ? Date.parse(serverNow) : NaN
+  return Number.isFinite(t) && Number.isFinite(localNow) ? t - localNow : 0
+}
+
+/** 已等秒数：从排队那一刻算；now 为（已按偏差校准的）毫秒时间戳。时间缺失或非法为 null */
+export function waitedSec(c: { queued_at?: string }, now: number): number | null {
+  const q = c.queued_at ? Date.parse(c.queued_at) : NaN
+  return Number.isFinite(q) && Number.isFinite(now) ? Math.max(0, (now - q) / 1000) : null
+}
 
 /** 能不能取消：free 还没提交（不花钱）；paid 已提交（服务商可能仍扣费）；null 不能（不在跑、正在提交、已在取回） */
 export function cancelKind(c: { state: FilmClipState; attempts: FilmAttempt[] }): 'free' | 'paid' | null {
@@ -109,8 +124,8 @@ const yuan = (n: number) => `¥${n.toFixed(2)}`
 export function laneText(c: FilmClip, now: number): string {
   switch (laneKind(c)) {
     case 'busy': {
-      const since = c.queued_at ? Math.max(0, (now - Date.parse(c.queued_at)) / 1000) : 0
-      return tr('film.busy', { wait: fmtClock(since) })
+      const since = waitedSec(c, now)
+      return since === null ? tr('film.waitUnknown') : tr('film.busy', { wait: fmtClock(since) })
     }
     case 'done':
       return tr('film.done', { id: shortId(c.id), n: (c.chosen ?? 0) + 1, cost: yuan(chosenAttempt(c)?.cost_cny ?? 0) })

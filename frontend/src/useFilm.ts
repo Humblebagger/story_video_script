@@ -12,7 +12,7 @@ import { primeNotifications } from './notify'
 import { tr } from './i18n/core'
 import { errValue, formatMsg } from './i18n/serverMsg'
 import type { MsgLike } from './i18n/serverMsg'
-import { needsConfirm, pollDelay } from './film'
+import { clockOffset, needsConfirm, pollDelay } from './film'
 import type { CancelOutcome, FilmClip, FilmSession, FilmSettings, FreePatch, VersionRef } from './types'
 
 export type FilmConfirm =
@@ -25,7 +25,13 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const [session, setSession] = useState<FilmSession | null>(null)
   /** off：没有版本（不出片）；none：还没建会话 */
   const [status, setStatus] = useState<'off' | 'loading' | 'none' | 'ready'>(enabled ? 'loading' : 'off')
-  const [error, setError] = useState<MsgLike>(null)
+  /** 读取失败（轮询、取文件）：下一次读取成功就清掉 */
+  const [readError, setReadError] = useState<MsgLike>(null)
+  /** 操作失败（出片、取消等）：读取成功不清它，直到用户关掉提示或再次操作 */
+  const [opError, setOpError] = useState<MsgLike>(null)
+  const error = opError ?? readError
+  /** 服务端时钟减本地时钟（毫秒），每次收到响应时重算：等待时长用（本地 now + 偏差）减排队时刻 */
+  const [skew, setSkew] = useState(0)
   /** 验证门没过的原因（读取时报告的，或出片被 422 拦下的） */
   const [gate, setGate] = useState<MsgLike>(null)
   const [busy, setBusy] = useState(false)
@@ -43,34 +49,38 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   /** 读取会话带 gate；写操作的响应不带：通过了门的操作（建、改设置、出片）清掉旧提示，采用 / 静音保持原样 */
   const accept = useCallback((s: FilmSession, passedGate = false) => {
     setSession(s)
+    if (s.server_now) setSkew(clockOffset(s.server_now, Date.now()))
     setStatus('ready')
     if (s.gate) setGate(s.gate.ok ? null : (s.gate.message ?? tr('film.gateFailed')))
     else if (passedGate) setGate(null)
   }, [])
 
   /** 验证门拦截记到 gate（按钮据此禁用），其余显示原因 */
-  const fail = useCallback((e: unknown) => {
+  const fail = useCallback((e: unknown, read = false) => {
     if (e instanceof ApiError && e.verification) setGate(errValue(e))
-    else setError(errValue(e))
+    else (read ? setReadError : setOpError)(errValue(e))
   }, [])
 
-  const load = useCallback(async () => {
-    if (!nid || !cid || !vid) return
+  /** 读取会话；成功返回读到的会话（取消的重新确认要拿最新的），失败 / 过期 / 没有为 null */
+  const load = useCallback(async (): Promise<FilmSession | null> => {
+    if (!nid || !cid || !vid) return null
     const mine = gen.current
     try {
       const got = await getFilm(nid, cid, vid)
-      if (gen.current !== mine) return
+      if (gen.current !== mine) return null
       accept(got)
-      setError(null)
+      setReadError(null)
+      return got
     } catch (e) {
-      if (gen.current !== mine) return
+      if (gen.current !== mine) return null
       if (e instanceof ApiError && e.status === 404) {
         setSession(null)
         setStatus('none')
       } else {
-        fail(e)
+        fail(e, true)
         setStatus((st) => (st === 'loading' ? 'none' : st))
       }
+      return null
     } finally {
       if (gen.current === mine) setTick((n) => n + 1)
     }
@@ -78,7 +88,8 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
 
   useEffect(() => {
     setSession(null)
-    setError(null)
+    setReadError(null)
+    setOpError(null)
     setGate(null)
     setConfirm(null)
     setStatus(enabled ? 'loading' : 'off')
@@ -96,7 +107,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   const apply = useCallback(async (fn: () => Promise<FilmSession>, passedGate = false) => {
     const mine = gen.current
     setBusy(true)
-    setError(null)
+    setOpError(null)
     try {
       const got = await fn()
       if (gen.current !== mine) return
@@ -116,7 +127,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     const mine = gen.current
     primeNotifications()     // 出片要等几分钟：趁这次点击申请通知权限，出完好提醒
     setBusy(true)
-    setError(null)
+    setOpError(null)
     try {
       const got = await fn()
       if (gen.current !== mine) return { kind: 'stale' }
@@ -136,25 +147,32 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
     }
   }, [accept, fail, load])
 
-  /** 取消排队或生成中的一段 / 一个自由节点：成功返回结局（调用方据此提示）；被拒（409 等）记到 error 并重读会话 */
-  const cancelItem = useCallback(async (itemId: string, free: boolean): Promise<CancelOutcome | null> => {
+  /** 取消排队或生成中的一段 / 一个自由节点：expect 是用户确认时的种类（free 不花钱 / paid 不等了）。
+   *  成功返回结局并重新读取会话（取消响应在服务商不可用时是降级视图，不能拿来覆盖会话）；
+   *  服务端发现种类已变（409 kind_changed）返回 'changed'，调用方重新读取后以新种类重新确认；
+   *  其他被拒记到操作错误（刷新成功也不清）并重读会话 */
+  const cancelItem = useCallback(async (itemId: string, free: boolean, expect?: 'free' | 'paid'):
+      Promise<CancelOutcome | 'changed' | null> => {
     const mine = gen.current
     setBusy(true)
-    setError(null)
+    setOpError(null)
     try {
-      const got = await cancelFilmItem(nid!, cid!, vid!, itemId, free)
+      const got = await cancelFilmItem(nid!, cid!, vid!, itemId, free, expect)
       if (gen.current !== mine) return null
-      accept(got)
+      await load()
       return got.cancel_outcome ?? null
     } catch (e) {
       if (gen.current !== mine) return null
+      if (e instanceof ApiError && e.status === 409 && (e.detail as { code?: unknown } | null)?.code === 'film.cancel.kind_changed') {
+        return 'changed'
+      }
       fail(e)
       void load()
       return null
     } finally {
       if (gen.current === mine) setBusy(false)
     }
-  }, [nid, cid, vid, accept, fail, load])
+  }, [nid, cid, vid, fail, load])
 
   /** 花钱的操作（确认框）：409 带了重算金额就放回确认框，等用户再确认 */
   const spend = async (fn: () => Promise<FilmSession>, again: (cny: number) => FilmConfirm) => {
@@ -188,7 +206,7 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
         live.current[path] = url
         setFiles({ ...live.current })
       })
-      .catch((e) => { if (gen.current === mine) setError(tr('film.readClipFailed', { error: formatMsg(errValue(e)) })) })
+      .catch((e) => { if (gen.current === mine) setReadError(tr('film.readClipFailed', { error: formatMsg(errValue(e)) })) })
       .finally(() => asking.current.delete(path))
   }, [nid, cid, vid])
   useEffect(() => () => {
@@ -200,7 +218,10 @@ export function useFilm(version: VersionRef | null | undefined, opts: { active: 
   }, [nid, cid, vid])
 
   return {
-    enabled, session, status, error, gate, busy, confirm, files, load, ensure,
+    enabled, session, status, error, gate, clockOffset: skew,
+    /** 关掉操作与读取的错误提示 */
+    dismissError: () => { setOpError(null); setReadError(null) },
+    busy, confirm, files, load, ensure,
     /** 版本 id（没有版本时都为 undefined）：配音与合成用同一会话 */
     ids: { nid, cid, vid },
     create: () => apply(() => createFilm(nid!, cid!, vid!), true),

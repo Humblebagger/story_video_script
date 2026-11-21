@@ -423,13 +423,14 @@ export function chooseFreeAttempt(nid: string, cid: string, vid: string, fid: st
 
 /** 取消排队或生成中的一段 / 一个自由节点；响应带 cancel_outcome。不在跑、正在提交、已在取回 → 409 */
 export function cancelFilmItem(nid: string, cid: string, vid: string, itemId: string,
-                               free: boolean): Promise<FilmSession> {
-  return req(`${filmPath(nid, cid, vid)}/${free ? 'free' : 'clips'}/${enc(itemId)}/cancel`, { method: 'POST' })
+                               free: boolean, expect?: 'free' | 'paid'): Promise<FilmSession> {
+  return req(`${filmPath(nid, cid, vid)}/${free ? 'free' : 'clips'}/${enc(itemId)}/cancel`,
+             expect ? jsonPost({ expect }) : { method: 'POST' })
 }
 
-/** 本人的出片任务：在跑的与最近结束的（任务铃铛与动态面板用） */
-export function listFilmTasks(): Promise<{ tasks: FilmTask[] }> {
-  return req<{ tasks: FilmTask[] }>('/render/tasks')
+/** 本人的出片任务：在跑的与最近结束的（任务铃铛与动态面板用）；server_now 是服务端此刻，已等时长由服务端算好 */
+export function listFilmTasks(): Promise<{ tasks: FilmTask[]; server_now?: string }> {
+  return req<{ tasks: FilmTask[]; server_now?: string }>('/render/tasks')
 }
 
 /** 取会话目录下的文件（片段视频、尾帧）。<video>/<image> 带不了 token，转成 blob URL（用完要 revoke） */

@@ -31,7 +31,7 @@ import type { Workbench } from './CanvasPanels'
 import { ShotCard } from './ShotCard'
 import { SourceView } from './SourceView'
 import type { CharLane, Timeline } from '../timeline'
-import type { Storyboard, VersionRef } from '../types'
+import type { FilmSession, Storyboard, VersionRef } from '../types'
 import { promptSheet, useKeyframes } from '../useKeyframes'
 
 interface Props {
@@ -152,8 +152,8 @@ export function TimelineCanvas({
   const [player, setPlayer] = useState<PlayTarget | null>(null)
   const [ask, confirmUi] = useConfirm()
   /** 取消排队或生成中的一条：先过确认框。已提交的那种要说明服务商可能仍会扣费 */
-  const cancelItem = async (id: string) => {
-    const s = film.session
+  const cancelItem = async (id: string, from?: FilmSession | null, round = 0) => {
+    const s = from ?? film.session
     const free = !!s && freeNodes(s).some((n) => n.id === id)
     const item = s ? [...s.clips, ...freeNodes(s)].find((x) => x.id === id) : undefined
     const kind = item ? cancelKind(item) : null
@@ -166,8 +166,11 @@ export function TimelineCanvas({
       danger: paid,
     })
     if (!sure) return
-    const outcome = await film.cancelItem(id, free)
-    if (outcome) notice.ok(tt(`film.cancel.${outcome}`))
+    // 带上用户确认的种类：确认框开着时状态变了（排队中 → 生成中），服务端拒绝，重新读取后以新种类再问一次
+    const outcome = await film.cancelItem(id, free, kind)
+    if (outcome === 'changed') {
+      if (round < 3) await cancelItem(id, await film.load(), round + 1)
+    } else if (outcome) notice.ok(tt(`film.cancel.${outcome}`))
   }
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
   const [filmMode, setFilmMode] = useState(true)
@@ -744,10 +747,10 @@ export function TimelineCanvas({
                          height={ROW.clip - 10} preserveAspectRatio="xMidYMid slice" />
                 )}
                 <text x={x(sp.start) + (thumb ? 46 : 6)} y={rowOf.clip.y + ROW.clip / 2 + 4}>
-                  {fitText(`${marks}${laneText(c, now)}`, w - (thumb ? 50 : 10), 10, 3)}
+                  {fitText(`${marks}${laneText(c, now + film.clockOffset)}`, w - (thumb ? 50 : 10), 10, 3)}
                 </text>
                 {/* 横条窄到写不下字时，悬停照样看得到状态 */}
-                <title>{`${laneText(c, now)}\n${laneTitle(c)}`}</title>
+                <title>{`${laneText(c, now + film.clockOffset)}\n${laneTitle(c)}`}</title>
               </g>
             )
           })}

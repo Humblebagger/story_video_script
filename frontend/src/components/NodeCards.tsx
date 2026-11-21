@@ -12,8 +12,9 @@ import { itemError } from '@/i18n/serverMsg'
 import type { MsgKey } from '@/i18n/core'
 import { FILM_STATE, label } from '../labels'
 import {
-  cancelKind, chosenAttempt, copyIndex, inFlight, needsConfirm, slotsNeeded, tailSources, waitedSec, waitLine,
+  cancelKind, chosenAttempt, copyIndex, inFlight, needsConfirm, playableAttempt, slotsNeeded, tailSources, waitedSec, waitLine,
 } from '../film'
+import { rememberOpener } from '../playerFocus'
 import type { Film } from '../useFilm'
 import type { AssetRole } from '../nodeGraph'
 import { foldTags } from '../shotSheet'
@@ -26,9 +27,11 @@ const TONE: Record<FilmClipState, Tone> = {
 
 /** 结果区：悬停或选中时播采用的那次（静音循环），平时显示它的尾帧；没有结果时显示首帧来源图。
  *  有结果且给了 onPlay 时，封面正中是「播放」按钮：点开带声音与控制条的播放窗口 */
-function Preview({ film, attempt, fallback, hot, id, onPlay }: {
+function Preview({ film, attempt, fallback, hot, id, onPlay, canPlay }: {
   film: Film; attempt: FilmAttempt | null; fallback: string | null; hot: boolean
   id: string; onPlay?: () => void
+  /** 有能播的结果（采用的，或没采用时最近成功的一次）：播放入口依据它，封面仍只展示采用的那次 */
+  canPlay: boolean
 }) {
   const { t } = useI18n()
   const { ensure, files } = film
@@ -41,12 +44,12 @@ function Preview({ film, attempt, fallback, hot, id, onPlay }: {
   const media = video ? <video className="ngv__media" src={video} autoPlay muted loop playsInline />
     : still ? <img className="ngv__media" src={still} alt="" />
     : <div className="ngv__media ngv__media--empty">{t('graph.noResult')}</div>
-  if (!file || !onPlay) return media
+  if (!canPlay || !onPlay) return media
   return (
     <div className="ngv__stage">
       {media}
       <button type="button" className="ngv__play" data-testid="ngv-play" aria-label={t('film.play.aria', { id })}
-              onClick={(e) => { e.stopPropagation(); onPlay() }}>
+              onClick={(e) => { e.stopPropagation(); rememberOpener(e.currentTarget); onPlay() }}>
         <Play aria-hidden />{t('film.play.open')}
       </button>
     </div>
@@ -55,10 +58,12 @@ function Preview({ film, attempt, fallback, hot, id, onPlay }: {
 
 /** 在跑的那一行：已等多久 · 通常多久（每秒走一次），右边是取消入口（还没提交写「取消」，已提交写「不等了」）。
  *  只有时间，不带厂商或模型名。确认框由上层弹（onCancel） */
-export function WaitRow({ item, typical, disabled, onCancel }: {
+export function WaitRow({ item, typical, disabled, offset = 0, onCancel }: {
   item: { state: FilmClipState; attempts: FilmAttempt[]; queued_at?: string }
   typical?: number[] | null
   disabled: boolean
+  /** 服务端时钟减本地时钟（毫秒）：已等时长按服务端时间算 */
+  offset?: number
   onCancel?: () => void
 }) {
   const { t } = useI18n()
@@ -70,7 +75,7 @@ export function WaitRow({ item, typical, disabled, onCancel }: {
   const kind = cancelKind(item)
   return (
     <p className="ngv__wait" data-testid="ngv-wait" onClick={(e) => e.stopPropagation()}>
-      <span>{waitLine(waitedSec(item, now), typical)}</span>
+      <span>{waitLine(waitedSec(item, now + offset), typical)}</span>
       {kind && onCancel && (
         <button type="button" className="tlc__linkbtn" disabled={disabled} onClick={onCancel}>
           {t(kind === 'free' ? 'film.cancel.free' : 'film.cancel.paid')}
@@ -177,9 +182,9 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, tags, onDer
           ))}
         </div>
       )}
-      <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} id={c.id} onPlay={onPlay} />
+      <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} id={c.id} onPlay={onPlay} canPlay={!!playableAttempt(c)} />
       {inFlight(c) && (
-        <WaitRow item={c} typical={s.options.typical_sec} disabled={film.busy} onCancel={onCancel} />
+        <WaitRow item={c} typical={s.options.typical_sec} disabled={film.busy} offset={film.clockOffset} onCancel={onCancel} />
       )}
       {chosen?.free_id && <p className="ngv__dim">{t('graph.fromFree', { id: chosen.free_id })}</p>}
       {c.attempts.some((a, i) => a.late && a.state === 'succeeded' && i !== c.chosen) && (
@@ -258,9 +263,9 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
       </header>
       {n.target_lost && !n.target && <p className="ngv__warn">{t('graph.free.lost')}</p>}
       {n.over_refs && <p className="ngv__warn">{t('graph.free.overRefs', { n: used, max })}</p>}
-      <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} id={n.id} onPlay={onPlay} />
+      <Preview film={film} attempt={chosen} fallback={fallback} hot={hot} id={n.id} onPlay={onPlay} canPlay={!!playableAttempt(n)} />
       {inFlight(n) && (
-        <WaitRow item={n} typical={s.options.typical_sec} disabled={film.busy} onCancel={onCancel} />
+        <WaitRow item={n} typical={s.options.typical_sec} disabled={film.busy} offset={film.clockOffset} onCancel={onCancel} />
       )}
       <div className="ngv__form" onClick={(e) => e.stopPropagation()}>
         <textarea className="ngv__text" value={text} disabled={lock} placeholder={t('graph.free.promptPh')}

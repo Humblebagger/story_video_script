@@ -13,6 +13,7 @@ import { formatMsg, itemError } from '@/i18n/serverMsg'
 import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, playableAttempt, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
+import { rememberOpener } from '../playerFocus'
 import { WaitRow } from './NodeCards'
 import type { AudioMode, FilmClip, FilmFreeNode, FilmSession, FilmSettings } from '../types'
 
@@ -48,7 +49,12 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
   const freeSel = s?.free?.find((n) => n.id === selected)
   return (
     <div className="film">
-      {film.error && <p className="tlc__kferr">{formatMsg(film.error, locale)}</p>}
+      {film.error && (
+        <p className="tlc__kferr">
+          {formatMsg(film.error, locale)}
+          <button type="button" className="tlc__linkbtn" data-testid="film-error-dismiss" onClick={film.dismissError}>{t('common.close')}</button>
+        </p>
+      )}
       {blocked && <p className="tlc__notice">{blocked}</p>}
       {s && <FilmConfirm s={s} film={film} blocked={blocked} />}
       {!s ? (
@@ -240,11 +246,12 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
         <span>{t('film.panel.clipMeta', { state: label(FILM_STATE, c.state), dur: c.duration, cost: yuan(c.estimate_cny) })}{c.truncated ? t('film.panel.clipCut') : ''}</span>
       </header>
       {flying && (
-        <WaitRow item={c} typical={s.options.typical_sec} disabled={film.busy}
+        <WaitRow item={c} typical={s.options.typical_sec} disabled={film.busy} offset={film.clockOffset}
                  onCancel={onCancel && (() => onCancel(c.id))} />
       )}
       {onPlay && playableAttempt(c) && (
-        <Button size="sm" variant="secondary" className="film__play" data-testid="clip-play" onClick={() => onPlay(c.id)}>
+        <Button size="sm" variant="secondary" className="film__play" data-testid="clip-play"
+                onClick={(e) => { rememberOpener(e.currentTarget); onPlay(c.id) }}>
           <Play aria-hidden />{t('film.play.open')}
         </Button>
       )}

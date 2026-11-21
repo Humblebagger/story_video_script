@@ -51,6 +51,8 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !focus) return
+      // 播放窗口、确认框里的 Esc 归对话框自己（Radix 关窗），不拿来取消节点选中
+      if ((e.target as Element | null)?.closest?.('[role="dialog"],[role="alertdialog"]')) return
       e.preventDefault()
       setFocus(null)
       setHover(null)
@@ -120,7 +122,12 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
         <Button size="sm" variant="ghost" disabled={film.busy} onClick={() => void film.createFree()}>
           <Plus aria-hidden />{t('graph.newFree')}
         </Button>
-        {film.error && <span className="ngv__err">{formatMsg(film.error, locale)}</span>}
+        {film.error && (
+          <span className="ngv__err">
+            {formatMsg(film.error, locale)}
+            <button type="button" className="tlc__linkbtn" data-testid="film-error-dismiss" onClick={film.dismissError}>{t('common.close')}</button>
+          </span>
+        )}
         {blocked && <span className="ngv__err">{blocked}</span>}
       </div>
       <div className="ngv__world"

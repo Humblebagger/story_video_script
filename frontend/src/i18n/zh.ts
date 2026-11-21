@@ -1155,6 +1155,7 @@ export const zh = {
     readClipFailed: '读取片段文件失败：{error}',
     wait: '已等 {wait} · 通常 {lo}–{hi} 分钟',
     waitOver: '已等 {wait} · 比通常久，仍在处理',
+    waitUnknown: '生成中',
     waitOnly: '已等 {wait}',
     waitMin: '{m} 分 {s} 秒',
     lateTag: '取消后才出的结果',
@@ -1442,6 +1443,7 @@ export const zh = {
         finished: '这一段已经生成完成，正在取回，不用取消了',
         not_running: '这一段不在排队或生成中',
         changed: '状态刚刚变了，请再试一次',
+        kind_changed: '状态刚刚变了，这一段的取消方式不同了，请重新确认',
         lost: '已取消的这一次一直查不到结果，无法确认是否计费',
       },
       submit: {
