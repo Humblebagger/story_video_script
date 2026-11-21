@@ -176,24 +176,30 @@ export function TimelineCanvas({
       if (round < 3) await cancelItem(id, await film.load(), round + 1)
     } else if (outcome) notice.ok(tt(`film.cancel.${outcome}`))
   }
-  /** 聚焦请求：同一个请求只执行一次（按对象认，上层清掉之前可能再渲染几次） */
+  /** 聚焦请求：同一个请求只执行一次（按对象认，上层清掉之前可能再渲染几次）。
+   *  点名了任务号（尝试）而会话里还没有：先重读会话（任务列表可能比画布自己的轮询先发现），
+   *  读完仍没有才降级为只选中、不播放；不会拿别的尝试顶替 */
   const focusSeen = useRef<FilmFocus | null>(null)
+  const [reread, setReread] = useState<FilmFocus | null>(null)
   const filmSession = film.session
   const focusReady = !!focus && focus.vid === version?.vid && !!filmSession
+  const reloadForFocus = film.load
   useEffect(() => {
     if (!focus || !focusReady || !filmSession || focusSeen.current === focus) return
-    focusSeen.current = focus
     const item = [...filmSession.clips, ...freeNodes(filmSession)].find((x) => x.id === focus.id)
+    const at = item && focus.taskId ? item.attempts.findIndex((a) => a.task_id === focus.taskId) : -1
+    if (item && focus.play && focus.taskId && at < 0 && reread !== focus) {
+      void reloadForFocus().finally(() => setReread(focus))
+      return
+    }
+    focusSeen.current = focus
     if (item) {
       setClipSel(focus.id)
       setPanel('film')
-      if (focus.play) {
-        const at = focus.taskId ? item.attempts.findIndex((a) => a.task_id === focus.taskId) : -1
-        setPlayer({ id: focus.id, ...(at >= 0 ? { attempt: at } : {}) })
-      }
+      if (focus.play && (!focus.taskId || at >= 0)) setPlayer({ id: focus.id, ...(at >= 0 ? { attempt: at } : {}) })
     }
     onFocusDone?.()
-  }, [focus, focusReady, filmSession, onFocusDone])
+  }, [focus, focusReady, filmSession, onFocusDone, reread, reloadForFocus])
   /** 预览窗播已出的成片（采用的那一次）还是关键帧 */
   const [filmMode, setFilmMode] = useState(true)
   /** 「生成中 · 已等 m:ss」每秒走一次 */

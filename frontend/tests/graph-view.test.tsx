@@ -602,6 +602,34 @@ console.log('6c. 采用位置与无障碍 ✓')
   console.log('6f. 聚焦请求 ✓')
 }
 
+// 6m. 点名了任务号但画布的会话还没有那一次（任务列表先发现、画布自己的轮询还没到）：
+//     先重读会话，找到后播那一次；重读后仍没有才降级为只选中，不播别的
+{
+  const player = () => win.document.body.querySelector('[data-testid="clip-player"]')
+  const closePlayer = async () => {
+    await click(win.document.body.querySelector('[data-testid="clip-player"] [data-slot="dialog-close"]')!)
+    await settle(300)
+  }
+  const give = async (f: FilmFocus) => { await act(async () => { giveFocus(f) }); await settle(300) }
+  await act(async () => { giveFocus(undefined) })
+  const before = clipOf(first).attempts.length
+  const done0 = focusDone
+  clipOf(first).attempts.push({ ...attempt(first, 9, 7.5), task_id: 't-late2', late: true })
+  film = recount(film!)      // 只改服务端；画布的会话仍是旧的，没点刷新
+  await give({ vid: 'v1', id: first, play: true, taskId: 't-late2' })
+  must(!!player() && (player()?.textContent ?? '').includes(`${first} · 第 ${before + 1} 次`)
+       && (player()?.textContent ?? '').includes('取消后才出的结果') && focusDone === done0 + 1,
+       `会话旧：先重读再播指定的那一次：${player()?.textContent}`)
+  await closePlayer()
+  await act(async () => { giveFocus(undefined) })
+  await give({ vid: 'v1', id: first, play: true, taskId: 't-nope' })
+  must(!player() && focusDone === done0 + 2, '重读后仍没有那一次：不播别的，请求用掉')
+  clipOf(first).attempts.pop()
+  film = recount(film!)
+  await refresh()
+  console.log('6m. 点名的尝试还没读到：先重读再播 ✓')
+}
+
 // 7. 切回时间轴：节点图收起
 await click(exact('时间轴'))
 must(!container.querySelector('[data-testid="node-graph"]'), '切回时间轴')
