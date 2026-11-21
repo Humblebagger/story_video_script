@@ -11,9 +11,22 @@ export const TABS = ['focus', 'cards', 'sheet', 'assets', 'source', 'render', 'j
 export const CANVAS_STEPS = ['review', 'render', 'compose'] as const satisfies readonly StepId[]
 export type CanvasView = 'timeline' | 'graph'
 
+/** 后台的页（/admin 是运营概览，其余是 /admin/<页>） */
+export const ADMIN_PAGES = ['overview', 'users', 'usage', 'jobs', 'errors', 'audit'] as const
+export type AdminPage = (typeof ADMIN_PAGES)[number]
+/** 任务页的筛选（?state=）；null 为全部 */
+export const JOB_STATES = ['running', 'failed'] as const
+export type JobState = (typeof JOB_STATES)[number]
+/** 用量页的分组（?group=，缺省 user）与天数（?days=，缺省 30） */
+export const USAGE_GROUPS = ['user', 'day', 'model'] as const
+export type UsageGroup = (typeof USAGE_GROUPS)[number]
+export const USAGE_DAYS = [7, 30, 90] as const
+export type UsageDays = (typeof USAGE_DAYS)[number]
+
 export type Loc =
   | { kind: 'home' }
-  | { kind: 'admin' }
+  /** state 只在任务页有意义，group / days 只在用量页有意义；其它页取缺省值 */
+  | { kind: 'admin'; page: AdminPage; state: JobState | null; group: UsageGroup; days: UsageDays }
   /** section 为 null：地址里没有分区段，小说加载完再 replace 到默认分区 */
   | { kind: 'novel'; nid: string; section: Section | null }
   /** step 为 null：步骤是章节工作流的组件内状态（§4.2） */
@@ -59,6 +72,19 @@ export function chapterPath(nid: string, cid: string, o: {
   return s ? `${p}?${s}` : p
 }
 
+/** 后台地址：缺省值（概览页、全部任务、按用户、30 天）不写进地址 */
+export function adminPath(page: AdminPage = 'overview', o: {
+  state?: JobState | null; group?: UsageGroup | null; days?: UsageDays | null
+} = {}): string {
+  const p = page === 'overview' ? '/admin' : `/admin/${page}`
+  const q = new URLSearchParams()
+  if (page === 'jobs' && o.state) q.set('state', o.state)
+  if (page === 'usage' && o.group && o.group !== 'user') q.set('group', o.group)
+  if (page === 'usage' && o.days && o.days !== 30) q.set('days', String(o.days))
+  const s = q.toString()
+  return s ? `${p}?${s}` : p
+}
+
 /** replace 时透传的 state：去掉一次性的 vid / jobId / force */
 export function passState(s: NavState | null | undefined): NavState {
   const rest: NavState = { ...(s ?? {}) }
@@ -75,7 +101,19 @@ export function parseLocation(pathname: string, search = ''): { loc: Loc; fix: s
   const parts = pathname.split('/').filter(Boolean).map(decode)
   const notFound = { loc: { kind: 'notFound' } as Loc, fix: null }
   if (parts.length === 0) return { loc: { kind: 'home' }, fix: null }
-  if (parts[0] === 'admin') return parts.length === 1 ? { loc: { kind: 'admin' }, fix: null } : notFound
+  if (parts[0] === 'admin') {
+    if (parts.length > 2) return notFound
+    const page = parts[1] ?? 'overview'
+    if (!isIn(ADMIN_PAGES, page)) return notFound
+    const q = new URLSearchParams(search)
+    const state: JobState | null = page === 'jobs' && isIn(JOB_STATES, q.get('state')) ? (q.get('state') as JobState) : null
+    const group: UsageGroup = page === 'usage' && isIn(USAGE_GROUPS, q.get('group')) ? (q.get('group') as UsageGroup) : 'user'
+    const n = Number(q.get('days'))
+    const days: UsageDays = page === 'usage' && (USAGE_DAYS as readonly number[]).includes(n) ? (n as UsageDays) : 30
+    const canon = adminPath(page, { state, group, days })
+    const here = pathname + (search && search !== '?' ? search : '')
+    return { loc: { kind: 'admin', page, state, group, days }, fix: canon === here ? null : canon }
+  }
   if (parts[0] !== 'novels' || parts.length < 2) return notFound
   const nid = parts[1]
   if (parts.length === 2) return { loc: { kind: 'novel', nid, section: null }, fix: null }

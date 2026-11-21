@@ -1,5 +1,5 @@
 /** 路由纯函数：地址 ↔ 位置、非法值规范化（设计 docs/specs/2026-11-12-frontend-routing-design.md §3）。 */
-import { chapterPath, novelPath, parseLocation, passState } from '../src/paths'
+import { adminPath, chapterPath, novelPath, parseLocation, passState } from '../src/paths'
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
 const eq = (a: unknown, b: unknown, msg: string) =>
@@ -7,10 +7,35 @@ const eq = (a: unknown, b: unknown, msg: string) =>
 
 // 1. 顶层
 eq(parseLocation('/'), { loc: { kind: 'home' }, fix: null }, '/ 是首页')
-eq(parseLocation('/admin'), { loc: { kind: 'admin' }, fix: null }, '/admin 是后台')
+const adm = (page: string, o: Record<string, unknown> = {}) =>
+  ({ kind: 'admin', page, state: null, group: 'user', days: 30, ...o })
+eq(parseLocation('/admin'), { loc: adm('overview'), fix: null }, '/admin 是后台的运营概览')
 eq(parseLocation('/nope').loc, { kind: 'notFound' }, '未知顶层路径是 404')
 eq(parseLocation('/admin/x').loc, { kind: 'notFound' }, '/admin 下没有子路径')
 console.log('1. 顶层 ✓')
+
+// 1b. 后台各页与筛选
+for (const page of ['users', 'usage', 'jobs', 'errors', 'audit']) {
+  eq(parseLocation(`/admin/${page}`), { loc: adm(page), fix: null }, `/admin/${page} 是后台的一页`)
+}
+eq(parseLocation('/admin/overview'), { loc: adm('overview'), fix: '/admin' }, '概览的规范地址是 /admin')
+eq(parseLocation('/admin/'), { loc: adm('overview'), fix: '/admin' }, '尾斜杠规范化')
+eq(parseLocation('/admin/users/u1').loc, { kind: 'notFound' }, '后台页下面没有更深的路径')
+eq(parseLocation('/admin/jobs', '?state=failed'), { loc: adm('jobs', { state: 'failed' }), fix: null }, '任务页按失败筛选')
+eq(parseLocation('/admin/jobs', '?state=running'), { loc: adm('jobs', { state: 'running' }), fix: null }, '任务页按运行中筛选')
+eq(parseLocation('/admin/jobs', '?state=bogus'), { loc: adm('jobs'), fix: '/admin/jobs' }, '非法筛选值去掉')
+eq(parseLocation('/admin/users', '?state=failed'), { loc: adm('users'), fix: '/admin/users' }, '别的页不认 state')
+eq(parseLocation('/admin/usage', '?group=model&days=7'), { loc: adm('usage', { group: 'model', days: 7 }), fix: null }, '用量页分组与天数')
+eq(parseLocation('/admin/usage', '?days=7&group=model').fix, '/admin/usage?group=model&days=7', '参数顺序规范化')
+eq(parseLocation('/admin/usage', '?group=user&days=30'), { loc: adm('usage'), fix: '/admin/usage' }, '缺省值不写进地址')
+eq(parseLocation('/admin/usage', '?days=15'), { loc: adm('usage'), fix: '/admin/usage' }, '非法天数去掉')
+eq(adminPath(), '/admin', '缺省是概览')
+eq(adminPath('jobs', { state: 'failed' }), '/admin/jobs?state=failed', '任务筛选地址')
+eq(adminPath('jobs', { state: null }), '/admin/jobs', '全部任务不带参数')
+eq(adminPath('usage', { group: 'model' }), '/admin/usage?group=model', '用量分组地址')
+eq(adminPath('usage', { group: 'user', days: 90 }), '/admin/usage?days=90', '用量天数地址')
+eq(adminPath('users', { state: 'failed', group: 'model' }), '/admin/users', '别的页不带筛选参数')
+console.log('1b. 后台各页与筛选 ✓')
 
 // 2. 小说
 eq(parseLocation('/novels/n1'), { loc: { kind: 'novel', nid: 'n1', section: null }, fix: null }, '无分区：section 为 null，等加载完再 replace')
