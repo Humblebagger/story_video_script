@@ -207,6 +207,27 @@ def main() -> int:
     assert est > 0
     print("11. 自由节点待结算时不能删 ✓")
 
+    # 12. 结束标记跨重建保留：成功、失败、取消之后刷新会话（空 patch 的 build）时间与结局不变；重新排队后清空
+    root2 = Path(tmp.name) / "render" / "v2"
+    s2 = sess.build(root2, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    ok, bad, gone = [x["id"] for x in s2["clips"][:3]]
+    tid, req = start(root2, ok)
+    sess.poll_update(root2, ok, FAKE.poll(tid))
+    st = FAKE.poll(tid)
+    sess.downloaded(root2, ok, FAKE.download(st, sess.clip_dest(root2, ok, tid)), FAKE.cost(st, req))
+    tid, _ = start(root2, bad)
+    sess.poll_update(root2, bad, base.TaskState(tid, "failed", error="审核未通过"))
+    sess.queue_run(root2, [gone])
+    sess.cancel(root2, gone)
+    before = {i: (clip(root2, i)["ended_at"], clip(root2, i)["ended_as"]) for i in (ok, bad, gone)}
+    assert [v[1] for v in before.values()] == ["done", "failed", "cancelled"], before
+    sess.build(root2, doc, owner=OWNER, patch={}, keyframes={}, allow_in_flight=True)
+    after = {i: (clip(root2, i).get("ended_at"), clip(root2, i).get("ended_as")) for i in (ok, bad, gone)}
+    assert after == before, (before, after)
+    sess.queue_run(root2, [gone])
+    assert "ended_at" not in clip(root2, gone) and "ended_as" not in clip(root2, gone)
+    print("12. 结束标记跨重建保留、重排队清空 ✓")
+
     print("\nALL PASS")
     return 0
 

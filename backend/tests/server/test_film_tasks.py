@@ -26,6 +26,7 @@ os.environ["STORYBOARD_RENDER_RUNNER"] = "0"     # 不起后台线程，测试�
 from fastapi.testclient import TestClient  # noqa: E402
 from server.messages import msg  # noqa: E402
 from render import providers, session as render_session  # noqa: E402
+from render.providers import base as render_video_base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
 from server import auth, novels  # noqa: E402
@@ -165,6 +166,63 @@ def main() -> int:
     assert r.status_code == 200 and r.json()["cancel_outcome"] == "dequeued", r.text
     assert pick(r.json(), "F01")["state"] == "planned"
     print("7. 自由节点 ✓")
+
+    # 8. 厂商建不起来（密钥被撤、配置变了）：取消照常落账、返回 200 与取消结局，后台跟踪一致
+    def broken():
+        raise render_video_base.ProviderError.of("film.fake.unknown_model")
+
+    c.post(R + f"/clips/{x}/run", headers=H, json={})                 # 排队中，还没提交
+    runner.tick()                                                     # 提交并跑起来
+    assert pick(c.get(R + "/session", headers=H).json(), x)["state"] == "running"
+    try:
+        providers.register("fake", broken)
+        r = c.post(R + f"/clips/{x}/cancel", headers=H)
+        assert r.status_code == 200, r.text
+        assert r.json()["cancel_outcome"] == "abandoned"
+        s = render_session.load(root)
+        assert pick(s, x)["state"] == "done" and pick(s, x)["attempts"][-1]["state"] == "abandoned"
+        assert runner.watching() == [root], "不等了的那次仍要盯"
+        # 本地排队取消：没有厂商调用，也不能因视图失败而报错
+        s = render_session.queue_run(root, [x]) and render_session.load(root)
+        assert pick(s, x)["state"] == "queued"
+        r = c.post(R + f"/clips/{x}/cancel", headers=H)
+        assert r.status_code == 200 and r.json()["cancel_outcome"] == "dequeued", r.text
+        assert pick(render_session.load(root), x)["state"] == "done" and runner.watching() == [root]
+    finally:
+        providers.register("fake", lambda: FAKE)
+    drain()
+    print("8. 厂商建不起来时取消仍成功 ✓")
+
+    # 9. 任务列表不带厂商、档位、签名地址、密钥：在跑、完成、取消后才出结果三种响应都查，并核对字段白名单
+    SENT = {"vendor": "zz-vendor-sentinel", "model": "zz-model-sentinel",
+            "url": "https://cdn.example.test/v.mp4?X-Amz-Signature=zz-sig-sentinel", "key": "sk-zz-key-sentinel"}
+    with render_session.mutate(root) as s:
+        s["provider"] = SENT["vendor"]
+        s["model"] = SENT["model"]
+        s["_secret"] = SENT["key"]
+        for it in render_session.items(s):
+            for a in it["attempts"]:
+                a.update(video_url=SENT["url"], last_frame_url=SENT["url"])
+                a["billing"] = {"provider": SENT["vendor"], "model": SENT["model"], "resolution": "720p",
+                                "duration": 4.0, "estimate_cny": 4.0}
+        s["clips"][2].update(ended_at=render_session._now(), ended_as="done")     # 最近完成
+        s["clips"][1]["state"] = "running"
+        s["clips"][1]["queued_at"] = render_session._now()
+        s["clips"][1]["attempts"] = [{"task_id": "t-run", "state": "running", "cost_cny": 0.0, "file": None,
+                                      "last_frame": None, "error": None, "error_msg": None,
+                                      "at": render_session._now(), "fingerprint": None, "first_frame_used": None,
+                                      "video_url": SENT["url"],
+                                      "billing": {"provider": SENT["vendor"], "model": SENT["model"]}}]
+    raw = c.get("/render/tasks", headers=H).text
+    got = {t["state"] for t in tasks()}
+    assert {"running", "done", "late"} <= got, got
+    for v in SENT.values():
+        assert v not in raw, v
+    allowed = {"id", "novel_id", "chapter_id", "version_id", "work_title", "chapter", "item_id", "kind", "state",
+               "elapsed_sec", "typical_sec", "ended_at", "cost_cny"}
+    for t in tasks():
+        assert set(t) <= allowed, set(t) - allowed
+    print("9. 任务列表不泄露厂商、地址、密钥 ✓")
 
     print("\nALL PASS")
     return 0

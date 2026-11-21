@@ -218,7 +218,7 @@ class Runner:
         if self.clock() - first >= give_up:
             self._first_fail.pop(key, None)
             return True
-        sess.note_error(root, c["id"], _coded(f"厂商暂时不可达，正在重试：{e}", "film.provider.retrying", cause=cause_of(e)))  # i18n: internal（中文兜底与旧文一致）
+        sess.note_error(root, c["id"], _coded(f"厂商暂时不可达，正在重试：{e}", "film.provider.retrying", cause=cause_of(e)), task_id)  # i18n: internal（中文兜底与旧文一致）
         return False
 
     def _clear(self, kind, root, c, task_id) -> None:
@@ -272,41 +272,67 @@ class Runner:
             return
         sess.downloaded(root, c["id"], files, cost)
 
+    def _lost(self, root, h, tid, key, known, provider=None) -> None:
+        """用户不等了的那次一时查不到（或厂商实例建不起来）：计时，到期放弃。已确认过成功的按已知费用记。"""
+        first = self._first_fail.setdefault(key, self.clock())
+        if self.clock() - first >= self.abandoned_give_up_sec:
+            self._first_fail.pop(key, None)
+            log.warning("%s", _scrub_secrets(f'已取消的任务查询放弃 root={root} item={h["id"]} task={tid}', provider))  # i18n: internal
+            sess.settle_abandoned(root, tid, "failed", cost=known or 0.0, error=msg("film.cancel.lost"))
+
     def _track_abandoned(self, root, h, a) -> None:
         """用户不等了的那次：查到厂商给出终态为止。成功 → 下载、记费、留作可采用的一次；失败或取消照实记。
-        厂商、档位、分辨率、时长都用那次提交时记下的（billing），不看会话现在的设置。"""
+        厂商、档位、分辨率、时长都用那次提交时记下的（billing），不看会话现在的设置。
+        查到成功后结果与费用先记在那次尝试上；之后下载一直瞬时失败，同样到期限按已知费用结算为失败。"""
         b = a.get("billing") or {}
-        provider = get_video(b.get("provider"))
         tid = a["task_id"]
         key = ("abandoned", str(root), h["id"], tid)
+        dl_key = ("abandoned-dl", str(root), h["id"], tid)
+        known = a.get("known_cost_cny")
         try:
-            st = self._retry(lambda: provider.poll(tid))
-        except (base.TransientError, base.ProviderError):
-            first = self._first_fail.setdefault(key, self.clock())
-            if self.clock() - first >= self.abandoned_give_up_sec:
-                self._first_fail.pop(key, None)
-                log.warning("%s", _scrub_secrets(f'已取消的任务查询放弃 root={root} item={h["id"]} task={tid}', provider))  # i18n: internal
-                sess.settle_abandoned(root, tid, "failed", error=msg("film.cancel.lost"))
+            provider = get_video(b.get("provider"))
+        except (base.ProviderError, KeyError):
+            self._lost(root, h, tid, key, known)
             return
-        self._first_fail.pop(key, None)
-        if st.status not in ("succeeded", "failed"):
-            return                                  # 还在排队或生成：下一轮再查
-        req = base.ClipRequest(prompt="", model=b.get("model"), duration=b.get("duration") or 0.0,
-                               resolution=b.get("resolution"), images=a.get("images"))
-        cost = provider.cost(st, req)
-        if st.status == "failed":
-            gone = (st.error_msg or {}).get("code") == "film.provider.task_cancelled"
-            err = ({"code": st.error_msg["code"], "params": st.error_msg.get("params") or {}, "message": st.error}
-                   if st.error_msg else (st.error or msg("film.provider.failed")))
-            sess.settle_abandoned(root, tid, "cancelled" if gone else "failed", cost=cost, error=err)
-            return
+        if known is None:
+            try:
+                st = self._retry(lambda: provider.poll(tid))
+            except (base.TransientError, base.ProviderError):
+                self._lost(root, h, tid, key, None, provider)
+                return
+            self._first_fail.pop(key, None)
+            if st.status not in ("succeeded", "failed"):
+                return                                  # 还在排队或生成：下一轮再查
+            req = base.ClipRequest(prompt="", model=b.get("model"), duration=b.get("duration") or 0.0,
+                                   resolution=b.get("resolution"), images=a.get("images"))
+            cost = provider.cost(st, req)
+            if st.status == "failed":
+                gone = (st.error_msg or {}).get("code") == "film.provider.task_cancelled"
+                err = ({"code": st.error_msg["code"], "params": st.error_msg.get("params") or {}, "message": st.error}
+                       if st.error_msg else (st.error or msg("film.provider.failed")))
+                sess.settle_abandoned(root, tid, "cancelled" if gone else "failed", cost=cost, error=err)
+                return
+            sess.record_abandoned_result(root, tid, st, cost)
+        else:
+            self._first_fail.pop(key, None)
+            cost = known
+            st = base.TaskState(tid, "succeeded", video_url=a.get("video_url"),
+                                last_frame_url=a.get("last_frame_url"), usage=a.get("usage") or {})
         try:
             files = self._retry(lambda: provider.download(st, sess.clip_dest(root, h["id"], tid)))
-        except base.TransientError:
-            return                                  # 下一轮重查、重下
+        except base.TransientError as e:
+            first = self._first_fail.setdefault(dl_key, self.clock())
+            if self.clock() - first >= self.abandoned_give_up_sec:
+                self._first_fail.pop(dl_key, None)
+                sess.settle_abandoned(root, tid, "failed", cost=cost,
+                                      error=_coded("下载一直失败，结果地址即将过期：" + str(e), "film.download.keeps_failing",  # i18n: internal
+                                                   cause=cause_of(e)))
+            return                                  # 下一轮重下（已知成功，不再查询）
         except base.ProviderError as e:
+            self._first_fail.pop(dl_key, None)
             sess.settle_abandoned(root, tid, "failed", cost=cost, error=e)
             return
+        self._first_fail.pop(dl_key, None)
         if not base.is_playable_mp4(files["video"]):
             sess.settle_abandoned(root, tid, "failed", cost=cost, error=msg("film.download.not_playable"))
             return

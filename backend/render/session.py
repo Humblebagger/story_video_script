@@ -264,6 +264,8 @@ def _carry(row: dict, old: Optional[dict], back: Optional[dict] = None) -> dict:
     row["chosen"] = chosen
     row["mute_native"] = bool(old.get("mute_native")) if same else False
     row["uncertain"] = bool(old.get("uncertain")) if same else False
+    if same and old.get("ended_at"):                  # 结束标记跨重建保留（任务列表「最近结束」按它显示）
+        row["ended_at"], row["ended_as"] = old["ended_at"], old.get("ended_as")
     set_error(row, None)
     if row["chosen"] is not None:
         chosen = row["attempts"][row["chosen"]]
@@ -384,10 +386,17 @@ def _default_note(s: dict):
     return None
 
 
-def view(s: dict) -> dict:
-    """给界面的会话：去掉归属，附状态计数、剩余与在跑预估、可选项。"""
-    provider = _provider(s["provider"])
-    caps = provider.caps(s["model"])
+def view(s: dict, lenient: bool = False) -> dict:
+    """给界面的会话：去掉归属，附状态计数、剩余与在跑预估、可选项。
+    lenient：厂商建不起来（密钥被撤、配置变了）时不抛，选项里只留厂商名单、参考位不标超限；
+    用在「操作已落账、只差序列化响应」的场合（取消），界面随后的刷新会照常报出厂商问题。"""
+    try:
+        provider = _provider(s["provider"])
+        caps = provider.caps(s["model"])
+    except (SessionError, base.ProviderError):
+        if not lenient:
+            raise
+        provider = caps = None
     counts = {}
     for c in s["clips"]:
         counts[c["state"]] = counts.get(c["state"], 0) + 1
@@ -403,9 +412,12 @@ def view(s: dict) -> dict:
                                     if c["state"] in IN_FLIGHT) + abandoned_cny(s), 2)
     # 自由节点：参考位超出当前厂商上限（改了设置）时标出来，删减之前生成会被拒
     out["free"] = [dict(n, uncertain=bool(n.get("uncertain")),
-                        over_refs=compose.free_slots_needed(n["refs"], n.get("first_frame"), caps) > caps.max_refs)
+                        over_refs=caps is not None and compose.free_slots_needed(n["refs"], n.get("first_frame"), caps) > caps.max_refs)
                    for n in s.get("free") or []]
     out["free_seq"] = int(s.get("free_seq") or 0)
+    if provider is None:
+        out["options"] = {"providers": names()}
+        return out
     out["options"] = {"providers": names(), "models": provider.models,
                       "resolutions": caps.resolutions, "cny_per_sec": caps.cny_per_sec,
                       "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
@@ -456,6 +468,8 @@ def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[floa
                                     spent=money(s["spent_cny"]), reserved=money(reserved), total=money(total))
         for c in targets:
             c["state"], c["queued_at"] = "queued", _now()
+            c.pop("ended_at", None)                   # 重新排队：上一次的结束标记作废
+            c.pop("ended_as", None)
             set_error(c, None)
             c["uncertain"] = False
         return s
@@ -617,10 +631,16 @@ def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0, *,
                 c["uncertain"] = True
 
 
-def note_error(root, clip_id: str, err) -> None:
-    """只记一条给用户看的提示，不改状态（如厂商暂时不可达、正在重试）。"""
+def note_error(root, clip_id: str, err, task_id: Optional[str] = None) -> None:
+    """只记一条给用户看的提示，不改状态（如厂商暂时不可达、正在重试）。
+    task_id：发出这条提示的那次任务；会话里这一条已不是同一次在跑（取消、重排队、换了新任务）就丢弃。"""
     with mutate(root) as s:
-        set_error(_item(s, clip_id), err)
+        c = _item(s, clip_id)
+        if task_id is not None:
+            a = c["attempts"][-1] if c["attempts"] else {}
+            if c["state"] not in ("running", "downloading") or a.get("task_id") != task_id:
+                return
+        set_error(c, err)
 
 
 def clip_dest(root, clip_id: str, task_id: str) -> Path:
@@ -687,6 +707,17 @@ def download_failed(root, clip_id: str, error, cost: float) -> None:
         c["state"] = "failed"
         set_error(c, error)
         _ended(c, "failed")
+
+
+def record_abandoned_result(root, task_id: str, st: base.TaskState, cost: float) -> None:
+    """用户不等了的那次已查到成功：把结果地址与已确认的费用记在那次尝试上（仍是待结算），
+    之后下载再失败也不会退回「是否生成未知」。"""
+    with mutate(root) as s:
+        for _, a in abandoned(s):
+            if a["task_id"] == task_id:
+                a.update(video_url=st.video_url, last_frame_url=st.last_frame_url, usage=st.usage,
+                         known_cost_cny=cost)
+                return
 
 
 def settle_abandoned(root, task_id: str, state: str, *, cost: float = 0.0, files: Optional[dict] = None,

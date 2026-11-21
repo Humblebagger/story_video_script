@@ -205,6 +205,8 @@ def queue(root, ctx: Ctx, fid: str, expected_cny: Optional[float] = None) -> dic
                                          spent=money(s["spent_cny"]), reserved=money(reserved),
                                          total=money(total))
         n.update(state="queued", queued_at=sess._now(), uncertain=False)
+        n.pop("ended_at", None)                   # 重新排队：上一次的结束标记作废
+        n.pop("ended_as", None)
         sess.set_error(n, None)
         return s
 

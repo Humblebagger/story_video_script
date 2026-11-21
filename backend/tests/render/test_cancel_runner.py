@@ -175,6 +175,107 @@ def main() -> int:
     assert tid
     print("8. 重启后接着盯 ✓")
 
+    # 9. 查询已确认成功、下载持续瞬时失败：结果与费用先记在那次尝试上，到期按已知费用结算为失败（恰记一次、放预留、不采用）
+    def transient_dl(_st, _dest):
+        raise base.TransientError.of("film.fake.throttled")
+
+    def stuck_download(cid):
+        """放弃一次、让它查到成功但下载一直瞬时失败；返回 (任务 id, 结算前的 spent)。"""
+        spent_ = sess.load(root)["spent_cny"]
+        tid_ = abandon(cid)
+        fake.download = transient_dl
+        for _ in range(8):
+            runner.tick()
+        att_ = clip(root, cid)["attempts"][-1]
+        assert att_["state"] == "abandoned" and att_.get("known_cost_cny", 0) > 0, att_
+        assert sess.load(root)["spent_cny"] == spent_, "到期前不入账"
+        return tid_, spent_
+
+    c9 = ids[2]
+    tid, spent = stuck_download(c9)
+    now[0] += 101
+    runner.tick()
+    fake.download = real_download
+    att = clip(root, c9)["attempts"][-1]
+    assert att["state"] == "failed" and att["error_msg"]["code"] == "film.download.keeps_failing", att
+    assert att["cost_cny"] == att["known_cost_cny"] > 0
+    assert sess.load(root)["spent_cny"] == round(spent + att["cost_cny"], 2), "费用恰记一次"
+    assert clip(root, c9)["chosen"] is None and sess.view(sess.load(root))["reserved_cny"] == 0
+    runner.tick()
+    runner.tick()
+    assert sess.load(root)["spent_cny"] == round(spent + att["cost_cny"], 2) and runner.watching() == []
+    print("9. 查询成功、下载持续瞬时失败 → 按已知费用结算 ✓")
+
+    # 10. 下载瞬时失败之后查询才永久失效：已知费用不丢
+    c10 = ids[3]
+    tid, spent = stuck_download(c10)
+
+    def gone_poll(_tid):
+        raise base.ProviderError.of("film.fake.no_task", id=_tid)
+
+    fake.poll = gone_poll
+    now[0] += 101
+    runner.tick()
+    fake.poll, fake.download = real_poll, real_download
+    att = clip(root, c10)["attempts"][-1]
+    assert att["state"] == "failed" and att["cost_cny"] == att["known_cost_cny"] > 0, att
+    assert sess.load(root)["spent_cny"] == round(spent + att["cost_cny"], 2)
+    assert runner.watching() == [] and clip(root, c10)["chosen"] is None
+    print("10. 下载瞬时失败后查询失效：已知费用不丢 ✓")
+
+    # 11. 厂商实例建不起来（如密钥被撤）：同样计时，到期写「无法确认」收尾，不再盯
+    c11 = ids[4]
+    spent = sess.load(root)["spent_cny"]
+    tid = abandon(c11)
+
+    def boom():
+        raise base.ProviderError.of("film.fake.unknown_model")
+
+    providers.register("fake", boom)
+    try:
+        runner.tick()
+        assert clip(root, c11)["attempts"][-1]["state"] == "abandoned" and runner.watching() == [root]
+        now[0] += 101
+        runner.tick()
+    finally:
+        providers.register("fake", lambda: fake)
+    att = clip(root, c11)["attempts"][-1]
+    assert att["state"] == "failed" and att["error_msg"]["code"] == "film.cancel.lost", att
+    assert sess.load(root)["spent_cny"] == spent and sess.view(sess.load(root))["reserved_cny"] == 0
+    assert runner.watching() == []
+    print("11. 厂商实例建不起来也按期放弃 ✓")
+
+    # 12. 旧轮询的重试错误不写回已取消 / 已重排队的条目
+    c12 = ids[5]
+    sess.queue_run(root, [c12])
+    runner.watch(root)
+    runner.tick()
+    assert clip(root, c12)["state"] == "running"
+    for requeue in (False, True):
+        calls = []
+
+        def racing_poll(_tid, _requeue=requeue):
+            if not calls:                    # 第一次查询时请求线程插进来取消（或再重排队）；之后每次重试都抛错
+                t_, _ = sess.cancel_target(root, c12)
+                sess.cancel(root, c12, t_)
+                if _requeue:
+                    sess.queue_run(root, [c12])
+            calls.append(1)
+            raise base.TransientError.of("film.fake.throttled")
+
+        fake.poll = racing_poll
+        runner._poll(root, fake, sess.load(root), clip(root, c12))
+        fake.poll = real_poll
+        assert calls and clip(root, c12)["error"] is None, (requeue, clip(root, c12)["error"])
+        if not requeue:
+            sess.queue_run(root, [c12])
+            runner.tick()
+            assert clip(root, c12)["state"] == "running"
+        else:
+            runner.tick()
+    drain()
+    print("12. 旧轮询的错误不污染当前条目 ✓")
+
     print("\nALL PASS")
     return 0
 

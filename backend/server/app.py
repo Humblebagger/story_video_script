@@ -1179,7 +1179,7 @@ def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str) -> dict
         confirmed = provider is not None and render_video_base.try_cancel(provider, task_id)
     s = _render_call(render_session.cancel, root, item_id, task_id, confirmed)
     _render_runner.watch(root)                  # 不等了的那次还要盯；没有要盯的，下一轮自己放下
-    out = _render_call(render_session.view, s)
+    out = _render_call(render_session.view, s, True)     # 厂商建不起来也要把已落账的取消如实返回
     out["cancel_outcome"] = "dequeued" if task_id is None else "cancelled" if confirmed else "abandoned"
     return out
 
