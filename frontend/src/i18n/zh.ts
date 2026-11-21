@@ -1393,6 +1393,13 @@ export const zh = {
         busy: '这一段正在生成，等它结束再换',
         not_success: '只能采用成功的那几次',
       },
+      cancel: {
+        submitting: '正在提交，几秒后再取消',
+        finished: '这一段已经生成完成，正在取回，不用取消了',
+        not_running: '这一段不在排队或生成中',
+        changed: '状态刚刚变了，请再试一次',
+        lost: '已取消的这一次一直查不到结果，无法确认是否计费',
+      },
       submit: {
         interrupted: '提交时服务中断，不确定厂商是否已受理；请到厂商控制台核对后再重做',
         over_budget: '超出单章上限，没有提交',
@@ -1428,6 +1435,7 @@ export const zh = {
         busy_edit: '这个节点正在生成，等它结束再改',
         target_duration: '挂靠某一段的节点时长跟随那一段，不能单独改',
         busy_delete: '这个节点正在生成，等它结束再删',
+        pending_delete: '这个节点有一次已取消的生成还没有结果，等它结束再删',
         tail_in_use: '{id} 用它的尾帧作首帧，先改掉那边',
         composing: '正在合成，等它结束再生成',
         confirm: '本次约 {amount}，请确认金额后再生成',

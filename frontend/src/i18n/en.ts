@@ -1399,6 +1399,13 @@ export const en: BaseMessages = {
         busy: 'This clip is generating; wait for it to finish before switching',
         not_success: 'Only successful attempts can be adopted',
       },
+      cancel: {
+        submitting: 'Still submitting; try cancelling again in a few seconds',
+        finished: 'This clip has finished generating and is being fetched; nothing to cancel',
+        not_running: 'This clip is not queued or generating',
+        changed: 'The status just changed; please try again',
+        lost: 'No result could be found for this cancelled attempt, so it is unclear whether it was billed',
+      },
       submit: {
         interrupted: 'The service was interrupted while submitting, so it is unclear whether the provider accepted it; check the provider console before redoing',
         over_budget: 'Over the per-chapter limit; not submitted',
@@ -1434,6 +1441,7 @@ export const en: BaseMessages = {
         busy_edit: 'This node is generating; wait for it to finish before editing',
         target_duration: 'A node attached to a clip follows that clip\'s duration and cannot be changed on its own',
         busy_delete: 'This node is generating; wait for it to finish before deleting',
+        pending_delete: 'This node has a cancelled generation with no result yet; wait for it to finish before deleting',
         tail_in_use: '{id} uses its last frame as a first frame; change that one first',
         composing: 'Composing is in progress; wait for it to finish before generating',
         confirm: 'This run costs about {amount}; please confirm the amount before generating',

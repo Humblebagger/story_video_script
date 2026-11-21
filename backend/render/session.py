@@ -25,6 +25,7 @@ log = logging.getLogger("render.session")
 
 SESSION_FILE = "session.json"
 IN_FLIGHT = ("queued", "running", "downloading")
+ABANDONED = "abandoned"     # 尝试的状态：用户不等了，厂商那边可能还在跑；出片线程在后台盯到它有结果
 REMAINING = ("planned", "failed")
 DEFAULT_BUDGET_CNY = 200.0
 DEFAULT_CONFIRM_OVER_CNY = 20.0
@@ -162,6 +163,37 @@ def _item(s: dict, item_id: str) -> dict:
         if c["id"] == item_id:
             return c
     raise NotFound.of("film.clip.not_found", id=item_id)
+
+
+def _ended(c: dict, how: str) -> None:
+    """记下这一条刚结束（done / failed / cancelled）：任务列表的「最近结束」按它显示。"""
+    c["ended_at"], c["ended_as"] = _now(), how
+
+
+def _rest_state(c: dict) -> str:
+    """不在跑时该回到的状态：有采用的按指纹判 done / stale（自由节点没有过期），没有采用就是未出片。"""
+    if c.get("chosen") is None:
+        return "planned"
+    if is_free(c["id"]):
+        return "done"
+    return "done" if c["attempts"][c["chosen"]].get("fingerprint") == c.get("fingerprint") else "stale"
+
+
+def abandoned(s: dict) -> list:
+    """[(所在的段 / 自由节点 / orphaned 记录, 尝试)]：用户不等了、还没有结果的尝试。"""
+    holders = items(s) + list(s.get("orphaned") or [])
+    return [(h, a) for h in holders for a in h.get("attempts") or []
+            if a.get("state") == ABANDONED and a.get("task_id")]
+
+
+def abandoned_cny(s: dict) -> float:
+    """这些尝试厂商可能照常完成并计费：按提交时的预估预留，算进上限。"""
+    return round(sum(float((a.get("billing") or {}).get("estimate_cny") or 0.0) for _, a in abandoned(s)), 2)
+
+
+def needs_runner(s: dict) -> bool:
+    """出片线程还要不要盯这个会话：有在跑的，或有不等了但还没结果的。"""
+    return any_in_flight(s) or bool(abandoned(s))
 
 
 def _provider(name: str):
@@ -368,7 +400,7 @@ def view(s: dict) -> dict:
     out["remaining_cny"] = round(sum(c["estimate_cny"] for c in _remaining(s)), 2)
     out["uncertain_count"] = sum(1 for c in s["clips"] if c.get("uncertain"))
     out["reserved_cny"] = round(sum(c["estimate_cny"] for c in items(s)
-                                    if c["state"] in IN_FLIGHT), 2)
+                                    if c["state"] in IN_FLIGHT) + abandoned_cny(s), 2)
     # 自由节点：参考位超出当前厂商上限（改了设置）时标出来，删减之前生成会被拒
     out["free"] = [dict(n, uncertain=bool(n.get("uncertain")),
                         over_refs=compose.free_slots_needed(n["refs"], n.get("first_frame"), caps) > caps.max_refs)
@@ -380,6 +412,7 @@ def view(s: dict) -> dict:
                       "first_frame": caps.first_frame, "frame_with_refs": caps.frame_with_refs,
                       "audio_modes": compose.audio_modes(caps),
                       "rate_note": provider.rate_note,
+                      "typical_sec": base.typical_sec(provider),
                       "default_note": _default_note(s)}
     return out
 
@@ -417,7 +450,7 @@ def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[floa
             raise Conflict.of("film.run.confirm", total, amount=money(total))
         if expected_cny is not None and abs(expected_cny - total) > 0.005:
             raise Conflict.of("film.run.changed", total, amount=money(total))
-        reserved = sum(c["estimate_cny"] for c in items(s) if c["state"] in IN_FLIGHT)
+        reserved = sum(c["estimate_cny"] for c in items(s) if c["state"] in IN_FLIGHT) + abandoned_cny(s)
         if s["spent_cny"] + reserved + total > s["budget_cny"] + 1e-9:
             raise BudgetExceeded.of("film.budget.exceeded", budget=f"{s['budget_cny']:g}",
                                     spent=money(s["spent_cny"]), reserved=money(reserved), total=money(total))
@@ -447,6 +480,56 @@ def set_mute(root, clip_id: str, mute: bool) -> dict:
         return s
 
 
+def _cancel_check(c: dict) -> Optional[str]:
+    """能不能取消：还没提交返回 None（纯本地取消，不花钱）；已提交返回任务 id；其余抛 Conflict。"""
+    last = c["attempts"][-1] if c["attempts"] else None
+    if c["state"] == "queued":
+        if last and last["state"] == "submitting":
+            raise Conflict.of("film.cancel.submitting")     # 请求正在路上，拿不到任务 id：几秒后再试
+        return None
+    if c["state"] == "running" and last and last.get("task_id"):
+        return last["task_id"]
+    if c["state"] == "downloading":
+        raise Conflict.of("film.cancel.finished")
+    raise Conflict.of("film.cancel.not_running")
+
+
+def cancel_target(root, item_id: str) -> tuple:
+    """取消前看一眼（不改会话）：(任务 id 或 None, 厂商名)。调用方拿任务 id 在锁外请厂商取消，再调 cancel。"""
+    with _lock(root):
+        s = _read_existing(root)
+        if s is None:
+            raise NotFound.of("film.session.none")
+        return _cancel_check(_item(s, item_id)), s["provider"]
+
+
+def cancel(root, item_id: str, task_id: Optional[str] = None, confirmed: bool = False) -> dict:
+    """取消一段或一个自由节点，立即放开它（回到未出片 / 原来采用的那次）。
+    task_id 是 cancel_target 看到的那个：对不上说明两步之间状态变了，抛 Conflict 让用户再试。
+    - 还没提交（task_id=None）：什么都没发出去，不留尝试。
+    - 已提交、厂商确认取消（confirmed=True）：那次尝试记 cancelled，不计费。
+    - 已提交、没取消成：那次尝试记 abandoned，连同提交时的厂商、档位、分辨率、时长与预估（之后改设置也按它记费）；
+      出片线程接着盯，结果回来由 settle_abandoned 落账。"""
+    with mutate(root) as s:
+        c = _item(s, item_id)
+        if _cancel_check(c) != task_id:
+            raise Conflict.of("film.cancel.changed")
+        if task_id is not None:
+            a = c["attempts"][-1]
+            a["cancelled_at"] = _now()
+            if confirmed:
+                a["state"] = "cancelled"
+                set_error(a, msg("film.provider.task_cancelled"))
+            else:
+                a["state"] = ABANDONED
+                a["billing"] = {"provider": s["provider"], "model": s["model"], "resolution": s["resolution"],
+                                "duration": c["duration"], "estimate_cny": c["estimate_cny"]}
+        c["state"] = _rest_state(c)
+        set_error(c, None)
+        _ended(c, "cancelled")
+        return s
+
+
 # ---------- 出片线程侧迁移 ----------
 
 def begin_submit(root, clip_id: str) -> Optional[dict]:
@@ -463,11 +546,13 @@ def begin_submit(root, clip_id: str) -> Optional[dict]:
             last["state"] = "failed"
             c["state"], c["uncertain"] = "failed", True
             copy_error(c, last)
+            _ended(c, "failed")
             return None
         running = sum(x["estimate_cny"] for x in items(s) if x["state"] in ("running", "downloading"))
-        if s["spent_cny"] + running + c["estimate_cny"] > s["budget_cny"] + 1e-9:
+        if s["spent_cny"] + running + abandoned_cny(s) + c["estimate_cny"] > s["budget_cny"] + 1e-9:
             c["state"] = "failed"
             set_error(c, msg("film.submit.over_budget"))
+            _ended(c, "failed")
             return None
         c["attempts"].append({"task_id": None, "state": "submitting", "cost_cny": 0.0,
                               "file": None, "last_frame": None, "error": None, "error_msg": None, "at": _now(),
@@ -505,6 +590,7 @@ def submit_failed(root, clip_id: str, error, *, stale: bool = False,
             if uncertain:
                 c["uncertain"] = True
         set_error(c, error)
+        _ended(c, "failed")
 
 
 def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0, *,
@@ -526,6 +612,7 @@ def poll_update(root, clip_id: str, st: base.TaskState, cost: float = 0.0, *,
             s["spent_cny"] = round(s["spent_cny"] + cost, 2)
             c["state"] = "failed"
             copy_error(c, a)
+            _ended(c, "failed")
             if uncertain:
                 c["uncertain"] = True
 
@@ -587,6 +674,7 @@ def downloaded(root, clip_id: str, files: dict, cost: float) -> None:
         else:
             c["state"] = "done" if a["fingerprint"] == c["fingerprint"] else "stale"
         set_error(c, None)
+        _ended(c, "done")
 
 
 def download_failed(root, clip_id: str, error, cost: float) -> None:
@@ -598,6 +686,27 @@ def download_failed(root, clip_id: str, error, cost: float) -> None:
         s["spent_cny"] = round(s["spent_cny"] + cost, 2)
         c["state"] = "failed"
         set_error(c, error)
+        _ended(c, "failed")
+
+
+def settle_abandoned(root, task_id: str, state: str, *, cost: float = 0.0, files: Optional[dict] = None,
+                     error=None) -> None:
+    """用户不等了的那次有了结果。state：succeeded（文件已下好）/ failed / cancelled。费用照记进 spent_cny。
+    成功的标 late、留作可采用的一次，不自动采用，也不动所在段的状态；挂靠的自由节点照常复制进目标段。"""
+    with mutate(root) as s:
+        for h, a in abandoned(s):
+            if a["task_id"] != task_id:
+                continue
+            a.update(state=state, cost_cny=cost, settled_at=_now())
+            if state == "succeeded":
+                a.update(file=_rel(root, files["video"]), last_frame=_rel(root, files.get("last_frame")), late=True)
+                set_error(a, None)
+                if is_free(h["id"]) and h.get("target"):
+                    _deliver(s, h, a)
+            else:
+                set_error(a, error)
+            s["spent_cny"] = round(s["spent_cny"] + cost, 2)
+            return
 
 
 def _prev(s: dict, clip: dict) -> Optional[dict]:
@@ -636,11 +745,12 @@ def recover(root) -> bool:
                 set_error(a, msg("film.submit.interrupted"))
                 c["state"], c["uncertain"] = "failed", True
                 copy_error(c, a)
+                _ended(c, "failed")
                 changed = True
         changed = _fail_interrupted_compose(s) or changed
         if changed:
             _save(root, s)
-        return any_in_flight(s)
+        return needs_runner(s)
 
 
 def _fail_interrupted_compose(s: dict) -> bool:

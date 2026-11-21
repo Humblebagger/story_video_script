@@ -798,6 +798,26 @@
     "params": [],
     "zh": "这个版本的分镜没有镜头，无法切段"
   },
+  "film.cancel.changed": {
+    "params": [],
+    "zh": "状态刚刚变了，请再试一次"
+  },
+  "film.cancel.finished": {
+    "params": [],
+    "zh": "这一段已经生成完成，正在取回，不用取消了"
+  },
+  "film.cancel.lost": {
+    "params": [],
+    "zh": "已取消的这一次一直查不到结果，无法确认是否计费"
+  },
+  "film.cancel.not_running": {
+    "params": [],
+    "zh": "这一段不在排队或生成中"
+  },
+  "film.cancel.submitting": {
+    "params": [],
+    "zh": "正在提交，几秒后再取消"
+  },
   "film.choose.busy": {
     "params": [],
     "zh": "这一段正在生成，等它结束再换"
@@ -927,6 +947,10 @@
       "max"
     ],
     "zh": "参考超出当前厂商上限（{need} / {max}）"
+  },
+  "film.free.pending_delete": {
+    "params": [],
+    "zh": "这个节点有一次已取消的生成还没有结果，等它结束再删"
   },
   "film.free.prompt_too_long": {
     "params": [

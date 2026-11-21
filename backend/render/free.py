@@ -171,6 +171,8 @@ def delete(root, fid: str) -> dict:
         n = _free(s, fid)
         if n["state"] in sess.IN_FLIGHT:
             raise sess.Conflict.of("film.free.busy_delete")
+        if any(a.get("state") == sess.ABANDONED for a in n["attempts"]):
+            raise sess.Conflict.of("film.free.pending_delete")      # 那次可能还会计费：删了节点就没处记
         users = [x["id"] for x in s.get("free") or [] if x.get("first_frame") == f"tail:{fid}"]
         if users:
             raise sess.Conflict.of("film.free.tail_in_use", id=users[0])
@@ -197,7 +199,7 @@ def queue(root, ctx: Ctx, fid: str, expected_cny: Optional[float] = None) -> dic
             raise sess.Conflict.of("film.free.confirm", total, amount=money(total))
         if expected_cny is not None and abs(expected_cny - total) > 0.005:
             raise sess.Conflict.of("film.run.changed", total, amount=money(total))
-        reserved = sum(c["estimate_cny"] for c in sess.items(s) if c["state"] in sess.IN_FLIGHT)
+        reserved = sum(c["estimate_cny"] for c in sess.items(s) if c["state"] in sess.IN_FLIGHT) + sess.abandoned_cny(s)
         if s["spent_cny"] + reserved + total > s["budget_cny"] + 1e-9:
             raise sess.BudgetExceeded.of("film.budget.exceeded", budget=f"{s['budget_cny']:g}",
                                          spent=money(s["spent_cny"]), reserved=money(reserved),
