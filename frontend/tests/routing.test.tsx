@@ -153,6 +153,14 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (path === '/admin/overview' && method === 'GET') {
     return json({ users: 2, active_7d: 1, tokens_30d: 0, cost_30d: 0, running: 0, failed_7d: 0, daily: [], unpriced_models: [] })
   }
+  if (path === '/admin/users' && method === 'GET') return json({ users: [] })
+  if (path === '/admin/jobs' && method === 'GET') return json({ running: [], failed: [] })
+  if (path === '/admin/usage' && method === 'GET') {
+    return json({ group: 'user', days: 30, rows: [], per_k_chars: { n: 0, mean: null, p90: null }, unpriced_models: [] })
+  }
+  if (path === '/admin/errors' && method === 'GET') return json({ errors: [] })
+  if (path === '/admin/audit' && method === 'GET') return json({ audit: [] })
+  if (path === '/admin/pricing' && method === 'GET') return json({ currency: 'USD', updated_at: null, models: {} })
   if (path === '/novels' && method === 'GET') return json({ novels: [{ id: novel.id, title: novel.title, updated_at: '', chapters: novel.chapters.length, asset_counts: counts(novel.memory.assets) }] })
   if (submitFail && method === 'POST' && path === '/novels/n1/chapters/c1/versions') {
     return err(422, { code: 'chapter.no_text', params: {}, message: '本章还没有原文' })
@@ -307,13 +315,59 @@ console.log('5. 未登录深链接 → 登录后回到原地址，关掉后不�
 // §12.3-6 非管理员访问 /admin：回首页
 {
   const a = await boot('/admin', 'alice')
-  must(a.here() === '/' && !a.has('管理后台'), `普通用户不能停在后台，实际 ${a.here()}`)
+  must(a.here() === '/' && !a.has('运营后台'), `普通用户不能停在后台，实际 ${a.here()}`)
   await a.done()
   const b = await boot('/admin', 'root')
-  must(b.here() === '/admin' && b.has('管理后台'), '管理员可以直接打开后台')
+  must(b.here() === '/admin' && b.has('运营后台'), '管理员可以直接打开后台')
   await b.done()
 }
 console.log('6. 非管理员 /admin → 回首页 ✓')
+
+// 后台每页有独立地址：深链接（等于刷新）、导航、后退、筛选、不规范地址、返回产品
+{
+  const h2 = (x: { q: (sel: string) => HTMLElement | null }) => x.q('.adm__pagehead h2')?.textContent
+  const a = await boot('/admin/jobs?state=failed', 'root')
+  must(a.here() === '/admin/jobs?state=failed' && h2(a) === '任务', `深链接到带筛选的任务页，实际 ${a.here()} / ${h2(a)}`)
+  must(button(a.container, '失败')?.getAttribute('aria-pressed') === 'true', '筛选取自地址')
+  must(doc.title === '任务 · 运营后台 — Inkreel', `后台页的标题，实际 ${doc.title}`)
+  must(!a.q('[data-testid="app-shell"]') && !!a.q('[data-testid="admin-shell"]'), '后台是独立的一屏，不套产品外壳')
+  await click(a.q('[data-testid="admin-nav-users"]')!)
+  must(a.here() === '/admin/users' && a.router.state.historyAction === 'PUSH' && h2(a) === '用户', `点导航换页是 push，实际 ${a.here()}`)
+  await act(async () => { await a.router.navigate(-1) })
+  await settle()
+  must(a.here() === '/admin/jobs?state=failed' && h2(a) === '任务', `后退回到上一页并带着筛选，实际 ${a.here()}`)
+  await click(button(a.container, '全部')!)
+  must(a.here() === '/admin/jobs' && a.router.state.historyAction === 'REPLACE', `改筛选是 replace，实际 ${a.here()}`)
+  await a.done()
+  const b = await boot('/admin/overview', 'root')
+  must(b.here() === '/admin' && h2(b) === '运营概览', `/admin/overview 规范化到 /admin，实际 ${b.here()}`)
+  await b.done()
+  const c = await boot('/admin/usage?days=7&group=model&x=1', 'root')
+  must(c.here() === '/admin/usage?group=model&days=7' && h2(c) === '用量与花费', `乱序与多余参数规范化，实际 ${c.here()}`)
+  await c.done()
+  const d = await boot('/admin/nope', 'root')
+  must(!!d.q('[data-testid="not-found"]'), '后台下面不存在的页是 404')
+  await d.done()
+  const e = await boot('/admin/users', 'alice')
+  must(e.here() === '/' && !e.has('运营后台'), `普通用户打不开后台子页，实际 ${e.here()}`)
+  await e.done()
+  // 返回产品：回到进后台之前在产品里的那一页（后台里翻过页也一样）
+  const f = await boot('/novels/n1/props', 'root')
+  await act(async () => { await f.router.navigate('/admin') })
+  await settle(150)
+  await click(f.q('[data-testid="admin-nav-audit"]')!)
+  must(f.here() === '/admin/audit', `先在后台里换一页，实际 ${f.here()}`)
+  await click(f.q('[data-testid="admin-back"]')!)
+  await settle(150)
+  must(f.here() === '/novels/n1/props' && !!f.q('[data-testid="app-shell"]'), `返回产品回到进后台之前的页，实际 ${f.here()}`)
+  await f.done()
+  const k = await boot('/admin/errors', 'root')
+  await click(k.q('[data-testid="admin-back"]')!)
+  await settle(150)
+  must(k.here() === '/', `直接打开后台时返回产品回首页，实际 ${k.here()}`)
+  await k.done()
+}
+console.log('后台各页独立地址 / 后退 / 筛选 / 规范化 / 返回产品 ✓')
 
 // §12.3-1（章节部分）深链接到章节的某一步
 {
@@ -582,7 +636,7 @@ console.log('C2. 换章后旧任务迟到的轮询被丢弃 ✓')
   must(a.here() === '/admin', `me() 回来前不应离开 /admin，实际 ${a.here()}`)
   release(); meGate = null
   await settle(300)
-  must(a.here() === '/admin' && a.has('管理后台'), 'me() 确认是管理员后留在后台')
+  must(a.here() === '/admin' && a.has('运营后台'), 'me() 确认是管理员后留在后台')
   await a.done()
 }
 console.log('I2. /admin 等角色确认 ✓')

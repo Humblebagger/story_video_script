@@ -1283,9 +1283,7 @@ export const en: Messages = {
   },
   admin: {
     title: 'Admin console',
-    back: 'Back',
-    tabsLabel: 'Admin sections',
-    tabs: { overview: 'Overview', users: 'Users', usage: 'Usage', jobs: 'Jobs', audit: 'Audit', errors: 'Errors' },
+    back: 'Back to app',
     nav: {
       label: 'Admin navigation', collapse: 'Collapse navigation', expand: 'Expand navigation',
       groups: { overview: 'Overview', people: 'Users & usage', ops: 'Operations' },

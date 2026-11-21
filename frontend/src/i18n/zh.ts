@@ -94,7 +94,7 @@ export const zh = {
       chapterGone: '这一章不存在或已删除',
       adminOnly: '需要管理员权限',
     },
-    title: { admin: '管理后台', canvas: '出片画布', notFound: '页面不存在' },
+    title: { admin: '运营后台', canvas: '出片画布', notFound: '页面不存在' },
     loading: '加载中…',
   },
   overview: {
@@ -1276,10 +1276,8 @@ export const zh = {
     refs: '垫图：{list}',
   },
   admin: {
-    title: '管理后台',
-    back: '返回',
-    tabsLabel: '后台页签',
-    tabs: { overview: '概览', users: '用户', usage: '用量', jobs: '任务', audit: '审计', errors: '错误记录' },
+    title: '运营后台',
+    back: '返回产品',
     nav: {
       label: '后台导航', collapse: '收起导航', expand: '展开导航',
       groups: { overview: '总览', people: '用户与用量', ops: '运行' },

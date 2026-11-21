@@ -360,6 +360,122 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   console.log('6. 导航组件：分组 / 当前页 / 计数 / 收起 / 窄屏下拉 / 英文 ✓')
 }
 
+// 7. 外框：每个地址打开对应的页；导航与卡片链接改地址；筛选写进地址；计数、收起、窄屏
+{
+  const { useState } = await import('react')
+  const { AdminView } = await import('../src/components/admin/AdminView')
+  const { parseLocation } = await import('../src/paths')
+  const me = { id: 'u-root', username: 'root', created_at: '', role: 'admin' as const }
+  const log: string[] = []
+  let here = ''
+  let back = 0
+  /** 代替 App：地址放在状态里，用 parseLocation 解析后交给外框 */
+  function Host({ start }: { start: string }) {
+    const [url, setUrl] = useState(start)
+    here = url
+    const [pathname, query] = url.split('?')
+    const { loc } = parseLocation(pathname, query ? `?${query}` : '')
+    if (loc.kind !== 'admin') return <p>不是后台地址</p>
+    return (
+      <AdminView me={me} page={loc.page} jobState={loc.state} usageGroup={loc.group} usageDays={loc.days}
+                 onNav={(to, replace) => { log.push(`${replace ? 'replace' : 'push'} ${to}`); setUrl(to) }}
+                 onBack={() => { back++ }} />
+    )
+  }
+  const open = async (url: string) => { log.length = 0; await remount(<Host start={url} />) }
+  const h2 = () => container.querySelector('.adm__pagehead h2')?.textContent
+  const current = () => container.querySelector('.adm-nav__item[aria-current="page"]')?.getAttribute('data-testid')
+
+  for (const [url, name, id] of [['/admin', '运营概览', 'overview'], ['/admin/users', '用户', 'users'],
+    ['/admin/usage', '用量与花费', 'usage'], ['/admin/jobs', '任务', 'jobs'], ['/admin/errors', '错误', 'errors'],
+    ['/admin/audit', '审计', 'audit']]) {
+    await open(url)
+    must(h2() === name && current() === `admin-nav-${id}`, `${url} 应打开「${name}」，实为 ${h2()} / ${current()}`)
+    must(container.querySelectorAll('.adm__pagehead').length === 1 && !!byId('admin-sidebar'), `${url}：一个标题行、左侧导航`)
+  }
+  console.log('7a. 六个地址各自打开对应的页 ✓')
+
+  await open('/admin')
+  must(textOf('admin-count-jobs') === '3' && textOf('admin-count-errors') === '2' && textOf('admin-count-usage') === '1'
+       && !byId('admin-count-users'), `导航计数：失败 3、近 7 天错误 2、未定价 1，实为 ${textOf('admin-count-jobs')}/${textOf('admin-count-errors')}/${textOf('admin-count-usage')}`)
+  must(calls.filter((c) => c === 'GET /admin/overview').length >= 1 && text().includes('30 天金额'), '概览页用外框那份概览数据')
+  await click(byId('stat-failed')!.querySelector('a')!)
+  must(here === '/admin/jobs?state=failed' && log.join() === 'push /admin/jobs?state=failed', `「去处理」跳到失败任务，实为 ${here}`)
+  must(h2() === '任务' && !byId('jobs-running') && !!byId('jobs-failed') && button('失败').getAttribute('aria-pressed') === 'true',
+       '带筛选打开任务页：只显示失败')
+  await click(button('全部'))
+  must(here === '/admin/jobs' && log[log.length - 1] === 'replace /admin/jobs' && !!byId('jobs-running'), `改筛选是 replace，实为 ${log}`)
+  await click(button('运行中'))
+  must(here === '/admin/jobs?state=running' && !byId('jobs-failed'), '筛选写进地址')
+  await click(byId('admin-nav-usage')!)
+  must(here === '/admin/usage' && log[log.length - 1] === 'push /admin/usage' && h2() === '用量与花费', '点导航项是 push')
+  await click(button('按模型'))
+  await click(button('7 天'))
+  must(here === '/admin/usage?group=model&days=7' && log[log.length - 1] === 'replace /admin/usage?group=model&days=7'
+       && calls.includes('GET /admin/usage?group=model&days=7'), `用量的分组与天数写进地址，实为 ${here}`)
+  await click(byId('admin-nav-overview')!)
+  await click(byId('unpriced-alert')!)
+  must(here === '/admin/usage?group=model' && button('按模型').getAttribute('aria-pressed') === 'true', `未定价提醒跳到按模型的用量页，实为 ${here}`)
+  await click(byId('admin-nav-overview')!)
+  await click(byId('stat-running')!.querySelector('a')!)
+  must(here === '/admin/jobs?state=running' && !!byId('jobs-running') && !byId('jobs-failed'), '「查看任务」跳到运行中')
+  await click(byId('admin-back')!)
+  must(back === 1, '返回产品回调')
+  console.log('7b. 计数 / 卡片链接带筛选 / 筛选写进地址 / 返回 ✓')
+
+  // 没有待处理的数：不显示徽标
+  ov.failed_7d = 0; ov.unpriced_models = []
+  await open('/admin/audit')
+  must(!byId('admin-count-jobs') && !byId('admin-count-usage') && textOf('admin-count-errors') === '2', '为 0 的计数不显示')
+  ov.failed_7d = 3; ov.unpriced_models = ['mystery']
+  // 概览接口失败：导航照常，只是没有来自它的计数；概览页显示错误条
+  failing.add('/admin/overview')
+  await open('/admin')
+  must(!byId('admin-count-jobs') && !!byId('admin-nav-jobs') && text().includes('服务器出了点问题'), '概览取不到：没有任务计数，页内是错误条')
+  failing.clear()
+
+  // 收起与展开；记在 localStorage
+  await open('/admin/users')
+  const shell = () => byId('admin-shell')!.className
+  must(!shell().includes('is-collapsed') && container.querySelector('h1')?.textContent === '运营后台', '默认展开')
+  await click(byId('admin-nav-toggle')!)
+  must(shell().includes('is-collapsed') && !container.querySelector('h1') && textOf('admin-count-jobs') === '3'
+       && win.localStorage.getItem('inkreel.admin.navCollapsed') === '1', '收起：窄条、计数还在、记住')
+  await open('/admin/users')
+  must(shell().includes('is-collapsed'), '重新打开仍是收起')
+  await click(byId('admin-nav-toggle')!)
+  must(!shell().includes('is-collapsed') && win.localStorage.getItem('inkreel.admin.navCollapsed') === '0', '再点展开')
+
+  // 窄屏：顶部下拉
+  const wide = win.matchMedia
+  ;(win as unknown as { matchMedia: unknown }).matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} })
+  g.matchMedia = win.matchMedia
+  await open('/admin/jobs?state=failed')
+  must(!byId('admin-sidebar') && !!byId('admin-topnav') && shell().includes('is-narrow') && h2() === '任务', '窄屏：没有侧栏，顶部一条')
+  const select = byId('admin-nav-select') as unknown as HTMLSelectElement
+  must(select.value === 'jobs', '窄屏下拉选中当前页')
+  await act(async () => {
+    select.value = 'errors'
+    select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
+  })
+  await settle()
+  must(here === '/admin/errors' && h2() === '错误', `窄屏下拉换页，实为 ${here}`)
+  ;(win as unknown as { matchMedia: unknown }).matchMedia = wide
+  g.matchMedia = wide
+  console.log('7c. 计数为 0 不显示 / 收起 / 窄屏下拉 ✓')
+
+  // 英文
+  log.length = 0
+  await remount(<I18nProvider initial="en"><Host start="/admin/jobs?state=failed" /></I18nProvider>)
+  must(container.querySelector('h1')?.textContent === 'Admin console' && h2() === 'Jobs' && byId('admin-back')!.textContent === 'Back to app'
+       && button('Failed').getAttribute('aria-pressed') === 'true'
+       && byId('admin-count-jobs')!.getAttribute('title') === '3 failed in the last 7 days', '英文外框')
+  await act(async () => { root.unmount() })
+  root = createRoot(container as unknown as HTMLElement)
+  setCurrentLocale('zh')
+  console.log('7d. 英文外框 ✓')
+}
+
 // ===== 追加点：后面的任务把新用例插在这一行上面 =====
 
 await act(async () => { root.unmount() })

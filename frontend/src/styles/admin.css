@@ -1,7 +1,6 @@
 /* 管理后台：只留表格、图表这类需要类名的规则；其余用 Tailwind 工具类。 */
 
 .adm { flex: 1; min-width: 0; width: 100%; max-width: 1180px; margin: 0 auto; padding: 22px 26px 48px; }
-.adm__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .adm__sec { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; }
 .adm__card { transition: border-color 150ms ease-out, box-shadow 150ms ease-out; }
 .adm__card:hover { border-color: var(--ring); box-shadow: 0 1px 3px oklch(0 0 0 / 6%); }

@@ -91,7 +91,8 @@ export default function App() {
   /** 当前地址指向的小说（URL 是唯一真相） */
   const nid = loc.kind === 'novel' || loc.kind === 'chapter' ? loc.nid : null
   const cid = loc.kind === 'chapter' ? loc.cid : null
-  const adminOpen = loc.kind === 'admin'
+  /** 当前在后台：页与筛选都在里面；不在后台为 null */
+  const adminLoc = loc.kind === 'admin' ? loc : null
   const section: Section = loc.kind === 'novel' && loc.section ? loc.section : 'overview'
   const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null))
   /** 登录成功后、首页淡出期间暂存的用户；淡出完才真正进应用 */
@@ -678,13 +679,14 @@ export default function App() {
   // 页面标题跟着位置走（§10）；加载中不显示上一本小说的名字
   const sectionKey = loc.kind === 'novel' ? loc.section : null
   const canvasKey = loc.kind === 'chapter' && loc.canvas
+  const adminPage = loc.kind === 'admin' ? loc.page : null
   useEffect(() => {
     const brand = BRAND.id
     const novelName = novel && novel.id === nid ? novel.title : null
     const chapterName = chapter && chapter.id === cid ? chapter.title : null
     const join = (head: string, tail: string | null) => (tail ? `${head} · ${tail} — ${brand}` : `${head} — ${brand}`)
     let title = BRAND.title
-    if (loc.kind === 'admin') title = `${t('route.title.admin')} — ${brand}`
+    if (adminPage) title = `${t(`admin.nav.pages.${adminPage}`)} · ${t('route.title.admin')} — ${brand}`
     else if (loc.kind === 'notFound') title = `${t('route.title.notFound')} — ${brand}`
     else if (loc.kind === 'novel') title = join(t(`nav.${sectionKey ?? 'overview'}` as MsgKey), novelName)
     else if (loc.kind === 'chapter') {
@@ -692,7 +694,7 @@ export default function App() {
         : chapterName ? join(chapterName, novelName) : brand
     }
     document.title = title
-  }, [loc.kind, nid, cid, sectionKey, canvasKey, novel, chapter, t])
+  }, [loc.kind, nid, cid, sectionKey, canvasKey, adminPage, novel, chapter, t])
 
   const newNovel = async () => {
     setActivityTab('activity')
@@ -703,9 +705,14 @@ export default function App() {
   const enterAdmin = () => {
     go('/admin')
   }
+  /** 进后台之前在产品里的地址（记下是谁的）：后台内部翻页会留下历史，「返回产品」不能靠后退 */
+  const lastProduct = useRef<{ uid: string | null; path: string }>({ uid: null, path: '/' })
+  useEffect(() => {
+    if (loc.kind !== 'admin') lastProduct.current = { uid: user?.id ?? null, path: location.pathname + location.search }
+  }, [loc.kind, location.pathname, location.search, user?.id])
   const leaveAdmin = () => {
-    if (location.key !== 'default') navigate(-1)
-    else navigate('/', { replace: true })
+    const last = lastProduct.current
+    navigate(user && last.uid === user.id ? last.path : '/')
   }
 
   const submitNovel = async (n: NewNovel) => {
@@ -1004,30 +1011,35 @@ export default function App() {
           e.target.value = ''
         }}
       />
+      {adminLoc && user.role === 'admin' ? (
+        <AdminView me={user} page={adminLoc.page} jobState={adminLoc.state}
+                   usageGroup={adminLoc.group} usageDays={adminLoc.days}
+                   onNav={(to, replace) => { go(to, { replace }) }} onBack={leaveAdmin} />
+      ) : (
       <AppShell
         username={user.username}
         isAdmin={user.role === 'admin'}
-        adminOpen={adminOpen && user.role === 'admin'}
-        onToggleAdmin={() => { if (adminOpen) leaveAdmin(); else void enterAdmin() }}
+        adminOpen={false}
+        onToggleAdmin={enterAdmin}
         onLogout={logout}
         onNewNovel={() => void newNovel()}
         onOpenLocal={() => fileRef.current?.click()}
         crumbs={[]}
-        projectSwitcher={shown && !(adminOpen && user.role === 'admin') ? (
+        projectSwitcher={shown ? (
           <ProjectSwitcher novels={novels} currentId={shown.id}
                            meta={[shown.params.aspect_ratio, ART_STYLES.find((a) => a.value === shown.params.art_style)?.label]
                              .filter(Boolean).join(' · ')}
                            onOpen={(nid) => void openNovel(nid)} onNew={() => void newNovel()}
                            onAll={() => void newNovel()} />
         ) : null}
-        chapterCrumb={shown && chapter && !(adminOpen && user.role === 'admin') ? (
+        chapterCrumb={shown && chapter ? (
           <ChapterCrumb chapters={[...shown.chapters].sort((a, b) => a.order - b.order)} currentId={chapter.id}
                         onOpen={(cid) => void openChapter(cid)} />
         ) : null}
-        costMeter={shown && !(adminOpen && user.role === 'admin')
+        costMeter={shown
           ? <CostMeter data={summary.data} chapterId={chapter?.id ?? null} /> : null}
         runningCount={running.length}
-        onOpenAssistant={shown && !(adminOpen && user.role === 'admin')
+        onOpenAssistant={shown
           ? () => { setActivityTab('assistant'); setActivityOpen(true) } : undefined}
         onToggleActivity={() => {
           setActivityDot(false)
@@ -1055,9 +1067,9 @@ export default function App() {
                          }} />
         ) : null}
         service={{ down: svcDown, ...(svcInfo && user?.role === 'admin' && svcInfo.uid === user.id ? { model: svcInfo.info.model, noKey: !svcInfo.info.api_key_configured } : {}) }}
-        viewKey={adminOpen ? 'admin' : `${novel?.id ?? ''}/${chapter?.id ?? ''}`}
+        viewKey={`${novel?.id ?? ''}/${chapter?.id ?? ''}`}
         sidebarHandlesCollapse={!!shown}
-        sidebar={adminOpen && user.role === 'admin' ? null : shown ? (
+        sidebar={shown ? (
           <ProjectNav
             novel={shown}
             section={chapter ? null : section}
@@ -1084,9 +1096,6 @@ export default function App() {
           />
         )}
       >
-        {adminOpen && user.role === 'admin' ? (
-          <AdminView me={user} onBack={leaveAdmin} />
-        ) : (
           <div className="main">
             {loc.kind === 'notFound' && <NotFound onHome={() => go('/')} />}
             {((nid && novel?.id !== nid) || (cid && chapter?.id !== cid)) && (
@@ -1168,8 +1177,8 @@ export default function App() {
                           onSave={() => void save()} onUndo={undo} />
             )}
           </div>
-        )}
       </AppShell>
+      )}
     </>
   )
 }

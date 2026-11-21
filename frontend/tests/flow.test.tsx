@@ -1066,17 +1066,17 @@ await openLogin()
 await loginAs('boss', 'pw000000')
 must(!!btn('管理'), '管理员应看到「管理」入口')
 await click(btn('管理')!)
-must(has('管理后台') && !!btn('返回书架'), '点「管理」应进入后台')
-await click(btn('返回书架')!)
-must(!has('管理后台') && !!btn('管理'), '「返回书架」应回到书架')
+must(has('运营后台') && !!btn('返回产品'), '点「管理」应进入后台')
+await click(btn('返回产品')!)
+must(!has('运营后台') && !!btn('管理'), '「返回产品」应回到书架')
 await click(btn('管理')!)
-must(has('管理后台'), '再次进入后台')
+must(has('运营后台'), '再次进入后台')
 await act(async () => { notifyUnauthorized() })     // 后台开着时登录失效
 await settle(50)
-must(has('login__tab') && !has('管理后台'), '401 后应回到登录页')
+must(has('login__tab') && !has('运营后台'), '401 后应回到登录页')
 must(has('登录已过期'), '401 后登录框应带过期提示')
 await loginAs('bob', 'pw654321')
-must(has('bob') && !has('管理后台') && !btn('管理') && !btn('返回书架'),
+must(has('bob') && !has('运营后台') && !btn('管理') && !btn('返回产品'),
      '401 后换普通用户登录，不能落进后台，也不该有「管理」入口')
 console.log('12b. 管理入口 → 管理员进出后台 / 401 后换普通用户不落进后台 ✓')
 

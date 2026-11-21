@@ -328,16 +328,20 @@ await click(button('刷新'))
 must(auditReqs() === auditBefore + 1, '审计刷新应重新请求')
 console.log('6. 审计 / 刷新 ✓')
 
-// 7. 页签框架：五个页签可切换，返回回调
+// 7. 外框：左侧导航六项，按传入的页显示内容，返回回调（地址、计数、收起等见 tests/admin-shell.test.tsx）
 let back = 0
-await remount(<AdminView me={me} onBack={() => { back++ }} />)
-for (const t of ['概览', '用户', '用量', '任务', '审计', '错误记录']) button(t)
-must(text().includes('30 天金额'), '默认在概览')
-await click(button('审计'))
-must(text().includes('管理员') && text().includes('之前') && text().includes('之后'), '切到审计')
-await click(button('返回'))
+const frame = (page: 'overview' | 'audit') => (
+  <AdminView me={me} page={page} jobState={null} usageGroup="user" usageDays={30}
+             onNav={() => {}} onBack={() => { back++ }} />)
+const navNames = () => [...container.querySelectorAll('.adm-nav__item')].map((a) => a.querySelector('span')!.textContent)
+await remount(frame('overview'))
+must(navNames().join() === '运营概览,用户,用量与花费,任务,错误,审计', `导航六项，实为 ${navNames()}`)
+must(text().includes('30 天金额'), '概览页')
+await remount(frame('audit'))
+must(text().includes('管理员') && text().includes('之前') && text().includes('之后'), '审计页')
+await click(button('返回产品'))
 must(back === 1, '返回回调')
-console.log('7. 页签框架 / 返回 ✓')
+console.log('7. 外框 / 返回 ✓')
 
 // 8. 加载骨架屏、30 天金额迷你折线
 slowMs = 80
@@ -352,15 +356,14 @@ must(container.querySelectorAll('[data-slot="skeleton"]').length === 0, '加载�
 must(container.querySelectorAll('[data-testid="sparkline"] path').length >= 1, '30 天金额卡里有迷你折线')
 console.log('8. 骨架屏 / 迷你折线 ✓')
 
-// 9. 英文：页签文字
-await remount(<I18nProvider initial="en"><AdminView me={me} onBack={() => {}} /></I18nProvider>)
-const tabNames = [...container.querySelectorAll('.tabs__btn')].map((b) => b.textContent)
-must(tabNames.join(' ') === 'Overview Users Usage Jobs Audit Errors', `英文页签，实为 ${tabNames.join(' ')}`)
+// 9. 英文：导航文字
+await remount(<I18nProvider initial="en">{frame('overview')}</I18nProvider>)
+must(navNames().join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Audit', `英文导航，实为 ${navNames()}`)
 must(text().includes('Active (7d)'), '英文概览')
 await act(async () => { root.unmount() })
 root = createRoot(container as unknown as HTMLElement)
 setCurrentLocale('zh')
-console.log('9. 英文页签 ✓')
+console.log('9. 英文导航 ✓')
 
 // 10. 读取失败：错误条按语言渲染，编号保留
 let setLoc: (l: 'zh' | 'en') => void = () => {}
@@ -491,7 +494,7 @@ await remount(<AuditTab />)
 must(text().includes('查看错误详情'), '审计动作名中文')
 console.log('13. 错误记录页签 ✓')
 
-await remount(<AdminView me={me} onBack={() => {}} />)
+await remount(frame('overview'))
 
 
 await act(async () => { root.unmount() })
