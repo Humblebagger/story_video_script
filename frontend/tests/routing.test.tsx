@@ -427,6 +427,46 @@ console.log('后台各页独立地址 / 后退 / 筛选 / 规范化 / 返回产�
 }
 console.log('后台不向非管理员透出：未登录 / 普通用户 / 角色未确认 / 入口可见性 ✓')
 
+// 入口与模型信息只认已确认的角色：缓存里写着 admin 也不算数（设计 §9.1、§9.4）
+{
+  const menuHas2 = async (x: Awaited<ReturnType<typeof boot>>) => {
+    await act(async () => {
+      x.q('[data-testid="account-menu"]')!.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event)
+    })
+    await settle()
+    const has = [...doc.body.querySelectorAll('[role="menuitem"]')].some((el) => (el.textContent ?? '').trim() === '管理')
+    await act(async () => { doc.body.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event) })
+    await settle()
+    return has
+  }
+  const sideHas = (x: Awaited<ReturnType<typeof boot>>) => !!button(x.container, '管理') || !!x.q('[aria-label="管理"]')
+  // 缓存说是管理员、me() 还没回来：没有入口、没有请求 /admin/service
+  adminSvcCalls = 0
+  let release!: () => void
+  meGate = new Promise<void>((r) => { release = r })
+  const a = await boot('/', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+  must(!sideHas(a), '角色未确认：侧边栏没有「管理」入口')
+  must(!(await menuHas2(a)), '角色未确认：账号菜单没有「管理」项')
+  must(adminSvcCalls === 0, `角色未确认：不请求 /admin/service，实为 ${adminSvcCalls} 次`)
+  release(); meGate = null
+  await settle(300)
+  must(sideHas(a) && (await menuHas2(a)), 'me() 确认是管理员后入口出现')
+  must(adminSvcCalls === 1, `确认后请求一次 /admin/service，实为 ${adminSvcCalls} 次`)
+  await a.done()
+  // 缓存说是管理员，me() 确认是普通用户：入口始终没有，也不请求
+  adminSvcCalls = 0
+  meGate = new Promise<void>((r) => { release = r })
+  const b = await boot('/', 'alice', { id: 'alice', username: 'alice', created_at: '', role: 'admin' })
+  must(!sideHas(b) && !(await menuHas2(b)) && adminSvcCalls === 0, '缓存为管理员、角色未确认：没有入口与请求')
+  release(); meGate = null
+  await settle(300)
+  must(!sideHas(b) && !(await menuHas2(b)), '确认为普通用户后始终没有入口')
+  must(adminSvcCalls === 0, `确认为普通用户后不请求 /admin/service，实为 ${adminSvcCalls} 次`)
+  await b.done()
+}
+console.log('入口与模型信息只认已确认的角色 ✓')
+
 // §12.3-1（章节部分）深链接到章节的某一步
 {
   const a = await boot('/novels/n1/chapters/c1/review', 'alice')

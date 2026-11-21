@@ -445,15 +445,16 @@ export default function App() {
     setAuth((a) => (a.open ? a : { open: true, mode: firstRun ? 'register' : 'login', expired: false }))
   }, [user, entering, loc.kind, location.pathname, firstRun])
 
-  // 账号菜单的模型信息只有管理员取得到
+  // 账号菜单的模型信息只有确认过的管理员取得到
+  const svcUid = user?.id
   useEffect(() => {
     setSvcInfo(null)
-    if (user?.role !== 'admin') return
-    const uid = user.id
+    if (!svcUid || !roleConfirmed || !isAdminUser) return   // 缓存的角色不算数，等 me() 确认
+    const uid = svcUid
     let stale = false   // 换账号、退出后，旧会话的响应一律丢弃
     adminService().then((info) => { if (!stale) setSvcInfo({ uid, info }) }).catch(() => { if (!stale) setSvcInfo(null) })
     return () => { stale = true }
-  }, [user?.id, user?.role])
+  }, [svcUid, isAdminUser, roleConfirmed])
 
   // 随登录态重取：否则注册后再退出，登录页仍显示「服务端还没有任何账号」
   useEffect(() => {
@@ -1030,7 +1031,7 @@ export default function App() {
       ) : (
       <AppShell
         username={user.username}
-        isAdmin={user.role === 'admin'}
+        isAdmin={roleConfirmed && user.role === 'admin'}
         adminOpen={false}
         onToggleAdmin={enterAdmin}
         onLogout={logout}
