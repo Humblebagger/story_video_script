@@ -68,6 +68,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 from typing import Optional
@@ -1163,6 +1164,33 @@ def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]
     return _render_call(render_session.view, s)
 
 
+def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str) -> dict:
+    """取消排队或生成中的一段 / 一个自由节点。还没提交：本地取消，不花钱。已提交：先请厂商取消（只有还在厂商
+    那边排队的才取消得了）；取消不了就是「不等了」——这一条立即放开，那次尝试留给出片线程在后台盯到有结果。
+    厂商调用在会话锁之外；两步之间状态变了由 session.cancel 抛 409。"""
+    root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
+    task_id, provider_name = _render_call(render_session.cancel_target, root, item_id)
+    confirmed = False
+    if task_id is not None:
+        try:
+            provider = render_providers.get_video(provider_name)
+        except (KeyError, render_video_base.ProviderError):
+            provider = None                     # 厂商建不起来（如密钥被撤）：按取消不了处理
+        confirmed = provider is not None and render_video_base.try_cancel(provider, task_id)
+    s = _render_call(render_session.cancel, root, item_id, task_id, confirmed)
+    _render_runner.watch(root)                  # 不等了的那次还要盯；没有要盯的，下一轮自己放下
+    out = _render_call(render_session.view, s)
+    out["cancel_outcome"] = "dequeued" if task_id is None else "cancelled" if confirmed else "abandoned"
+    return out
+
+
+@app.post(_R + "/clips/{clip_id}/cancel")
+def render_clip_cancel(nid: str, cid: str, vid: str, clip_id: str, user: dict = Depends(novel_user)):
+    """取消这一段。响应是会话视图加 cancel_outcome：dequeued（还没提交）/ cancelled（厂商确认，不计费）/
+    abandoned（不等了，厂商可能照常完成并计费）。不在跑、正在提交、已在取回 → 409。"""
+    return _film_cancel(user, nid, cid, vid, clip_id)
+
+
 @app.post(_R + "/clips/{clip_id}/run")
 def render_clip_run(nid: str, cid: str, vid: str, clip_id: str,
                     body: Optional[RenderRunBody] = None, user: dict = Depends(novel_user)):
@@ -1253,6 +1281,12 @@ def render_free_run(nid: str, cid: str, vid: str, fid: str, body: Optional[Rende
     return _render_call(render_session.view, s)
 
 
+@app.post(_R + "/free/{fid}/cancel")
+def render_free_cancel(nid: str, cid: str, vid: str, fid: str, user: dict = Depends(novel_user)):
+    """取消这个自由节点的生成（与取消一段同一套）。"""
+    return _film_cancel(user, nid, cid, vid, fid)
+
+
 @app.put(_R + "/free/{fid}/chosen")
 def render_free_chosen(nid: str, cid: str, vid: str, fid: str, body: RenderChosenBody,
                        user: dict = Depends(novel_user)):
@@ -1269,6 +1303,73 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
     if root not in target.parents or not target.is_file():
         raise HTTPException(404, detail=msg("film.file.not_found"))
     return FileResponse(target)
+
+
+FILM_RECENT_SEC = 600       # 任务列表里「最近结束」保留多久（秒）
+
+
+def _iso_ts(value) -> Optional[float]:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _film_tasks(uid: str) -> list:
+    """本人的出片任务：在排队 / 生成 / 取回的段与自由节点，最近 FILM_RECENT_SEC 秒内结束的，以及取消后才出结果的。
+    只读两类会话：出片线程正盯着的，和文件最近改过的；不必每次读遍所有章节。给普通用户看：不带厂商与档位。
+    已等时长由服务端算（不让浏览器拿自己的时钟去减）。在跑的在前，结束的按结束时间倒序。"""
+    now = time.time()
+    since = now - FILM_RECENT_SEC
+    home = novels.novels_dir(uid)
+    roots = {p for p in _render_runner.watching() if home in p.parents}
+    for f in home.glob("*/chapters/*/render/*/session.json"):
+        try:
+            if f.stat().st_mtime >= since:
+                roots.add(f.parent)
+        except OSError:
+            continue
+    out = []
+    for root in sorted(roots):
+        s = render_session.load(root)
+        o = (s or {}).get("owner") or {}
+        if s is None or o.get("user_id") != uid:
+            continue
+        try:
+            typical = render_video_base.typical_sec(render_providers.get_video(s["provider"]))
+        except (KeyError, render_video_base.ProviderError):
+            typical = list(render_video_base.DEFAULT_TYPICAL_SEC)
+        title, chapter = novels.titles(uid, o.get("nid"), o.get("cid"))
+        for c in render_session.items(s):
+            row = {"id": f'{o.get("vid")}:{c["id"]}', "item_id": c["id"],
+                   "kind": "free" if render_session.is_free(c["id"]) else "clip",
+                   "novel_id": o.get("nid"), "chapter_id": o.get("cid"), "version_id": o.get("vid"),
+                   "work_title": title, "chapter": chapter, "typical_sec": typical,
+                   "ended_at": None, "elapsed_sec": None, "cost_cny": None}
+            queued, ended = _iso_ts(c.get("queued_at")), _iso_ts(c.get("ended_at"))
+            if c["state"] in render_session.IN_FLIGHT:
+                out.append({**row, "state": c["state"],
+                            "elapsed_sec": max(0, round(now - queued)) if queued else None})
+            elif ended is not None and ended >= since and c.get("ended_as"):
+                out.append({**row, "state": c["ended_as"], "ended_at": c["ended_at"],
+                            "elapsed_sec": max(0, round(ended - queued)) if queued else None})
+            for a in c.get("attempts") or []:
+                settled = _iso_ts(a.get("settled_at"))
+                if (a.get("late") and not a.get("free_id") and a.get("state") == "succeeded"
+                        and settled is not None and settled >= since):
+                    out.append({**row, "id": f'{row["id"]}:{a["task_id"]}', "state": "late",
+                                "ended_at": a["settled_at"], "cost_cny": a.get("cost_cny")})
+    live = [t for t in out if t["ended_at"] is None]
+    past = sorted((t for t in out if t["ended_at"] is not None), key=lambda t: t["ended_at"], reverse=True)
+    return live + past
+
+
+@app.get("/render/tasks")
+def render_tasks(user: dict = Depends(novel_user)):
+    """本人的出片任务（任务铃铛与动态面板用）。每项：id、item_id、kind（clip / free）、novel_id、chapter_id、
+    version_id、work_title、chapter、state（queued / running / downloading / done / failed / cancelled / late）、
+    elapsed_sec、typical_sec、ended_at、cost_cny（只有 late 有）。"""
+    return {"tasks": _film_tasks(user["id"])}
 
 
 # ---------- 配音与合成：音色存在 session.json 的 voices，成片在 final/ ----------

@@ -64,6 +64,7 @@ MODULES: dict = {
                       "render_session_patch", "_film_quote", "_film_run", "render_clip_run", "render_run_all",
                       "render_clip_chosen", "render_clip_patch", "_free_ctx", "render_free_create",
                       "render_free_patch", "render_free_delete", "render_free_run", "render_free_chosen",
+                      "_film_cancel", "render_clip_cancel", "render_free_cancel", "_film_tasks", "render_tasks",
                       "render_file", "_tts", "_session_or_404", "render_voices", "render_voices_put",
                       "_compose_preview", "_compose_blockers", "_compose_quote", "_compose_start",
                       "_export_check", "render_compose_get", "render_export", "_compose_worker",
