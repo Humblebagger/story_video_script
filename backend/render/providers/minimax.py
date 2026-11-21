@@ -244,6 +244,7 @@ class MiniMax:
     default_model = DEFAULT_MODEL
     console_name = "console.minimax"
     rate_note = {"code": "rate.minimax", "params": {}}
+    typical_sec = (180, 420)        # 2026-11-21 实测一段约 4–5 分钟，取保守区间 3–7 分钟
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
         self._key = api_key
@@ -417,6 +418,16 @@ class MiniMax:
             except _Expired:
                 raise ProviderError.of("film.minimax.url_expired")
         return {"video": dest, "last_frame": _grab_last_frame(dest)}
+
+    def cancel(self, task_id: str) -> bool:
+        """只取消还在排队的任务。官方（DELETE /v2/video_generation/{task_id}，2026-11-21 核对）：排队中 → 取消且
+        不扣费；运行中、已取消 → 报错；成功、失败 → 删除任务记录。所以先查状态，不是 queued 就不发 DELETE。"""
+        j = self._call("GET", f"/v2/query/video_generation/{task_id}")
+        t = j.get("task") if isinstance(j.get("task"), dict) else j
+        if t.get("status") != "queued":
+            return False
+        r = self._call("DELETE", f"/v2/video_generation/{task_id}")
+        return r.get("action") == "cancelled"
 
     def cost(self, st: TaskState, req: ClipRequest) -> float:
         if st.status != "succeeded":

@@ -148,6 +148,7 @@ class Seedance:
     console_name = "console.ark"
     default_model = DEFAULT_MODEL
     rate_note = {"code": "rate.ark", "params": {}}
+    typical_sec = (120, 480)        # 没有实测数据，先取保守区间 2–8 分钟；真跑后按实际校准
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
         self._key = api_key
@@ -303,6 +304,16 @@ class Seedance:
             except ProviderError:
                 last = None                         # 尾帧只用于接力，拿不到不影响这一段
         return {"video": dest, "last_frame": last}
+
+    def cancel(self, task_id: str) -> bool:
+        """只取消还在排队的任务。官方（DELETE /contents/generations/tasks/{id}，2026-11-21 核对）：queued → 取消排队、
+        状态变 cancelled；running → 不支持；succeeded / failed / expired / cancelled → 删除任务记录。
+        所以先查状态，不是 queued 就不发 DELETE；DELETE 回的是空对象，再查一次确认。"""
+        url = f"/contents/generations/tasks/{task_id}"
+        if self._call("GET", url, task_id=task_id).get("status") != "queued":
+            return False
+        self._call("DELETE", url, task_id=task_id)
+        return self._call("GET", url, task_id=task_id).get("status") == "cancelled"
 
     def cost(self, st: TaskState, req: ClipRequest) -> float:
         if st.status != "succeeded":

@@ -423,6 +423,35 @@ def main() -> int:
     assert MiniMax.rate_note == {"code": "rate.minimax", "params": {}} and MiniMax.console_name == "console.minimax"
     print("10. 错误带代码 ✓")
 
+    # 11. 取消：先查状态，只有排队中才发 DELETE；运行中、已结束都不发（对已结束的任务 DELETE 是删记录）
+    calls = []
+
+    def cancel_api(status, action="cancelled"):
+        def handler(r):
+            calls.append((r.method, r.url.path))
+            if r.method == "GET":
+                return httpx.Response(200, json={"task": {"status": status}})
+            return httpx.Response(200, json={"task_id": "t1", "action": action, "status": action})
+        return handler
+
+    assert mmx(cancel_api("queued")).cancel("t1") is True
+    assert calls == [("GET", "/v2/query/video_generation/t1"), ("DELETE", "/v2/video_generation/t1")], calls
+    for status in ("running", "succeeded", "failed", "cancelled"):
+        calls.clear()
+        assert mmx(cancel_api(status)).cancel("t1") is False
+        assert calls == [("GET", "/v2/query/video_generation/t1")], (status, calls)
+    assert mmx(cancel_api("queued", "deleted")).cancel("t1") is False, "回的是删除而不是取消：不算取消成功"
+
+    def cancel_refused(r):
+        if r.method == "GET":
+            return httpx.Response(200, json={"task": {"status": "queued"}})
+        return httpx.Response(400, json={"base_resp": {"status_code": 2013, "status_msg": "task is running"}})
+
+    must_raise(base.ProviderError, mmx(cancel_refused).cancel, "t1")
+    assert base.try_cancel(mmx(cancel_refused), "t1") is False, "取消接口报错由 try_cancel 接住"
+    assert MiniMax.typical_sec == (180, 420)
+    print("11. 取消 ✓")
+
     print("\nALL PASS")
     return 0
 

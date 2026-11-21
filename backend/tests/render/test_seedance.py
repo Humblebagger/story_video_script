@@ -399,6 +399,38 @@ def main() -> int:
             os.environ["MINIMAX_API_KEY"] = old_env
     print("9b. 日志整体脱敏 ✓")
 
+    # 10. 取消：先查状态，只有排队中才发 DELETE；方舟的 DELETE 回空对象，所以再查一次确认变成 cancelled
+    calls = []
+
+    def cancel_api(*statuses):
+        left = list(statuses)
+
+        def handler(r):
+            calls.append((r.method, r.url.path))
+            if r.method == "GET":
+                return httpx.Response(200, json={"id": "cgt-1", "status": left.pop(0)})
+            return httpx.Response(200, json={})
+        return handler
+
+    path = "/api/v3/contents/generations/tasks/cgt-1"
+    assert ark(cancel_api("queued", "cancelled")).cancel("cgt-1") is True
+    assert calls == [("GET", path), ("DELETE", path), ("GET", path)], calls
+    for status in ("running", "succeeded", "failed", "expired", "cancelled"):
+        calls.clear()
+        assert ark(cancel_api(status)).cancel("cgt-1") is False
+        assert calls == [("GET", path)], (status, calls)
+    assert ark(cancel_api("queued", "running")).cancel("cgt-1") is False, "DELETE 之后没变成 cancelled：不算取消成功"
+
+    def cancel_refused(r):
+        if r.method == "GET":
+            return httpx.Response(200, json={"id": "cgt-1", "status": "queued"})
+        return httpx.Response(400, json={"error": {"code": "InvalidParameter", "message": "task is running"}})
+
+    must_raise(base.ProviderError, ark(cancel_refused).cancel, "cgt-1")
+    assert base.try_cancel(ark(cancel_refused), "cgt-1") is False, "取消接口报错由 try_cancel 接住"
+    assert Seedance.typical_sec == (120, 480)
+    print("10. 取消 ✓")
+
     print("\nALL PASS")
     return 0
 
