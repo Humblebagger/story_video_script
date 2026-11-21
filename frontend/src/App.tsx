@@ -60,7 +60,7 @@ import { useJob } from './useJob'
 import { DUR, EASE_OUT } from './motion'
 
 /** 运营后台单独成块：渲染到它才去取，而它只在确认是管理员之后才渲染（见下面的 adminShown） */
-const AdminView = lazy(() => import('./components/admin/AdminView').then((m) => ({ default: m.AdminView })))
+const AdminView = lazy(() => import('./components/admin/entry'))
 
 const RUNNING = ['queued', 'running']
 const msg = (e: unknown) => errText(e)

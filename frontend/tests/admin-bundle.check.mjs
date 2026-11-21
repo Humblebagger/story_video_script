@@ -34,5 +34,13 @@ must(lazy.length > 0, '应有按需加载的块')
 const lazyText = lazy.map(read).join('\n')
 for (const mark of MARKS) must(lazyText.includes(mark), `按需加载的块里应有后台标识「${mark}」`)
 
+// 块文件名不暴露后台：dist 下所有文件名、以及首屏文件里引用的 assets/... 路径都不含 AdminView / admin
+const allFiles = readdirSync(dist, { recursive: true }).map(String)
+for (const f of allFiles) must(!/admin/i.test(f), `dist 里的文件名不应含 admin：${f}`)
+for (const file of eager) {
+  for (const m of read(file).matchAll(/assets\/[\w./-]+/g)) must(!/admin/i.test(m[0]), `首屏文件 ${file} 引用了带后台名的块「${m[0]}」`)
+}
+must(/admin/i.test(html) === false, 'index.html 不应出现 admin')
+
 console.log(`首屏文件 ${eager.size} 个，都不含后台标识；按需加载的块 ${lazy.length} 个，含全部 ${MARKS.length} 个标识`)
 console.log('\nALL PASS')
