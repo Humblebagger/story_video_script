@@ -308,11 +308,14 @@ export default function App() {
    *  放到后台的任务靠它留在侧栏里可点回去，跑完也靠它播报——
    *  否则一旦松开附着，任务就既看不见也回不去了。 */
   const prevRunning = useRef<Set<string>>(new Set())
+  /** 巡检请求的序号：只接受最新一次发出的请求的响应，先发后到的过期响应不得覆盖新的结果 */
+  const jobsSeq = useRef(0)
   const watchJobs = useCallback(async () => {
     const ep = epoch.current
+    const seq = ++jobsSeq.current
     try {
       const { jobs } = await listJobs()
-      if (epoch.current !== ep) return
+      if (epoch.current !== ep || jobsSeq.current !== seq) return
       const live = jobs.filter((x) => RUNNING.includes(x.status))
       setRunning(live)
       const liveIds = new Set(live.map((x) => x.id))
@@ -348,11 +351,13 @@ export default function App() {
   const filmSeen = useRef<Set<string>>(new Set())
   const filmFirst = useRef(true)
   const openFilmRef = useRef<(tk: FilmTask, play: boolean) => void>(() => {})
+  const filmSeq = useRef(0)      // 同 jobsSeq：过期响应不更新列表、首轮标记与播报状态
   const watchFilm = useCallback(async () => {
     const ep = epoch.current
+    const seq = ++filmSeq.current
     try {
       const { tasks } = await listFilmTasks()
-      if (epoch.current !== ep) return
+      if (epoch.current !== ep || filmSeq.current !== seq) return
       const { live, ended, announce: fresh } = diffFilmTasks(tasks, filmSeen.current, filmFirst.current)
       filmFirst.current = false
       setFilmAct({ live, ended, at: Date.now() })

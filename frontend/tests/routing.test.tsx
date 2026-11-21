@@ -122,6 +122,8 @@ const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
 /** 本人的出片任务（GET /render/tasks 原样返回） */
 let filmTasks: unknown[] = []
+/** 队列里每项是一个 promise：对应的 /render/tasks 请求等它完成才返回（空项即刻返回） */
+const tasksHold: (Promise<void> | undefined)[] = []
 /** 收到的取消请求（路径） */
 const cancelCalls: string[] = []
 g.fetch = async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
@@ -148,7 +150,12 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
   if (!who || !users[who]) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
   if (path === '/auth/me') { if (meGate) await meGate; return json(userOf(who)) }
   if (path === '/jobs') return json({ jobs: jobsList })
-  if (path === '/render/tasks') return json({ tasks: filmTasks })
+  if (path === '/render/tasks') {
+    const snap = filmTasks      // 请求发出时的快照；可控完成顺序的测试靠 tasksHold 让它晚点返回
+    const hold = tasksHold.shift()
+    if (hold) await hold
+    return json({ tasks: snap })
+  }
   if (method === 'POST' && /\/render\/(clips|free)\/[^/]+\/cancel$/.test(path)) {
     cancelCalls.push(path)
     return json({ cancel_outcome: 'abandoned', clips: [], free: [] })
@@ -1065,6 +1072,23 @@ console.log('T9e. 当前会话的 401 经请求层清令牌并提示过期 ✓')
   await settle(300)
   must(JSON.stringify(focusOf(b.router)?.focus) === JSON.stringify({ vid: 'v1', id: 'E01-C02', play: true, taskId: 't9' }),
        `点通知带着任务号：${JSON.stringify(b.router.state.location.state)}`)
+  // 巡检响应乱序：先发的 A（仍在跑）后返回，后发的 B（已取消）先返回——铃铛与列表不回退
+  {
+    let release!: () => void
+    tasksHold.push(new Promise<void>((r) => { release = r }))
+    const running = task({ id: 'v1:E01-C09', item_id: 'E01-C09', cancel: 'paid' })
+    filmTasks = [running]
+    await poke()                      // A：快照是在跑，卡住
+    filmTasks = [{ ...running, state: 'cancelled', ended_at: '2026-11-21T03:10:00+00:00', cancel: null }]
+    await poke()                      // B：已取消，立刻返回
+    must(!b.q('[data-testid="activity-count"]'), 'B 先返回：铃铛归零')
+    await act(async () => { release() })
+    await settle(150)
+    must(!b.q('[data-testid="activity-count"]'), '过期的 A 后返回：铃铛不回退')
+    if (!doc.body.querySelector('[data-testid="activity-panel"]')) await click(b.q('[data-testid="activity-bell"]')!)
+    must(!doc.body.querySelector('[data-testid="activity-film-running"]'), '过期的 A 后返回：列表里不再有在跑的')
+    await click(b.q('[data-testid="activity-bell"]')!)      // 收起
+  }
   // 成片合成也播报；点开到这一章的画布（出片页），不带要选中的片段
   filmTasks = [task({ id: 'v1:compose', item_id: 'compose', kind: 'compose', state: 'done', typical_sec: null,
                       elapsed_sec: 40, ended_at: '2026-11-21T03:12:00+00:00' })]
