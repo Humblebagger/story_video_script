@@ -83,8 +83,9 @@ def _load() -> None:
     if fixed:
         try:
             _write(VERDICTS_FILE, _verdicts)
-        except OSError as e:     # 内存里已是对的；盘上下次写结论时一并带上
-            log.warning("结论缓存对账补写失败：%r", e)  # i18n: internal
+        except OSError:          # 补写失败不吞：丢掉内存、让下次访问重新读盘并再对账，直到写成功
+            _verdicts, _blocks = None, None
+            raise
 
 
 def _verdicts_data() -> dict:
@@ -154,13 +155,15 @@ def _view(row: dict) -> dict:
 
 
 def record_block(text, *, category: str, ctx: dict, reason: str = "", reason_code: Optional[str] = None,
-                 cache: bool = True) -> str:
+                 cache: bool = True, audit: bool = False) -> Optional[str]:
     """记一次拦截，返回编号。同一文本（且同为未放行）再次被拦：返回原编号，次数加一。
     cache=False：只写记录，不写结论缓存（模型拒答用，见 REFUSED）。
-    该文本已被管理员放行（迟到的分类结果）：不覆盖、不记录，返回 None，调用方按通过处理。"""
+    该文本已被管理员放行（迟到的分类结果）：不覆盖、不记录，返回 None，调用方按通过处理。
+    audit=True：已经发生的事件（转换中生成模型拒答）只记审计记录，不受放行保护、不碰结论缓存（须同时 cache=False）。"""
+    assert not (audit and cache), "审计记录不写结论缓存"
     h = text_hash(text)
     with _txn():
-        if (_verdicts_data().get(h) or {}).get("released"):
+        if not audit and (_verdicts_data().get(h) or {}).get("released"):
             return None
         rows = _blocks_data()
         row = next((r for r in rows if r["hash"] == h and r["status"] == "blocked"
@@ -239,14 +242,17 @@ def release(block_id, admin_name: str) -> dict:
         cur = data.get(row["hash"]) or {}
         now = row.get("released_at") if row["status"] == "released" else None
         now = now or now_iso()
-        # 先写结论缓存（放行通过），再写记录：中途失败时放行已生效，重试能补完记录
+        # 先写结论缓存（放行通过），再写记录：中途失败时放行已生效，重试能补完记录。
+        # 重复放行也写一次结论缓存：内存正确不代表盘上正确
         if not (cur.get("verdict") == "pass" and cur.get("released")):
             data[row["hash"]] = {"verdict": "pass", "released": True, "policy": policy(), "at": now}
-            _save_verdicts()
+        _save_verdicts()
         if row["status"] != "released":
             row.update(status="released", released_by=admin_name, released_at=now)
             _save_blocks()
-        return _view(row)
+        result = _view(row)
+    _cleanup_quietly()
+    return result
 
 
 def cleanup(now: Optional[datetime] = None) -> int:
@@ -292,4 +298,5 @@ def purge(user_id: str, novel_id: Optional[str] = None, chapter_id: Optional[str
                 n += 1
         if n:
             _save_blocks()
+    _cleanup_quietly()
     return n

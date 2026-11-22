@@ -248,6 +248,60 @@ def main() -> int:
     assert all(store.get_verdict(text_hash(f"并发异文{i}"))["verdict"] == "block" for i in range(4))
     print("14. 并发拦截记录 ✓")
 
+    # 15. 对账补写失败不吞（I3）：失败 → 恢复 → 重复放行 → 重载
+    rid4 = store.record_block("对账失败文本", category="drugs", reason="x", ctx=CTX)
+    with store._lock:
+        row = next(r for r in store._blocks_data() if r["id"] == rid4)
+        row.update(status="released", released_by="root", released_at=row["at"])
+        store._save_blocks()                        # 记录已放行，结论缓存仍是 block
+    store._reset_for_test()
+    store._write = (lambda path, data: (_ for _ in ()).throw(OSError("disk full")))
+    try:
+        must_raise(OSError, store.get_verdict, text_hash("对账失败文本"))
+    finally:
+        store._write = real_write
+    assert _json.loads(store.VERDICTS_FILE.read_text(encoding="utf-8"))[text_hash("对账失败文本")]["verdict"] == "block"
+    assert store.get_verdict(text_hash("对账失败文本"))["released"] is True, "恢复后重新对账"
+    writes = []
+    store._write = lambda path, data: (writes.append(path), real_write(path, data))[1]
+    try:
+        assert store.release(rid4, "root")["status"] == "released"
+    finally:
+        store._write = real_write
+    assert store.VERDICTS_FILE in writes, "重复放行也要写一次结论缓存"
+    store._reset_for_test()
+    assert _json.loads(store.VERDICTS_FILE.read_text(encoding="utf-8"))[text_hash("对账失败文本")]["released"] is True
+    print("15. 对账补写失败 ✓")
+
+    # 16. 生成模型拒答是已发生的事件：放行后仍写不可放行记录、不碰结论缓存（I4）；预检查迟到结果仍受保护
+    rid5 = store.record_block("放行后拒答", category="sexual", reason="x", ctx=CTX)
+    store.release(rid5, "root")
+    assert store.record_block("放行后拒答", category="unspecified", reason_code=store.REFUSED, ctx=CTX,
+                              cache=False) is None, "预检查口径：受放行保护"
+    aid = store.record_block("放行后拒答", category="unspecified", reason_code=store.REFUSED, ctx=CTX,
+                             cache=False, audit=True)
+    assert aid and aid != rid5 and store.find_block(aid)["releasable"] is False
+    assert store.record_block("放行后拒答", category="unspecified", reason_code=store.REFUSED, ctx=CTX,
+                              cache=False, audit=True) == aid and store.find_block(aid)["hits"] == 2, "同文合并"
+    assert store.get_verdict(text_hash("放行后拒答"))["released"] is True, "放行不被碰"
+    print("16. 生成拒答审计记录 ✓")
+
+    # 17. release / purge 也触发到期清理（B1-6）
+    for trigger in ("release", "purge"):
+        rid6 = store.record_block(f"清理{trigger}", category="drugs", reason="理由", ctx=dict(CTX, novel_id="n77"))
+        old6 = (datetime.now(timezone.utc) - timedelta(days=91)).isoformat(timespec="seconds")
+        other = store.record_block(f"待放行{trigger}", category="drugs", reason="r", ctx=dict(CTX, novel_id="n78"))
+        with store._lock:
+            next(r for r in store._blocks_data() if r["id"] == rid6)["at"] = old6
+            store._save_blocks()
+        store._last_cleanup = -1e9
+        if trigger == "release":
+            store.release(other, "root")
+        else:
+            store.purge("a" * 12, "n78")
+        assert next(r for r in store.list_blocks() if r["id"] == rid6)["excerpt"] == "", trigger
+    print("17. release/purge 触发清理 ✓")
+
     print("\nALL PASS")
     return 0
 
