@@ -16,7 +16,7 @@ from langgraph.errors import GraphRecursionError
 from assistant.actions import ACTIONS
 from assistant.edits import EDITS
 from pipeline.chat import llm_error
-from server import error_refs
+from server import error_refs, public
 from server.messages import compact, msg as make_msg   # stream 里的 msg 是消息块，别名免得遮住
 
 CARD_TOOLS = ACTIONS + EDITS    # 出卡片的工具：不发 tool_start / tool_end，历史里进 cards
@@ -53,10 +53,12 @@ def error_msg(e: BaseException, user_id: Optional[str] = None, where: str = "ass
     模型服务错误按 llm.* 映射；needs_ref 的（llm.bad_request）保留代码并带参考编号（设计审查 I2）；其余带编号的 assistant.crashed。"""
     mapped = llm_error(e)
     if mapped is not None and error_refs.expected(mapped):
-        return mapped.as_msg()
-    if mapped is not None and mapped.code:
-        return error_refs.unexpected(e, mapped.code, user_id=user_id, where=where)
-    return error_refs.unexpected(e, "assistant.crashed", user_id=user_id, where=where)
+        m = mapped.as_msg()
+    elif mapped is not None and mapped.code:
+        m = error_refs.unexpected(e, mapped.code, user_id=user_id, where=where)
+    else:
+        m = error_refs.unexpected(e, "assistant.crashed", user_id=user_id, where=where)
+    return public.public_msg(m)       # 出口统一：旧码归一、原文打码、保留编号
 
 
 def _ui(m: dict) -> dict:
@@ -74,6 +76,34 @@ def _tool_msg(m: ToolMessage) -> Optional[dict]:
     return _ui(e) if isinstance(e, dict) and e.get("code") else None
 
 
+def _public_tool(m: ToolMessage, hide: Optional[str], failed: Optional[bool] = None) -> tuple:
+    """工具结果 → (给界面的中文文字, 消息对象或 None)，一律过普通用户出口（历史与流式共用）：
+    失败的：有代码按登记表归一（旧厂商码换成中性码），没有代码的换通用失败文案，保留参考编号；
+    film_status 的旧结果：pending[].error 里的厂商词打码。对话正文不经这里。"""
+    if m.status == "error" if failed is None else failed:
+        a = m.artifact if isinstance(m.artifact, dict) else {}
+        raw = a.get("error") if isinstance(a.get("error"), dict) and a["error"].get("code") else None
+        pm = public.public_msg(raw)
+        return _hide(pm["message"], hide), _hide_deep(_ui(pm), hide)
+    text = text_of(m)
+    if m.name == "film_status":
+        try:
+            d = json.loads(text)
+            for row in ((d.get("session") or {}).get("pending") or []):
+                if isinstance(row.get("error"), str):
+                    row["error"] = public.redact(row["error"])
+            text = json.dumps(d, ensure_ascii=False)
+        except (ValueError, AttributeError, TypeError):
+            pass
+    return _hide(text, hide), None
+
+
+def tool_end_data(m: ToolMessage, hide: Optional[str]) -> dict:
+    """tool_end 事件的数据（流式与历史同一份）。"""
+    text, em = _public_tool(m, hide)
+    return {"id": m.tool_call_id, "ok": m.status != "error", "summary": text[:200], **({"msg": em} if em else {})}
+
+
 def _failed(m: dict) -> dict:
     """失败条目：error 留中文兜底（旧前端、给模型的同一句话），error_msg 给界面按语言渲染。"""
     return {"error": m["message"], "error_msg": _ui(m)}
@@ -82,12 +112,9 @@ def _failed(m: dict) -> dict:
 def action_view(m: ToolMessage, hide: Optional[str] = None) -> dict:
     """操作工具的结果 → action 事件 / 历史里的卡。报错（或没有 artifact）算没做成。"""
     if m.status == "error" or not m.artifact:
-        out = {"tool_call_id": m.tool_call_id, "action": m.name, "outcome": "failed",
-               "error": _hide(text_of(m), hide)[:300]}
-        em = _tool_msg(m)
-        if em:
-            out["error_msg"] = _hide_deep(em, hide)
-        return out
+        text, em = _public_tool(m, hide, True)
+        return {"tool_call_id": m.tool_call_id, "action": m.name, "outcome": "failed",
+                "error": text[:300], "error_msg": em}
     a = m.artifact
     return {"tool_call_id": m.tool_call_id, "action": m.name, "outcome": a["outcome"],
             "card": a.get("card"), "task": a.get("task")}
@@ -126,10 +153,7 @@ def stream(agent, config: dict, payload, hide: Optional[str] = None,
                             yield {"event": "action", "data": action_view(m, hide)}
                             continue
                         ok = m.status != "error"
-                        em = _tool_msg(m)
-                        yield {"event": "tool_end", "data": {"id": m.tool_call_id, "ok": ok,
-                                                             "summary": _hide(text_of(m), hide)[:200],
-                                                             **({"msg": _hide_deep(em, hide)} if em else {})}}
+                        yield {"event": "tool_end", "data": tool_end_data(m, hide)}
                         if ok and m.name == "goto" and m.artifact:
                             yield {"event": "goto", "data": m.artifact}
     except GraphRecursionError:
@@ -183,11 +207,10 @@ def history(agent, config: dict, hide: Optional[str] = None, undone: Optional[se
                 continue
             for t in cur["tools"]:
                 if t["id"] == m.tool_call_id:
-                    t["ok"] = m.status != "error"
-                    t["summary"] = _hide(text_of(m), hide)[:200]
-                    em = _tool_msg(m)
-                    if em:
-                        t["msg"] = _hide_deep(em, hide)
+                    d = tool_end_data(m, hide)
+                    t["ok"], t["summary"] = d["ok"], d["summary"]
+                    if "msg" in d:
+                        t["msg"] = d["msg"]
             if m.status != "error" and m.name == "goto" and m.artifact:
                 cur["goto"].append(m.artifact)
     for entry in out:

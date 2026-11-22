@@ -333,7 +333,11 @@ def main() -> int:
     assert cp["report"]["lines_failed"][0]["error_msg"]["code"] == "tts.vendor.rejected", cp["report"]
     rf = c.get(R + "/files/final/mix_report.json", headers=H)
     rb = clean("files.report", rf, 200, route=RTP + "/files/{path:path}")
-    assert rb["lines_failed"] and "***" in json.dumps(rb, ensure_ascii=False), rb       # 文本打码、结构保留
+    # 与预览同一个公共视图：旧码归一成中性码、旧原话参数去掉、detail 打码，而不是逐字符串替换
+    assert rb["lines_failed"] == cp["report"]["lines_failed"], (rb["lines_failed"], cp["report"]["lines_failed"])
+    lf = rb["lines_failed"][0]["error_msg"]
+    assert lf == {"code": "tts.vendor.rejected", "params": {}} and rb["detail"] == "*** ***", (lf, rb["detail"])
+    assert "tts.***" not in json.dumps(rb), rb
     clean("files.404", c.get(R + "/files/session.json", headers=H), 404, route=RTP + "/files/{path:path}")
     print("3. 合成与报告 ✓")
 
@@ -353,8 +357,29 @@ def main() -> int:
                             "persisted": True, "created_at": "2026-01-01T00:00:00", "work_title": "药", "chapter": "第一章",
                             "chars": 2, "progress": {}, "partial": {"batches_done": 1}, "novel_id": nid,
                             "chapter_id": cid, "version_id": "jvg", "finished_at": "2026-01-01T00:01:00"}
+    # 转换的旧失败记录：无代码的系统错误、旧厂商错误码、清单里带厂商词的诊断报告；用户内容（result）不动
+    POISON_REPORT = "MiniMax says boom deepseek https://api.minimax.cn/v1 sk-live-1"
+    app_mod._jobs["jvg"].update(
+        error="Anthropic claude 调用失败 api.anthropic.com",
+        manifest={"contracts": {"model": "deepseek-x", "review_model": "claude-x", "schema": "s1"},
+                  "attempts": [{"n": 1, "report": POISON_REPORT}]})
+    app_mod._jobs["jvg2"] = {**app_mod._jobs["jvg"], "id": "jvg2", "version_id": "jvg2",
+                             "error": "旧", "error_msg": {"code": "film.minimax.no_key", "params": {}}}
+    novels.create_version(alice, nid, cid, "v2", {}, "原文")
+    novels.update_version_state(alice, nid, cid, "v2", "failed", error="Anthropic claude 调用失败",
+                                error_msg={"code": "tts.volc.no_key", "params": {}},
+                                manifest={"contracts": {"model": "deepseek-x"}, "attempts": [{"report": POISON_REPORT}]})
     clean("jobs", c.get("/jobs", headers=H), 200, route="/jobs")
-    clean("job", c.get("/jobs/jvg", headers=H), 200, route="/jobs/{job_id}")
+    j1 = clean("job", c.get("/jobs/jvg", headers=H), 200, route="/jobs/{job_id}")
+    assert j1["error_msg"]["code"] == "common.failed_generic" and "claude" not in j1["error"].lower(), j1
+    assert j1["manifest"]["attempts"][0]["report"] == "*** says boom *** https://api.***.cn/v1 sk-live-1", j1["manifest"]
+    assert j1["manifest"]["contracts"] == {"schema": "s1"}, j1["manifest"]
+    j2 = clean("job2", c.get("/jobs/jvg2", headers=H), 200, route="/jobs/{job_id}")
+    assert j2["error_msg"]["code"] == "film.vendor.no_key" and j2["error"] == "视频生成服务还没有配置，请联系管理员", j2
+    v2 = clean("version.err", c.get(f"/novels/{nid}/chapters/{cid}/versions/v2", headers=H), 200,
+               route="/novels/{nid}/chapters/{cid}/versions/{vid}")
+    assert v2["error_msg"]["code"] == "tts.vendor.no_key" and v2["error"] == "配音服务还没有配置，请联系管理员", v2
+    assert "***" in v2["manifest"]["attempts"][0]["report"], v2["manifest"]
     clean("job.partial", c.get("/jobs/jvg/partial", headers=H), 200, route="/jobs/{job_id}/partial")
     clean("job.404", c.get("/jobs/nope", headers=H), 404, route="/jobs/{job_id}")
     # 生产包与估价：夹具不含厂商词，整份响应全文扫（含 packs[].markdown）；estimate.model 只放行中性费率档
@@ -369,6 +394,51 @@ def main() -> int:
           route="/novels/{nid}/chapters/{cid}/versions/{vid}")
     clean("memory", c.get(f"/novels/{nid}/memory", headers=H), 200, route="/novels/{nid}/memory")
     clean("assistant", c.get(f"/novels/{nid}/assistant", headers=H), 200, route="/novels/{nid}/assistant")
+    # 助手历史里的旧工具记录：升级前存下的厂商错误码、无代码的厂商文字、film_status 结果里的错误字段；
+    # 对话正文（用户提问与回答，含「方舟」这种常用词）原样，其余全部过出口
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+    from assistant import actions as a_actions, events as a_events, graph as a_graph, store as a_store
+    act = a_actions.ACTIONS[0]
+    fs_old = json.dumps({"session": {"pending": [{"id": "E01-C01", "error": "视频服务（MiniMax）账户余额不足 seedance"}]}},
+                        ensure_ascii=False)
+    old_msgs = [HumanMessage("方舟是什么"),
+                AIMessage("", tool_calls=[{"name": act, "args": {}, "id": "c1"}, {"name": act, "args": {}, "id": "c2"},
+                                          {"name": "film_status", "args": {}, "id": "c3"},
+                                          {"name": "plot_get", "args": {}, "id": "c4"}]),
+                ToolMessage("视频服务（MiniMax）还没有配置 minimax", name=act, tool_call_id="c1", status="error",
+                            artifact={"error": {"code": "film.minimax.no_key", "params": {}, "message": "视频服务（MiniMax）还没有配置"}}),
+                ToolMessage("doubao 豆包语音出错 volc", name=act, tool_call_id="c2", status="error"),
+                ToolMessage(fs_old, name="film_status", tool_call_id="c3"),
+                ToolMessage("Anthropic claude 出错", name="plot_get", tool_call_id="c4", status="error",
+                            artifact={"error": {"code": "tts.volc.no_key", "params": {}, "ref": "AB12CD34"}}),
+                AIMessage("方舟是一艘船。")]
+    with a_store.saver(alice, nid) as cp:
+        ag = a_graph.build_agent(a_graph.NullModel(), cp)
+        ag.update_state(a_graph.run_config(alice, nid, {}, "zh"), {"messages": old_msgs}, as_node="tools")
+    hb = clean("assistant.old", c.get(f"/novels/{nid}/assistant", headers=H), 200, route="/novels/{nid}/assistant",
+               user_fields=("$.messages[].text",))
+    assert hb["messages"][0]["text"] == "方舟是什么" and hb["messages"][-1]["text"] == "方舟是一艘船。", hb["messages"]
+    ent = hb["messages"][1]
+    cards = {x["tool_call_id"]: x for x in ent["cards"]}
+    assert cards["c1"]["error_msg"]["code"] == "film.vendor.no_key" and cards["c1"]["error"] == "视频生成服务还没有配置，请联系管理员", cards["c1"]
+    assert cards["c2"]["error_msg"]["code"] == "common.failed_generic", cards["c2"]
+    tl = {x["id"]: x for x in ent["tools"]}
+    assert tl["c4"]["msg"]["code"] == "tts.vendor.no_key" and tl["c4"]["msg"]["ref"] == "AB12CD34" and "AB12CD34" in tl["c4"]["summary"], tl["c4"]
+    assert "***" in tl["c3"]["summary"] and "MiniMax" not in tl["c3"]["summary"], tl["c3"]
+    # SSE：工具结束与操作事件走同一个序列化；系统错误事件也过出口
+    ev_end = a_events.tool_end_data(old_msgs[5], None)
+    assert not P.find_vendor_words(ev_end) and ev_end["msg"]["code"] == "tts.vendor.no_key", ev_end
+    ev_err = a_events.error_msg(RuntimeError("MiniMax boom https://api.minimax.cn"), alice, "w")
+    assert not P.find_vendor_words(ev_err) and ev_err["code"] in ("assistant.crashed", "common.failed_generic"), ev_err
+    from render.providers.base import ProviderError as _PE
+    legacy_err = _PE("视频服务（MiniMax）还没有配置")
+    legacy_err.code, legacy_err.params = "film.minimax.no_key", {}
+    real_llm_error, a_events.llm_error = a_events.llm_error, lambda e: legacy_err      # 模型错误映射给出旧码
+    try:
+        ev_old = a_events.error_msg(RuntimeError("x"), alice, "w")
+    finally:
+        a_events.llm_error = real_llm_error
+    assert ev_old["code"] == "film.vendor.no_key" and not P.find_vendor_words(ev_old), ev_old
     clean("keyframes", c.get(f"/novels/{nid}/chapters/{cid}/versions/v1/keyframes", headers=H), 200,
           route="/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes")
     # R12：用户内容里的「方舟」不打码；系统文案与键名照扫

@@ -448,15 +448,23 @@ def _public_manifest(m):
     if isinstance(out.get("attempts"), list):
         # 尝试记录里的校验报告：入库时已脱敏密钥，这里再把主机路径换成占位（旧记录同样生效）
         out["attempts"] = [
-            {**a, "report": error_refs.scrub_text(a["report"])}
+            {**a, "report": public.redact(error_refs.scrub_text(a["report"]))}
             if isinstance(a, dict) and isinstance(a.get("report"), str) else a
             for a in out["attempts"]]
     return out
 
 
+def _sys_error(out: dict) -> None:
+    """记录顶层的系统错误（error / error_msg）过普通用户出口：有代码按登记表归一，只有文字的换通用文案。
+    只动这两个键，result、input_text 等用户内容不碰。"""
+    if "error" in out or "error_msg" in out:
+        out["error"], out["error_msg"] = public.error_pair(out)
+
+
 def _version_view(v: dict) -> dict:
     """版本记录给普通用户的视图：不给调试日志（只给管理员），清单去掉模型名。"""
     out = {k: x for k, x in v.items() if k != "debug_log"}
+    _sys_error(out)
     if "manifest" in out:
         out["manifest"] = _public_manifest(out["manifest"])
     return out
@@ -490,7 +498,7 @@ def list_jobs(user: dict = Depends(current_user)):
         "last_log": j["log"][-1] if j["log"] else None,   # 进度事件（消息对象）
         "progress": _progress_view(j),
         "finished_at": j.get("finished_at"),
-        "error_msg": _public_error(j) if j["status"] == "failed" else None,
+        "error_msg": _task_msg(j) if j["status"] == "failed" else None,
         **_job_where(user["id"], j),
     } for j in sorted(jobs, key=lambda x: x.get("created_at") or "", reverse=True)]}
 
@@ -515,6 +523,7 @@ def get_job(job_id: str, user: dict = Depends(current_user)):
         raise HTTPException(404, detail=msg("job.not_found"))
     # 部分产物有几百 KB，轮询每 1.5 秒一次，只带批数；要看再走 /partial 取。调试日志只给管理员
     out = {k: v for k, v in job.items() if k not in ("user_id", "partial", "debug_log")}
+    _sys_error(out)
     out["manifest"] = _public_manifest(job.get("manifest"))
     out["progress"] = _progress_view(job)
     out["partial_batches"] = (job.get("partial") or {}).get("batches_done", 0)
@@ -1373,16 +1382,12 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid).resolve()
     target = (root / path).resolve()
     rel = target.relative_to(root).parts if root in target.parents else ()
-    if rel == ("final", "mix_report.json") and target.is_file():     # 唯一放行的 json：合成报告，文本打码后给
+    if rel == ("final", "mix_report.json") and target.is_file():     # 唯一放行的 json：合成报告，过公共出口后给
         try:
             data = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             raise HTTPException(404, detail=msg("film.file.not_found"))
-
-        def red(v):
-            return (public.redact(v) if isinstance(v, str) else [red(x) for x in v] if isinstance(v, list)
-                    else {k: red(x) for k, x in v.items()} if isinstance(v, dict) else v)
-        return JSONResponse(red(data))
+        return JSONResponse(public.scrub_errors(data))      # 与合成预览同一个公共视图
     if (not rel or any(p.startswith(".") for p in rel) or "work" in rel[:-1]
             or re.search(r"\.part\d*(\.|$)", rel[-1]) or target.suffix.lower() not in RENDER_FILE_EXTS
             or not target.is_file()):

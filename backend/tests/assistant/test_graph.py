@@ -264,13 +264,16 @@ def main() -> int:
     assert h[-1]["cards"][-1] == {"tool_call_id": "f9", "action": "film_run", "outcome": "failed",
                                    "error": "（已中断）",
                                    "error_msg": {"code": "assistant.interrupted", "params": {}}}, h[-1]
-    # 兼容：旧存档里没有 artifact 的失败结果只有文字，没有 error_msg / msg
+    # 兼容：旧存档里没有 artifact 的失败结果只有文字：原文不外放（可能带厂商名），换通用失败文案
     old = ToolMessage("坏了", tool_call_id="o1", name="film_run", status="error")
-    assert events.action_view(old) == {"tool_call_id": "o1", "action": "film_run", "outcome": "failed", "error": "坏了"}
+    assert events.action_view(old) == {"tool_call_id": "o1", "action": "film_run", "outcome": "failed",
+                                       "error": "没有成功，请重试；仍失败请联系管理员",
+                                       "error_msg": {"code": "common.failed_generic", "params": {}}}
     old_t = [HumanMessage("q"), AIMessage("", tool_calls=[{"name": "plot_get", "args": {}, "id": "o2"}]),
              ToolMessage("旧错误", tool_call_id="o2", name="plot_get", status="error")]
     fk = SimpleNamespace(get_state=lambda c: SimpleNamespace(values={"messages": old_t}))
-    assert "msg" not in events.history(fk, {})[1]["tools"][0]
+    t0 = events.history(fk, {})[1]["tools"][0]
+    assert t0["summary"] == "没有成功，请重试；仍失败请联系管理员" and t0["msg"]["code"] == "common.failed_generic", t0
     print("15. 操作报错与被停掉 ✓")
 
     # 15b. 带参考编号的工具报错（common.internal + ref）：编号经生产包装一路保留（终审 I1）
@@ -352,7 +355,7 @@ def main() -> int:
     t0 = events.history(fk2, {}, hide=_TMP.name)[1]["tools"][0]
     assert t0["ok"] is False and t0["msg"]["code"] == "assistant.tool.bad_step", t0
     assert t0["msg"]["params"]["options"].endswith("a, b") and _TMP.name not in json.dumps(t0, ensure_ascii=False), t0
-    assert t0["msg"]["params"]["nested"]["paths"][1] == "ok"
+    assert "nested" not in t0["msg"]["params"], "出口只留登记过的参数"
     print("18. 历史里失败工具带代码与参数、嵌套路径隐去 ✓")
 
     print("\nALL PASS")

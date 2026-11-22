@@ -140,10 +140,12 @@ def main() -> int:
     assert c.get(R + "/files/final/ep1.srt", headers=H).status_code == 200
     # 合成报告（前端下载页会取）是唯一放行的 json：文本字段里的厂商词被打码；别的 json 仍拒绝
     (rdir / "final" / "mix_report.json").write_text(json.dumps(
-        {"episodes": [{"episode": "E01", "seconds": 3, "notes": [{"code": "x", "params": {"t": "MiniMax 挂了"}}],
-                       "placeholders": [], "stale": []}]}, ensure_ascii=False), encoding="utf-8")
+        {"episodes": [{"episode": "E01", "seconds": 3, "notes": [], "placeholders": [], "stale": []}],
+         "lines_failed": [{"line": "L1", "error": "MiniMax 挂了",
+                           "error_msg": {"code": "tts.volc.no_key", "params": {}}}]}, ensure_ascii=False), encoding="utf-8")
     r = c.get(R + "/files/final/mix_report.json", headers=H)
-    assert r.status_code == 200 and "MiniMax" not in r.text and "***" in r.text and r.json()["episodes"][0]["seconds"] == 3, r.text
+    assert r.status_code == 200 and "MiniMax" not in r.text and r.json()["episodes"][0]["seconds"] == 3, r.text
+    assert r.json()["lines_failed"][0]["error_msg"] == {"code": "tts.vendor.no_key", "params": {}}, r.text
     assert c.get(R + "/files/final/timeline.json", headers=H).status_code == 404
     assert c.get(R + "/files/session.json", headers=H).status_code == 404
     (rdir / "clips" / "mix_report.json").write_text("{}", encoding="utf-8")      # 真实存在也不给：只放行 final/ 下那一个

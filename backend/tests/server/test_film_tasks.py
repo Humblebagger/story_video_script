@@ -385,7 +385,7 @@ def main() -> int:
     assert j["finished_at"] == job["finished_at"] and j["error_msg"]["code"] == "compose.interrupted"
     render_session.set_error(job, "大模型（MiniMax）超时")
     (j,) = [x for x in c.get("/jobs", headers=H).json()["jobs"] if x["id"] == "jb1"]
-    assert j["error_msg"] is None
+    assert j["error_msg"]["code"] == "common.failed_generic" and "MiniMax" not in json.dumps(j, ensure_ascii=False), j
     print("16. 转换任务的结束时间与失败原因 ✓")
 
     # 16b. 参考编号：通过筛选的消息保留合法的顶层 ref，其它内部字段不放行（/jobs 与 /render/tasks 都是）
