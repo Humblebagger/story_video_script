@@ -404,13 +404,19 @@ def main() -> int:
     old_msgs = [HumanMessage("方舟是什么"),
                 AIMessage("", tool_calls=[{"name": act, "args": {}, "id": "c1"}, {"name": act, "args": {}, "id": "c2"},
                                           {"name": "film_status", "args": {}, "id": "c3"},
-                                          {"name": "plot_get", "args": {}, "id": "c4"}]),
+                                          {"name": "plot_get", "args": {}, "id": "c4"},
+                                          {"name": "film_status", "args": {}, "id": "c5"},
+                                          {"name": "plot_get", "args": {}, "id": "c6"}]),
                 ToolMessage("视频服务（MiniMax）还没有配置 minimax", name=act, tool_call_id="c1", status="error",
                             artifact={"error": {"code": "film.minimax.no_key", "params": {}, "message": "视频服务（MiniMax）还没有配置"}}),
                 ToolMessage("doubao 豆包语音出错 volc", name=act, tool_call_id="c2", status="error"),
                 ToolMessage(fs_old, name="film_status", tool_call_id="c3"),
                 ToolMessage("Anthropic claude 出错", name="plot_get", tool_call_id="c4", status="error",
                             artifact={"error": {"code": "tts.volc.no_key", "params": {}, "ref": "AB12CD34"}}),
+                ToolMessage("{\"session\": {\"pending\": [{\"id\": \"E01-C01\", \"error\": \"视频服务（MiniMax）账户余额不足 seedance " + "x" * 400 + "（已截断）",
+                            name="film_status", tool_call_id="c5"),
+                ToolMessage("坏了 MiniMax", name="plot_get", tool_call_id="c6", status="error",
+                            artifact={"error": {"params": {}, "ref": "ZX98YW76"}}),
                 AIMessage("方舟是一艘船。")]
     with a_store.saver(alice, nid) as cp:
         ag = a_graph.build_agent(a_graph.NullModel(), cp)
@@ -425,6 +431,11 @@ def main() -> int:
     tl = {x["id"]: x for x in ent["tools"]}
     assert tl["c4"]["msg"]["code"] == "tts.vendor.no_key" and tl["c4"]["msg"]["ref"] == "AB12CD34" and "AB12CD34" in tl["c4"]["summary"], tl["c4"]
     assert "***" in tl["c3"]["summary"] and "MiniMax" not in tl["c3"]["summary"], tl["c3"]
+    # 截断得无法解析的旧 film_status 结果：不回退原文，给登记过的中性摘要；无代码但带结构化 ref 的工具错误保留 ref
+    assert tl["c5"]["summary"] == "（结果过长，已省略）" and tl["c5"]["msg"]["code"] == "assistant.tool.truncated", tl["c5"]
+    assert tl["c6"]["msg"] == {"code": "common.failed_generic", "params": {}, "ref": "ZX98YW76"} and "ZX98YW76" in tl["c6"]["summary"], tl["c6"]
+    assert a_events.tool_end_data(old_msgs[6], None)["msg"]["code"] == "assistant.tool.truncated"
+    assert a_events.tool_end_data(old_msgs[7], None)["msg"]["ref"] == "ZX98YW76"
     # SSE：工具结束与操作事件走同一个序列化；系统错误事件也过出口
     ev_end = a_events.tool_end_data(old_msgs[5], None)
     assert not P.find_vendor_words(ev_end) and ev_end["msg"]["code"] == "tts.vendor.no_key", ev_end

@@ -1730,7 +1730,7 @@ export const zh = {
       unavailable: '助手暂不可用，请稍后重试；仍失败请联系管理员', crashed: '助手出错了，请重试；仍失败请联系管理员',
       too_many_steps: '步骤太多，先停在这里。可以换个更具体的问法再问我。', interrupted: '（已中断）',
       tool: {
-        no_chapters: '（还没有章节）', pick_chapter: '请指明是哪一章。可选章节：{options}',
+        no_chapters: '（还没有章节）', truncated: '（结果过长，已省略）', pick_chapter: '请指明是哪一章。可选章节：{options}',
         no_such_chapter: '没有第 {n} 章。可选章节：{options}', ambiguous_chapter: '「{text}」对应不到唯一的章节。可选章节：{options}',
         no_version: '{chapter} 还没有可用的分镜版本', bad_kind: 'kind 只能是 {options}', bad_step: 'step 只能是 {options}',
         no_text: '{chapter} 还没有原文', job_running: '{chapter} 正在生成分镜，等它跑完再说',

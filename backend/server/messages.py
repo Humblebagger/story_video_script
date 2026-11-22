@@ -620,6 +620,7 @@ register("admin.error_ref.not_found", "没有这个参考编号：{ref}")
 register("usage.bad_group", "不支持的分组：{group}")
 # 助手工具（str() 也是给模型看的工具报错正文，与改造前一字不差）
 register("assistant.tool.no_chapters", "（还没有章节）")
+register("assistant.tool.truncated", "（结果过长，已省略）")
 register("assistant.tool.pick_chapter", "请指明是哪一章。可选章节：{options}")
 register("assistant.tool.no_such_chapter", "没有第 {n} 章。可选章节：{options}")
 register("assistant.tool.ambiguous_chapter", "「{text}」对应不到唯一的章节。可选章节：{options}")

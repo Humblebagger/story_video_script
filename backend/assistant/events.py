@@ -82,7 +82,7 @@ def _public_tool(m: ToolMessage, hide: Optional[str], failed: Optional[bool] = N
     film_status 的旧结果：pending[].error 里的厂商词打码。对话正文不经这里。"""
     if m.status == "error" if failed is None else failed:
         a = m.artifact if isinstance(m.artifact, dict) else {}
-        raw = a.get("error") if isinstance(a.get("error"), dict) and a["error"].get("code") else None
+        raw = a.get("error") if isinstance(a.get("error"), dict) else None      # 无代码但带 ref 的也交给出口（保留合法编号）
         pm = public.public_msg(raw)
         return _hide(pm["message"], hide), _hide_deep(_ui(pm), hide)
     text = text_of(m)
@@ -93,8 +93,9 @@ def _public_tool(m: ToolMessage, hide: Optional[str], failed: Optional[bool] = N
                 if isinstance(row.get("error"), str):
                     row["error"] = public.redact(row["error"])
             text = json.dumps(d, ensure_ascii=False)
-        except (ValueError, AttributeError, TypeError):
-            pass
+        except (ValueError, AttributeError, TypeError):      # 截断得无法解析（tools._dump 的「（已截断）」）：不回退原文
+            m = make_msg("assistant.tool.truncated")
+            return m["message"], compact(m)
     return _hide(text, hide), None
 
 

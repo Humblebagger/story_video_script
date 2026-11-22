@@ -1752,7 +1752,7 @@ export const en: BaseMessages = {
       crashed: 'The assistant ran into a problem. Please try again; if it keeps failing, contact the administrator',
       too_many_steps: 'That took too many steps, so I stopped here. Try asking more specifically', interrupted: '(interrupted)',
       tool: {
-        no_chapters: '(no chapters yet)', pick_chapter: 'Please say which chapter. Available chapters: {options}',
+        no_chapters: '(no chapters yet)', truncated: '(result too long, omitted)', pick_chapter: 'Please say which chapter. Available chapters: {options}',
         no_such_chapter: 'There is no chapter {n}. Available chapters: {options}',
         ambiguous_chapter: '“{text}” doesn’t match exactly one chapter. Available chapters: {options}',
         no_version: '{chapter} has no usable storyboard version yet', bad_kind: 'kind must be one of: {options}',
