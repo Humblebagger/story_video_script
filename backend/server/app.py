@@ -711,16 +711,18 @@ def _strings(v) -> list:
     return []
 
 
-def _injected_text(params: ConvertParams, seed: Optional[dict],
-                   context: novel_memory.NovelContext) -> str:
-    """转换时随原文一起送给模型的、用户能手写的文字：资产卡、创作限制、梗概、章节摘要、人物状态备注、风格前缀。"""
-    parts = [params.style_prefix or "", context.outline or ""]
-    parts += _strings(seed or {})
-    parts += [s for _title, s in context.synopses]
-    parts += [str(e.get("detail") or "") for e in context.lifecycle]
+def _injected_items(params: ConvertParams, seed: Optional[dict],
+                    context: novel_memory.NovelContext) -> list:
+    """转换时随原文一起送给模型的、用户能手写的文字，按条返回：风格前缀、梗概、每张资产卡、每章摘要、每条人物状态备注、每条创作限制。"""
+    items = [params.style_prefix or "", context.outline or ""]
+    for group in (seed or {}).values():
+        cards = group if isinstance(group, (list, tuple)) else [group]
+        items += ["\n".join(_strings(card)) for card in cards]
+    items += [s for _title, s in context.synopses]
+    items += [str(e.get("detail") or "") for e in context.lifecycle]
     for c in context.constraints:
-        parts += [str(c.get("text") or ""), str(c.get("negative_prompt") or "")]
-    return "\n".join(p.strip() for p in parts if p and p.strip())
+        items += [str(c.get("text") or ""), str(c.get("negative_prompt") or "")]
+    return [i.strip() for i in items if i and i.strip()]
 
 
 def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
@@ -755,7 +757,7 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
             sctx = {"stage": "convert", "user_id": user_id, "novel_id": nid, "chapter_id": cid,
                     "version_id": job["id"]}
             safety_gate.check_sync(text, sctx)                                   # 章节原文
-            safety_gate.check_sync(_injected_text(params, seed, context), sctx)  # 用户手写的注入文本
+            safety_gate.check_items_sync(_injected_items(params, seed, context), sctx)  # 用户手写的注入文本
         _execute(job, text, params, strict, seed,
                  lambda status, **f: novels.update_version_state(
                      user_id, nid, cid, job["id"], status, **f),

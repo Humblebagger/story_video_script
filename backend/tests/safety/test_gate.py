@@ -153,6 +153,34 @@ def main() -> int:
         os.environ["STORYBOARD_SAFETY"] = "1"
     print("9. 开关 ✓")
 
+    # 10. 分条检查：每条单独查缓存，只有没缓存的拼成一次分类；通过后每条都记通过；拦截记拼接摘录
+    n = len(CALLS)
+    script(reply(False))
+    gate.check_items_sync(["条目甲", "条目乙", "条目甲", "  "], CTX)
+    assert len(CALLS) == n + 1
+    assert store.get_verdict(text_hash("条目甲"))["verdict"] == "pass" and store.get_verdict(text_hash("条目乙"))["verdict"] == "pass"
+    gate.check_items_sync(["条目甲", "条目乙"], CTX)
+    assert len(CALLS) == n + 1, "全部有缓存：零次调用"
+    seen = []
+    gate._make_chat = lambda: ChatInvoker(Settings(api_key="k", transport_retries=0), chat=FakeChat(
+        responses=[lambda m: (seen.append(m[-1].content), reply(False))[1]]))
+    gate.check_items_sync(["条目甲", "条目丙", "条目丁"], CTX)
+    assert len(seen) == 1 and "条目丙" in seen[0] and "条目丁" in seen[0] and "条目甲" not in seen[0], seen
+    assert "条目丙\n\n条目丁" in seen[0]
+    script(reply(True, "sexual", "露骨"))
+    try:
+        gate.check_items_sync(["条目甲", "条目戊", "条目己"], CTX)
+        raise AssertionError("应拦截")
+    except gate.SafetyBlocked:
+        pass
+    assert store.get_verdict(text_hash("条目戊")) is None or store.get_verdict(text_hash("条目戊"))["verdict"] != "pass"
+    try:
+        gate.check_items_sync(["正常", "含有 child porn 的条目"], CTX)
+        raise AssertionError("词表应拦")
+    except gate.SafetyBlocked:
+        pass
+    print("10. 分条检查 ✓")
+
     assert blocklist.match("含有 child porn 的第三段") == "minor_sexual"
     print("\nALL PASS")
     return 0

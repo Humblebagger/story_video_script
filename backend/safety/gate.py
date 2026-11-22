@@ -110,6 +110,32 @@ def check_sync(text, ctx: dict) -> None:
         raise blocked_error(result[2], result[1])
 
 
+def check_items_sync(items, ctx: dict) -> None:
+    """分条检查（转换前的注入文本用）：每条各自查缓存与词表；只有没缓存的拼成一次分类（空行分隔）。
+    通过则每条都记通过；拦截按拼接文本记录。拦截抛 SafetyBlocked，分不出结论抛 SafetyUnavailable。"""
+    if not enabled():
+        return
+    todo, seen = [], set()
+    for item in items:
+        body = normalize(item)
+        h = text_hash(body) if body else None
+        if not body or h in seen:
+            continue
+        seen.add(h)
+        result = _local(body, ctx)
+        if result is None:
+            todo.append(body)
+        elif result[0] == "block":
+            raise blocked_error(result[2], result[1])
+    if not todo:
+        return
+    result = _classify("\n\n".join(todo), ctx)
+    if result[0] == "block":
+        raise blocked_error(result[2], result[1])
+    for body in todo:
+        store.set_pass(text_hash(body))
+
+
 # ---------- 出片线程用：不在 tick 里调模型 ----------
 
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="safety")

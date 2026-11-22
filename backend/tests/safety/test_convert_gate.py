@@ -77,9 +77,16 @@ def main() -> int:
     cid, vid, job = run("他推门进屋。", "一")
     assert job["status"] == "succeeded" and converted == ["他推门进屋。"], job
     assert any(e.get("code") == "job.event.safety_check" for e in job["log"]), job["log"]
+    assert any("他推门进屋。" == c for c in CLASSIFIED), CLASSIFIED
+    # 第一次转换后资产卡被采用；之后只有新增的卡是未缓存的
     seen = len(CLASSIFIED)
     _cid, _vid, job = run("他推门进屋。", "一续")
-    assert job["status"] == "succeeded" and "他推门进屋。" not in CLASSIFIED[seen:], "同文本走缓存"
+    assert job["status"] == "succeeded"
+    new_calls = CLASSIFIED[seen:]
+    assert len(new_calls) == 1 and "他推门进屋。" not in new_calls and "C01" in new_calls[0], new_calls
+    seen = len(CLASSIFIED)
+    _cid, _vid, job = run("他推门进屋。", "一再续")
+    assert job["status"] == "succeeded" and len(CLASSIFIED) == seen, "没有任何变化：零次分类"
     print("1. 通过与缓存 ✓")
 
     # 2. 原文拦截：版本失败、消息带类别与编号、没有进入转换、有拦截记录
