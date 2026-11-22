@@ -107,6 +107,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, error_refs, library, novels, pricing, public, store, summary, usage
+from safety import gate as safety_gate, store as safety_store
 from server.messages import REPORT_MAX, UserError, compact, lines_of, money, msg, ref, render_zh, to_detail, vendor, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
@@ -299,6 +300,17 @@ def _job_note(job: dict, code: str, /, **params) -> None:
     _job_debug(job, m["message"])
 
 
+def _record_model_refusal(job: dict, text: str) -> None:
+    """转换途中底层模型拒绝处理：消息照旧，另记一条拦截记录让管理员看得到（只记不缓存，放行无效）。"""
+    try:
+        safety_store.record_block(
+            text, category="unspecified", reason_code=safety_store.REFUSED, cache=False,
+            ctx={"stage": "convert", "user_id": job.get("user_id"), "novel_id": job.get("novel_id"),
+                 "chapter_id": job.get("chapter_id"), "version_id": job.get("version_id") or job.get("id")})
+    except Exception as e:  # noqa: BLE001  记账失败不能影响失败收尾
+        _job_debug(job, f"拦截记录写入失败：{e!r}")  # i18n: internal
+
+
 def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
              seed: Optional[dict], persist, after_success,
              numbering: Optional[dict] = None,
@@ -394,6 +406,8 @@ def _execute(job: dict, text: str, params: ConvertParams, strict: bool,
             crashed(e, e.code if isinstance(e, LLMError) and e.code else "job.crashed")
             return
         m = e.as_msg()
+        if getattr(e, "code", None) == "llm.content_blocked":
+            _record_model_refusal(job, text)
         report = getattr(e, "report", "") or ""
         shown = getattr(e, "lines", None) or []
         if report or shown:
@@ -686,6 +700,29 @@ def chapters_delete(nid: str, cid: str, user: dict = Depends(novel_user)):
     return {"deleted": cid}
 
 
+def _strings(v) -> list:
+    """任意 JSON 值里的全部字符串叶子（按出现顺序）。"""
+    if isinstance(v, str):
+        return [v] if v.strip() else []
+    if isinstance(v, dict):
+        return [s for x in v.values() for s in _strings(x)]
+    if isinstance(v, (list, tuple)):
+        return [s for x in v for s in _strings(x)]
+    return []
+
+
+def _injected_text(params: ConvertParams, seed: Optional[dict],
+                   context: novel_memory.NovelContext) -> str:
+    """转换时随原文一起送给模型的、用户能手写的文字：资产卡、创作限制、梗概、章节摘要、人物状态备注、风格前缀。"""
+    parts = [params.style_prefix or "", context.outline or ""]
+    parts += _strings(seed or {})
+    parts += [s for _title, s in context.synopses]
+    parts += [str(e.get("detail") or "") for e in context.lifecycle]
+    for c in context.constraints:
+        parts += [str(c.get("text") or ""), str(c.get("negative_prompt") or "")]
+    return "\n".join(p.strip() for p in parts if p and p.strip())
+
+
 def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
                      params: ConvertParams, strict: bool) -> None:
     """新接口：转换某章，产物落成该章的一个版本；本章还没有采用版时自动采用。"""
@@ -713,6 +750,12 @@ def _run_version_job(job: dict, user_id: str, nid: str, cid: str, text: str,
             _job_note(job, "job.event.memory", lifecycle=len(context.lifecycle), synopses=len(context.synopses),
                       outline=ref("job.event.with_outline") if context.outline else "",
                       constraints=len(context.constraints))
+        if safety_gate.enabled():
+            _job_note(job, "job.event.safety_check")
+            sctx = {"stage": "convert", "user_id": user_id, "novel_id": nid, "chapter_id": cid,
+                    "version_id": job["id"]}
+            safety_gate.check_sync(text, sctx)                                   # 章节原文
+            safety_gate.check_sync(_injected_text(params, seed, context), sctx)  # 用户手写的注入文本
         _execute(job, text, params, strict, seed,
                  lambda status, **f: novels.update_version_state(
                      user_id, nid, cid, job["id"], status, **f),
