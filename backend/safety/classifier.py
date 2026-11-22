@@ -74,11 +74,18 @@ def _one(segment: str, chat) -> Verdict:
     blocked, category = data.get("blocked"), data.get("category")
     if not isinstance(blocked, bool):
         raise Unavailable("bad_blocked")
+    reason = data.get("reason", "")
+    if reason is None:
+        reason = ""
+    if not isinstance(reason, str):
+        raise Unavailable("bad_reason")
     if not blocked:
+        if category is not None:
+            raise Unavailable("bad_category")
         return Verdict(False)
     if category not in CLASSIFIER_CODES:
         raise Unavailable("bad_category")
-    return Verdict(True, category, str(data.get("reason") or "")[:REASON_MAX])
+    return Verdict(True, category, reason[:REASON_MAX])
 
 
 def classify(text, chat) -> Verdict:
