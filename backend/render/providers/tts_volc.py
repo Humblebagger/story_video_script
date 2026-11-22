@@ -89,7 +89,7 @@ def _reject(r: httpx.Response, secrets: list) -> ProviderError:
     msg = _clean(msg, secrets)
     if msg:
         return ProviderError.from_msg(base.vendor_reject(
-            "tts.vendor.rejected", f"{_safe_code(code, secrets)}: {msg}", who="volc", secrets=secrets))
+            "tts.vendor.rejected", f"{_clean(code, secrets)}: {msg}", who="volc", secrets=secrets))
     return ProviderError.of("tts.vendor.rejected_http", status=r.status_code)
 
 

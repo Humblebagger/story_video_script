@@ -62,9 +62,14 @@ def _value(v: Any, refs: list) -> Any:
         t = v.get("t")
         if t == "money":
             c = v.get("cny")
-            if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c):
+            try:
+                ok = not isinstance(c, bool) and isinstance(c, (int, float)) and math.isfinite(c)
+                val = round(float(c), 2) if ok else None
+            except OverflowError:
+                ok = False
+            if not ok:
                 raise _Bad("money")
-            return {"t": "money", "cny": round(float(c), 2)}
+            return {"t": "money", "cny": val}
         if t == "ref":
             code = messages.canonical(str(v.get("code")))
             return {"t": "ref", "code": code} if messages.registered(code) else ""

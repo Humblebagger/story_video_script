@@ -143,6 +143,11 @@ def main() -> int:
             e = must_raise(ProviderError, status(401, {"message": "invalid key"}).synthesize,
                            "一", VOICE, None, 1.0, Path(d) / "e.wav")
             assert e.as_msg()["ref"] == "AB12CD34"
+            seen_rej.clear()          # HTTP 拒绝：后台记录保留（脱敏后的）原始码，对外不含
+            e = must_raise(ProviderError, status(401, {"code": "Doubao.InvalidSpeaker k-secret", "message": "denied"}).synthesize,
+                           "一", VOICE, None, 1.0, Path(d) / "e.wav")
+            assert "Doubao" not in str(e) and e.params == {}
+            assert seen_rej and "Doubao.InvalidSpeaker" in seen_rej[0][1] and "denied" in seen_rej[0][1] and "k-secret" not in seen_rej[0][1], seen_rej
         finally:
             _b.record_reject = None
         echo2 = volc(lambda r: httpx.Response(200, content=(json.dumps(

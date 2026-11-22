@@ -210,6 +210,40 @@ def main() -> int:
             assert str(e).startswith("有语音条合成失败，为免成片漏句已停止合成：S0-L1：出片会话目录已不存在")
             assert "、S1-L1：" in str(e)
 
+            # 端到端编号：带 ref 的已计费拒绝 → 配音（不重试、只计一次费）→ compose.lines_failed → 会话存储 → 公开响应
+            from render import session as _sess
+            from render.providers.tts_base import BilledError
+            from server import public as _pub
+            from server.messages import with_ref as _wr
+            calls, spent = [], []
+
+            class _Billed(_Tts):
+                name = "stub"
+                class caps:
+                    voices, emotions, max_chars, cny_per_k_chars = [], False, 300, 1.0
+
+                def synthesize(self, *a, **k):
+                    calls.append(1)
+                    raise BilledError.from_msg(_wr(msg("tts.vendor.failed", code=45000000), "AB12CD34"), 0.07)
+
+            class _AnyVoice(dict):
+                def __missing__(self, k):
+                    return "v1"
+            voice.synthesize = real_syn
+            voice.resolve_voices = lambda *a, **k: (_AnyVoice(), [])
+            e = raises(lambda: mix.compose(root, doc, dict(base, audio_mode="tts_all"), **dict(args, tts=_Billed(), on_cost=spent.append)))
+            assert e.code == "compose.lines_failed", e.code
+            n_lines = len(calls)
+            assert n_lines >= 1 and spent == [0.07] * n_lines, (calls, spent)       # 每条只调一次、只计一次费
+            sroot = root / "sess"
+            sroot.mkdir()
+            (sroot / "session.json").write_text(json.dumps({"final": {}, "clips": [], "free": [], "owner": {}}), encoding="utf-8")
+            _sess.compose_failed(sroot, e.as_msg())
+            stored = json.loads((sroot / "session.json").read_text(encoding="utf-8"))["final"]
+            out = _pub.scrub_errors(stored)
+            assert out["error_msg"]["ref"] == "AB12CD34" and "AB12CD34" in out["error"], out
+            voice.synthesize = real_syn
+
             def boom(*a, **k):
                 raise voice.VoiceError.of("film.session.dir_gone")
             voice.synthesize = boom

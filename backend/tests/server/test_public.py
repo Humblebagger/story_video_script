@@ -97,7 +97,8 @@ def main() -> int:
     ok = P.public_msg({"code": "film.run.confirm", "params": {"amount": {"t": "money", "cny": 1.236, "detail": "MiniMax"}}})
     assert ok["params"]["amount"] == {"t": "money", "cny": 1.24} and not P.find_vendor_words(ok)
     for bad in ({"t": "money"}, {"t": "money", "cny": "bad"}, {"t": "money", "cny": float("nan")},
-                {"t": "money", "cny": float("inf")}, {"t": "money", "cny": True}):
+                {"t": "money", "cny": float("inf")}, {"t": "money", "cny": True},
+                {"t": "money", "cny": 10 ** 400}, {"t": "money", "cny": -10 ** 400}):
         g = P.public_msg({"code": "film.run.confirm", "ref": "AB12CD34", "params": {"amount": bad}})
         assert g["code"] == "common.failed_generic" and g["ref"] == "AB12CD34", (bad, g)
     v = P.public_msg({"code": "film.fake.failed", "params": {"detail": {"t": "vendor", "text": "x MiniMax", "extra": "Seedance"}}})

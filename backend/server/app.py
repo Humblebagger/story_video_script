@@ -1060,8 +1060,9 @@ def _public_detail(d):
 
 def _film_view(s: dict, lenient: bool = False) -> dict:
     """出片会话给界面的视图：会话层的完整视图过一遍普通用户出口（不带厂商、模型、厂商任务号、下载地址）。"""
-    v = _render_call(render_session.view, s, lenient)
-    return public.film_view(v, tier=render_tiers.tier_of(s.get("provider"), s.get("model")),
+    tier = render_tiers.tier_of(s.get("provider"), s.get("model"))
+    v = _render_call(render_session.view, s, lenient or tier is None)      # 映射外的组合（下线的档位）走降级序列化，不抛
+    return public.film_view(v, tier=tier,
                             tiers=render_tiers.options(), rate_note=compact(msg("rate.video")))
 
 
@@ -1382,7 +1383,8 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
             return (public.redact(v) if isinstance(v, str) else [red(x) for x in v] if isinstance(v, list)
                     else {k: red(x) for k, x in v.items()} if isinstance(v, dict) else v)
         return JSONResponse(red(data))
-    if (not rel or any(p.startswith(".") for p in rel) or target.suffix.lower() not in RENDER_FILE_EXTS
+    if (not rel or any(p.startswith(".") for p in rel) or "work" in rel[:-1]
+            or re.search(r"\.part\d*(\.|$)", rel[-1]) or target.suffix.lower() not in RENDER_FILE_EXTS
             or not target.is_file()):
         raise HTTPException(404, detail=msg("film.file.not_found"))
     return FileResponse(target)

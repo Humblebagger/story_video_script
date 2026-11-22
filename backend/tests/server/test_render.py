@@ -146,15 +146,25 @@ def main() -> int:
     assert r.status_code == 200 and "MiniMax" not in r.text and "***" in r.text and r.json()["episodes"][0]["seconds"] == 3, r.text
     assert c.get(R + "/files/final/timeline.json", headers=H).status_code == 404
     assert c.get(R + "/files/session.json", headers=H).status_code == 404
+    (rdir / "clips" / "mix_report.json").write_text("{}", encoding="utf-8")      # 真实存在也不给：只放行 final/ 下那一个
     assert c.get(R + "/files/clips/mix_report.json", headers=H).status_code == 404
+    # 合成的中间产物（final/work 下的整理段、拼接、写到一半的 .part.mp4）与带 .part 的名字不给；成片照给
+    (rdir / "final" / "work").mkdir(exist_ok=True)
+    for name in ("final/work/C01.abc.part.mp4", "final/work/E01.joined.mp4", "final/work/C01.abc.mp4",
+                 "final/E01.part.mp4", "audio/cache/k.part0.wav"):
+        (rdir / name).parent.mkdir(parents=True, exist_ok=True)
+        (rdir / name).write_bytes(b"x")
+        assert c.get(R + "/files/" + name, headers=H).status_code == 404, name
+    (rdir / "final" / "E01.mp4").write_bytes(b"x")
+    assert c.get(R + "/files/final/E01.mp4", headers=H).status_code == 200
     assert c.get(R + "/files/" + done["attempts"][0]["file"], headers=H).status_code == 200
     # 映射表里没有的（厂商, 档位）组合：视图 tier 为 null，不抛错、不带厂商与模型
     import copy as _copy
     s_old = _copy.deepcopy(render_session.load(rdir))
     for prov, model in (("fake", "gone-model"), ("gone-provider", "gone-model"), (None, None)):
         s_old["provider"], s_old["model"] = prov, model
-        vv = app_mod._film_view(s_old, True)
-        assert vv["tier"] is None and "provider" not in vv and "model" not in vv, (prov, vv.get("tier"))
+        for vv in (app_mod._film_view(s_old), app_mod._film_view(s_old, True)):      # 默认调用也不抛
+            assert vv["tier"] is None and "provider" not in vv and "model" not in vv, (prov, vv.get("tier"))
     print("3. 试段与取文件 ✓")
 
     # 4. 批量：必须带确认金额；不一致 409；超上限 422；在跑时不能改设置
