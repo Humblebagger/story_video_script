@@ -62,13 +62,28 @@ RT = "/novels/{nid}/chapters/{cid}/versions/{vid}/render"
 
 
 
-def _drop(v, keys):
-    """扫词前去掉用户自己的内容字段（按键名，任意深度）；其余——键名、错误对象、服务端文案——照扫。"""
-    if isinstance(v, dict):
-        return {k: _drop(x, keys) for k, x in v.items() if k not in keys}
-    if isinstance(v, list):
-        return [_drop(x, keys) for x in v]
-    return v
+def _blank(v, path):
+    """扫词前把用户内容字段的字符串值换成空串：只按明确的字段路径（$.a.b[].c，[] 是列表里每一项），
+    键名与结构保留，路径上必须真的是字符串（形状变了就报错，不会静默放过）。"""
+    return _blank_walk(v, path.split("."), 1)
+
+
+def _blank_walk(v, parts, i):
+    if i == len(parts):
+        assert isinstance(v, str), ("豁免路径上应是字符串", parts, v)
+        return ""
+    part = parts[i]
+    many = part.endswith("[]")
+    key = part[:-2] if many else part
+    assert isinstance(v, dict) and key in v, ("豁免路径不存在", parts, part)
+    out = dict(v)
+    child = v[key]
+    if many:
+        assert isinstance(child, list), ("豁免路径上应是列表", parts, part)
+        out[key] = [_blank_walk(x, parts, i + 1) for x in child]
+    else:
+        out[key] = _blank_walk(child, parts, i + 1)
+    return out
 
 
 def _pieces(v):
@@ -92,12 +107,14 @@ def _echo_free(body, sent):
     return body
 
 
-def clean(label, resp, status, *, route, exclude=(), models_at=None, sent=None):
-    """响应状态码精确等于 status；整份响应没有厂商词（exclude：只去掉这些用户内容字段）、没有禁止的键；
+def clean(label, resp, status, *, route, user_fields=(), models_at=None, sent=None):
+    """响应状态码精确等于 status；整份响应没有厂商词（user_fields：这几条字段路径上的用户字符串值先清空再扫，键名与结构仍检查）、没有禁止的键；
     登记 (方法, 路径模板)。models_at：{字段路径: 允许的取值}，只有这些位置的 model 字符串放行。"""
     assert resp.status_code == status, (label, resp.status_code, status, resp.text[:300])
     body = resp.json()
-    scan = _drop(body, set(exclude))
+    scan = body
+    for path in user_fields:
+        scan = _blank(scan, path)
     if sent is not None:
         scan = _echo_free(scan, sent)
     assert not P.find_vendor_words(scan), (label, P.find_vendor_words(scan))
@@ -357,13 +374,17 @@ def main() -> int:
     # R12：用户内容里的「方舟」不打码；系统文案与键名照扫
     nid2 = novels.create_novel(alice, "方舟纪事")["id"]
     cid2 = novels.create_chapter(alice, nid2, "方舟之行", text="他登上方舟。")["id"]
-    ex = ("title", "text", "work_title", "chapter", "name")
-    for label, path, route in (("novels.user", "/novels", "/novels"),
-                               ("novel.user", f"/novels/{nid2}", "/novels/{nid}"),
-                               ("chapter.user", f"/novels/{nid2}/chapters/{cid2}", "/novels/{nid}/chapters/{cid}")):
-        resp = c.get(path, headers=H)
-        clean(label, resp, 200, route=route, exclude=ex)
-        assert "方舟" in resp.text and "***" not in resp.text, (label, "用户内容不打码")
+    title2, ch_title2, text2 = "方舟纪事", "方舟之行", "他登上方舟。"
+    lst = clean("novels.user", c.get("/novels", headers=H), 200, route="/novels", user_fields=("$.novels[].title",))
+    mine = next(x for x in lst["novels"] if x["id"] == nid2)
+    assert mine["title"] == title2, mine
+    r1 = c.get(f"/novels/{nid2}", headers=H)
+    nv = clean("novel.user", r1, 200, route="/novels/{nid}", user_fields=("$.title", "$.chapters[].title"))
+    assert nv["title"] == title2 and [x["title"] for x in nv["chapters"]] == [ch_title2], nv
+    r2 = c.get(f"/novels/{nid2}/chapters/{cid2}", headers=H)
+    cv = clean("chapter.user", r2, 200, route="/novels/{nid}/chapters/{cid}", user_fields=("$.title", "$.text"))
+    assert (cv["title"], cv["text"]) == (ch_title2, text2), cv
+    assert "***" not in lst.__repr__() + nv.__repr__() + cv.__repr__(), "用户内容不打码"
     print("4. 其余接口 ✓")
 
     # ---- 具体断言 ----
