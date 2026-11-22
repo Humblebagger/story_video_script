@@ -15,6 +15,7 @@ import binascii
 import json
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -23,6 +24,7 @@ import httpx
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
 from render.providers import base
+from server.messages import msg as _msg, with_ref
 from render.providers.base import ProviderError, TransientError, scrub
 from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
 
@@ -63,10 +65,14 @@ def _clean(text, secrets: list) -> str:
 
 
 def _safe_code(code, secrets: list):
-    """错误码进参数：数字原样，其余（字符串、列表、字典…）转成文字并抹掉密钥。"""
-    if isinstance(code, (int, float)) and not isinstance(code, bool):
+    """错误码进参数：只放行整数或纯数字字符串（最长 12 位）；其余返回 None（调用方改走中性拒绝，原值进错误记录）。"""
+    if isinstance(code, bool):
+        return None
+    if isinstance(code, int) and 0 <= code < 10 ** 12:
         return code
-    return _clean(code, secrets)
+    if isinstance(code, str) and re.fullmatch(r"[0-9]{1,12}", code):
+        return code
+    return None
 
 
 def _reject(r: httpx.Response, secrets: list) -> ProviderError:
@@ -154,10 +160,18 @@ class VolcTts:
                         break
                     if code != 0:
                         detail = msg.get("message") or ""
-                        safe_code = _safe_code(code, list(self._auth.values()))
-                        if detail:
-                            base.vendor_reject("tts.vendor.rejected", f"{safe_code}: {detail}", who="volc",
-                                               secrets=list(self._auth.values()))    # 只取副作用：原话进日志与错误记录
+                        secrets = list(self._auth.values())
+                        safe_code = _safe_code(code, secrets)
+                        cost = tts_cost(len(text), self.caps)
+                        if safe_code is None:        # 形状不明的错误码：不进参数，走中性拒绝（原值进错误记录，带编号）
+                            raise BilledError.from_msg(base.vendor_reject(
+                                "tts.vendor.rejected", f"{_clean(code, secrets)}: {detail}", who="volc", secrets=secrets), cost)
+                        if detail:                   # 原话进日志与错误记录，编号挂在 tts.vendor.failed 上
+                            rec = base.vendor_reject("tts.vendor.rejected", f"{safe_code}: {detail}", who="volc", secrets=secrets)
+                            m = _msg("tts.vendor.failed", code=safe_code)
+                            if rec.get("ref"):
+                                m = with_ref(m, rec["ref"])
+                            raise BilledError.from_msg(m, cost)
                         raise self._billed("tts.vendor.failed", text, code=safe_code)
                     if msg.get("data"):
                         try:

@@ -161,7 +161,9 @@ def public_cause(e: BaseException) -> dict:
     """异常 → 可嵌进给用户的消息的原因：带代码的给紧凑消息；没有代码的只说「未知原因」（原文由调用方写日志，
     里面可能有厂商接口地址）。出片与合成用它；转换管线仍用 cause_of。"""
     m = e.as_msg() if isinstance(e, UserError) else None
-    return compact(m) if m else compact(msg("film.vendor.unknown_cause"))
+    if not m:
+        return compact(msg("film.vendor.unknown_cause"))
+    return {**compact(m), **({"ref": m["ref"]} if m.get("ref") else {})}      # 参考编号随原因走，出口处提升到外层
 
 
 def recast(cls, e: BaseException):

@@ -18,6 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 
 _TMP = tempfile.TemporaryDirectory()
 os.environ["STORYBOARD_DATA_DIR"] = _TMP.name     # 必须在导入 server.* 之前
@@ -378,6 +380,8 @@ def main() -> int:
     with render_session.mutate(root) as s_:
         mode, s_["audio_mode"] = s_["audio_mode"], "silent"
     try:
+        vs = c.get(R + "/voices", headers=H).json()      # 无配音分支也给中性费率说明，且不碰配音密钥
+        assert vs["rate_note"] == {"code": "rate.tts", "params": {}} and vs["voices"] == [], vs
         r = c.get(R + "/compose", headers=H)
         assert r.status_code == 200 and r.json()["lines"] == 0 and r.json()["tts_cny"] == 0, r.text
         assert r.json()["voices"] == {} and r.json()["missing_voices"] == []

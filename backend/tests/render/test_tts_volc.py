@@ -15,6 +15,8 @@ import httpx
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 
 from render import providers  # noqa: E402
 from render.providers import tts_volc  # noqa: E402
@@ -121,6 +123,28 @@ def main() -> int:
         e = must_raise(BilledError, bad.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
         assert "45000000" in str(e) and "permission" not in str(e) and e.billed_cny == tts_cost(1, bad.caps)
         assert e.code == "tts.vendor.failed" and e.params == {"code": 45000000}, (e.code, e.params)
+        # 编号：流内失败（有厂商原话）带编号、仍按已计费；形状不明的 code 不进参数，走中性拒绝并带编号
+        from render.providers import base as _b
+        seen_rej = []
+        _b.record_reject = lambda c, d: (seen_rej.append((c, d)), "AB12CD34")[1]
+        try:
+            e = must_raise(BilledError, bad.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+            assert e.code == "tts.vendor.failed" and e.params == {"code": 45000000} and e.as_msg()["ref"] == "AB12CD34", e.as_msg()
+            assert "AB12CD34" in str(e) and e.billed_cny == tts_cost(1, bad.caps)
+            assert seen_rej and "permission" in seen_rej[0][1]
+            for weird in ("Doubao.InvalidSpeaker", "1234567890123", ["1"], {"a": 1}, True, 1.5):
+                w = volc(lambda r, weird=weird: httpx.Response(200, content=(json.dumps(
+                    {"code": weird, "message": "denied k-secret"}) + "\n").encode()))
+                seen_rej.clear()
+                e = must_raise(BilledError, w.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")
+                assert e.code == "tts.vendor.rejected" and e.params == {} and e.as_msg()["ref"] == "AB12CD34", (weird, e.as_msg())
+                assert e.billed_cny == tts_cost(1, w.caps) and "Doubao" not in str(e) and "k-secret" not in str(e)
+                assert seen_rej and "k-secret" not in seen_rej[0][1]
+            e = must_raise(ProviderError, status(401, {"message": "invalid key"}).synthesize,
+                           "一", VOICE, None, 1.0, Path(d) / "e.wav")
+            assert e.as_msg()["ref"] == "AB12CD34"
+        finally:
+            _b.record_reject = None
         echo2 = volc(lambda r: httpx.Response(200, content=(json.dumps(
             {"code": "k-secret", "message": "no k-secret here"}) + "\n").encode()))
         e = must_raise(BilledError, echo2.synthesize, "一", VOICE, None, 1.0, Path(d) / "e.wav")

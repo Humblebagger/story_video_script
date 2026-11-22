@@ -2,6 +2,7 @@
 管理接口（/admin/*）不经过这里。打码只用于错误文字，不用于分镜、提示词、小说、对话等用户内容。"""
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any, Optional
@@ -36,24 +37,45 @@ def task_key(task_id) -> Optional[str]:
     return "t" + hashlib.sha256(str(task_id).encode("utf-8")).hexdigest()[:16] if task_id else None
 
 
-def _value(v: Any) -> Any:
+class _Bad(Exception):
+    """参数形状不合法：整条消息回落通用文案。"""
+
+
+# 个别参数的形状白名单：(规范代码, 参数名) → 校验函数；不合法时整条回落通用消息
+def _digits_code(v) -> bool:
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, int):
+        return 0 <= v < 10 ** 12
+    return isinstance(v, str) and re.fullmatch(r"[0-9]{1,12}", v) is not None
+
+
+_PARAM_CHECK = {("tts.vendor.failed", "code"): _digits_code}
+
+
+def _value(v: Any, refs: list) -> Any:
     if isinstance(v, str):
         return redact(v)
     if isinstance(v, list):
-        return [_value(x) for x in v]
+        return [_value(x, refs) for x in v]
     if isinstance(v, dict):
         t = v.get("t")
         if t == "money":
-            return v
+            c = v.get("cny")
+            if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c):
+                raise _Bad("money")
+            return {"t": "money", "cny": round(float(c), 2)}
         if t == "ref":
             code = messages.canonical(str(v.get("code")))
             return {"t": "ref", "code": code} if messages.registered(code) else ""
         if t == "vendor":
             return {"t": "vendor", "text": redact(v.get("text", ""))}
         if t == "lines":
-            return {"t": "lines", "items": [_value(x) for x in v.get("items") or []]}
+            return {"t": "lines", "items": [_value(x, refs) for x in v.get("items") or []]}
         if isinstance(v.get("code"), str):
             m = public_msg(v)
+            if m.get("ref"):
+                refs.append(m["ref"])
             return {"code": m["code"], "params": m["params"]}
         return ""
     return v
@@ -61,18 +83,28 @@ def _value(v: Any) -> Any:
 
 def public_msg(m) -> dict:
     """消息对象 → 可以给普通用户的消息对象：旧代码归一、只留登记过的参数、文字里的厂商词打码、中文兜底重写。
-    认不出的代码、缺参数的，一律换成通用失败文案（保留参考编号）。"""
-    out = None
+    认不出的代码、缺参数、参数形状不合法的，一律换成通用失败文案（保留参考编号）。
+    嵌套的原因带着参考编号而外层没有时，把编号提升到外层。"""
+    out, refs = None, []
     if isinstance(m, dict) and isinstance(m.get("code"), str):
         code = messages.canonical(m["code"])
         src = m.get("params") if isinstance(m.get("params"), dict) else {}
         if messages.registered(code) and all(k in src for k in messages.params_of(code)):
-            params = {k: _value(src[k]) for k in messages.params_of(code)}
-            out = {"code": code, "params": params, "message": messages.render_zh(code, params)}
+            try:
+                for k in messages.params_of(code):
+                    chk = _PARAM_CHECK.get((code, k))
+                    if chk and not chk(src[k]):
+                        raise _Bad(k)
+                params = {k: _value(src[k], refs) for k in messages.params_of(code)}
+                out = {"code": code, "params": params, "message": messages.render_zh(code, params)}
+            except (_Bad, KeyError, ValueError, TypeError):
+                out = None
     if out is None:
         out = messages.msg(GENERIC)
     ref = m.get("ref") if isinstance(m, dict) else None
-    if isinstance(ref, str) and _REF_RE.fullmatch(ref):
+    if not (isinstance(ref, str) and _REF_RE.fullmatch(ref)):
+        ref = next((r for r in refs if isinstance(r, str) and _REF_RE.fullmatch(r)), None)
+    if ref:
         out = messages.with_ref(out, ref)
     return out
 

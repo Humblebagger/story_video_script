@@ -5,6 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 
 from server import messages as M, public as P  # noqa: E402
 
@@ -77,6 +79,38 @@ def main() -> int:
     m = P.public_msg({"code": "tts.volc.failed_detail", "params": {"code": "45000", "detail": {"t": "vendor", "text": "豆包…"}}})
     assert m["code"] == "tts.vendor.failed" and m["params"] == {"code": "45000"}
     print("旧代码归一 ✓")
+
+    # 8. 参考编号：嵌套原因里的编号提升到外层；公开原因（public_cause）带着编号
+    from server.messages import with_ref
+    from render.providers.base import ProviderError
+    inner = {"code": "tts.vendor.rejected", "params": {}, "ref": "AB12CD34"}
+    m = P.public_msg({"code": "film.poll.gave_up", "params": {"cause": inner}})
+    assert m["ref"] == "AB12CD34" and "AB12CD34" in m["message"] and "ref" not in m["params"]["cause"], m
+    m = P.public_msg({"code": "film.poll.gave_up", "ref": "ZZ99ZZ99", "params": {"cause": inner}})
+    assert m["ref"] == "ZZ99ZZ99", "外层自己有编号时不覆盖"
+    e = ProviderError.from_msg(with_ref(M.msg("tts.vendor.rejected"), "AB12CD34"))
+    assert M.public_cause(e) == inner, M.public_cause(e)
+    assert M.public_cause(RuntimeError("x")) == {"code": "film.vendor.unknown_cause", "params": {}}
+    print("参考编号提升 ✓")
+
+    # 9. 金额与原文参数只留允许字段；形状不合法整条回落通用消息并保留有效编号
+    ok = P.public_msg({"code": "film.run.confirm", "params": {"amount": {"t": "money", "cny": 1.236, "detail": "MiniMax"}}})
+    assert ok["params"]["amount"] == {"t": "money", "cny": 1.24} and not P.find_vendor_words(ok)
+    for bad in ({"t": "money"}, {"t": "money", "cny": "bad"}, {"t": "money", "cny": float("nan")},
+                {"t": "money", "cny": float("inf")}, {"t": "money", "cny": True}):
+        g = P.public_msg({"code": "film.run.confirm", "ref": "AB12CD34", "params": {"amount": bad}})
+        assert g["code"] == "common.failed_generic" and g["ref"] == "AB12CD34", (bad, g)
+    v = P.public_msg({"code": "film.fake.failed", "params": {"detail": {"t": "vendor", "text": "x MiniMax", "extra": "Seedance"}}})
+    assert v["params"]["detail"] == {"t": "vendor", "text": "x ***"}, v
+    print("money / vendor 参数 ✓")
+
+    # 10. 配音错误码只放行整数或纯数字串（最长 12 位）；历史 failed_detail 同样
+    for good in (45000000, "45000"):
+        assert P.public_msg({"code": "tts.volc.failed_detail", "params": {"code": good, "detail": {"t": "vendor", "text": "x"}}})["code"] == "tts.vendor.failed"
+    for bad in ("Doubao.InvalidSpeaker", "1234567890123", ["1"], True, 1.5, -3):
+        g = P.public_msg({"code": "tts.vendor.failed", "ref": "AB12CD34", "params": {"code": bad}})
+        assert g["code"] == "common.failed_generic" and g["ref"] == "AB12CD34", (bad, g)
+    print("配音 code 白名单 ✓")
 
     print("\nALL PASS")
     return 0

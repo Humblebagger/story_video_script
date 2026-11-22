@@ -6,6 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 
 # 测试不读真实的 .env：各处 _load_dotenv 换成空操作
 import pipeline.config as _pc  # noqa: E402

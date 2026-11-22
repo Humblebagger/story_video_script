@@ -1555,7 +1555,7 @@ def render_voices(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)
     s = _session_or_404(root)
     lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
     if not lines:       # 这个声音模式不配音：不取配音厂商，没配密钥也能看
-        return {"rate_note": "", "voices": [], "speakers": [], "missing": []}
+        return {"rate_note": compact(msg("rate.tts")), "voices": [], "speakers": [], "missing": []}
     tts = _tts()
     voices, missing = render_voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
     info = render_voice.speakers(doc)

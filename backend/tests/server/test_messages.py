@@ -6,6 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 
 from server import messages as M  # noqa: E402
 
@@ -26,6 +28,78 @@ class Conf(M.UserError, ValueError):
     def __init__(self, message, expected_cny=None):
         super().__init__(message)
         self.expected_cny = expected_cny
+
+
+# 固定的旧码 → 新码清单（逐项照 spec §6.3），与 messages._legacy() 独立书写
+EXPECTED_LEGACY = {
+    "film.ark.access_denied": "film.vendor.access_denied",
+    "film.ark.auth": "film.vendor.auth",
+    "film.ark.connect_failed": "film.vendor.connect_failed",
+    "film.ark.copyright": "film.vendor.copyright",
+    "film.ark.download_failed": "film.provider.download_failed",
+    "film.ark.http_ambiguous": "film.vendor.http_ambiguous",
+    "film.ark.input_moderated": "film.vendor.input_moderated",
+    "film.ark.limit_paused": "film.vendor.limit_paused",
+    "film.ark.model_unavailable": "film.vendor.tier_unavailable",
+    "film.ark.no_key": "film.vendor.no_key",
+    "film.ark.no_result_url": "film.vendor.no_result_url",
+    "film.ark.no_task_id": "film.vendor.no_task_id",
+    "film.ark.not_json": "film.vendor.not_json",
+    "film.ark.output_copyright": "film.vendor.output_copyright",
+    "film.ark.output_moderated": "film.vendor.output_moderated",
+    "film.ark.overdue": "film.vendor.balance",
+    "film.ark.quota": "film.vendor.quota",
+    "film.ark.task_expired": "film.vendor.task_expired",
+    "film.ark.throttled": "film.vendor.throttled",
+    "film.ark.unavailable": "film.vendor.unavailable",
+    "film.ark.unknown_model": "film.settings.no_model",
+    "film.fake.unknown_model": "film.settings.no_model",
+    "film.minimax.bad_image": "film.input.bad_image",
+    "film.minimax.bad_ratio": "film.input.bad_ratio",
+    "film.minimax.bad_resolution": "film.settings.bad_resolution",
+    "film.minimax.connect_failed": "film.vendor.connect_failed",
+    "film.minimax.corrupt_image": "film.input.corrupt_image",
+    "film.minimax.http_ambiguous": "film.vendor.http_ambiguous",
+    "film.minimax.image_too_big": "film.input.image_too_big",
+    "film.minimax.insufficient_balance": "film.vendor.balance",
+    "film.minimax.invalid_key": "film.vendor.auth",
+    "film.minimax.label_first": "film.input.label_first",
+    "film.minimax.label_ref": "film.input.label_ref",
+    "film.minimax.lite_needs_ratio": "film.input.needs_ratio",
+    "film.minimax.moderated": "film.vendor.input_moderated",
+    "film.minimax.no_key": "film.vendor.no_key",
+    "film.minimax.no_result_url": "film.vendor.no_result_url",
+    "film.minimax.no_task_id": "film.vendor.no_task_id",
+    "film.minimax.not_json": "film.vendor.not_json",
+    "film.minimax.prompt_too_long": "film.input.prompt_too_long",
+    "film.minimax.request_too_big": "film.input.request_too_big",
+    "film.minimax.throttled": "film.vendor.throttled",
+    "film.minimax.unavailable": "film.vendor.unavailable",
+    "film.minimax.unknown_model": "film.settings.no_model",
+    "film.minimax.unsupported_format": "film.input.unsupported_format",
+    "film.minimax.url_expired": "film.vendor.result_expired",
+    "film.provider.http_rejected": "film.vendor.rejected",
+    "film.provider.rejected": "film.vendor.rejected",
+    "film.provider.unknown": "film.settings.no_model",
+    "rate.ark": "rate.video",
+    "rate.fake": "rate.video",
+    "rate.fake_tts": "rate.tts",
+    "rate.minimax": "rate.video",
+    "rate.volc_tts": "rate.tts",
+    "tts.unknown_provider": "tts.vendor.misconfigured",
+    "tts.volc.bad_audio": "tts.vendor.bad_audio",
+    "tts.volc.connect_failed": "tts.vendor.connect_failed",
+    "tts.volc.cut": "tts.vendor.cut",
+    "tts.volc.failed": "tts.vendor.failed",
+    "tts.volc.failed_detail": "tts.vendor.failed",
+    "tts.volc.incomplete": "tts.vendor.incomplete",
+    "tts.volc.no_key": "tts.vendor.no_key",
+    "tts.volc.not_json": "tts.vendor.not_json",
+    "tts.volc.not_object": "tts.vendor.not_json",
+    "tts.volc.rejected": "tts.vendor.rejected",
+    "tts.volc.rejected_http": "tts.vendor.rejected_http",
+    "tts.volc.unavailable": "tts.vendor.unavailable",
+}
 
 
 def main() -> int:
@@ -128,7 +202,7 @@ def main() -> int:
         "tts.volc.unavailable": ["status"], "tts.volc.rejected": ["code", "detail"], "tts.volc.rejected_http": ["status"],
         "tts.volc.failed": ["code"], "tts.volc.failed_detail": ["code", "detail"],
     }
-    assert len(M.LEGACY) >= 60
+    assert M.LEGACY == EXPECTED_LEGACY, "对照表与固定清单不一致：" + str(set(M.LEGACY.items()) ^ set(EXPECTED_LEGACY.items()))
     for old, new in M.LEGACY.items():
         assert not M.registered(old), f"{old} 应已删除"
         assert M.registered(new), f"{new} 没登记"

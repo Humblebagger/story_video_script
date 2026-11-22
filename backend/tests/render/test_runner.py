@@ -13,6 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 os.environ["STORYBOARD_DATA_DIR"] = tempfile.mkdtemp()   # 错误记录写临时目录，不碰真实 backend/data（在导入 render/server 之前）
 # 测试不读真实的 backend/.env：load_settings 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
@@ -782,6 +784,32 @@ def main() -> int:
     c = clip(r23, i23[0])
     assert c["error"] == "多次查询都失败，已放弃；请联系管理员核对这个任务：未知原因", c["error"]
     assert c["error_msg"]["params"]["cause"] == {"code": "film.vendor.unknown_cause", "params": {}}
+    fake.poll = real_poll19
+    # 带参考编号的厂商拒绝：包装成「重试中」「查询放弃」后，经出口编号提升到外层
+    from server import public as _P
+    from server.messages import msg as _msg, with_ref as _wref
+    now20 = [0.0]
+    r25, i25 = fresh("fallback4")
+    sess.queue_run(r25, [i25[0]])
+    rn = Runner(builder, sleep=lambda s: None, clock=lambda: now20[0],
+                poll_give_up_sec=100, download_give_up_sec=100)
+    rn.watch(r25)
+    rn.tick()
+
+    def poll_ref(tid):
+        raise base.ProviderError.from_msg(_wref(_msg("film.vendor.rejected"), "AB12CD34"))
+
+    fake.poll = poll_ref
+    now20[0] = 1
+    rn.tick()
+    c = clip(r25, i25[0])
+    pm = _P.public_msg(c["error_msg"])
+    assert c["error_msg"]["code"] == "film.provider.retrying" and pm["ref"] == "AB12CD34" and "AB12CD34" in pm["message"], (c["error_msg"], pm)
+    now20[0] = 101
+    rn.tick()
+    c = clip(r25, i25[0])
+    pm = _P.public_msg(c["error_msg"])
+    assert c["error_msg"]["code"] == "film.poll.gave_up" and pm["ref"] == "AB12CD34" and "ref" not in pm["params"]["cause"], (c["error_msg"], pm)
     fake.poll = real_poll19
     print("18. 未知原因与中文兜底 ✓")
 

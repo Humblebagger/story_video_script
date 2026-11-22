@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+import _noenv  # noqa: E402,F401  测试不读真实 .env
 
 from render import voice  # noqa: E402
 from render.providers.fake import FakeTts  # noqa: E402
@@ -112,6 +114,16 @@ def main() -> int:
         assert "自动重试" not in failed[0]["error"] and "retrying" not in failed[0]["error"], failed[0]["error"]
         from server.messages import render_zh
         assert "自动重试" not in render_zh(failed[0]["error_msg"]["code"], failed[0]["error_msg"]["params"]), failed[0]
+    with tempfile.TemporaryDirectory() as d:     # 带参考编号的厂商拒绝经 voice.synthesize 后编号仍在
+        from server.messages import msg as _m, with_ref as _wr
+        from render.providers.base import ProviderError
+        refd = FakeTts()
+
+        def synth_ref(*a, **k):
+            raise ProviderError.from_msg(_wr(_m("tts.vendor.rejected"), "AB12CD34"))
+        refd.synthesize = synth_ref
+        _, failed = voice.synthesize(two[:1], voices, refd, Path(d), sleep=lambda s: None)
+        assert failed[0]["error_msg"] == {"code": "tts.vendor.rejected", "params": {}, "ref": "AB12CD34"}, failed[0]
     with tempfile.TemporaryDirectory() as d:
         bad = FakeTts(fail_with="音色无权限")
         done, failed = voice.synthesize(two, voices, bad, Path(d), sleep=lambda s: None)

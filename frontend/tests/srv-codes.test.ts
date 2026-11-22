@@ -32,5 +32,6 @@ for (const [code, { params, zh: zhText }] of Object.entries(codes)) {
   for (const p of params) must(holes(enSrv[code]).includes(p), `en srv.${code} 漏了参数 {${p}}`)
 }
 for (const k of Object.keys(zhSrv)) must(k in codes, `zh 多余的 srv.${k}（后端没登记）`)
+for (const k of Object.keys(enSrv)) must(k in codes, `en 多余的 srv.${k}（后端没登记）`)
 console.log(`\n${Object.keys(codes).length} codes`)
 console.log('\nALL PASS')
