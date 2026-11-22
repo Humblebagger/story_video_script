@@ -107,7 +107,7 @@ from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
 from server import audit, auth, error_refs, library, novels, pricing, public, store, summary, usage
-from safety import gate as safety_gate, store as safety_store
+from safety import gate as safety_gate, store as safety_store, text as safety_text
 from server.messages import REPORT_MAX, UserError, compact, lines_of, money, msg, ref, render_zh, to_detail, vendor, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
@@ -1113,11 +1113,18 @@ def _public_detail(d):
 
 
 def _film_view(s: dict, lenient: bool = False) -> dict:
-    """出片会话给界面的视图：会话层的完整视图过一遍普通用户出口（不带厂商、模型、厂商任务号、下载地址）。"""
+    """出片会话给界面的视图：会话层的完整视图过一遍普通用户出口（不带厂商、模型、厂商任务号、下载地址）。
+    排队中、正等内容检查结论的段与自由节点标 safety_checking。"""
     tier = render_tiers.tier_of(s.get("provider"), s.get("model"))
     v = _render_call(render_session.view, s, lenient or tier is None)      # 映射外的组合（下线的档位）走降级序列化，不抛
-    return public.film_view(v, tier=tier,
-                            tiers=render_tiers.options(), rate_note=compact(msg("rate.video")))
+    out = public.film_view(v, tier=tier,
+                           tiers=render_tiers.options(), rate_note=compact(msg("rate.video")))
+    owner = s.get("owner")
+    for key in ("clips", "free"):
+        for item in out.get(key) or []:
+            if item.get("state") == "queued" and _render_runner.is_checking(owner, item["id"]):
+                item["safety_checking"] = True
+    return out
 
 
 def _style_for(uid: str, nid: str) -> Optional[dict]:
@@ -1151,11 +1158,44 @@ def _render_request(root, s: dict, clip: dict):
         caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style)
 
 
+_safety_asked: dict = {}      # (用户, 版本, 段, 文本 hash) → 上次交给分类线程池的时刻
+_safety_asked_lock = threading.Lock()
+_SAFETY_REASK_SEC = 120.0     # 同一段每轮都来问：只交一次分类（gate 按交的次数计等待者）；超时再交，防取消后遗留
+
+
+def _render_safety(root, s: dict, clip: dict) -> str:
+    """出片线程提交前的内容检查：只查缓存与词表；还没有结论的交给 safety 的线程池，本轮等。
+    文本用会话里存的提示词（段）或自由节点的正文。"""
+    o = s["owner"]
+    sctx = {"stage": "video", "user_id": o["user_id"], "novel_id": o["nid"], "chapter_id": o["cid"],
+            "version_id": o["vid"], "clip_id": clip["id"]}
+    text = clip.get("prompt") or ""
+    key = (o["user_id"], o["nid"], o["cid"], o["vid"], clip["id"], safety_text.text_hash(safety_text.normalize(text)))
+    result = safety_gate.lookup(text, sctx)
+    if result is None:
+        now = time.monotonic()
+        with _safety_asked_lock:
+            fresh = now - _safety_asked.get(key, -1e9) < _SAFETY_REASK_SEC
+            if not fresh:
+                _safety_asked[key] = now
+        if not fresh:
+            safety_gate.classify_async(text, sctx)
+        return "wait"
+    with _safety_asked_lock:
+        _safety_asked.pop(key, None)
+    if result[0] == "block":
+        raise safety_gate.blocked_error(result[2], result[1])
+    if result[0] == "unavailable":
+        raise safety_gate.unavailable_error()
+    return "pass"
+
+
 render_video_base.record_reject = lambda code, detail: error_refs.record(code, detail, where="vendor")
 _render_runner = render_runner.Runner(
     _render_request,
     poll_sec=float(os.environ.get("STORYBOARD_RENDER_POLL_SEC", "10")),
-    max_parallel=int(os.environ.get("STORYBOARD_RENDER_PARALLEL", "2")))
+    max_parallel=int(os.environ.get("STORYBOARD_RENDER_PARALLEL", "2")),
+    safety_check=_render_safety)
 
 
 @app.on_event("startup")

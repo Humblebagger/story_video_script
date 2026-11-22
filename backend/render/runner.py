@@ -14,7 +14,7 @@ from pathlib import Path
 from render import compose, session as sess
 from render.providers import base, get_video
 from server import error_refs
-from server.messages import compact, msg, public_cause, with_ref
+from server.messages import UserError, compact, msg, public_cause, with_ref
 
 
 log = logging.getLogger("render.runner")
@@ -33,10 +33,14 @@ class Runner:
     def __init__(self, request_builder, *, poll_sec: float = 10.0, max_parallel: int = 2,
                  retries: int = 3, sleep=time.sleep, clock=time.monotonic,
                  poll_give_up_sec: float = 6 * 3600, download_give_up_sec: float = 20 * 3600,
-                 abandoned_give_up_sec: float = 3600):
+                 abandoned_give_up_sec: float = 3600, safety_check=None):
         """request_builder(root, session, item) → (ClipRequest, 实际首帧来源)；item 是剧本段或自由节点。
-        分镜改了抛 compose.Stale；自由节点复查不过抛 compose.FreeInvalid。"""
+        分镜改了抛 compose.Stale；自由节点复查不过抛 compose.FreeInvalid。
+        safety_check(root, session, item) → "pass" | "wait"；拦截或暂时无法检查时抛带代码的 UserError。
+        它只能做毫秒级的查询（缓存、词表），要调模型的由它自己排到别的线程，这里下一轮再问。"""
         self.request_builder = request_builder
+        self.safety_check = safety_check
+        self._checking: set = set()      # 等内容检查结论的 (用户, 小说, 章节, 版本, 段)
         self.poll_sec = poll_sec
         self.max_parallel = max_parallel
         self.retries = retries
@@ -177,6 +181,8 @@ class Runner:
                 try:
                     if c["state"] != "queued" or sess.waiting_on_relay(s, c):
                         continue
+                    if not self._safety(root, s, c):
+                        continue
                     if self._submit(root, provider, s, c):
                         busy += 1
                 except Exception as e:
@@ -185,6 +191,39 @@ class Runner:
 
         for root in roots:
             self._settle(root)
+
+    @staticmethod
+    def _check_key(owner: dict, item_id: str) -> tuple:
+        o = owner or {}
+        return (o.get("user_id"), o.get("nid"), o.get("cid"), o.get("vid"), item_id)
+
+    def is_checking(self, owner: dict, item_id: str) -> bool:
+        """这一段是不是正排着队等内容检查的结论（界面据此显示「内容检查中」）。"""
+        with self._guard:
+            return self._check_key(owner, item_id) in self._checking
+
+    def _safety(self, root, s, c) -> bool:
+        """提交前的内容检查，在 begin_submit 之前。可以提交返回 True；等结论或已判失败返回 False。"""
+        if self.safety_check is None:
+            return True
+        key = self._check_key(s.get("owner"), c["id"])
+        try:
+            verdict = self.safety_check(root, s, c)
+        except Exception as e:
+            with self._guard:
+                self._checking.discard(key)
+            if isinstance(e, UserError):               # 拦截、暂时无法检查：不提交、不花钱
+                sess.submit_failed(root, c["id"], e)
+            else:                                      # 检查自己出错同样不放行
+                log.warning("%s", _scrub_secrets(f'内容检查出错 root={root} clip={c["id"]} {type(e).__name__}: {e}', None))  # i18n: internal
+                sess.submit_failed(root, c["id"], msg("safety.unavailable"))
+            return False
+        with self._guard:
+            if verdict == "wait":
+                self._checking.add(key)
+            else:
+                self._checking.discard(key)
+        return verdict != "wait"
 
     def _settle(self, root) -> None:
         """没有未完成的段就不再盯。读取与移除在锁内，与 watch 互斥，避免刚排队的段被漏掉。"""
