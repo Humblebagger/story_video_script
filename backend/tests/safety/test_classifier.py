@@ -100,7 +100,7 @@ def main() -> int:
         classifier.ChatInvoker, classifier.load_settings = real, real_ls
     s = seen["settings"]
     assert (s.thinking, s.temperature, s.max_tokens, s.transport_retries) == ("disabled", 0.0, 200, 0)
-    assert seen["timeout"] == 15 and seen["streaming"] is False
+    assert seen["timeout"] == 15 and seen["streaming"] is False and seen["compat_retry"] is False
     print("5. 专用调用配置 ✓")
 
     print("\nALL PASS")

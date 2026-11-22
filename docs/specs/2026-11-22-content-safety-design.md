@@ -31,7 +31,7 @@
 
 `classify(text) -> Verdict(blocked, category, reason)`。
 
-- 专用 `ChatInvoker`：关 thinking、`temperature=0`、`max_tokens=200`、`transport_retries=0`；`pipeline/chat.build_chat_model` 新增请求超时参数，分类器传 15 秒。单段最坏耗时 = 15 秒（无重试）。
+- 专用 `ChatInvoker`：关 thinking、`temperature=0`、`max_tokens=200`、`transport_retries=0`；`pipeline/chat.build_chat_model` 新增请求超时参数，分类器传 15 秒。单段请求超时 15 秒（网络阶段），无重试；不支持 thinking 的错误不做兼容重试，直接按不可用处理。
 - 系统提示写明 §1 尺度表；要求只输出 JSON `{"blocked":bool,"category":code|null,"reason":"≤80字，概括原因，不得引用原文"}`。
 - 长文本按 6000 字切段（段落边界优先），逐段调用，任一段 blocked 即止。
 - 解析失败、category 不在表内、超时、其他模型错误 → `SafetyUnavailable`。

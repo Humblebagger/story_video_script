@@ -48,7 +48,7 @@ def make_chat() -> ChatInvoker:
     """分类专用的模型调用（测试里换成包着 FakeChat 的 ChatInvoker）。"""
     settings = replace(load_settings(), thinking="disabled", temperature=0.0,
                        max_tokens=MAX_TOKENS, transport_retries=0)
-    return ChatInvoker(settings, timeout=TIMEOUT_SEC, streaming=False)
+    return ChatInvoker(settings, timeout=TIMEOUT_SEC, streaming=False, compat_retry=False)
 
 
 def _text_of(msg) -> str:

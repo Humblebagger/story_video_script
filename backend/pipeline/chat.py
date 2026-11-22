@@ -264,12 +264,15 @@ class ChatInvoker:
 
     def __init__(self, settings: Settings, *, model: Optional[str] = None,
                  chat=None, usage: Optional[UsageCallback] = None, log=print,
-                 timeout: Optional[float] = None, streaming: bool = True) -> None:
+                 timeout: Optional[float] = None, streaming: bool = True,
+                 compat_retry: bool = True) -> None:
         self._settings = settings
         self._model_name = model
         self._log = log
         self.usage = usage or UsageCallback()
         extra = {} if timeout is None and streaming else {"timeout": timeout, "streaming": streaming}
+        self._extra = extra          # 降级重建模型时原样带上（超时、非流式不能丢）
+        self._compat_retry = compat_retry   # False：不支持 thinking 的错误直接抛，不做兼容重试
         self._model = chat if chat is not None else build_chat_model(
             settings, model=model, **extra)
         self._injected = chat is not None
@@ -329,7 +332,7 @@ class ChatInvoker:
         try:
             return self._invoke_wrapped(model, tools, messages, config, max_tokens)
         except anthropic.BadRequestError as e:
-            if self._thinking_rejected or "thinking" not in str(e).lower() \
+            if not self._compat_retry or self._thinking_rejected or "thinking" not in str(e).lower() \
                     or _thinking_param(self._settings.thinking) is None:
                 raise
             # 网关不认这个参数：退回默认行为，但要说一声——推理块会重新开始烧预算
@@ -338,7 +341,7 @@ class ChatInvoker:
             self._log(f"服务端不接受 thinking 参数（{detail}），"
                       "改用模型默认行为重试")
             self._no_thinking = self._model if self._injected else build_chat_model(
-                replace_thinking(self._settings), model=self._model_name)
+                replace_thinking(self._settings), model=self._model_name, **self._extra)
             self._thinking_rejected = True
             return self._invoke_wrapped(self._no_thinking, tools, messages, config,
                                        max_tokens)

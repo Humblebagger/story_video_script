@@ -535,6 +535,38 @@ def main() -> int:
     assert seen.get("timeout") == 15 and seen.get("streaming") is False, seen
     print("chat: 请求超时与非流式参数 ✓")
 
+    # thinking 降级重建沿用 timeout / streaming；compat_retry=False 时不降级、直接报错
+    import anthropic as _an
+    import httpx2 as _hx
+
+    def _picky(_m):
+        raise _an.BadRequestError("thinking: unsupported parameter",
+                                  response=_hx.Response(400, request=_hx.Request("POST", "http://x")), body=None)
+
+    builds = []
+    keep = _cm.build_chat_model
+
+    def _factory(s, **kw):
+        builds.append(kw)
+        return FakeChat(responses=[_picky] if len(builds) == 1 else ["好"])
+    _cm.build_chat_model = _factory
+    try:
+        invk = ChatInvoker(Settings(api_key="k", thinking="2000"), timeout=15, streaming=False, log=lambda _: None)
+        assert invk.invoke([HumanMessage("x")]).content == "好"
+        assert len(builds) == 2 and builds[1].get("timeout") == 15 and builds[1].get("streaming") is False, builds
+        builds.clear()
+        invn = ChatInvoker(Settings(api_key="k", thinking="2000"), timeout=15, streaming=False,
+                           compat_retry=False, log=lambda _: None)
+        try:
+            invn.invoke([HumanMessage("x")])
+            raise AssertionError("compat_retry=False 应直接报错")
+        except LLMError as e:
+            assert e.code == "llm.bad_request", e.code
+        assert len(builds) == 1 and not invn._thinking_rejected, "不重建、不降级"
+    finally:
+        _cm.build_chat_model = keep
+    print("chat: thinking 降级沿用超时与非流式；可关闭兼容重试 ✓")
+
     print("\nALL PASS")
     return 0
 
