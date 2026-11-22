@@ -126,6 +126,26 @@ def main() -> int:
     assert a["file"] == f'clips/{done["id"]}.{a["task_id"]}.mp4'
     assert c.get(R + "/files/clips/nope.mp4", headers=H).status_code == 404
     assert c.get(R + "/files/%2e%2e/%2e%2e/versions/v1.json", headers=H).status_code == 404
+    # 只给发布的媒体产物：原始会话、备份、任何 json、隐藏文件、临时文件一律 404（与不存在一样）
+    rdir = app_mod.novels.render_dir(uid, nid, cid, "v1")
+    (rdir / "session.json.corrupt-123").write_text("{}", encoding="utf-8")
+    (rdir / "clips" / "x.mp4.part").write_bytes(b"x")
+    (rdir / "clips" / ".hidden.mp4").write_bytes(b"x")
+    (rdir / "final").mkdir(exist_ok=True)
+    (rdir / "final" / "timeline.json").write_text("{}", encoding="utf-8")
+    (rdir / "final" / "ep1.srt").write_text("1\n", encoding="utf-8")
+    for bad in ("session.json", "session.json.corrupt-123", "clips/x.mp4.part", "clips/.hidden.mp4", "final/timeline.json"):
+        r = c.get(R + "/files/" + bad, headers=H)
+        assert r.status_code == 404 and r.json()["detail"]["code"] == "film.file.not_found", (bad, r.status_code)
+    assert c.get(R + "/files/final/ep1.srt", headers=H).status_code == 200
+    assert c.get(R + "/files/" + done["attempts"][0]["file"], headers=H).status_code == 200
+    # 映射表里没有的（厂商, 档位）组合：视图 tier 为 null，不抛错、不带厂商与模型
+    import copy as _copy
+    s_old = _copy.deepcopy(render_session.load(rdir))
+    for prov, model in (("fake", "gone-model"), ("gone-provider", "gone-model"), (None, None)):
+        s_old["provider"], s_old["model"] = prov, model
+        vv = app_mod._film_view(s_old, True)
+        assert vv["tier"] is None and "provider" not in vv and "model" not in vv, (prov, vv.get("tier"))
     print("3. 试段与取文件 ✓")
 
     # 4. 批量：必须带确认金额；不一致 409；超上限 422；在跑时不能改设置

@@ -1362,12 +1362,18 @@ def render_free_chosen(nid: str, cid: str, vid: str, fid: str, body: RenderChose
     return _film_view(s)
 
 
+RENDER_FILE_EXTS = {".mp4", ".webm", ".mp3", ".wav", ".m4a", ".png", ".jpg", ".jpeg", ".webp", ".srt", ".zip"}
+
+
 @app.get(_R + "/files/{path:path}")
 def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(novel_user)):
-    """取本版本出片目录下的文件（片段、尾帧）。拒绝路径穿越。"""
+    """取本版本出片目录下的媒体产物（片段、尾帧、配音、成片、字幕、导出包）。拒绝路径穿越；
+    会话文件及其备份、任何 json、隐藏文件、临时文件不给（与不存在同样返回 404）。"""
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid).resolve()
     target = (root / path).resolve()
-    if root not in target.parents or not target.is_file():
+    rel = target.relative_to(root).parts if root in target.parents else ()
+    if (not rel or any(p.startswith(".") for p in rel) or target.suffix.lower() not in RENDER_FILE_EXTS
+            or not target.is_file()):
         raise HTTPException(404, detail=msg("film.file.not_found"))
     return FileResponse(target)
 

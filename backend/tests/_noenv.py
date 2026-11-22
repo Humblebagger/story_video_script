@@ -1,4 +1,4 @@
-"""测试不读真实的 .env：把所有 _load_dotenv 换成空操作，并设两道保险（import 本模块即生效）。
+"""测试不读真实的 .env：把所有 _load_dotenv 换成空操作，并清掉 shell 里的厂商密钥环境变量，另设两道保险（import 本模块即生效）。
 
 1. 绊线：pathlib.Path.read_text / builtins.open 碰到名为 .env 的文件就记一条违规并抛 AssertionError（不读内容）。
 2. 退出核对：没有任何已加载模块还持有真实的 _load_dotenv，且没有违规；否则打印原因并以非 0 退出。
@@ -52,7 +52,12 @@ def _open(file, *a, **k):
     return _real_open(file, *a, **k)
 
 
+VENDOR_ENVS = ("MINIMAX_API_KEY", "ARK_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_APP_ID", "VOLC_TTS_ACCESS_KEY")
+
+
 def install() -> None:
+    for k in VENDOR_ENVS:           # shell 里的厂商密钥不能影响「只有假厂商」之类的断言；要用的测试自己设
+        os.environ.pop(k, None)
     pathlib.Path.read_text = _read_text
     builtins.open = _open
     for name in ("pipeline.config", "render.providers.minimax", "render.providers.seedance", "render.providers.tts_volc"):
