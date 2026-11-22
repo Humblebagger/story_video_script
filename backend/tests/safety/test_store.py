@@ -130,6 +130,124 @@ def main() -> int:
     assert len(store.list_blocks()) == 4
     print("9. 并发写与重新加载 ✓")
 
+    # 10. 迟到的拦截结果不能覆盖放行（同一文本两个检查交错：先拦、放行、后拦）
+    first = store.record_block("竞争文本", category="sexual", reason="a", ctx=CTX)
+    store.release(first, "root")
+    n_rows = len(store.list_blocks())
+    assert store.record_block("竞争文本", category="sexual", reason="b", ctx=CTX) is None, "已放行：返回 None 让调用方放行"
+    assert store.record_block("竞争文本", category="unspecified", reason_code=store.REFUSED, ctx=CTX,
+                              cache=False) is None
+    assert len(store.list_blocks()) == n_rows, "不新增记录"
+    v = store.get_verdict(text_hash("竞争文本"))
+    assert v["verdict"] == "pass" and v["released"] is True, "放行仍然有效"
+    store.set_pass(text_hash("竞争文本"))
+    assert store.get_verdict(text_hash("竞争文本"))["released"] is True
+    real_write = store._write
+    print("10. 迟到结果不覆盖放行 ✓")
+
+    # 11. 放行的写入顺序与失败恢复：先结论缓存后记录；任一写失败内存从盘上重载；重试能补完
+    def failing(nth):
+        calls = {"n": 0}
+
+        def w(path, data):
+            calls["n"] += 1
+            if calls["n"] == nth:
+                raise OSError("disk full")
+            return real_write(path, data)
+        return w
+    rid1 = store.record_block("恢复文本一", category="drugs", reason="x", ctx=CTX)
+    store._write = failing(1)                      # 第一次写（结论缓存）失败
+    try:
+        must_raise(OSError, store.release, rid1, "root")
+    finally:
+        store._write = real_write
+    assert store.find_block(rid1)["status"] == "blocked" and store.get_verdict(text_hash("恢复文本一"))["verdict"] == "block"
+    store._write = failing(2)                      # 第二次写（记录）失败：放行已写进结论缓存
+    try:
+        must_raise(OSError, store.release, rid1, "root")
+    finally:
+        store._write = real_write
+    assert store.find_block(rid1)["status"] == "blocked", "内存已从盘上重载，记录仍是未放行"
+    assert store.get_verdict(text_hash("恢复文本一"))["released"] is True, "盘上结论已是放行"
+    assert store.release(rid1, "root")["status"] == "released", "重试补完"
+    store._reset_for_test()
+    assert store.find_block(rid1)["status"] == "released" and store.get_verdict(text_hash("恢复文本一"))["released"]
+    # 重复放行已放行的记录：结论缺失时补写
+    with store._lock:
+        del store._verdicts_data()[text_hash("恢复文本一")]
+    assert store.release(rid1, "root")["status"] == "released"
+    store._reset_for_test()
+    assert store.get_verdict(text_hash("恢复文本一"))["released"] is True, "重复放行也把结论落盘"
+    # 写拦截记录失败：不留半截内存状态
+    rows_before = len(store.list_blocks())
+    store._write = failing(1)
+    try:
+        must_raise(OSError, store.record_block, "写失败文本", category="drugs", reason="x", ctx=CTX)
+    finally:
+        store._write = real_write
+    assert len(store.list_blocks()) == rows_before and store.get_verdict(text_hash("写失败文本")) is None
+    print("11. 放行顺序与失败恢复 ✓")
+
+    # 12. 加载对账：记录已放行而结论缓存不是放行通过 → 补写并落盘
+    rid2 = store.record_block("对账文本", category="drugs", reason="x", ctx=CTX)
+    with store._lock:
+        row = next(r for r in store._blocks_data() if r["id"] == rid2)
+        row.update(status="released", released_by="root", released_at=row["at"])
+        store._save_blocks()                        # 只写记录，结论缓存仍是 block
+    store._reset_for_test()
+    v = store.get_verdict(text_hash("对账文本"))
+    assert v["verdict"] == "pass" and v["released"] is True
+    import json as _json
+    on_disk = _json.loads(store.VERDICTS_FILE.read_text(encoding="utf-8"))
+    assert on_disk[text_hash("对账文本")]["released"] is True, "对账结果落盘"
+    print("12. 加载对账 ✓")
+
+    # 13. 命中缓存拦截（touch_block）也触发到期清理
+    rid3 = store.record_block("清理文本", category="drugs", reason="理由", ctx=CTX)
+    old3 = (datetime.now(timezone.utc) - timedelta(days=91)).isoformat(timespec="seconds")
+    with store._lock:
+        next(r for r in store._blocks_data() if r["id"] == rid3)["at"] = old3
+        store._save_blocks()
+    store._last_cleanup = -1e9
+    store.touch_block(rid3)
+    row3 = next(r for r in store.list_blocks() if r["id"] == rid3)
+    assert row3["excerpt"] == "" and row3["reason"] == "", "只命中缓存、没有新记录，也要清理"
+    print("13. touch_block 触发清理 ✓")
+
+    # 14. 并发：同 hash 并发 record_block 合并成一条、hits 累计；不同 hash 各一条；重载一致；线程异常传回主线程
+    errors = []
+
+    def run(fn):
+        def inner():
+            try:
+                fn()
+            except BaseException as e:  # noqa: BLE001
+                errors.append(e)
+        return inner
+    same_ids, barrier = [], threading.Barrier(8)
+
+    def same():
+        barrier.wait()
+        same_ids.append(store.record_block("并发同文", category="sexual", reason="r", ctx=CTX))
+
+    def diff(i):
+        def f():
+            barrier.wait()
+            store.record_block(f"并发异文{i}", category="drugs", reason="r", ctx=CTX)
+        return f
+    ts = [threading.Thread(target=run(same)) for _ in range(4)] + \
+         [threading.Thread(target=run(diff(i))) for i in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    if errors:
+        raise errors[0]
+    assert len(set(same_ids)) == 1 and len(same_ids) == 4
+    store._reset_for_test()
+    assert store.find_block(same_ids[0])["hits"] == 4
+    assert sum(1 for r in store.list_blocks() if r["excerpt"].startswith("并发异文")) == 4
+    assert all(store.get_verdict(text_hash(f"并发异文{i}"))["verdict"] == "block" for i in range(4))
+    print("14. 并发拦截记录 ✓")
+
     print("\nALL PASS")
     return 0
 
