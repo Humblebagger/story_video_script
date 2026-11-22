@@ -74,9 +74,7 @@ def _one(segment: str, chat) -> Verdict:
     blocked, category = data.get("blocked"), data.get("category")
     if not isinstance(blocked, bool):
         raise Unavailable("bad_blocked")
-    reason = data.get("reason", "")
-    if reason is None:
-        reason = ""
+    reason = data.get("reason")
     if not isinstance(reason, str):
         raise Unavailable("bad_reason")
     if not blocked:
