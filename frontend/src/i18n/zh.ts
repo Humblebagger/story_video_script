@@ -1586,6 +1586,7 @@ export const zh = {
     safety: {
       blocked: '内容不符合使用规范，已拒绝生成（类别：{category}）',
       unavailable: '暂时无法完成内容检查，请稍后再试',
+      purge_failed: '暂时无法清理内容检查记录，没有删除，请稍后重试',
       category: {
         sexual: '色情', minor_sexual: '涉及未成年人的性内容', drugs: '毒品', political: '现实政治',
         extremism: '恐怖与极端主义', unspecified: '不符合使用规范',
@@ -1732,7 +1733,7 @@ export const zh = {
       },
       error_ref: { not_found: '没有这个参考编号：{ref}' },
       job: { not_found: '没有这次转换的调试日志：{id}' },
-      safety: { not_found: '没有这条拦截记录：{ref}', not_releasable: '这条记录是模型服务拒绝，放行无效', storage_failed: '拦截记录暂时无法读写，请稍后再试' },
+      safety: { not_found: '没有这条拦截记录：{ref}', not_releasable: '这条记录是模型服务拒绝，放行无效', storage_failed: '拦截记录暂时无法读写，请稍后再试', audit_failed: '审计记录写入失败，操作没有执行，请稍后再试' },
     },
     assistant: {
       busy: '上一条还在回答', busy_clear: '助手正在回答，等它说完再清空', busy_undo: '助手正在回答，等它说完再撤销',

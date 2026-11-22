@@ -333,6 +333,59 @@ def main() -> int:
     must_raise(OSError, real_read, bad, {})
     print("18. 读取错误不当空数据 ✓")
 
+    # 19. 非法 UTF-8 与 JSON 损坏同样转成 OSError（第四轮 Minor）
+    badu = store.DIR / "坏编码.json"
+    badu.write_bytes(b'{"a": "\xff\xfe"}')
+    must_raise(OSError, real_read, badu, {})
+    store._reset_for_test()
+    good_blocks = store.BLOCKS_FILE.read_bytes()
+    store.BLOCKS_FILE.write_bytes(b"[\xff]")
+    try:
+        must_raise(OSError, store.list_blocks)
+    finally:
+        store.BLOCKS_FILE.write_bytes(good_blocks)
+        store._reset_for_test()
+    assert store.list_blocks(), "恢复后正常读到"
+    print("19. 非法编码 ✓")
+
+    # 20. 已删范围（第四轮 3）：purge 持久化 (用户, 作品) / (用户, 作品, 章节)；迟到写入不留摘录与理由；旧格式能读
+    U = "b" * 12
+    store.purge(U, "n90", "c90")
+    store.purge(U, "n91")
+    store._reset_for_test()
+    late = store.record_block("迟到章节文本", category="drugs", reason="迟到理由",
+                              ctx=dict(CTX, user_id=U, novel_id="n90", chapter_id="c90"))
+    row = store.find_block(late)
+    assert row is not None and row["excerpt"] == "" and row["reason"] == "", row
+    late2 = store.record_block("迟到作品文本", category="drugs", reason="迟到理由",
+                               ctx=dict(CTX, user_id=U, novel_id="n91", chapter_id="c1"), cache=False,
+                               reason_code=store.REFUSED, audit=True)
+    assert store.find_block(late2)["excerpt"] == "" and store.find_block(late2)["reason"] == ""
+    keep = store.record_block("同作品别章文本", category="drugs", reason="留着",
+                              ctx=dict(CTX, user_id=U, novel_id="n90", chapter_id="c99"))
+    assert store.find_block(keep)["excerpt"] == "同作品别章文本", "只删了章节 c90，别章照常"
+    other_user = store.record_block("别人同号作品", category="drugs", reason="留着",
+                                    ctx=dict(CTX, user_id="c" * 12, novel_id="n91"))
+    assert store.find_block(other_user)["excerpt"] == "别人同号作品"
+    disk = _json.loads(store.BLOCKS_FILE.read_text(encoding="utf-8"))
+    assert [U, "n90", "c90"] in disk["purged_scopes"] and [U, "n91"] in disk["purged_scopes"], disk.keys()
+    # 旧格式（整份是记录列表）照常读入，已删范围为空
+    rows_now = disk["rows"]
+    store.BLOCKS_FILE.write_text(_json.dumps(rows_now, ensure_ascii=False), encoding="utf-8")
+    store._reset_for_test()
+    assert len(store.list_blocks()) == len(rows_now)
+    fresh = store.record_block("旧格式之后", category="drugs", reason="r", ctx=dict(CTX, user_id=U, novel_id="n91"))
+    assert store.find_block(fresh)["excerpt"] == "旧格式之后", "旧格式没有已删范围"
+    # purge 写盘失败：抛 OSError，内存不留已删范围
+    store._write = lambda path, data: (_ for _ in ()).throw(OSError("disk full"))
+    try:
+        must_raise(OSError, store.purge, U, "n92")
+    finally:
+        store._write = real_write
+    later = store.record_block("清理失败之后", category="drugs", reason="r", ctx=dict(CTX, user_id=U, novel_id="n92"))
+    assert store.find_block(later)["excerpt"] == "清理失败之后"
+    print("20. 已删范围 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -392,6 +392,78 @@ def main() -> int:
         gate._now = real_now
     print("15. 等待者生命周期 ✓")
 
+    # 16. 票据模型（第四轮 1）：任务绑定启动时的 (等待者, 代次)；forget 后的新代次另起任务，不收旧任务的临时终态
+    # 16a. 旧任务未完成时 forget，然后重新登记：另起新任务；旧任务的不可用不交给新代次
+    s_old, go_old = threading.Event(), threading.Event()
+
+    def hold_old_bad(_m):
+        s_old.set()
+        assert go_old.wait(10)
+        return "坏输出"
+    script(hold_old_bad, reply(False))
+    wn = ("u", "n", "c", "v", "E10-C01")
+    n = len(CALLS)
+    assert gate.classify_async("新旧提示词", vctx, wn) is True and s_old.wait(10)
+    gate.forget(wn)
+    assert gate.classify_async("新旧提示词", vctx, wn) is True, "新代次不加入旧任务，另起一个"
+    for _ in range(500):                              # 新任务（通过）先结束；旧任务还挂着
+        if store.get_verdict(text_hash("新旧提示词")) is not None:
+            break
+        time.sleep(0.01)
+    assert gate.pending() == 1 and len(CALLS) == n + 2
+    go_old.set()
+    wait_idle()
+    assert gate.lookup("新旧提示词", vctx, wn) == ("pass",), "旧任务的不可用没有交给新代次"
+    # 16b. 同 hash 新旧两个任务并存：旧任务的临时终态只交给它记下的、代次仍有效的票据
+    s1, g1, s2, g2 = threading.Event(), threading.Event(), threading.Event(), threading.Event()
+
+    def hold1(_m):
+        s1.set()
+        assert g1.wait(10)
+        return "坏输出"
+
+    def hold2(_m):
+        s2.set()
+        assert g2.wait(10)
+        raise LLMError.coded("llm.content_blocked")
+    script(hold1, hold2)
+    wx, wy = ("u", "n", "c", "v", "E11-C01"), ("u", "n", "c", "v", "E11-C02")
+    assert gate.classify_async("并存提示词", vctx, wx) is True and s1.wait(10)
+    assert gate.classify_async("并存提示词", vctx, wy) is False, "同代次加入正在跑的任务"
+    gate.forget(wx)
+    assert gate.classify_async("并存提示词", vctx, wx) is True and s2.wait(10), "wx 的新代次另起任务"
+    assert gate.classify_async("并存提示词", vctx, wx) is False, "pending 期间不重复登记"
+    assert gate.classify_async("并存提示词", vctx, wy) is False, "wy 已在旧任务里登记，不重复登记"
+    assert gate.pending() == 2
+    g1.set()                                          # 旧任务：不可用
+    for _ in range(500):
+        if gate.pending() == 1:
+            break
+        time.sleep(0.01)
+    assert gate.lookup("并存提示词", vctx, wx) is None, "旧任务的不可用不交给 wx 的新代次"
+    assert gate.lookup("并存提示词", vctx, wy) == ("unavailable",), "wy 是旧任务记下的有效票据"
+    g2.set()                                          # 新任务：模型拒答
+    wait_idle()
+    got = gate.lookup("并存提示词", vctx, wx)
+    assert got is not None and got[0] == "block" and got[2] == "unspecified", got
+    assert gate.lookup("并存提示词", vctx, wy) is None, "wy 没有登记新任务，拒答不交给它"
+    # 16c. 前缀 forget 也作废从没被 forget 过的等待者（登记即有代次）
+    s3, g3 = threading.Event(), threading.Event()
+
+    def hold3(_m):
+        s3.set()
+        assert g3.wait(10)
+        return "坏输出"
+    script(hold3, reply(False))
+    wz = ("u", "n9", "c", "v", "E12-C01")
+    assert gate.classify_async("前缀提示词", vctx, wz) is True and s3.wait(10)
+    gate.forget(("u", "n9"), prefix=True)
+    assert gate.classify_async("前缀提示词", vctx, wz) is True, "前缀 forget 之后也是新代次"
+    g3.set()
+    wait_idle()
+    assert gate.lookup("前缀提示词", vctx, wz) == ("pass",)
+    print("16. 票据模型 ✓")
+
     assert blocklist.match("含有 child porn 的第三段") == "minor_sexual"
     print("\nALL PASS")
     return 0

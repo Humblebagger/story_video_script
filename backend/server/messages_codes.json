@@ -58,6 +58,10 @@
     "params": [],
     "zh": "价格表必须包含至少一个模型"
   },
+  "admin.safety.audit_failed": {
+    "params": [],
+    "zh": "审计记录写入失败，操作没有执行，请稍后再试"
+  },
   "admin.safety.not_found": {
     "params": [
       "ref"
@@ -1667,6 +1671,10 @@
   "safety.category.unspecified": {
     "params": [],
     "zh": "不符合使用规范"
+  },
+  "safety.purge_failed": {
+    "params": [],
+    "zh": "暂时无法清理内容检查记录，没有删除，请稍后重试"
   },
   "safety.reason.blocklist": {
     "params": [],

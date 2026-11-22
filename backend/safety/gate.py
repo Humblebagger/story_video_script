@@ -4,6 +4,7 @@ check_sync：转换任务、合成任务用（已在后台线程，允许等几�
 lookup + classify_async：出片线程用——tick 里只查缓存与词表，要调模型的交给本模块自己的线程池。
 环境变量 STORYBOARD_SAFETY=0 整体关闭（缺省开启）。
 """
+import itertools
 import logging
 import os
 import threading
@@ -167,31 +168,31 @@ def check_items_sync(items, ctx: dict) -> None:
 
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="safety")
 _plock = threading.Lock()
-_pending: set = set()      # 正在排队或分类中的文本 hash
-_waiters: dict = {}        # hash → {等待者键: 登记时的代次}（同一键重复登记只算一个）
-_gen: dict = {}            # 等待者键 → 代次；forget 让它加一，之后迟到的结果不再挂回旧登记
+# 票据模型：每个等待者有代次 gen（forget 加一）；登记以 (等待者, 代次) 为单位，叫一张票据。
+# 每个分类任务记下绑定给它的票据集合；临时终态只交给这些票据里代次仍有效的。
+_jobs: dict = {}           # 任务号 → {"h": 文本 hash, "tickets": {等待者键: 代次}}（只含正在排队或分类中的任务）
+_by_hash: dict = {}        # 文本 hash → [任务号, ...]（启动先后顺序；同一 hash 允许新旧任务并存）
+_gen: dict = {}            # 等待者键 → 当前代次（第一次登记即为 0）
 _temp: dict = {}           # (hash, 等待者键) → (结论, 时刻)：只在进程内、不进结论缓存的临时终态
                            # 结论是 ("unavailable",)，或模型拒答的 ("block", 编号, 类别)；该等待者读一次即清
 TEMP_TTL_SEC = 600.0       # 没人来读的临时结论超时即视为不存在
 _now = time.monotonic
+_job_ids = itertools.count(1)
 
 
 def pending() -> int:
+    """正在排队或分类中的任务数。"""
     with _plock:
-        return len(_pending)
+        return len(_jobs)
 
 
 def forget(waiter, prefix: bool = False) -> None:
-    """这个等待者不等了（片段取消、重新排队、会话移除）：撤掉它的全部登记与未读结论，代次加一，
-    正在跑的任务之后的结果不会再挂回它。prefix=True 时 waiter 是元组前缀，批量处理。"""
+    """这个等待者不等了（片段取消、重新排队、会话移除）：代次加一、清掉它的未读结论。
+    它在正在跑的任务里的旧票据留着但已失效：旧任务的临时终态不再交给它，它再登记也不会并入旧任务。
+    prefix=True 时 waiter 是元组前缀，批量处理（登记过的等待者都有代次，都能被前缀命中）。"""
     def hit(w):
         return (isinstance(w, tuple) and w[:len(waiter)] == waiter) if prefix else w == waiter
     with _plock:
-        for h in list(_waiters):
-            for w in [w for w in _waiters[h] if hit(w)]:
-                del _waiters[h][w]
-            if not _waiters[h]:
-                del _waiters[h]
         for k in [k for k in _temp if hit(k[1])]:
             del _temp[k]
         for w in {w for w in _gen if hit(w)} | ({waiter} if not prefix else set()):
@@ -216,35 +217,48 @@ def lookup(text, ctx: dict, waiter=None):
 
 
 def classify_async(text, ctx: dict, waiter=None) -> bool:
-    """只负责登记并把分类交给专用线程池。同一文本已在排队返回 False；同一 (文本, 等待者) 已有
-    没读走的结论时也返回 False，不删它、不起新任务（下一次 lookup 交付）。"""
+    """以 (等待者, 当前代次) 登记，并按需把分类交给专用线程池。起了新任务返回 True，否则 False：
+    - 该 (文本, 等待者) 已有没读走的结论：不删它、不登记（下一次 lookup 交付）；
+    - 这张票据已登记在某个正在跑的任务里：不重复登记；
+    - 最新的那个同文本任务里没有这个等待者：并入它（同代次加入正在运行的任务）；
+    - 否则（没有任务，或最新任务里只有它 forget 之前的旧票据）：另起一个任务。"""
     body = normalize(text)
     h = text_hash(body)
     with _plock:
         if (h, waiter) in _temp:
             return False
-        _waiters.setdefault(h, {})[waiter] = _gen.get(waiter, 0)
-        if h in _pending:
+        g = _gen.setdefault(waiter, 0)
+        ids = _by_hash.get(h, [])
+        if any(_jobs[j]["tickets"].get(waiter, -1) == g for j in ids):
             return False
-        _pending.add(h)
+        if ids and waiter not in _jobs[ids[-1]]["tickets"]:
+            _jobs[ids[-1]]["tickets"][waiter] = g
+            return False
+        jid = next(_job_ids)
+        _jobs[jid] = {"h": h, "tickets": {waiter: g}}
+        _by_hash.setdefault(h, []).append(jid)
 
     def job():
         final = None
         try:
             r = _classify(body, dict(ctx))
             if r[0] == "block" and store.get_verdict(h) is None:
-                final = r            # 没写进结论缓存的拦截（模型拒答）：只交给等待者
-        except Exception:  # noqa: BLE001  含 SafetyUnavailable：等待者读到 unavailable
+                final = r            # 没写进结论缓存的拦截（模型拒答）：只交给票据
+        except Exception:  # noqa: BLE001  含 SafetyUnavailable：票据读到 unavailable
             final = ("unavailable",)
         finally:
             with _plock:
-                who = _waiters.pop(h, {})
+                tickets = _jobs.pop(jid)["tickets"]
+                rest = [j for j in _by_hash.get(h, []) if j != jid]
+                if rest:
+                    _by_hash[h] = rest
+                else:
+                    _by_hash.pop(h, None)
                 if final is not None:
                     now = _now()
-                    for w, g in who.items():
-                        if _gen.get(w, 0) == g:
+                    for w, tg in tickets.items():
+                        if _gen.get(w, 0) == tg:
                             _temp[(h, w)] = (final, now)
-                _pending.discard(h)
 
     _pool.submit(job)
     return True

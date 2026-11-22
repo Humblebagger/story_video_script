@@ -1,7 +1,8 @@
 """结论缓存与拦截记录（spec §2.4）。
 
 verdicts.json：文本 hash → 结论（pass / block）。全站共享：只按文本 hash，不分用户。
-blocks.json：拦截记录（管理员在后台看、放行）。
+blocks.json：拦截记录（管理员在后台看、放行）与已删范围：{"rows": [...], "purged_scopes": [[用户, 作品], [用户, 作品, 章节]]}。
+旧格式（整份是记录列表）照常读入，已删范围为空。
 两份都是整份 JSON、原子写；一把模块级锁管读改写；内存里留一份，进程内只读盘一次。
 """
 import json
@@ -32,6 +33,7 @@ log = logging.getLogger("safety.store")
 _lock = threading.RLock()
 _verdicts: Optional[dict] = None
 _blocks: Optional[list] = None
+_scopes: Optional[set] = None       # 已删范围：(用户, 作品) / (用户, 作品, 章节)；迟到写入不留摘录与理由
 _last_cleanup = 0.0
 
 
@@ -49,14 +51,14 @@ def policy() -> str:
 
 
 def _read(path, default):
-    """文件不存在才是空数据；权限、读写错误、JSON 损坏一律上抛（调用方保持内存未加载，不拿空数据冒充）。"""
+    """文件不存在才是空数据；权限、读写错误、编码或 JSON 损坏一律上抛 OSError（调用方保持内存未加载，不拿空数据冒充）。"""
     try:
-        text = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except FileNotFoundError:
         return default
     try:
-        return json.loads(text)
-    except ValueError as e:
+        return json.loads(raw.decode("utf-8"))
+    except ValueError as e:              # 含 UnicodeDecodeError（ValueError 的子类）与 JSONDecodeError
         raise OSError(f"{path.name} unparsable") from e
 
 
@@ -69,13 +71,18 @@ def _write(path, data) -> None:
 
 def _load() -> None:
     """两份文件一起读进内存，并对账：记录已放行而结论缓存里不是放行通过的，补成放行通过。"""
-    global _verdicts, _blocks
-    if _verdicts is not None and _blocks is not None:
+    global _verdicts, _blocks, _scopes
+    if _verdicts is not None and _blocks is not None and _scopes is not None:
         return
     v = _read(VERDICTS_FILE, {})
     b = _read(BLOCKS_FILE, [])
+    if isinstance(b, dict):
+        rows, scopes = b.get("rows"), b.get("purged_scopes")
+    else:
+        rows, scopes = b, []
     _verdicts = v if isinstance(v, dict) else {}
-    _blocks = b if isinstance(b, list) else []
+    _blocks = rows if isinstance(rows, list) else []
+    _scopes = {tuple(x) for x in (scopes if isinstance(scopes, list) else []) if isinstance(x, list)}
     fixed = False
     for r in _blocks:
         if r.get("status") != "released" or r.get("reason_code") == REFUSED:
@@ -89,7 +96,7 @@ def _load() -> None:
         try:
             _write(VERDICTS_FILE, _verdicts)
         except OSError:          # 补写失败不吞：丢掉内存、让下次访问重新读盘并再对账，直到写成功
-            _verdicts, _blocks = None, None
+            _verdicts, _blocks, _scopes = None, None, None
             raise
 
 
@@ -106,12 +113,12 @@ def _blocks_data() -> list:
 @contextmanager
 def _txn():
     """持锁的一次修改：任何一步失败（含写盘）就丢掉内存状态、下次从盘上重读，不留半截。"""
-    global _verdicts, _blocks
+    global _verdicts, _blocks, _scopes
     with _lock:
         try:
             yield
         except BaseException:
-            _verdicts, _blocks = None, None
+            _verdicts, _blocks, _scopes = None, None, None
             raise
 
 
@@ -119,15 +126,30 @@ def _save_verdicts() -> None:
     _write(VERDICTS_FILE, _verdicts_data())
 
 
+def _scopes_data() -> set:
+    _load()
+    return _scopes
+
+
 def _save_blocks() -> None:
-    _write(BLOCKS_FILE, _blocks_data())
+    rows = _blocks_data()
+    _write(BLOCKS_FILE, {"rows": rows, "purged_scopes": sorted(list(x) for x in _scopes_data())})
+
+
+def _purged(ctx: dict) -> bool:
+    """这条记录归属的作品或章节已被用户删除。"""
+    u, n, c = ctx.get("user_id"), ctx.get("novel_id"), ctx.get("chapter_id")
+    if not u or not n:
+        return False
+    sc = _scopes_data()
+    return (u, n) in sc or (c is not None and (u, n, c) in sc)
 
 
 def _reset_for_test() -> None:
     """丢掉内存里的那份，下次从盘上重新读（测试用）。"""
-    global _verdicts, _blocks
+    global _verdicts, _blocks, _scopes
     with _lock:
-        _verdicts, _blocks = None, None
+        _verdicts, _blocks, _scopes = None, None, None
 
 
 def _evict(data: dict) -> None:
@@ -174,16 +196,17 @@ def record_block(text, *, category: str, ctx: dict, reason: str = "", reason_cod
         row = next((r for r in rows if r["hash"] == h and r["status"] == "blocked"
                     and (r.get("reason_code") == REFUSED) == (reason_code == REFUSED)), None)
         now = now_iso()
-        if row is not None:
+        if row is not None:          # 合并进已有记录：摘录仍是那条记录自己的（它的范围若已删，purge 时已清空）
             row["hits"] = int(row.get("hits") or 1) + 1
             row["last_at"] = now
         else:
+            gone = _purged(ctx)      # 删除之后才到的结论：记录照记，不留摘录与理由
             row = {"id": error_refs.new_ref(), "at": now, "last_at": now, "hits": 1,
                    "user_id": ctx.get("user_id"), "novel_id": ctx.get("novel_id"),
                    "chapter_id": ctx.get("chapter_id"), "version_id": ctx.get("version_id"),
                    "clip_id": ctx.get("clip_id"), "stage": ctx.get("stage"), "category": category,
-                   "reason": str(reason or "")[:80], "reason_code": reason_code,
-                   "excerpt": excerpt(text), "hash": h, "status": "blocked",
+                   "reason": "" if gone else str(reason or "")[:80], "reason_code": reason_code,
+                   "excerpt": "" if gone else excerpt(text), "hash": h, "status": "blocked",
                    "released_by": None, "released_at": None}
             rows.append(row)
         _save_blocks()
@@ -291,9 +314,12 @@ def _cleanup_quietly() -> None:
 
 
 def purge(user_id: str, novel_id: Optional[str] = None, chapter_id: Optional[str] = None) -> int:
-    """用户删了作品或章节：对应记录的摘录与理由清空。返回清了几条。"""
+    """用户删了作品或章节：对应记录的摘录与理由清空，并把这个范围记进已删范围（持久化），
+    之后迟到的拦截记录不再保存摘录与理由。写盘失败抛 OSError（调用方据此不删作品，可重试）。返回清了几条。"""
     n = 0
     with _txn():
+        if novel_id:
+            _scopes_data().add((user_id, novel_id, chapter_id) if chapter_id else (user_id, novel_id))
         for r in _blocks_data():
             if r.get("user_id") != user_id or (novel_id and r.get("novel_id") != novel_id) \
                     or (chapter_id and r.get("chapter_id") != chapter_id):
@@ -301,7 +327,6 @@ def purge(user_id: str, novel_id: Optional[str] = None, chapter_id: Optional[str
             if r.get("excerpt") or r.get("reason"):
                 r["excerpt"], r["reason"] = "", ""
                 n += 1
-        if n:
-            _save_blocks()
+        _save_blocks()
     _cleanup_quietly()
     return n

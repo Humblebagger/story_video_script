@@ -672,17 +672,20 @@ def novels_update(nid: str, body: NovelBody, user: dict = Depends(novel_user)):
 
 
 def _purge_safety(user_id: str, nid: str, cid: Optional[str] = None) -> None:
-    """用户删了作品或章节：拦截记录里对应的摘录与理由一并清空（记录保留）。"""
+    """用户要删作品或章节：先把拦截记录里对应的摘录与理由清空并记下已删范围（之后迟到的记录也不留摘录）。
+    清理失败抛 503（safety.purge_failed），调用方不删，用户可重试。"""
     try:
         safety_store.purge(user_id, nid, cid)
-    except Exception as e:  # noqa: BLE001  清理失败不影响删除本身
+    except OSError as e:
         log.warning("清空拦截摘录失败 user=%s novel=%s %s", user_id, nid, type(e).__name__)  # i18n: internal
+        raise HTTPException(503, detail=msg("safety.purge_failed"))
 
 
 @app.delete("/novels/{nid}")
 def novels_delete(nid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.get_novel, user["id"], nid)          # 不存在先 404，不留已删范围
+    _purge_safety(user["id"], nid)                           # 先清再删：清理失败作品保持不删
     _novel_call(novels.delete_novel, user["id"], nid)
-    _purge_safety(user["id"], nid)
     return {"deleted": nid}
 
 
@@ -706,8 +709,9 @@ def chapters_update(nid: str, cid: str, body: ChapterBody,
 
 @app.delete("/novels/{nid}/chapters/{cid}")
 def chapters_delete(nid: str, cid: str, user: dict = Depends(novel_user)):
+    _novel_call(novels.get_chapter, user["id"], nid, cid)    # 不存在先 404，不留已删范围
+    _purge_safety(user["id"], nid, cid)                      # 先清再删：清理失败章节保持不删
     _novel_call(novels.delete_chapter, user["id"], nid, cid)
-    _purge_safety(user["id"], nid, cid)
     return {"deleted": cid}
 
 
@@ -1329,8 +1333,9 @@ def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
     _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                  allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
-    s = _render_call(render_session.queue_run, root, clip_ids, expected_cny)
-    _render_runner.release_checks(owner, set(clip_ids) if clip_ids else None)   # 重新排队：上一代的检查登记作废
+    moved: list = []
+    s = _render_call(render_session.queue_run, root, clip_ids, expected_cny, migrated=moved)
+    _render_runner.release_checks(owner, set(moved))   # 只作废本次实际迁移到排队的段（批量不碰无关的段）
     _render_runner.watch(root)
     return _film_view(s)
 
@@ -1455,6 +1460,7 @@ def render_free_run(nid: str, cid: str, vid: str, fid: str, body: Optional[Rende
     """生成一次（与单段出片同一套确认线与上限）。过验证门；超过确认线要带 expected_cny。"""
     root, ctx = _free_ctx(user, nid, cid, vid, gate=True)
     s = _render_call(render_free.queue, root, ctx, fid, body.expected_cny if body else None)
+    _render_runner.release_checks({"user_id": user["id"], "nid": nid, "cid": cid, "vid": vid}, {fid})   # 重跑：上一代登记作废
     _render_runner.watch(root)
     return _film_view(s)
 
@@ -2457,6 +2463,15 @@ def _safety_storage_error(e: OSError) -> HTTPException:
     return HTTPException(503, detail=msg("admin.safety.storage_failed"))
 
 
+def _safety_audit(user: dict, action: str, target, before, after) -> None:
+    """后台内容拦截操作的审计：写失败返回带代码的 503（调用方据此不执行、不返回内容）。"""
+    try:
+        audit.write(user, action, target, before, after)
+    except OSError as e:
+        log.warning("审计写入失败 action=%s %s", action, type(e).__name__)  # i18n: internal  原文不外露
+        raise HTTPException(503, detail=msg("admin.safety.audit_failed"))
+
+
 @app.get("/admin/safety/count")
 def admin_safety_count(user: dict = Depends(admin_user)):
     """未放行的拦截条数（导航徽标用；不带摘录，不记审计）。"""
@@ -2476,24 +2491,39 @@ def admin_safety_blocks(status: Optional[Literal["blocked", "released"]] = None,
         rows = [_safety_row(r) for r in safety_store.list_blocks(status=status, days=days, ref=ref)]
     except OSError as e:
         raise _safety_storage_error(e)
-    audit.write(user, "view_safety_blocks", None, None, {"status": status, "days": days, "ref": ref, "n": len(rows)})
+    _safety_audit(user, "view_safety_blocks", None, None, {"status": status, "days": days, "ref": ref, "n": len(rows)})
     return {"blocks": _with_username(rows)}
 
 
 @app.post("/admin/safety/blocks/{block_id}/release")
 def admin_safety_release(block_id: str, user: dict = Depends(admin_user)):
-    """放行：这段文本此后通过检查（全站同文本都通过）。模型服务拒绝的记录放行无效（409）。"""
+    """放行：这段文本此后通过检查（全站同文本都通过）。模型服务拒绝的记录放行无效（409）。
+    审计先行：先写一条 release_safety_block（结果 requested），写不进去就不放行（503 admin.safety.audit_failed）；
+    再执行放行，失败 503（admin.safety.storage_failed），那条审计保持 requested，如实反映「请求过、未确认生效」；
+    成功后再追加一条结果 released（这一条写失败只记日志：放行已生效，requested 那条已留下操作痕迹）。"""
     try:
-        row = safety_store.release(block_id, user["username"])
+        row = safety_store.find_block(block_id)
+    except OSError as e:
+        raise _safety_storage_error(e)
+    if row is None:
+        raise HTTPException(404, detail=msg("admin.safety.not_found", ref=error_refs.normalize(block_id)))
+    if not row["releasable"]:
+        raise HTTPException(409, detail=msg("admin.safety.not_releasable"))
+    owner = auth.get_user_raw(row["user_id"]) if row.get("user_id") else None
+    facts = {"id": row["id"], "category": row["category"]}
+    _safety_audit(user, "release_safety_block", owner, {"status": row["status"]}, {"status": "requested", **facts})
+    try:
+        row = safety_store.release(row["id"], user["username"])
     except safety_store.NotFound as e:
         raise HTTPException(404, detail=to_detail(e))
     except safety_store.StoreError as e:
         raise HTTPException(409, detail=to_detail(e))
     except OSError as e:
         raise _safety_storage_error(e)
-    owner = auth.get_user_raw(row["user_id"]) if row.get("user_id") else None
-    audit.write(user, "release_safety_block", owner, {"status": "blocked"},
-                {"status": "released", "id": row["id"], "category": row["category"]})
+    try:
+        audit.write(user, "release_safety_block", owner, {"status": "requested"}, {"status": "released", **facts})
+    except OSError as e:
+        log.warning("放行结果审计写入失败 id=%s %s", row["id"], type(e).__name__)  # i18n: internal
     return _with_username([_safety_row(row)])[0]
 
 

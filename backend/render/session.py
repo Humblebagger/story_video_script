@@ -457,10 +457,12 @@ def run_quote(s: dict, clip_ids: Optional[list] = None) -> tuple:
     return targets, round(sum(c["estimate_cny"] for c in targets), 2)
 
 
-def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[float] = None) -> dict:
+def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[float] = None,
+              migrated: Optional[list] = None) -> dict:
     """排队出片。clip_ids=None 为批量出剩余各段（planned / failed，不含待核对的段），必须带
     确认金额；单段超过确认线也要带。金额与服务端重算不一致 → Conflict（附重算金额）。
-    单段点名重做视为用户已看过「请到控制台核对」，清掉待核对标记。"""
+    单段点名重做视为用户已看过「请到控制台核对」，清掉待核对标记。
+    migrated：传入列表时，追加本次实际迁移到 queued 的段 id（调用方据此只作废这些段的检查登记）。"""
     with mutate(root) as s:
         targets, total = run_quote(s, clip_ids)
         if (clip_ids is None or total > s["confirm_over_cny"]) and expected_cny is None:
@@ -477,6 +479,8 @@ def queue_run(root, clip_ids: Optional[list] = None, expected_cny: Optional[floa
             c.pop("ended_as", None)
             set_error(c, None)
             c["uncertain"] = False
+        if migrated is not None:
+            migrated.extend(c["id"] for c in targets)
         return s
 
 

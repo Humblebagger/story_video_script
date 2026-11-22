@@ -110,6 +110,66 @@ def main() -> int:
         assert c.post(f"/admin/safety/blocks/{b2}/release", headers=H).status_code == 200
         print("6. 存储失败 ✓")
 
+        # 7. 删除时先清摘录再删（第四轮 3）：清理失败 → 503 带代码，章节与作品都还在，可重试；之后迟到的记录不留摘录
+        nid7 = novels.create_novel(bob["id"], "七")["id"]
+        cid7 = novels.create_chapter(bob["id"], nid7, "七一", text="原文")["id"]
+        ctx7 = dict(ctx, novel_id=nid7, chapter_id=cid7)
+        b7 = store.record_block("第七节违规", category="drugs", reason="方法", ctx=ctx7)
+        store._write = boom
+        try:
+            r = c.delete(f"/novels/{nid7}/chapters/{cid7}", headers=B)
+            assert r.status_code == 503 and r.json()["detail"]["code"] == "safety.purge_failed", r.text
+            assert "secret" not in r.text
+            r = c.delete(f"/novels/{nid7}", headers=B)
+            assert r.status_code == 503 and r.json()["detail"]["code"] == "safety.purge_failed", r.text
+        finally:
+            store._write = real_write
+        assert novels.get_chapter(bob["id"], nid7, cid7)["id"] == cid7, "清理失败：章节保持不删"
+        assert store.find_block(b7)["excerpt"] == "第七节违规"
+        assert c.delete(f"/novels/{nid7}/chapters/{cid7}", headers=B).status_code == 200, "重试成功"
+        assert store.find_block(b7)["excerpt"] == ""
+        late = store.record_block("删除后才到的结论", category="drugs", reason="迟到", ctx=ctx7)
+        assert store.find_block(late)["excerpt"] == "" and store.find_block(late)["reason"] == ""
+        assert c.delete(f"/novels/{nid7}/chapters/nope", headers=B).status_code == 404
+        print("7. 删除时先清后删 ✓")
+
+        # 8. 放行审计（第四轮 4）：先写 requested 审计；审计写失败 → 503 带代码、不放行；放行写盘失败 → 503，审计保持 requested
+        b8 = store.record_block("第八节违规", category="drugs", reason="方法", ctx=ctx)
+        real_audit = app_mod.audit.write
+
+        def audit_boom(*_a, **_k):
+            raise OSError("audit disk full /secret/path")
+        app_mod.audit.write = audit_boom
+        try:
+            r = c.post(f"/admin/safety/blocks/{b8}/release", headers=H)
+        finally:
+            app_mod.audit.write = real_audit
+        assert r.status_code == 503 and r.json()["detail"]["code"] == "admin.safety.audit_failed", r.text
+        assert "secret" not in r.text
+        assert store.find_block(b8)["status"] == "blocked" and store.get_verdict(text_hash("第八节违规"))["verdict"] == "block"
+        n_audit = len(audit.read(10000))
+        store._write = boom
+        try:
+            r = c.post(f"/admin/safety/blocks/{b8}/release", headers=H)
+        finally:
+            store._write = real_write
+        assert r.status_code == 503 and r.json()["detail"]["code"] == "admin.safety.storage_failed", r.text
+        rows8 = audit.read(10000)
+        assert len(rows8) == n_audit + 1 and rows8[0]["action"] == "release_safety_block"
+        assert rows8[0]["after"]["status"] == "requested" and rows8[0]["after"]["id"] == b8, rows8[0]
+        r = c.post(f"/admin/safety/blocks/{b8}/release", headers=H)
+        assert r.status_code == 200
+        rows8 = audit.read(10000)
+        assert [x["after"]["status"] for x in rows8[:2]] == ["released", "requested"], rows8[:2]
+        # 查看列表的审计写失败也是带代码的错误
+        app_mod.audit.write = audit_boom
+        try:
+            r = c.get("/admin/safety/blocks", headers=H)
+        finally:
+            app_mod.audit.write = real_audit
+        assert r.status_code == 503 and r.json()["detail"]["code"] == "admin.safety.audit_failed", r.text
+        print("8. 放行审计 ✓")
+
     print("\nALL PASS")
     return 0
 

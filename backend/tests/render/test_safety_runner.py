@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -169,7 +170,6 @@ def main() -> int:
     assert flags[q] is True and sum(1 for f in flags.values() if f) == 1, flags
     print("7. app 接线与视图标注 ✓")
     # 7b. 同一段每轮都来问：用真实 gate，只分类一次，之后拿到结论（等待者键是 (用户, 作品, 版本, 片段)，没有重提逻辑）
-    import threading
     from fakes import FakeChat
     from pipeline.chat import ChatInvoker
     from pipeline.config import Settings
@@ -253,6 +253,83 @@ def main() -> int:
     assert not runner5.is_checking(OWNER, t4) and len(forgot) == 2
     runner5.release_checks(OWNER)          # 空操作也安全
     print("9. 检查标记随取消与移除清掉 ✓")
+
+    # 10. 回调期间取消（第四轮 2）：显式取消一律作废登记；回调返回后生命周期已变，丢弃 wait 与失败写回
+    forgot10 = []
+    tmp6 = tempfile.TemporaryDirectory()
+    root6 = Path(tmp6.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+    sess.build(root6, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    t6 = firsts[1]
+    key6 = ("u", "n", "c", "v", t6)
+    started10, go10, mode = threading.Event(), threading.Event(), {"out": "wait"}
+
+    def check10(r, sn, c):
+        started10.set()
+        assert go10.wait(10)
+        if isinstance(mode["out"], Exception):
+            raise mode["out"]
+        return mode["out"]
+    runner6 = Runner(builder, sleep=lambda _s: None, max_parallel=4, safety_check=check10,
+                     safety_forget=forgot10.append)
+    sess.queue_run(root6, [t6])
+    runner6.watch(root6)
+    th = threading.Thread(target=runner6.tick)
+    th.start()
+    assert started10.wait(10)
+    sess.cancel(root6, t6)
+    runner6.release_checks(OWNER, {t6})                # 回调还没返回：_checking 里没有这个键
+    assert forgot10 == [key6], forgot10
+    go10.set()
+    th.join(10)
+    assert not runner6.is_checking(OWNER, t6), "取消之后回调才返回的 wait 不恢复标记"
+    # 10b. 回调期间取消并重新排队（自由节点重跑同理），回调随后报不可用：失败不写回新一轮
+    started10.clear()
+    go10.clear()
+    mode["out"] = gate.unavailable_error()
+    sess.queue_run(root6, [t6])
+    runner6.watch(root6)
+    th = threading.Thread(target=runner6.tick)
+    th.start()
+    assert started10.wait(10)
+    sess.cancel(root6, t6)
+    sess.queue_run(root6, [t6])
+    runner6.release_checks(OWNER, {t6})
+    go10.set()
+    th.join(10)
+    c6 = clip(root6, t6)
+    assert c6["state"] == "queued" and c6["attempts"] == [] and not c6.get("error_msg"), c6
+    mode["out"] = "pass"
+    runner6.tick()                                     # 新一轮重新检查，按新结论提交
+    assert clip(root6, t6)["state"] == "running"
+    print("10. 回调期间取消 ✓")
+
+    # 11. 接口层：自由节点重跑作废旧登记；批量出片只作废 queue_run 实际迁移到 queued 的段
+    calls = []
+    runner_app = app_mod._render_runner
+    real_release, real_free_ctx, real_free_queue = runner_app.release_checks, app_mod._free_ctx, app_mod.render_free.queue
+    real_render_ctx, real_style = app_mod._render_ctx, app_mod._style_for
+    tmp7 = tempfile.TemporaryDirectory()
+    root7 = Path(tmp7.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+    sess.build(root7, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    runner_app.release_checks = lambda owner, ids=None: calls.append((dict(owner), None if ids is None else set(ids)))
+    app_mod._free_ctx = lambda *_a, **_k: (root7, None)
+    app_mod.render_free.queue = lambda r, _ctx, _fid, _e=None: sess.load(r)
+    app_mod._render_ctx = lambda *_a: (root7, doc, {}, OWNER)
+    app_mod._style_for = lambda *_a: None
+    try:
+        app_mod.render_free_run("n", "c", "v", "F1", None, user={"id": "u"})
+        assert calls == [(OWNER, {"F1"})], calls
+        waiting = firsts[2]
+        sess.queue_run(root7, [waiting])                # 这一段已在排队等检查，与本次批量无关
+        targets, total = sess.run_quote(sess.load(root7), None)
+        want = {c["id"] for c in targets}
+        assert waiting not in want and want
+        app_mod._film_run({"id": "u"}, "n", "c", "v", None, total)
+        assert calls[-1] == (OWNER, want), calls[-1]
+    finally:
+        runner_app.release_checks, app_mod._free_ctx, app_mod.render_free.queue = real_release, real_free_ctx, real_free_queue
+        app_mod._render_ctx, app_mod._style_for = real_render_ctx, real_style
+    print("11. 接口层只作废本次排队的 ✓")
 
     print("\nALL PASS")
     return 0

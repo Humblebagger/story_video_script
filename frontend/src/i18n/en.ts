@@ -1600,6 +1600,7 @@ export const en: BaseMessages = {
     safety: {
       blocked: 'This content does not meet our usage policy and was not generated (category: {category})',
       unavailable: 'The content check is temporarily unavailable. Please try again later',
+      purge_failed: 'Could not clear content-check records, so nothing was deleted. Please try again later',
       category: {
         sexual: 'Sexual content', minor_sexual: 'Sexual content involving minors', drugs: 'Drugs',
         political: 'Real-world politics', extremism: 'Terrorism and extremism', unspecified: 'Policy violation',
@@ -1751,7 +1752,7 @@ export const en: BaseMessages = {
       },
       error_ref: { not_found: 'No error with reference {ref}' },
       job: { not_found: 'No debug log for this conversion: {id}' },
-      safety: { not_found: 'No such blocked record: {ref}', not_releasable: 'The model service refused this text; releasing it has no effect', storage_failed: 'Blocked records are temporarily unavailable; please try again later' },
+      safety: { not_found: 'No such blocked record: {ref}', not_releasable: 'The model service refused this text; releasing it has no effect', storage_failed: 'Blocked records are temporarily unavailable; please try again later', audit_failed: 'Could not write the audit record, so the action was not performed. Please try again later' },
     },
     assistant: {
       busy: 'Still answering the previous message', busy_clear: 'The assistant is answering; wait for it to finish before clearing',
