@@ -1332,6 +1332,7 @@ export const zh = {
     rate: { video: '按公开刊例价估算，未经账单核对', tts: '配音按字符计费，按公开刊例价估算，未经账单核对' },
     tier: { a_standard: '引擎 A · 标准', a_fast: '引擎 A · 快速', a_lite: '引擎 A · 经济', b_standard: '引擎 B · 标准', b_fast: '引擎 B · 快速', b_lite: '引擎 B · 经济', demo: '演示（不联网、不花钱）' },
     film: {
+      safety_checking: '内容检查中',
       provider: {
         failed: '厂商返回失败',
         generation_failed: '生成失败',
@@ -1582,6 +1583,15 @@ export const zh = {
       gave_up: '已重试 {retries} 次仍失败：{cause}',
       truncated: 'AI 输出超出了长度上限，这次没有完成；请联系管理员调整转换设置',
     },
+    safety: {
+      blocked: '内容不符合使用规范，已拒绝生成（类别：{category}）',
+      unavailable: '暂时无法完成内容检查，请稍后再试',
+      category: {
+        sexual: '色情', minor_sexual: '涉及未成年人的性内容', drugs: '毒品', political: '现实政治',
+        extremism: '恐怖与极端主义', unspecified: '不符合使用规范',
+      },
+      reason: { blocklist: '命中词表', model_refused: '模型服务拒绝处理这段文本' },
+    },
     verify: {
       gate: { blocked: '分镜未通过独立验证，禁止进入付费渲染' },
       finding: '{path}: {detail}',
@@ -1673,6 +1683,7 @@ export const zh = {
       batch_failed: '批 {batch} 重试 {retries} 次后仍未通过校验',
       crashed: '转换时出现意外错误，请重试；仍失败请联系管理员',
       event: {
+        safety_check: '正在检查内容是否符合使用规范…',
         adopted: '已自动采用为本章首个成功版本：资产库新增 {added} 张、合并 {merged} 张',
         archived: '本章已有采用版，这一版仅存档；要用它请在版本列表里点「采用」',
         batch_start: '批 {batch}/{batches}（{chars} 字符）：开始生成…',
@@ -1721,6 +1732,7 @@ export const zh = {
       },
       error_ref: { not_found: '没有这个参考编号：{ref}' },
       job: { not_found: '没有这次转换的调试日志：{id}' },
+      safety: { not_found: '没有这条拦截记录：{ref}', not_releasable: '这条记录是模型服务拒绝，放行无效' },
     },
     assistant: {
       busy: '上一条还在回答', busy_clear: '助手正在回答，等它说完再清空', busy_undo: '助手正在回答，等它说完再撤销',

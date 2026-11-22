@@ -58,6 +58,16 @@
     "params": [],
     "zh": "价格表必须包含至少一个模型"
   },
+  "admin.safety.not_found": {
+    "params": [
+      "ref"
+    ],
+    "zh": "没有这条拦截记录：{ref}"
+  },
+  "admin.safety.not_releasable": {
+    "params": [],
+    "zh": "这条记录是模型服务拒绝，放行无效"
+  },
   "admin.self_disable": {
     "params": [],
     "zh": "不能停用自己"
@@ -1058,6 +1068,10 @@
     "params": [],
     "zh": "没有要出的段"
   },
+  "film.safety_checking": {
+    "params": [],
+    "zh": "内容检查中"
+  },
   "film.session.corrupt": {
     "params": [
       "path"
@@ -1383,6 +1397,10 @@
     ],
     "zh": "批 {batch} 回喂校验报告重新输出整份（{n}/{total}）…"
   },
+  "job.event.safety_check": {
+    "params": [],
+    "zh": "正在检查内容是否符合使用规范…"
+  },
   "job.event.seed_assets": {
     "params": [
       "title",
@@ -1615,6 +1633,48 @@
   "rate.video": {
     "params": [],
     "zh": "按公开刊例价估算，未经账单核对"
+  },
+  "safety.blocked": {
+    "params": [
+      "category"
+    ],
+    "zh": "内容不符合使用规范，已拒绝生成（类别：{category}）"
+  },
+  "safety.category.drugs": {
+    "params": [],
+    "zh": "毒品"
+  },
+  "safety.category.extremism": {
+    "params": [],
+    "zh": "恐怖与极端主义"
+  },
+  "safety.category.minor_sexual": {
+    "params": [],
+    "zh": "涉及未成年人的性内容"
+  },
+  "safety.category.political": {
+    "params": [],
+    "zh": "现实政治"
+  },
+  "safety.category.sexual": {
+    "params": [],
+    "zh": "色情"
+  },
+  "safety.category.unspecified": {
+    "params": [],
+    "zh": "不符合使用规范"
+  },
+  "safety.reason.blocklist": {
+    "params": [],
+    "zh": "命中词表"
+  },
+  "safety.reason.model_refused": {
+    "params": [],
+    "zh": "模型服务拒绝处理这段文本"
+  },
+  "safety.unavailable": {
+    "params": [],
+    "zh": "暂时无法完成内容检查，请稍后再试"
   },
   "tier.a_fast": {
     "params": [],

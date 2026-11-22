@@ -1338,6 +1338,7 @@ export const en: BaseMessages = {
     rate: { video: 'Estimated from public list prices; not reconciled against billing', tts: 'Voiceover is billed per character; estimated from public list prices, not reconciled against billing' },
     tier: { a_standard: 'Engine A · Standard', a_fast: 'Engine A · Fast', a_lite: 'Engine A · Economy', b_standard: 'Engine B · Standard', b_fast: 'Engine B · Fast', b_lite: 'Engine B · Economy', demo: 'Demo (offline, free)' },
     film: {
+      safety_checking: 'Checking content',
       provider: {
         failed: 'The provider reported a failure',
         generation_failed: 'Generation failed',
@@ -1596,6 +1597,15 @@ export const en: BaseMessages = {
       gave_up: 'Still failing after {retries} retries: {cause}',
       truncated: 'The AI output hit its length limit, so this didn’t finish. Please ask the administrator to adjust the conversion settings',
     },
+    safety: {
+      blocked: 'This content does not meet our usage policy and was not generated (category: {category})',
+      unavailable: 'The content check is temporarily unavailable. Please try again later',
+      category: {
+        sexual: 'Sexual content', minor_sexual: 'Sexual content involving minors', drugs: 'Drugs',
+        political: 'Real-world politics', extremism: 'Terrorism and extremism', unspecified: 'Policy violation',
+      },
+      reason: { blocklist: 'Matched the blocklist', model_refused: 'The model service refused to process this text' },
+    },
     verify: {
       gate: { blocked: 'The storyboard failed independent verification, so paid rendering is blocked' },
       finding: '{path}: {detail}',
@@ -1687,6 +1697,7 @@ export const en: BaseMessages = {
       batch_failed: 'Batch {batch} still failed validation after {retries} retries',
       crashed: 'Something went wrong during conversion. Please try again; if it keeps failing, contact the administrator',
       event: {
+        safety_check: 'Checking the content against the usage policy…',
         adopted: 'Adopted automatically as this chapter’s first successful version: {added} asset cards added, {merged} merged',
         archived: 'This chapter already has an adopted version, so this one is archived only; to use it, click “Adopt” in the version list',
         batch_start: 'Batch {batch}/{batches} ({chars} chars): generating…',
@@ -1740,6 +1751,7 @@ export const en: BaseMessages = {
       },
       error_ref: { not_found: 'No error with reference {ref}' },
       job: { not_found: 'No debug log for this conversion: {id}' },
+      safety: { not_found: 'No such blocked record: {ref}', not_releasable: 'The model service refused this text; releasing it has no effect' },
     },
     assistant: {
       busy: 'Still answering the previous message', busy_clear: 'The assistant is answering; wait for it to finish before clearing',

@@ -261,6 +261,22 @@ def main() -> int:
     assert len(long["items"]) == 20 and long["items"][-1] == {"code": "common.more_lines", "params": {"n": 11}}, "每项 301 字（含换行），19 项后超预算"
     assert len(M.render_zh("common.unknown", {"message": long})) <= M.REPORT_MAX + 100
     print("子计划 5：lines_of / 条数与总长截断 / 中文兜底 ✓")
+    # 内容限制的消息：类别走代码引用，拦截消息带参考编号
+    from server import messages as _m, public as _p
+    for c in ("sexual", "minor_sexual", "drugs", "political", "extremism", "unspecified"):
+        assert _m.registered(f"safety.category.{c}"), c
+    assert not _m.registered("safety.category") and not _m.registered("safety.reason")
+    blocked = _m.with_ref(_m.msg("safety.blocked", category=_m.ref("safety.category.sexual")), "AB12CD34")
+    assert blocked["message"] == "内容不符合使用规范，已拒绝生成（类别：色情）（参考编号 AB12CD34）", blocked["message"]
+    out = _p.public_msg(blocked)
+    assert out["code"] == "safety.blocked" and out["ref"] == "AB12CD34"
+    assert out["params"]["category"] == {"t": "ref", "code": "safety.category.sexual"}
+    assert _m.msg("safety.unavailable")["message"] == "暂时无法完成内容检查，请稍后再试"
+    for code in ("safety.reason.blocklist", "safety.reason.model_refused", "job.event.safety_check",
+                 "film.safety_checking", "admin.safety.not_releasable"):
+        assert _m.registered(code), code
+    assert _m.params_of("admin.safety.not_found") == ("ref",)
+    print("内容限制消息登记 ✓")
     print("\nALL PASS")
     return 0
 
