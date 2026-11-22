@@ -1,0 +1,11 @@
+{
+  "words": [
+    {"text": "child porn", "category": "minor_sexual"},
+    {"text": "儿童色情", "category": "minor_sexual"},
+    {"text": "幼女色情", "category": "minor_sexual"},
+    {"text": "冰毒合成步骤", "category": "drugs"},
+    {"text": "制毒配方", "category": "drugs"},
+    {"text": "自制炸弹教程", "category": "extremism"},
+    {"text": "加入圣战组织", "category": "extremism"}
+  ]
+}
