@@ -238,8 +238,6 @@ class _Expired(Exception):
 
 class MiniMax:
     name = "minimax"
-    console_name = "console.minimax"
-    rate_note = {"code": "rate.minimax", "params": {}}
     default_model = DEFAULT_MODEL
     typical_sec = (180, 420)        # 2026-11-21 实测一段约 4–5 分钟，取保守区间 3–7 分钟
 

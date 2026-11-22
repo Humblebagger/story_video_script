@@ -113,6 +113,35 @@ def main() -> int:
     assert M.render_zh("film.provider.submit_cut", {}) == "网络中断"
     assert M.render_zh("film.submit.crashed", {}) == "提交时出现意外错误，请重试；仍失败请联系管理员"
 
+    # 对照表：旧代码不在登记表、新代码在、新参数 ⊆ 旧参数（旧数据总能渲染）；全表没有厂商词
+    from server import public as P
+    from render.providers.base import ProviderError as _PE3
+    OLD_PARAMS = {  # 删除前各旧代码的参数（只列有参数的；其余为空）
+        "film.ark.http_ambiguous": ["status"], "film.ark.unavailable": ["status"], "film.ark.download_failed": ["status"],
+        "film.minimax.http_ambiguous": ["status"], "film.minimax.unavailable": ["status"], "film.minimax.throttled": ["status"],
+        "film.minimax.label_ref": ["id"], "film.minimax.bad_image": ["label"], "film.minimax.corrupt_image": ["label"],
+        "film.minimax.unsupported_format": ["label", "mime"], "film.minimax.image_too_big": ["label", "mb"],
+        "film.minimax.prompt_too_long": ["max", "len"], "film.minimax.bad_ratio": ["ratio", "options"],
+        "film.minimax.request_too_big": ["mb"], "film.minimax.bad_resolution": ["resolution", "options"],
+        "film.provider.rejected": ["detail"], "film.provider.http_rejected": ["status", "detail"],
+        "film.provider.unknown": ["name"], "tts.unknown_provider": ["name"],
+        "tts.volc.unavailable": ["status"], "tts.volc.rejected": ["code", "detail"], "tts.volc.rejected_http": ["status"],
+        "tts.volc.failed": ["code"], "tts.volc.failed_detail": ["code", "detail"],
+    }
+    assert len(M.LEGACY) >= 60
+    for old, new in M.LEGACY.items():
+        assert not M.registered(old), f"{old} 应已删除"
+        assert M.registered(new), f"{new} 没登记"
+        assert set(M.params_of(new)) <= set(OLD_PARAMS.get(old, [])), (old, new)
+    assert not [c for c in codes if c.startswith(("film.ark.", "film.minimax.", "tts.volc.", "console."))]
+    hits = {c: P.find_vendor_words([c, v["zh"]]) for c, v in M.dump_codes().items()}
+    assert not {c: h for c, h in hits.items() if h}, "登记表里不得有厂商词"
+    # public_cause：有代码给紧凑消息；没有代码不带原文
+    e = _PE3.of("film.vendor.throttled")
+    assert M.public_cause(e) == {"code": "film.vendor.throttled", "params": {}}
+    assert M.public_cause(RuntimeError("POST https://api.minimax.cn 502")) == {"code": "film.vendor.unknown_cause", "params": {}}
+    print("对照表 / public_cause ✓")
+
     # 10. with_ref：顶层 ref，已有编号时替换、不重复附加
     r1 = M.with_ref(M.msg("common.internal"), "K7Q2M9XD")
     r2 = M.with_ref(r1, "AB12CD34")

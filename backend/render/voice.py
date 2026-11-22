@@ -8,14 +8,17 @@ speechOf 同一算法。送 TTS 的文字即分镜原文，不改写。缓存键
 """
 import hashlib
 import json
+import logging
 import re
 import time
 from pathlib import Path
 from typing import Optional
 
 from render.providers.base import ProviderError, TransientError
-from server.messages import UserError, cause_of, compact, msg
+from server.messages import UserError, compact, msg, public_cause, render_zh
 from render.providers.tts_base import BilledError, concat_wavs, default_voice, tts_cost, wav_seconds
+
+log = logging.getLogger("render.voice")
 
 NARRATION = "narration"
 # 各声音模式下哪些语音条走 TTS（设计文档 3.4）；其余由视频模型自己出声或不出声，只进字幕
@@ -180,7 +183,11 @@ def synthesize(lines: list, voices: dict, provider, root, *, retries: int = 3, s
         except BilledError as e:         # 厂商收下后才失败：可能已计费，照记花费，不重试
             if on_cost:
                 on_cost(e.billed_cny)
-            failed.append({**line, "error": str(e), "error_msg": cause_of(e)})
+            log.warning("%s", f"配音失败（已计费） {type(e).__name__}: {e}")  # i18n: internal
+            m = public_cause(e)
+            failed.append({**line, "error": render_zh(m["code"], m["params"]), "error_msg": m})
         except (ProviderError, TransientError) as e:
-            failed.append({**line, "error": str(e), "error_msg": cause_of(e)})
+            log.warning("%s", f"配音失败 {type(e).__name__}: {e}")  # i18n: internal
+            m = public_cause(e)
+            failed.append({**line, "error": render_zh(m["code"], m["params"]), "error_msg": m})
     return done, failed

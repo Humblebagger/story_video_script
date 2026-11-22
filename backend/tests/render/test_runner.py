@@ -354,17 +354,8 @@ def main() -> int:
     c = clip(r8, i8[0])
     assert len(calls) == 1, calls
     assert c["state"] == "failed" and c["uncertain"] is True and len(c["attempts"]) == 1
-    assert c["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到厂商控制台核对") and "ReadTimeout" in c["error"]
-    # 厂商自报控制台名时用它
-    r8b, i8b = fresh("ambiguous2")
-    sess.queue_run(r8b, [i8b[0]])
-    fake.console_name = "console.ark"
-    rn = quick()
-    rn.watch(r8b)
-    rn.tick()
-    rn.tick()
-    assert clip(r8b, i8b[0])["error"].startswith("提交时连接中断，不确定厂商是否已受理：请到方舟控制台核对")
-    del fake.console_name
+    assert c["error"].startswith("提交时连接中断，不确定生成服务是否已受理：这一段可能已计费，请联系管理员核对后再重做")
+    assert "控制台" not in c["error"] and "ReadTimeout" not in c["error"] and set(c["error_msg"]["params"]) == {"cause"}
     fake.submit = real_submit
     print("13. 提交结果不明不重试 ✓")
 
@@ -413,7 +404,7 @@ def main() -> int:
         now[0] = t_
         rn.tick()
         c = clip(r10, i10[0])
-        assert c["state"] == "running" and not c.get("uncertain") and "InternalServiceError" in c["error"]
+        assert c["state"] == "running" and not c.get("uncertain") and c["error"] == "厂商暂时不可达，正在重试：未知原因"
     assert r10 in rn.watching()
     now[0] = 101
     rn.tick()
@@ -556,10 +547,9 @@ def main() -> int:
     rn.tick()
     c = clip(r17, i17[0])
     assert c["error_msg"] == {"code": "film.submit.ambiguous", "params": {
-        "console": {"t": "ref", "code": "console.generic"},
         "cause": {"code": "film.provider.submit_cut", "params": {}}}}, c["error_msg"]
     assert c["attempts"][-1]["error_msg"]["code"] == "film.submit.ambiguous"
-    assert "提交时连接中断，不确定厂商是否已受理：请到厂商控制台核对" in c["error"]
+    assert "请联系管理员核对后再重做" in c["error"] and "控制台" not in c["error"]
     assert c["error"].endswith("（网络中断）") and c["error"].count("提交时连接中断") == 1, c["error"]
 
     def submit_crash17(req):
@@ -715,41 +705,31 @@ def main() -> int:
     fake.fail_with = None
     print("17. 错误带代码与嵌套原因 ✓")
 
-    # 18. 控制台代码缺失 / 为空 / 未登记 / 旧中文名：提交不明照常落盘，只提交一次，回落通用说法
+    # 18. 没有代码的异常（可能带厂商接口地址）：原因只说「未知原因」，原文只进日志
     real_submit18 = fake.submit
-    saved_console = fake.__dict__.get("console_name", "__unset__")
-    for label, setup in (("missing", "del"), ("empty", ""), ("unknown", "console.nope"), ("zh", "某某控制台")):
-        r20, i20 = fresh("console_" + label)
-        sess.queue_run(r20, [i20[0]])
-        calls18 = []
+    r20, i20 = fresh("unknown_cause")
+    sess.queue_run(r20, [i20[0]])
+    calls18 = []
 
-        def submit_amb18(req, calls18=calls18):
-            calls18.append(1)
-            raise base.AmbiguousSubmit("提交时连接中断：ReadTimeout")
+    def submit_amb18(req):
+        calls18.append(1)
+        raise base.AmbiguousSubmit("boom https://api.minimax.cn/v1")
 
-        fake.submit = submit_amb18
-        if setup == "del":
-            type(fake).console_name_backup = type(fake).console_name
-            del type(fake).console_name
-        else:
-            fake.console_name = setup
-        try:
-            rn = quick()
-            rn.watch(r20)
+    fake.submit = submit_amb18
+    try:
+        rn = quick()
+        rn.watch(r20)
+        with _LogGrab("render.runner") as g18:
             rn.tick()
             rn.tick()
-        finally:
-            if setup == "del":
-                type(fake).console_name = type(fake).console_name_backup
-            else:
-                del fake.console_name
-            fake.submit = real_submit18
-        c = clip(r20, i20[0])
-        assert len(calls18) == 1, label
-        assert c["state"] == "failed" and c["uncertain"] is True, (label, c)
-        assert c["error_msg"]["code"] == "film.submit.ambiguous", label
-        assert c["error_msg"]["params"]["console"] == {"t": "ref", "code": "console.generic"}, label
-        assert "请到厂商控制台核对" in c["error"], c["error"]
+    finally:
+        fake.submit = real_submit18
+    c = clip(r20, i20[0])
+    assert len(calls18) == 1 and c["state"] == "failed" and c["uncertain"] is True, c
+    assert c["error_msg"]["code"] == "film.submit.ambiguous", c["error_msg"]
+    assert c["error_msg"]["params"] == {"cause": {"code": "film.vendor.unknown_cause", "params": {}}}, c["error_msg"]
+    assert "boom" not in c["error"] and "minimax" not in c["error"] and c["error"].endswith("（未知原因）"), c["error"]
+    assert any("boom" in x for x in g18.lines), g18.lines
 
     # 19. 外层中文兜底与改造前一致：不被参数截断、KeyError 的引号保留、轮询放弃保留完整原文
     r21, i21 = fresh("fallback")
@@ -778,8 +758,8 @@ def main() -> int:
     rn.watch(r22)
     rn.tick()
     c = clip(r22, i22[0])
-    assert c["error"] == "组装请求失败：'缺字段'", c["error"]
-    assert c["error_msg"]["params"]["cause"]["text"] == "缺字段"
+    assert c["error"] == "组装请求失败：未知原因", c["error"]
+    assert c["error_msg"]["params"]["cause"] == {"code": "film.vendor.unknown_cause", "params": {}}
 
     now19 = [0.0]
     r23, i23 = fresh("fallback3")
@@ -796,14 +776,14 @@ def main() -> int:
     fake.poll = poll_long
     now19[0] = 1
     rn.tick()
-    assert clip(r23, i23[0])["error"] == "厂商暂时不可达，正在重试：" + long_raw
+    assert clip(r23, i23[0])["error"] == "厂商暂时不可达，正在重试：未知原因"
     now19[0] = 101
     rn.tick()
     c = clip(r23, i23[0])
-    assert c["error"] == "多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + long_raw
-    assert len(c["error_msg"]["params"]["cause"]["text"]) == 300
+    assert c["error"] == "多次查询都失败，已放弃；请联系管理员核对这个任务：未知原因", c["error"]
+    assert c["error_msg"]["params"]["cause"] == {"code": "film.vendor.unknown_cause", "params": {}}
     fake.poll = real_poll19
-    print("18. 控制台回落与中文兜底原样 ✓")
+    print("18. 未知原因与中文兜底 ✓")
 
     # 19. 提交意外异常 + 状态写回也失败：stderr 与日志里没有密钥，也没有原异常链；段仍停在「提交中」
     import contextlib

@@ -86,8 +86,6 @@ class VideoProvider(Protocol):
     name: str
     default_model: str
     models: dict                    # 档位 id → {"label": ...}
-    rate_note: dict     # 费率依据（消息对象 {code, params}）：如实写出处、是否经账单核对；出片确认框照抄
-    console_name: str   # 厂商控制台名的代码，如 console.ark
     typical_sec: tuple  # 一段通常要等多久（秒，下限与上限）：只给界面显示「通常 x–y 分钟」，不参与判定
 
     def caps(self, model: str) -> Caps: ...

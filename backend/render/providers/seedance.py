@@ -138,8 +138,6 @@ def _reject(r: httpx.Response, key: str, *, model=None, task_id=None) -> Provide
 
 class Seedance:
     name = "seedance"
-    console_name = "console.ark"
-    rate_note = {"code": "rate.ark", "params": {}}
     default_model = DEFAULT_MODEL
     typical_sec = (120, 480)        # 没有实测数据，先取保守区间 2–8 分钟；真跑后按实际校准
 

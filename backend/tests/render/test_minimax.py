@@ -114,7 +114,7 @@ def main() -> int:
     os.environ.pop("STORYBOARD_MINIMAX_PRICE_SCALE")
     must_raise(base.ProviderError, m.caps, "MiniMax-H3-Max")
     assert m.default_model == "minimax-h3" and set(m.models) == set(MODELS)
-    assert m.console_name == "console.minimax" and m.rate_note["code"] == "rate.minimax"
+    assert not hasattr(m, "console_name") and not hasattr(m, "rate_note")
     print("1. 能力表 ✓")
 
     # 2. 改写与请求体
@@ -422,7 +422,6 @@ def main() -> int:
         e = must_raise(base.ProviderError, dead.download,
                        base.TaskState("t", "succeeded", video_url="https://cdn/x.mp4"), Path(d) / "c" / "a.mp4")
         assert e.code == "film.vendor.result_expired"
-    assert MiniMax.rate_note == {"code": "rate.minimax", "params": {}} and MiniMax.console_name == "console.minimax"
     print("10. 错误带代码 ✓")
 
     # 11. 取消：先查状态，只有排队中才发 DELETE；运行中、已结束都不发（对已结束的任务 DELETE 是删记录）

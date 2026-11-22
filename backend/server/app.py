@@ -1529,7 +1529,7 @@ def render_voices(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)
     voices, missing = render_voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
     info = render_voice.speakers(doc)
     chosen = s.get("voices") or {}
-    return {"provider": tts.name, "rate_note": tts.rate_note,
+    return {"provider": tts.name, "rate_note": compact(msg("rate.tts")),
             "voices": [{"id": x.id, "name": x.name, "gender": x.gender} for x in tts.caps.voices],
             "speakers": [{"key": k, "name": (info.get(k) or {}).get("name") or k or compact(msg("voice.unlabeled")),
                           "hint": (info.get(k) or {}).get("hint"), "voice": voices.get(k), "chosen": chosen.get(k)}

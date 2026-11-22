@@ -89,7 +89,6 @@ def _reject(r: httpx.Response, secrets: list) -> ProviderError:
 
 class VolcTts:
     name = "volc"
-    rate_note = {"code": "rate.volc_tts", "params": {}}
 
     def __init__(self, *, api_key: str = "", app_id: str = "", access_key: str = "",
                  client=None, url: str = URL, timeout: float = 60.0):

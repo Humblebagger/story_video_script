@@ -147,7 +147,6 @@ def main() -> int:
     # 6. 错误带代码
     e = must_raise(KeyError, providers.get_video, "nope")
     assert e.code == "film.settings.no_model" and e.params == {} and "nope" not in e.args[0]
-    assert FakeVideo().rate_note["code"] == "rate.fake"
     print("6. 错误带代码 ✓")
 
     # 脱敏：模型密钥、签名密钥、x-api-key 头

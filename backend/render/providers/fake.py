@@ -19,8 +19,6 @@ _REF = re.compile(r"\{ref:([^{}]+)\}")
 class FakeVideo:
     name = "fake"
     default_model = "fake-1"
-    console_name = "console.generic"
-    rate_note = {"code": "rate.fake", "params": {}}
     typical_sec = (60, 180)
 
     def __init__(self, *, polls_to_finish: int = 1, fail_with: Optional[str] = None,
@@ -100,7 +98,6 @@ class FakeVideo:
 class FakeTts:
     """假 TTS：不联网、不花钱，按字数出静音 WAV（每字 1/4.5 秒）；可指定前几次限流、一律失败或收下后失败（已计费）。"""
     name = "fake"
-    rate_note = {"code": "rate.fake_tts", "params": {}}
     RATE = 24000
 
     def __init__(self, *, fail_times: int = 0, fail_with: Optional[str] = None,

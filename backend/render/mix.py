@@ -7,6 +7,7 @@
 """
 import hashlib
 import json
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,7 +16,9 @@ from typing import Optional
 from pipeline.quality import DEFAULT_SPEECH_CPS
 from render import compose as shotcalc, voice
 from render.providers import get_video
-from server.messages import UserError, cause_of, compact, msg
+from server.messages import UserError, compact, msg, public_cause
+
+log = logging.getLogger("render.mix")
 
 FPS = 30
 SPEEDUP_MAX = 1.15
@@ -364,7 +367,8 @@ def compose(root, doc: dict, s: dict, *, tts, keyframes: dict, bgm: dict, draft:
         try:
             done, failed = voice.synthesize(lines, voices, tts, root, on_cost=on_cost)
         except voice.VoiceError as e:
-            raise MixError.of("compose.voice_failed", cause=cause_of(e))
+            log.warning("%s", f"配音失败 {type(e).__name__}: {e}")  # i18n: internal
+            raise MixError.of("compose.voice_failed", cause=public_cause(e))
     if failed:
         raise MixError.of("compose.lines_failed", items=[
             {"code": "compose.line_failed", "params": {"id": x["id"], "cause": x["error_msg"]}} for x in failed[:5]])

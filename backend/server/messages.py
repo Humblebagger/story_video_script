@@ -157,6 +157,13 @@ def cause_of(e: BaseException) -> dict:
     return compact(m) if m else vendor(_raw_text(e))
 
 
+def public_cause(e: BaseException) -> dict:
+    """异常 → 可嵌进给用户的消息的原因：带代码的给紧凑消息；没有代码的只说「未知原因」（原文由调用方写日志，
+    里面可能有厂商接口地址）。出片与合成用它；转换管线仍用 cause_of。"""
+    m = e.as_msg() if isinstance(e, UserError) else None
+    return compact(m) if m else compact(msg("film.vendor.unknown_cause"))
+
+
 def recast(cls, e: BaseException):
     """下层异常换成 cls（UserError 子类）：带代码的保留代码与参数，不带代码的保留原文（子计划 3 R4 的通用写法）。"""
     m = e.as_msg() if isinstance(e, UserError) else None
@@ -210,31 +217,20 @@ register("common.more_lines", "…还有 {n} 行未显示")
 register("common.internal", "服务器出了点问题，请稍后重试；仍失败请联系管理员")
 register("common.failed_generic", "没有成功，请重试；仍失败请联系管理员")
 
-# 控制台名与费率说明（厂商属性，前端按代码渲染）
-register("console.generic", "厂商控制台")
-register("console.ark", "方舟控制台")
-register("console.minimax", "MiniMax 开放平台")
-register("rate.fake", "假厂商：不联网、不花钱，金额只用于演示")
-register("rate.ark", "2026-10 方舟官方刊例价（2.0 为 46、fast 为 37、mini 为 23 元/百万 token，"
-                     "token ≈ 秒 × 宽 × 高 × 24 / 1024），未经账单核对")
-register("rate.minimax", "2026-11 MiniMax 官方刊例价（H3 768P 0.50、2K 0.80 元/秒，Highspeed、Lite 见档位；"
-                         "每段前 5 张参考图免费，超出另计），未经账单核对")
+# 费率说明（不点名厂商；前端按代码渲染）
+register("rate.video", "按公开刊例价估算，未经账单核对")
+register("rate.tts", "配音按字符计费，按公开刊例价估算，未经账单核对")
 # 厂商通用
-register("film.provider.unknown", "未知的视频厂商：{name}")
 register("film.provider.failed", "厂商返回失败")
 register("film.provider.generation_failed", "生成失败")
 register("film.provider.task_cancelled", "任务已取消")
-register("film.provider.rejected", "{detail}")
-register("film.provider.http_rejected", "HTTP {status}：{detail}")
 register("film.provider.submit_cut", "网络中断")
 register("film.provider.download_retry", "下载暂时失败（HTTP {status}）")
 register("film.provider.download_failed", "下载失败（HTTP {status}）")
 register("film.provider.download_connect", "下载视频时连接失败")
 # 假厂商
-register("film.fake.unknown_model", "所选的视频档位已不可用，请在出片设置里重新选择")
 register("film.fake.throttled", "假的限流")
 register("film.fake.no_task", "任务不存在：{id}")
-# 方舟 Seedance
 # ---- 生成服务侧的失败：中性命名，不带厂商名（spec vendor-name-cleanup §6.1） ----
 register("film.vendor.no_key", "视频生成服务还没有配置，请联系管理员")
 register("film.vendor.auth", "视频生成服务鉴权失败，请联系管理员")
@@ -270,52 +266,6 @@ register("film.input.prompt_too_long", "提示词超出上限 {max} 字（当前
 register("film.input.needs_ratio", "这个档位的参考生视频必须明确画幅，不支持自适应")
 register("film.input.bad_ratio", "这个档位不支持画幅 {ratio}，可选：{options}")
 register("film.input.request_too_big", "请求体约 {mb}MB，超过上限：减少参考图或换小一些的图")
-register("film.ark.no_key", "视频服务（方舟）还没有配置，请联系管理员")
-register("film.ark.unknown_model", "所选的视频档位已不可用，请在出片设置里重新选择")
-register("film.ark.connect_failed", "连接视频服务（方舟）失败")
-register("film.ark.throttled", "视频服务（方舟）繁忙")
-register("film.ark.http_ambiguous", "方舟返回 HTTP {status}")
-register("film.ark.unavailable", "方舟暂时不可用（HTTP {status}）")
-register("film.ark.not_json", "视频服务（方舟）返回了无法识别的响应")
-register("film.ark.no_task_id", "视频服务（方舟）受理了请求却没有返回任务编号")
-register("film.ark.task_expired", "任务超时")
-register("film.ark.no_result_url", "方舟没有返回结果地址")
-register("film.ark.download_failed", "下载失败（HTTP {status}）：结果地址 24 小时内有效")
-register("film.ark.auth", "视频服务（方舟）鉴权失败，请联系管理员")
-register("film.ark.overdue", "视频服务（方舟）账户欠费，暂时无法出片，请联系管理员")
-register("film.ark.access_denied", "视频服务（方舟）拒绝访问，请联系管理员")
-register("film.ark.model_unavailable", "所选的视频档位暂时不可用（模型未开通），请换一个档位或联系管理员")
-register("film.ark.limit_paused", "视频服务（方舟）已达到用量上限并暂停，请联系管理员")
-register("film.ark.quota", "额度不足或排队已满，持续失败请联系管理员")
-register("film.ark.input_moderated", "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试")
-register("film.ark.copyright", "这一段的描述可能涉及版权限制：改写后重试")
-register("film.ark.output_moderated", "生成的视频没通过内容审核：调整这一段的描述后重试")
-register("film.ark.output_copyright", "生成的视频可能涉及版权限制：调整这一段的描述后重试")
-# MiniMax
-register("film.minimax.insufficient_balance", "视频服务（MiniMax）账户余额不足，暂时无法出片，请联系管理员")
-register("film.minimax.invalid_key", "视频服务（MiniMax）鉴权失败，请联系管理员")
-register("film.minimax.moderated", "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试")
-register("film.minimax.url_expired", "结果地址已过期且重新查询失败；任务只能在 7 天内查询")
-register("film.minimax.label_first", "首帧")
-register("film.minimax.label_ref", "参考图 {id}")
-register("film.minimax.bad_image", "{label} 不是可用的图片地址")
-register("film.minimax.unsupported_format", "{label} 的格式 {mime} MiniMax 不支持（只收 JPG、PNG、WEBP、HEIC、HEIF）")
-register("film.minimax.corrupt_image", "{label} 的图片数据损坏")
-register("film.minimax.image_too_big", "{label} 有 {mb}MB，超过 MiniMax 单张 30MB 上限")
-register("film.minimax.no_key", "视频服务（MiniMax）还没有配置，请联系管理员")
-register("film.minimax.unknown_model", "所选的视频档位已不可用，请在出片设置里重新选择")
-register("film.minimax.connect_failed", "连接视频服务（MiniMax）失败")
-register("film.minimax.throttled", "MiniMax 限流或过载（HTTP {status}）")
-register("film.minimax.http_ambiguous", "MiniMax 返回 HTTP {status}")
-register("film.minimax.unavailable", "MiniMax 暂时不可用（HTTP {status}）")
-register("film.minimax.not_json", "视频服务（MiniMax）返回了无法识别的响应")
-register("film.minimax.bad_resolution", "这个档位不支持 {resolution}，可选：{options}")
-register("film.minimax.prompt_too_long", "提示词超出 MiniMax 上限 {max} 字（当前 {len} 字）")
-register("film.minimax.lite_needs_ratio", "MiniMax H3 Lite 的参考生视频必须明确画幅，不支持 adaptive")
-register("film.minimax.bad_ratio", "MiniMax 不支持画幅 {ratio}，可选：{options}")
-register("film.minimax.request_too_big", "请求体约 {mb}MB，超过 MiniMax 上限：减少参考图或换小一些的图")
-register("film.minimax.no_task_id", "视频服务（MiniMax）受理了请求却没有返回任务编号")
-register("film.minimax.no_result_url", "MiniMax 没有返回结果地址")
 
 # 验证（子计划 5 的逐条规则在 verify.rule.*，与这里不冲突）
 register("verify.gate.blocked", "分镜未通过独立验证，禁止进入付费渲染")
@@ -415,7 +365,7 @@ register("film.session.corrupt", "出片会话文件损坏：{path}，已保留�
 register("film.session.corrupt_admin", "出片记录文件已损坏，原文件已备份，请联系管理员处理")
 register("film.session.dir_gone", "出片会话目录已不存在（版本可能已删除）")
 register("film.session.none", "还没有出片会话")
-register("film.session.none_pick", "还没有出片会话：先到出片那一步选好厂商与档位")
+register("film.session.none_pick", "还没有出片会话：先到出片那一步选好档位")
 register("film.session.no_storyboard", "这个版本还没有分镜产物")
 register("film.file.not_found", "文件不存在")
 register("film.clip.not_found", "没有这一段：{id}")
@@ -423,7 +373,7 @@ register("film.settings.unknown", "未知的出片设置：{keys}")
 register("film.settings.no_model", "所选的视频档位已不可用，请在出片设置里重新选择")
 register("film.settings.bad_resolution", "这个档位不支持 {resolution}，可选：{options}")
 register("film.settings.bad_audio", "未知的声音模式：{mode}")
-register("film.settings.no_native_audio", "这家厂商不出原声，可选：全部配音、静音")
+register("film.settings.no_native_audio", "这个档位不出原声，可选：全部配音、静音")
 register("film.build.no_shots", "这个版本的分镜没有镜头，无法切段")
 register("film.build.in_flight", "有段在排队或生成中，等它们结束再改设置")
 register("film.build.incomplete", "分镜结构不完整，无法切段：{detail}")
@@ -443,15 +393,15 @@ register("film.cancel.not_running", "这一段不在排队或生成中")
 register("film.cancel.changed", "状态刚刚变了，请再试一次")
 register("film.cancel.kind_changed", "状态刚刚变了，这一段的取消方式不同了，请重新确认")
 register("film.cancel.lost", "已取消的这一次一直查不到结果，无法确认是否计费")
-register("film.submit.interrupted", "提交时服务中断，不确定厂商是否已受理；请到厂商控制台核对后再重做")
+register("film.submit.interrupted", "提交时服务中断，不确定生成服务是否已受理；请联系管理员核对后再重做")
 register("film.submit.over_budget", "超出单章上限，没有提交")
 register("film.submit.stale", "分镜或关键帧已改动，没有提交；请确认后重新出这一段")
 register("film.submit.build_failed", "组装请求失败：{cause}")
-register("film.submit.ambiguous", "提交时连接中断，不确定厂商是否已受理：请到{console}核对，确认没有生成再重做（{cause}）")
+register("film.submit.ambiguous", "提交时连接中断，不确定生成服务是否已受理：这一段可能已计费，请联系管理员核对后再重做（{cause}）")
 register("film.submit.unavailable", "厂商暂时不可用（已重试 {retries} 次）：{cause}")
 register("film.submit.crashed", "提交时出现意外错误，请重试；仍失败请联系管理员")
 register("film.provider.retrying", "厂商暂时不可达，正在重试：{cause}")
-register("film.poll.gave_up", "多次查询都失败，已放弃；请到厂商控制台核对这个任务：{cause}")
+register("film.poll.gave_up", "多次查询都失败，已放弃；请联系管理员核对这个任务：{cause}")
 register("film.download.keeps_failing", "下载一直失败，结果地址即将过期：{cause}")
 register("film.download.not_playable", "下载到的文件不是可播放的视频")
 # 自由节点
@@ -460,8 +410,8 @@ register("film.free.dup_ref", "参考里有重复的资产")
 register("film.free.no_style", "这部小说还没有风格图")
 register("film.free.unknown_asset", "分镜里没有这个资产：{id}")
 register("film.free.no_ref_image", "{name}（{id}）没有可用的参考图")
-register("film.free.over_refs", "参考超出当前厂商上限（{need} / {max}）")
-register("film.free.no_first_frame", "当前厂商不支持指定首帧")
+register("film.free.over_refs", "参考超出当前档位上限（{need} / {max}）")
+register("film.free.no_first_frame", "当前档位不支持指定首帧")
 register("film.free.no_keyframe", "镜头 {shot} 还没有关键帧")
 register("film.free.self_tail", "不能用自己的尾帧作首帧")
 register("film.free.no_tail", "{id} 还没有可用的尾帧")
@@ -485,9 +435,6 @@ register("film.free_invalid.keyframe_gone", "首帧用的关键帧没了：{shot
 register("film.free_invalid.tail_gone", "首帧用的尾帧找不到了：{id}")
 
 # 配音厂商与音色
-register("rate.volc_tts", "2026-10 火山引擎豆包语音合成 2.0 后付费刊例价（3 元/万字符），未经账单核对")
-register("rate.fake_tts", "假配音：不联网、不花钱，金额只用于演示")
-register("tts.unknown_provider", "未知的配音厂商：{name}")
 register("tts.unknown_voice", "未知的音色：{voice}")
 register("tts.unknown_voice_list", "没有这个音色：{voices}")
 register("tts.concat_mismatch", "拼接的语音片段参数不一致")
@@ -504,18 +451,6 @@ register("tts.vendor.bad_audio", "配音服务返回的音频无法解码")
 register("tts.vendor.cut", "配音服务中途断开")
 register("tts.vendor.connect_failed", "连接配音服务失败")
 register("tts.vendor.incomplete", "配音服务没有返回完整的音频")
-register("tts.volc.no_key", "配音服务还没有配置，请联系管理员")
-register("tts.volc.unavailable", "豆包语音暂时不可用（HTTP {status}）")
-register("tts.volc.rejected", "豆包语音拒绝了请求（{code}）：{detail}")
-register("tts.volc.rejected_http", "豆包语音拒绝了请求（HTTP {status}）")
-register("tts.volc.not_json", "豆包语音返回的不是 JSON")
-register("tts.volc.not_object", "豆包语音返回的不是 JSON 对象")
-register("tts.volc.failed", "豆包语音合成失败（{code}）")
-register("tts.volc.failed_detail", "豆包语音合成失败（{code}）：{detail}")
-register("tts.volc.bad_audio", "豆包语音返回的音频无法解码")
-register("tts.volc.cut", "豆包语音中途断开")
-register("tts.volc.connect_failed", "连接豆包语音失败")
-register("tts.volc.incomplete", "豆包语音没有返回完整的音频")
 register("voice.narrator", "旁白")
 register("voice.unlabeled", "（未标说话人）")
 register("compose.interrupted", "合成时服务中断，请重新合成（已合成的配音与已规整的片段会复用）")
@@ -740,6 +675,41 @@ register("assistant.too_many_steps", "步骤太多，先停在这里。可以换
 register("assistant.interrupted", "（已中断）")
 # 旧资产库
 register("library.empty_title", "作品名不能为空")
+
+
+def _legacy() -> dict:
+    out = {}
+    same = ("no_key", "connect_failed", "throttled", "http_ambiguous", "unavailable", "not_json", "no_task_id", "no_result_url")
+    for ns in ("film.ark", "film.minimax"):
+        out.update({f"{ns}.{x}": f"film.vendor.{x}" for x in same})
+        out[f"{ns}.unknown_model"] = "film.settings.no_model"
+    out.update({f"film.ark.{x}": f"film.vendor.{x}" for x in
+                ("access_denied", "limit_paused", "quota", "task_expired", "input_moderated", "copyright",
+                 "output_moderated", "output_copyright")})
+    out.update({"film.ark.auth": "film.vendor.auth", "film.minimax.invalid_key": "film.vendor.auth",
+                "film.ark.overdue": "film.vendor.balance", "film.minimax.insufficient_balance": "film.vendor.balance",
+                "film.ark.model_unavailable": "film.vendor.tier_unavailable",
+                "film.ark.download_failed": "film.provider.download_failed",
+                "film.minimax.moderated": "film.vendor.input_moderated",
+                "film.minimax.url_expired": "film.vendor.result_expired",
+                "film.minimax.bad_resolution": "film.settings.bad_resolution",
+                "film.minimax.lite_needs_ratio": "film.input.needs_ratio",
+                "film.fake.unknown_model": "film.settings.no_model", "film.provider.unknown": "film.settings.no_model",
+                "film.provider.rejected": "film.vendor.rejected", "film.provider.http_rejected": "film.vendor.rejected",
+                "tts.volc.not_object": "tts.vendor.not_json", "tts.volc.failed_detail": "tts.vendor.failed",
+                "tts.unknown_provider": "tts.vendor.misconfigured",
+                "rate.ark": "rate.video", "rate.minimax": "rate.video", "rate.fake": "rate.video",
+                "rate.volc_tts": "rate.tts", "rate.fake_tts": "rate.tts"})
+    out.update({f"film.minimax.{x}": f"film.input.{x}" for x in
+                ("label_first", "label_ref", "bad_image", "unsupported_format", "corrupt_image", "image_too_big",
+                 "prompt_too_long", "bad_ratio", "request_too_big")})
+    out.update({f"tts.volc.{x}": f"tts.vendor.{x}" for x in
+                ("no_key", "unavailable", "rejected", "rejected_http", "not_json", "failed", "bad_audio", "cut",
+                 "connect_failed", "incomplete")})
+    return out
+
+
+LEGACY.update(_legacy())
 
 
 if __name__ == "__main__":

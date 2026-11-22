@@ -38,16 +38,16 @@ const api = new ApiError('m', 409, { code: 'common.unknown', params: { message: 
 must(errValue(api) === api.detail, 'ApiError 的 detail 引用原样保留（渲染时再格式化）')
 must(errValue(new Error('plain')) === 'plain', '普通错误取 message')
 
-// 7. 真实代码：中英模板不同；金额、嵌套 cause、console 引用
+// 7. 真实代码：中英模板不同；金额、嵌套 cause
 const confirm = { code: 'film.run.confirm', params: { amount: { t: 'money', cny: 6 } }, message: '本次约 ¥6.00，请确认金额后再出片' }
 must(formatMsg(confirm, 'zh') === '本次约 ¥6.00，请确认金额后再出片', '真实代码中文')
 must(formatMsg(confirm, 'en') === en.srv.film.run.confirm.replace('{amount}', '¥6.00'), '真实代码英文')
 must(formatMsg(confirm, 'zh') !== formatMsg(confirm, 'en'), '中英模板不同')
 const cause = { code: 'film.run.nothing', params: {} }
-const amb = { code: 'film.submit.ambiguous', params: { console: { t: 'ref', code: 'console.minimax' }, cause } }
-must(formatMsg(amb, 'zh').includes('MiniMax 开放平台') && formatMsg(amb, 'zh').includes('没有要出的段'), 'console 引用与嵌套 cause（中文）')
-must(formatMsg(amb, 'en').includes(en.srv.console.minimax) && formatMsg(amb, 'en').includes(en.srv.film.run.nothing),
-  'console 引用与嵌套 cause（英文）')
+const amb = { code: 'film.submit.ambiguous', params: { cause } }
+must(formatMsg(amb, 'zh').includes('请联系管理员核对') && formatMsg(amb, 'zh').includes('没有要出的段'), '嵌套 cause（中文）')
+must(formatMsg(amb, 'en').includes(en.srv.film.run.nothing) && !formatMsg(amb, 'en').includes('{'),
+  '嵌套 cause（英文）')
 
 // 8. 英文缺译回落到中文模板（临时删掉英文条目，再还原）
 {
@@ -71,15 +71,15 @@ must(conflictCny(apiCoded) === 6, '带代码的 409 仍有重算金额')
 
 // 10. 旧会话里存的消息带已被拿掉的参数：按新模板渲染，不报错、不留占位符
 {
-  const old = { code: 'film.ark.connect_failed', params: { kind: 'ConnectError' } }
+  const old = { code: 'film.vendor.connect_failed', params: { kind: 'ConnectError' } }
   const enText = formatMsg(old, 'en')
-  must(enText === en.srv.film.ark.connect_failed && !enText.includes('{kind}') && !enText.includes('ConnectError'),
+  must(enText === en.srv.film.vendor.connect_failed && !enText.includes('{kind}') && !enText.includes('ConnectError'),
     '旧会话多余参数（en）渲染为新模板')
   const zhText = formatMsg(old, 'zh')
-  must(zhText === zh.srv.film.ark.connect_failed && !zhText.includes('{kind}') && !zhText.includes('ConnectError'),
+  must(zhText === zh.srv.film.vendor.connect_failed && !zhText.includes('{kind}') && !zhText.includes('ConnectError'),
     '旧会话多余参数（zh）渲染为新模板')
-  const unk = formatMsg({ code: 'film.ark.unknown_model', params: { model: 'doubao-x' } }, 'en')
-  must(unk === en.srv.film.ark.unknown_model && !unk.includes('doubao-x'), '旧会话 unknown_model 多余参数')
+  const unk = formatMsg({ code: 'film.settings.no_model', params: { model: 'doubao-x' } }, 'en')
+  must(unk === en.srv.film.settings.no_model && !unk.includes('doubao-x'), '旧会话 unknown_model 多余参数')
 }
 
 // 8. 参考编号：顶层 ref 附在渲染结果后；兜底 message 已带编号时不重复；嵌套原因不附

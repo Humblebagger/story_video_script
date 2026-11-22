@@ -100,6 +100,7 @@ def main() -> int:
     assert "owner" not in v and v["counts"] == {"planned": len(s["clips"])}
     assert v["remaining_cny"] == round(sum(c["estimate_cny"] for c in s["clips"]), 2)
     assert "fake" in v["options"]["providers"] and v["options"]["resolutions"] == ["480p", "720p"]
+    assert v["options"]["rate_note"] == {"code": "rate.video", "params": {}}
     seen_images = []
     real_est = base.estimate_cny
     base.estimate_cny = lambda d, c, r, images=0: (seen_images.append(images), real_est(d, c, r, images))[1]
@@ -197,7 +198,7 @@ def main() -> int:
     assert snap["attempts"][-1]["state"] == "submitting"
     assert sess.recover(root) is True
     c = clip(sess.load(root), second)
-    assert c["state"] == "failed" and "不确定厂商是否已受理" in c["error"]
+    assert c["state"] == "failed" and "不确定生成服务是否已受理" in c["error"]
     assert c["attempts"][-1]["state"] == "failed" and c["uncertain"] is True
     print("9. 重启恢复 ✓")
 

@@ -66,6 +66,18 @@ def main() -> int:
     assert view["provider"] == "minimax" and "video_url" in view["clips"][0]["attempts"][0], "不改入参"
     print("film_view ✓")
 
+    # 7. 旧数据经出口后的样子
+    m = P.public_msg({"code": "film.minimax.insufficient_balance", "params": {}, "message": "视频服务（MiniMax）账户余额不足…"})
+    assert m["code"] == "film.vendor.balance" and m["message"] == M.render_zh("film.vendor.balance", {})
+    m = P.public_msg({"code": "film.provider.rejected", "params": {"detail": {"t": "vendor", "text": "MiniMax: bad"}}})
+    assert m == M.msg("film.vendor.rejected")
+    m = P.public_msg({"code": "film.submit.ambiguous", "params": {
+        "console": {"t": "ref", "code": "console.minimax"}, "cause": {"code": "film.ark.connect_failed", "params": {"kind": "ConnectError"}}}})
+    assert m["params"] == {"cause": {"code": "film.vendor.connect_failed", "params": {}}} and not P.find_vendor_words(m)
+    m = P.public_msg({"code": "tts.volc.failed_detail", "params": {"code": "45000", "detail": {"t": "vendor", "text": "豆包…"}}})
+    assert m["code"] == "tts.vendor.failed" and m["params"] == {"code": "45000"}
+    print("旧代码归一 ✓")
+
     print("\nALL PASS")
     return 0
 

@@ -123,8 +123,8 @@ def main() -> int:
         spent = []
         one = lines[:1]
         done, failed = voice.synthesize(one, voices, billed, Path(d), on_cost=spent.append, sleep=sleeps.append)
-        assert not done and [x["error"] for x in failed] == ["中途断开"] and len(billed.calls) == 1, "不重试"
-        assert failed[0]["error_msg"] == {"t": "vendor", "text": "中途断开"}, "无代码的 BilledError：error_msg 是厂商原文"
+        assert not done and [x["error"] for x in failed] == ["未知原因"] and len(billed.calls) == 1, "不重试"
+        assert failed[0]["error_msg"] == {"code": "film.vendor.unknown_cause", "params": {}}, "无代码的 BilledError：只说未知原因"
         assert spent == [tts_cost(len(one[0]["text"]), billed.caps)], "收下后才失败照记花费"
         assert not list((Path(d) / voice.CACHE_DIR).glob("*.wav")), "失败不留缓存"
     print("6. 瞬时错误重试 3 次、明确失败不重试，收下后失败按已计费记账，失败汇总不中断其余各条 ✓")

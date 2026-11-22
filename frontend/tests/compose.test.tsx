@@ -152,7 +152,7 @@ let film = makeSession()
 const lastClip = film.clips[film.clips.length - 1].id
 
 const voicesInfo: VoicesInfo = {
-  provider: 'fake', rate_note: { code: 'rate.fake_tts', params: {} },
+  provider: 'fake', rate_note: { code: 'rate.tts', params: {} },
   voices: [{ id: 'fake-male', name: '假男声', gender: 'male' }, { id: 'fake-female', name: '假女声', gender: 'female' }],
   speakers: [
     { key: 'narration', name: { code: 'voice.narrator', params: {} }, hint: 'male_mature', voice: 'fake-male', chosen: null },
@@ -328,7 +328,7 @@ console.log('7. 没装 ffmpeg 的提示 ✓')
 // 8. 合成：先弹确认（配音金额、费率依据），不发请求；服务端金额变了（409）→ 换新金额再确认 → 带新金额发请求
 let n0 = calls.length
 await click(composeBtn())
-must(has('确认合成（¥0.18）') && has('费率依据：假配音') && !since(n0).some((c) => c.startsWith('POST')),
+must(has('确认合成（¥0.18）') && has('费率依据：配音按字符计费') && !since(n0).some((c) => c.startsWith('POST')),
   '确认前不发请求')
 nextConflict = 0.21
 n0 = calls.length
@@ -480,9 +480,9 @@ console.log('18. 预览读取失败可重试 ✓')
   await click(button('时间轴画布'))
   await click(tab('出片')!)
   await settle()
-  must(has(zh.srv.rate.fake_tts) && has(zh.srv.voice.narrator), '中文界面：费率说明与旁白名')
+  must(has(zh.srv.rate.tts) && has(zh.srv.voice.narrator), '中文界面：费率说明与旁白名')
   await lang('en')
-  must(has(en.srv.rate.fake_tts) && !has(zh.srv.rate.fake_tts), '英文界面：费率说明')
+  must(has(en.srv.rate.tts) && !has(zh.srv.rate.tts), '英文界面：费率说明')
   must(has(en.srv.voice.narrator) && !!container.querySelector('select[aria-label="Voice for Narrator"]'),
     '英文界面：旁白名与音色选择框的无障碍名')
   must(has('假男声'), '音色名是专有名，不翻译')
@@ -522,12 +522,12 @@ console.log('18. 预览读取失败可重试 ✓')
   composeDown = false
   await click(button('重试'))
   await lang('zh')
-  nextPostFail = { status: 422, detail: { code: 'tts.volc.no_key', params: {}, message: zh.srv.tts.volc.no_key } }
+  nextPostFail = { status: 422, detail: { code: 'tts.vendor.no_key', params: {}, message: zh.srv.tts.vendor.no_key } }
   await click(composeBtn())
   await click(button('确认合成'))
-  must(has(zh.srv.tts.volc.no_key) && !has(en.srv.tts.volc.no_key), '操作报错（中文）')
+  must(has(zh.srv.tts.vendor.no_key) && !has(en.srv.tts.vendor.no_key), '操作报错（中文）')
   await lang('en')
-  must(has(en.srv.tts.volc.no_key) && !has(zh.srv.tts.volc.no_key), '切英文：已显示的错误跟着变')
+  must(has(en.srv.tts.vendor.no_key) && !has(zh.srv.tts.vendor.no_key), '切英文：已显示的错误跟着变')
   console.log('19. 费率说明、旁白名、音色错误按界面语言渲染 ✓')
 
   // 20. 合成进度、失败原因、报告按界面语言渲染；旧数据（只有字符串）原样显示

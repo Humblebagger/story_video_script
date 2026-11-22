@@ -48,7 +48,6 @@ class TtsResult:
 class TtsProvider(Protocol):
     name: str
     caps: TtsCaps
-    rate_note: dict     # 费率依据（消息对象 {code, params}）：如实写出处、是否经账单核对
 
     def synthesize(self, text: str, voice: str, emotion: Optional[str], speed: float,
                    dest: Path) -> TtsResult: ...

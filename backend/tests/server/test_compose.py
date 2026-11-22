@@ -83,7 +83,7 @@ def main() -> int:
         and r.json()["detail"]["message"] == "没有这个音色：nope、nah", r.text
     assert next(x for x in v["speakers"] if x["key"] == "narration")["name"] == \
         {"code": "voice.narrator", "params": {}}
-    assert v["rate_note"] == {"code": "rate.fake_tts", "params": {}}
+    assert v["rate_note"] == {"code": "rate.tts", "params": {}}
     assert all(isinstance(x["name"], str) for x in v["speakers"] if x["key"] != "narration" and x["key"])
     from render.providers.base import ProviderError as _PE
 

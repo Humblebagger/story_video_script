@@ -191,7 +191,6 @@ def main() -> int:
         assert e.code == "tts.vendor.no_key" and str(e) == "配音服务还没有配置，请联系管理员"
         assert "VOLC_TTS_API_KEY" not in str(e) and ".env" not in str(e)
         assert any("VOLC_TTS_API_KEY" in x for x in g.lines), g.lines
-        assert VolcTts.rate_note == {"code": "rate.volc_tts", "params": {}}
         os.environ["VOLC_TTS_API_KEY"] = "env-key"
         assert VolcTts.from_env()._auth == {"X-Api-Key": "env-key"}
         providers._TTS_INSTANCES.pop("volc", None)

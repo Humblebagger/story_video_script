@@ -420,7 +420,7 @@ def view(s: dict, lenient: bool = False) -> dict:
         # 厂商不可用：结构仍完整（空值），界面读 models[...] / resolutions.map 不会崩；不为填充去初始化厂商
         out["options"] = {"providers": names(), "models": {}, "resolutions": [], "cny_per_sec": {},
                           "max_clip_sec": 0, "max_refs": 0, "first_frame": False, "frame_with_refs": False,
-                          "audio_modes": [], "rate_note": "", "typical_sec": list(base.DEFAULT_TYPICAL_SEC),
+                          "audio_modes": [], "rate_note": compact(msg("rate.video")), "typical_sec": list(base.DEFAULT_TYPICAL_SEC),
                           "default_note": _default_note(s)}
         return out
     out["options"] = {"providers": names(), "models": provider.models,
@@ -428,7 +428,7 @@ def view(s: dict, lenient: bool = False) -> dict:
                       "max_clip_sec": caps.max_clip_sec, "max_refs": caps.max_refs,
                       "first_frame": caps.first_frame, "frame_with_refs": caps.frame_with_refs,
                       "audio_modes": compose.audio_modes(caps),
-                      "rate_note": provider.rate_note,
+                      "rate_note": compact(msg("rate.video")),
                       "typical_sec": base.typical_sec(provider),
                       "default_note": _default_note(s)}
     return out

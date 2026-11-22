@@ -195,7 +195,6 @@ def main() -> int:
     assert e.code == "film.vendor.throttled"
     st = task({"id": "x", "status": "expired"}).poll("x")
     assert st.error_msg["code"] == "film.vendor.task_expired" and st.error == "任务超时"
-    assert Seedance.rate_note == {"code": "rate.ark", "params": {}} and Seedance.console_name == "console.ark"
     # 7b. 面向最终用户的文案：档位、异常类名不进界面，只进日志
     with _LogGrab("render.providers.seedance") as g:
         e = must_raise(base.ProviderError, sd.caps, "nope-tier")

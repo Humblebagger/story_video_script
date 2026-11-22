@@ -225,7 +225,7 @@ def main() -> int:
     assert c.post(R9 + "/session", headers=H, json={}).status_code == 200
     s = c.get(R9 + "/session", headers=H).json()
     assert s["gate"] == {"ok": True, "message": None}, s["gate"]
-    assert s["options"]["rate_note"] == {"code": "rate.fake", "params": {}}, s["options"]
+    assert s["options"]["rate_note"] == {"code": "rate.video", "params": {}}, s["options"]
     real_gate = app_mod._render_gate
 
     def failing_gate(doc, record):
@@ -306,7 +306,7 @@ def main() -> int:
     r = c.get(R14 + "/files/nope.mp4", headers=H)
     assert r.status_code == 404 and r.json()["detail"]["code"] == "film.file.not_found", r.text
     s = c.get(R14 + "/session", headers=H).json()
-    assert s["options"]["rate_note"] == {"code": "rate.fake", "params": {}}
+    assert s["options"]["rate_note"] == {"code": "rate.video", "params": {}}
     print("14. 出片接口错误带代码 ✓")
 
     # 14b. 合成与音色接口返回消息对象

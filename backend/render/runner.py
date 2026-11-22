@@ -14,30 +14,15 @@ from pathlib import Path
 from render import compose, session as sess
 from render.providers import base, get_video
 from server import error_refs
-from server.messages import cause_of, compact, msg, ref, render_zh, with_ref
+from server.messages import compact, msg, public_cause, with_ref
 
 
 log = logging.getLogger("render.runner")
 
 
-def _coded(zh: str, code: str, **params) -> dict:
-    """带代码的消息，中文兜底用调用方给的原样拼接（与改造前逐字一致，不受参数截断影响）。"""
-    m = msg(code, **params)
-    m["message"] = zh
-    return m
-
-
 def _scrub_secrets(text: str, provider) -> str:
     """日志文字脱敏：抹掉 Bearer 凭据、厂商对象持有的密钥与环境里配置的厂商密钥。"""
     return base.scrub_secrets(text, [getattr(provider, "_key", "")])
-
-
-def _console_ref(provider) -> dict:
-    """厂商的控制台代码引用；缺失、为空或不是登记过的代码都回落通用说法，不能让它挡住「提交不明」的落盘。"""
-    try:
-        return ref(getattr(provider, "console_name", "") or "console.generic")
-    except (KeyError, TypeError):
-        return ref("console.generic")
 
 
 BUSY = ("running", "downloading")
@@ -218,7 +203,8 @@ class Runner:
         if self.clock() - first >= give_up:
             self._first_fail.pop(key, None)
             return True
-        sess.note_error(root, c["id"], _coded(f"厂商暂时不可达，正在重试：{e}", "film.provider.retrying", cause=cause_of(e)), task_id)  # i18n: internal（中文兜底与旧文一致）
+        log.warning("%s", _scrub_secrets(f'暂时不可达 root={root} clip={c["id"]} task={task_id} {type(e).__name__}: {e}', None))  # i18n: internal
+        sess.note_error(root, c["id"], msg("film.provider.retrying", cause=public_cause(e)), task_id)
         return False
 
     def _clear(self, kind, root, c, task_id) -> None:
@@ -240,8 +226,8 @@ class Runner:
             # （TaskState 里的 failed）才算结束；查询一直出错到期限才放弃，并标待核对
             if self._transient("poll", root, c, a["task_id"], e, self.poll_give_up_sec):
                 log.warning("%s", _scrub_secrets(f'查询放弃 root={root} clip={c["id"]} task={a["task_id"]}', provider))  # i18n: internal
-                m = _coded("多次查询都失败，已放弃；请到厂商控制台核对这个任务：" + str(e), "film.poll.gave_up",
-                           cause=cause_of(e))
+                log.warning("%s", _scrub_secrets(f'查询放弃原因 root={root} clip={c["id"]} {type(e).__name__}: {e}', provider))  # i18n: internal
+                m = msg("film.poll.gave_up", cause=public_cause(e))
                 st = base.TaskState(a["task_id"], "failed", error=m["message"], error_msg=compact(m))
                 sess.poll_update(root, c["id"], st, 0.0, uncertain=True)
             return                                  # 下一轮再查
@@ -259,8 +245,8 @@ class Runner:
             files = self._retry(lambda: provider.download(st, dest))
         except base.TransientError as e:
             if self._transient("download", root, c, a["task_id"], e, self.download_give_up_sec):
-                sess.download_failed(root, c["id"], _coded("下载一直失败，结果地址即将过期：" + str(e), "film.download.keeps_failing",  # i18n: internal（中文兜底与旧文一致）
-                                                cause=cause_of(e)), cost)
+                log.warning("%s", _scrub_secrets(f'下载放弃 root={root} clip={c["id"]} {type(e).__name__}: {e}', provider))  # i18n: internal
+                sess.download_failed(root, c["id"], msg("film.download.keeps_failing", cause=public_cause(e)), cost)
             return                                  # 结果地址限时有效，下一轮再下
         except base.ProviderError as e:
             self._clear("download", root, c, a["task_id"])
@@ -325,9 +311,9 @@ class Runner:
             first = self._first_fail.setdefault(dl_key, self.clock())
             if self.clock() - first >= self.abandoned_give_up_sec:
                 self._first_fail.pop(dl_key, None)
+                log.warning("%s", _scrub_secrets(f'迟到结果下载放弃 root={root} task={tid} {type(e).__name__}: {e}', provider))  # i18n: internal
                 sess.settle_abandoned(root, tid, "failed", cost=cost,
-                                      error=_coded("下载一直失败，结果地址即将过期：" + str(e), "film.download.keeps_failing",  # i18n: internal
-                                                   cause=cause_of(e)))
+                                      error=msg("film.download.keeps_failing", cause=public_cause(e)))
             return                                  # 下一轮重下（已知成功，不再查询）
         except base.ProviderError as e:
             self._first_fail.pop(dl_key, None)
@@ -352,22 +338,18 @@ class Runner:
             sess.submit_failed(root, c["id"], e)
             return False
         except Exception as e:                     # 组装失败不能卡住整个队列
-            sess.submit_failed(root, c["id"], _coded(f"组装请求失败：{e}", "film.submit.build_failed",  # i18n: internal（中文兜底与旧文一致）
-                                                  cause=cause_of(e)))
+            log.warning("%s", _scrub_secrets(f'组装请求失败 root={root} clip={c["id"]} {type(e).__name__}: {e}', provider))  # i18n: internal
+            sess.submit_failed(root, c["id"], msg("film.submit.build_failed", cause=public_cause(e)))
             return False
         try:
             tid = self._retry(lambda: provider.submit(req))
         except base.AmbiguousSubmit as e:          # 厂商可能已建了付费任务：不重试
-            where = _console_ref(provider)
-            sess.submit_failed(root, c["id"], _coded(  # i18n: internal（中文兜底与旧文一致）
-                f"提交时连接中断，不确定厂商是否已受理：请到{render_zh(where['code'], {})}核对，"
-                f"确认没有生成再重做（{e}）", "film.submit.ambiguous", console=where, cause=cause_of(e)),
-                uncertain=True)
+            log.warning("%s", _scrub_secrets(f'提交结果不明 root={root} clip={c["id"]} {type(e).__name__}: {e}', provider))  # i18n: internal
+            sess.submit_failed(root, c["id"], msg("film.submit.ambiguous", cause=public_cause(e)), uncertain=True)
             return False
         except base.TransientError as e:
-            sess.submit_failed(root, c["id"], _coded(f"厂商暂时不可用（已重试 {self.retries} 次）：{e}",  # i18n: internal（中文兜底与旧文一致）
-                                                  "film.submit.unavailable", retries=self.retries,
-                                                  cause=cause_of(e)))
+            log.warning("%s", _scrub_secrets(f'提交不可用 root={root} clip={c["id"]} {type(e).__name__}: {e}', provider))  # i18n: internal
+            sess.submit_failed(root, c["id"], msg("film.submit.unavailable", retries=self.retries, cause=public_cause(e)))
             return False
         except base.ProviderError as e:
             log.warning("%s", _scrub_secrets(f'段失败 root={root} clip={c["id"]} code={getattr(e, "code", None)}', provider))  # i18n: internal

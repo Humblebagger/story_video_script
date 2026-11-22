@@ -67,7 +67,6 @@ def main() -> int:
             raise AssertionError("参数不一致应抛")
         except tts_base.ProviderError as e:
             assert e.code == "tts.concat_mismatch" and str(e) == "拼接的语音片段参数不一致"
-        assert FakeTts.rate_note == {"code": "rate.fake_tts", "params": {}}
     print("2. 假 TTS 出 WAV、时长按字数、拼接 ✓")
 
     os.environ["STORYBOARD_TTS_PROVIDER"] = "fake"

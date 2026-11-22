@@ -495,27 +495,27 @@ console.log('10c. 出错后轮询不断 ✓')
   function Cap() { setLoc = useI18n().setLocale; return null }
   const lang = async (l: 'zh' | 'en') => { await act(async () => { setLoc(l) }); await settle() }
   const [ca, cb] = [film!.clips[2].id, film!.clips[3].id]
-  Object.assign(clipOf(ca), { state: 'failed', error: '内容被 MiniMax 审核拦下（1026）：…',
-                              error_msg: { code: 'film.minimax.moderated', params: {} } })
+  Object.assign(clipOf(ca), { state: 'failed', error: '这一段的画面描述或参考图没通过内容审核：…',
+                              error_msg: { code: 'film.vendor.input_moderated', params: {} } })
   Object.assign(clipOf(cb), { state: 'failed', error: '旧中文原因', error_msg: null })
-  film = recount({ ...film!, options: { ...film!.options, rate_note: { code: 'rate.fake', params: {} } } })
+  film = recount({ ...film!, options: { ...film!.options, rate_note: { code: 'rate.video', params: {} } } })
   await act(async () => { root.render(<I18nProvider initial="zh"><Cap /><Host key="g1" withVersion /></I18nProvider>) })
   await click(button('时间轴画布'))
   await click(tab('出片')!)
   await settle()
   await click(bar(ca))
-  must(has(zh.srv.film.minimax.moderated) && !has(en.srv.film.minimax.moderated), '中文界面：按代码渲染中文')
+  must(has(zh.srv.film.vendor.input_moderated) && !has(en.srv.film.vendor.input_moderated), '中文界面：按代码渲染中文')
   await lang('en')
-  must(has(en.srv.film.minimax.moderated) && !has(zh.srv.film.minimax.moderated), '切英文：按代码渲染英文')
+  must(has(en.srv.film.vendor.input_moderated) && !has(zh.srv.film.vendor.input_moderated), '切英文：按代码渲染英文')
   await click(bar(cb))
   must(has('旧中文原因'), '只有旧 error 时原样显示，切英文也不变')
   await lang('zh')
   must(has('旧中文原因'), '切回中文仍原样显示')
   // 确认框的费率依据随语言变
   await click(button('出剩余'))
-  must(has(zh.srv.rate.fake), '确认框费率依据（中文）')
+  must(has(zh.srv.rate.video), '确认框费率依据（中文）')
   await lang('en')
-  must(has(en.srv.rate.fake) && !has(zh.srv.rate.fake), '确认框费率依据（英文）')
+  must(has(en.srv.rate.video) && !has(zh.srv.rate.video), '确认框费率依据（英文）')
   await lang('zh')
   await click(button('取消'))
   // 409 带代码仍取得到重算金额
