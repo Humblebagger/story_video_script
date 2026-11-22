@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -124,10 +125,19 @@ def main() -> int:
     vctx = dict(CTX, stage="video", clip_id="E01-C01")
     assert gate.lookup("他推门进屋。", vctx) == ("pass",)
     assert gate.lookup("新提示词", vctx) is None
-    script(reply(True, "drugs", "制毒方法"))
+    started, go = threading.Event(), threading.Event()
+
+    def hold(_m):
+        started.set()
+        assert go.wait(10), "测试没放行分类任务"
+        return reply(True, "drugs", "制毒方法")
+    script(hold)
     n = len(CALLS)
     assert gate.classify_async("新提示词", vctx) is True
+    assert started.wait(10), "首个分类任务应已开始"
+    assert gate.pending() == 1 and gate.lookup("新提示词", vctx) is None
     assert gate.classify_async("新提示词", vctx) is False, "同一 hash 同时只排一个"
+    go.set()
     wait_idle()
     r = gate.lookup("新提示词", vctx)
     assert r[0] == "block" and r[2] == "drugs" and len(CALLS) == n + 1
@@ -142,6 +152,30 @@ def main() -> int:
     assert gate.lookup("又一条提示词", vctx) == ("unavailable",)
     assert gate.lookup("又一条提示词", vctx) is None
     print("8. 异步不可用 ✓")
+
+    # 8b. 异步模型拒答：不进结论缓存，但每个等待者都读到同编号的 unspecified 拦截；读完清掉，再检查重新分类
+    started, go = threading.Event(), threading.Event()
+
+    def hold_refuse(_m):
+        started.set()
+        assert go.wait(10)
+        raise LLMError.coded("llm.content_blocked")
+    script(hold_refuse)
+    assert gate.classify_async("被拒的提示词", vctx) is True and started.wait(10)
+    assert gate.classify_async("被拒的提示词", vctx) is False, "第二个等待者"
+    go.set()
+    wait_idle()
+    assert store.get_verdict(text_hash("被拒的提示词")) is None
+    r1, r2 = gate.lookup("被拒的提示词", vctx), gate.lookup("被拒的提示词", vctx)
+    assert r1[0] == "block" and r1[2] == "unspecified" and r1 == r2, (r1, r2)
+    assert store.find_block(r1[1])["releasable"] is False
+    assert gate.lookup("被拒的提示词", vctx) is None, "读完即清，再来就是未知"
+    script(reply(False))
+    n = len(CALLS)
+    assert gate.classify_async("被拒的提示词", vctx) is True
+    wait_idle()
+    assert gate.lookup("被拒的提示词", vctx) == ("pass",) and len(CALLS) == n + 1, "重新分类"
+    print("8b. 异步模型拒答 ✓")
 
     # 9. 开关关掉：一律通过、不调模型、不查词表
     os.environ["STORYBOARD_SAFETY"] = "0"
@@ -180,6 +214,62 @@ def main() -> int:
     except gate.SafetyBlocked:
         pass
     print("10. 分条检查 ✓")
+
+    # 11. 迟到的拦截结果不覆盖放行：两个检查同时分类，先拦、放行、后拦 → 后一个按通过处理
+    s1, g1, s2, g2 = (threading.Event() for _ in range(4))
+
+    def slow(started, go):
+        def f(_m):
+            started.set()
+            assert go.wait(10)
+            return reply(True, "sexual", "露骨")
+        return f
+    script(slow(s1, g1), slow(s2, g2))
+    out = {}
+
+    def run(name):
+        try:
+            gate.check_sync("并发竞争文本", CTX)
+            out[name] = "pass"
+        except gate.SafetyBlocked as e:
+            out[name] = e
+        except BaseException as e:  # noqa: BLE001
+            out[name] = e
+    t1 = threading.Thread(target=run, args=("a",))
+    t1.start()
+    assert s1.wait(10)
+    t2 = threading.Thread(target=run, args=("b",))
+    t2.start()
+    assert s2.wait(10)
+    g1.set()
+    t1.join(10)
+    assert isinstance(out["a"], gate.SafetyBlocked), out
+    store.release(out["a"].ref, "root")
+    g2.set()
+    t2.join(10)
+    assert out["b"] == "pass", out
+    assert len([r for r in store.list_blocks() if r["excerpt"] == "并发竞争文本"]) == 1
+    assert store.get_verdict(text_hash("并发竞争文本"))["released"] is True
+    print("11. 迟到结果不覆盖放行 ✓")
+
+    # 12. 存储写盘失败：同步检查、分条检查、lookup 都按不可用处理（SafetyUnavailable），不是 OSError
+    real_write = store._write
+
+    def disk_full(path, data):
+        raise OSError("disk full")
+    store._write = disk_full
+    try:
+        must_raise(gate.SafetyUnavailable, gate.check_sync, "含有 child porn 的磁盘满", CTX)          # 词表命中记录失败
+        script(reply(False))
+        must_raise(gate.SafetyUnavailable, gate.check_sync, "磁盘满的正常文本", CTX)                     # 写通过结论失败
+        script(reply(False))
+        must_raise(gate.SafetyUnavailable, gate.check_items_sync, ["磁盘满条目甲", "磁盘满条目乙"], CTX)
+        assert gate.lookup("含有 child porn 的磁盘满二", vctx) == ("unavailable",)
+    finally:
+        store._write = real_write
+    script(reply(False))
+    assert gate.check_sync("磁盘满的正常文本", CTX) is None, "恢复后能正常检查"
+    print("12. 存储失败按不可用处理 ✓")
 
     assert blocklist.match("含有 child porn 的第三段") == "minor_sexual"
     print("\nALL PASS")

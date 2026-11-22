@@ -7,6 +7,7 @@ lookup + classify_async：出片线程用——tick 里只查缓存与词表，�
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
@@ -43,6 +44,16 @@ def unavailable_error() -> SafetyUnavailable:
     return SafetyUnavailable.of("safety.unavailable")
 
 
+@contextmanager
+def _guard():
+    """存储层写盘失败（磁盘满、无权限等）一律按「暂时无法检查」处理，不放行。"""
+    try:
+        yield
+    except OSError as e:
+        log.warning("内容检查存储失败：%s", type(e).__name__)  # i18n: internal
+        raise unavailable_error() from e
+
+
 def _make_chat():
     """分类用的模型调用（测试替换这个名字）。"""
     return classifier.make_chat()
@@ -50,17 +61,18 @@ def _make_chat():
 
 def _local(text: str, ctx: dict):
     """缓存与词表能定的结论：("pass",) / ("block", 编号, 类别)；定不了返回 None。"""
-    v = store.get_verdict(text_hash(text))
-    if v is not None and v["verdict"] == "pass":
-        return ("pass",)
-    if v is not None and v["verdict"] == "block":
-        store.touch_block(v["block_id"])
-        return ("block", v["block_id"], v["category"])
-    category = blocklist.match(text)
-    if category:
-        bid = store.record_block(text, category=category, reason_code=BLOCKLIST_REASON, ctx=ctx)
-        return ("block", bid, category)
-    return None
+    with _guard():
+        v = store.get_verdict(text_hash(text))
+        if v is not None and v["verdict"] == "pass":
+            return ("pass",)
+        if v is not None and v["verdict"] == "block":
+            store.touch_block(v["block_id"])
+            return ("block", v["block_id"], v["category"])
+        category = blocklist.match(text)
+        if category:
+            bid = store.record_block(text, category=category, reason_code=BLOCKLIST_REASON, ctx=ctx)
+            return ("pass",) if bid is None else ("block", bid, category)    # None：同时被管理员放行了
+        return None
 
 
 def _record_usage(chat, ctx: dict, ok: bool) -> None:
@@ -90,14 +102,15 @@ def _classify(text: str, ctx: dict):
     finally:
         if chat is not None:
             _record_usage(chat, ctx, ok)
-    if not verdict.blocked:
-        store.set_pass(text_hash(text))
-        return ("pass",)
-    if verdict.refused:
-        bid = store.record_block(text, category=UNSPECIFIED, reason_code=store.REFUSED, ctx=ctx, cache=False)
-        return ("block", bid, UNSPECIFIED)
-    bid = store.record_block(text, category=verdict.category, reason=verdict.reason, ctx=ctx)
-    return ("block", bid, verdict.category)
+    with _guard():
+        if not verdict.blocked:
+            store.set_pass(text_hash(text))
+            return ("pass",)
+        if verdict.refused:
+            bid = store.record_block(text, category=UNSPECIFIED, reason_code=store.REFUSED, ctx=ctx, cache=False)
+            return ("pass",) if bid is None else ("block", bid, UNSPECIFIED)
+        bid = store.record_block(text, category=verdict.category, reason=verdict.reason, ctx=ctx)
+        return ("pass",) if bid is None else ("block", bid, verdict.category)
 
 
 def check_sync(text, ctx: dict) -> None:
@@ -132,8 +145,9 @@ def check_items_sync(items, ctx: dict) -> None:
     result = _classify("\n\n".join(todo), ctx)
     if result[0] == "block":
         raise blocked_error(result[2], result[1])
-    for body in todo:
-        store.set_pass(text_hash(body))
+    with _guard():
+        for body in todo:
+            store.set_pass(text_hash(body))
 
 
 # ---------- 出片线程用：不在 tick 里调模型 ----------
@@ -141,7 +155,9 @@ def check_items_sync(items, ctx: dict) -> None:
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="safety")
 _plock = threading.Lock()
 _pending: set = set()      # 正在排队或分类中的文本 hash
-_failed: set = set()       # 最近一次分类不可用的文本 hash（lookup 读到一次后清掉）
+_waiters: dict = {}        # hash → 正在等这次分类结果的调用方个数
+_temp: dict = {}           # hash → [结论, 还剩几个等待者要读]：只在进程内、不进结论缓存的终态
+                           # 结论是 ("unavailable",)，或模型拒答的 ("block", 编号, 类别)；读完即清
 
 
 def pending() -> int:
@@ -149,40 +165,56 @@ def pending() -> int:
         return len(_pending)
 
 
+def _take_temp(h: str):
+    with _plock:
+        entry = _temp.get(h)
+        if entry is None:
+            return None
+        entry[1] -= 1
+        if entry[1] <= 0:
+            del _temp[h]
+        return entry[0]
+
+
 def lookup(text, ctx: dict):
-    """只查缓存与词表（毫秒级）：("pass",) / ("block", 编号, 类别) / ("unavailable",)；还不知道返回 None。"""
+    """只查缓存与词表（毫秒级）：("pass",) / ("block", 编号, 类别) / ("unavailable",)；还不知道返回 None。
+    异步分类的临时终态（不可用、模型拒答）每个等待者读到一次，读完清掉，再来就是 None（重新分类）。"""
     body = normalize(text)
     if not enabled() or not body:
         return ("pass",)
-    result = _local(body, ctx)
+    try:
+        result = _local(body, ctx)
+    except SafetyUnavailable:
+        return ("unavailable",)
     if result is not None:
         return result
-    h = text_hash(body)
-    with _plock:
-        if h in _failed:
-            _failed.discard(h)
-            return ("unavailable",)
-    return None
+    return _take_temp(text_hash(body))
 
 
 def classify_async(text, ctx: dict) -> bool:
-    """把分类交给专用线程池。同一文本已在排队返回 False。"""
+    """把分类交给专用线程池。同一文本已在排队返回 False（调用方也算一个等待者，各读一次结果）。"""
     body = normalize(text)
     h = text_hash(body)
     with _plock:
+        _waiters[h] = _waiters.get(h, 0) + 1
         if h in _pending:
             return False
         _pending.add(h)
-        _failed.discard(h)
+        _temp.pop(h, None)
 
     def job():
+        final = None
         try:
-            _classify(body, dict(ctx))
-        except Exception:  # noqa: BLE001  含 SafetyUnavailable：下一轮 lookup 报不可用
-            with _plock:
-                _failed.add(h)
+            r = _classify(body, dict(ctx))
+            if r[0] == "block" and store.get_verdict(h) is None:
+                final = r            # 没写进结论缓存的拦截（模型拒答）：只交给等待者
+        except Exception:  # noqa: BLE001  含 SafetyUnavailable：等待者读到 unavailable
+            final = ("unavailable",)
         finally:
             with _plock:
+                n = _waiters.pop(h, 1)
+                if final is not None:
+                    _temp[h] = [final, max(1, n)]
                 _pending.discard(h)
 
     _pool.submit(job)
