@@ -90,7 +90,9 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const flying = anyInFlight(s)
   const tried = s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))
   const tiers = s.options.tiers
-  const tierId = draft.tier ?? s.tier ?? ''
+  const picked0 = draft.tier ?? s.tier
+  const tierValid = tiers.some((o) => o.id === picked0)   // 当前档位不在可选表里（含 null）：下拉停在占位项
+  const tierId = tierValid ? picked0! : ''
   const tierName = (id: string | null) => {
     const x = tiers.find((o) => o.id === id)
     return x ? formatMsg(x.label, locale) : t('film.panel.tierGone')
@@ -118,7 +120,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
       <label className="field">
         <span>{t('film.panel.tier')}</span>
         <select data-testid="film-tier" value={tierId} onChange={(e) => pickTier(e.target.value)}>
-          {s.tier === null && !draft.tier ? <option value="" disabled>{t('film.panel.tierGone')}</option> : null}
+          {!tierValid ? <option value="" disabled>{t('film.panel.tierGone')}</option> : null}
           {tiers.map((o) => <option key={o.id} value={o.id}>{formatMsg(o.label, locale)}</option>)}
         </select>
       </label>

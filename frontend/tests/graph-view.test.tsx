@@ -73,7 +73,9 @@ function makeSession(): FilmSession {
     tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
     confirm_over_cny: 20, spent_cny: 0, clips, free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
     reserved_cny: 0, uncertain_count: 0,
-    options: { tiers: [], resolutions: ['480p', '720p'],
+    options: { tiers: [{ id: 'demo', label: { code: 'tier.demo', params: {} }, resolutions: ['480p', '720p'], default_resolution: '720p',
+                         cny_per_sec: { '480p': 0.5, '720p': 1 }, audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'] }],
+               resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
                frame_with_refs: false, audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'],
                rate_note: '假厂商：不联网、不花钱', typical_sec: [180, 420] },
@@ -537,7 +539,11 @@ console.log('6c. 采用位置与无障碍 ✓')
   const after = calls.slice(at)
   const i = after.findIndex((c) => c.startsWith(`POST /clips/${third}/cancel`))
   must(i >= 0 && after.slice(i + 1).includes('GET /session'), `取消后重新读取会话：${after.join(' | ')}`)
-  must(!!container.querySelector('[data-testid="node-graph"]') && has('原档位已不可用'), '界面没被降级响应弄坏（档位表为空时摘要走占位）')
+  // 取消响应是缺当前档位的降级视图；重读成功后必须换回正常视图：档位名、分辨率都在，没有占位
+  const { zh } = await import('../src/i18n/zh')
+  const sumText = () => container.querySelector('.film__settings summary')?.textContent ?? ''
+  must(!!container.querySelector('[data-testid="node-graph"]') && sumText().includes(zh.srv.tier.demo) && sumText().includes('720p')
+       && !has(zh.film.panel.tierGone), `重读成功后采用正常视图：${sumText()}`)
   lenientCancel = false
   console.log('6k. 取消后重读 ✓')
 }
@@ -563,6 +569,7 @@ console.log('6c. 采用位置与无障碍 ✓')
   must(![...el.querySelectorAll('button')].some((b) => b.textContent === '取消'), '取消入口消失')
   must(!has('有段在排队或生成中'), '设置不再因在跑被挡')
   must((container.querySelector('.ngv__err')?.textContent ?? '').includes('服务商暂不可用'), '显示读取错误')
+  must((container.querySelector('.film__settings summary')?.textContent ?? '').includes('原档位已不可用'), '读取失败时保留取消响应里的降级视图')
   await settle(100)
   console.log('6l. 取消后读取失败不退回 ✓')
 }
