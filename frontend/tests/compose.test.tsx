@@ -44,7 +44,7 @@ const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ '
             { id: 'E01-C02', state: 'planned', chosen: null, mute_native: false }],
   } as unknown as FilmSession
   const V: VoicesInfo = {
-    provider: 'fake', rate_note: '假配音', voices: [{ id: 'fake-male', name: '假男声', gender: 'male' }],
+    rate_note: '假配音', voices: [{ id: 'fake-male', name: '假男声', gender: 'male' }],
     speakers: [{ key: 'C09', name: '路人', hint: null, voice: null, chosen: null }], missing: ['C09'],
   }
   const base = { dirty: false, gate: null, draft: true }
@@ -140,10 +140,10 @@ function makeSession(): FilmSession {
   const last = clips[clips.length - 1]
   Object.assign(last, { state: 'planned', attempts: [], chosen: null })
   return {
-    provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
+    tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
     confirm_over_cny: 20, spent_cny: 100, voices: {}, final: null, clips, orphaned: [],
     counts: { done: clips.length - 1, planned: 1 }, remaining_cny: 5, reserved_cny: 0, uncertain_count: 0,
-    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['720p'],
+    options: { tiers: [], resolutions: ['720p'],
                cny_per_sec: { '720p': 1 }, max_clip_sec: 10, max_refs: 3,
                audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'], rate_note: '假厂商' },
   }
@@ -152,7 +152,7 @@ let film = makeSession()
 const lastClip = film.clips[film.clips.length - 1].id
 
 const voicesInfo: VoicesInfo = {
-  provider: 'fake', rate_note: { code: 'rate.tts', params: {} },
+  rate_note: { code: 'rate.tts', params: {} },
   voices: [{ id: 'fake-male', name: '假男声', gender: 'male' }, { id: 'fake-female', name: '假女声', gender: 'female' }],
   speakers: [
     { key: 'narration', name: { code: 'voice.narrator', params: {} }, hint: 'male_mature', voice: 'fake-male', chosen: null },

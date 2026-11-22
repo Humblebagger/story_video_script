@@ -83,16 +83,22 @@ function makeSession(): FilmSession {
     }
   }
   return recount({
-    provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+    tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
     confirm_over_cny: 20, spent_cny: 0, clips, orphaned: [], counts: {}, remaining_cny: 0,
     reserved_cny: 0, uncertain_count: 0,
-    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
+    options: { tiers: [
+                 { id: 'demo', label: { code: 'tier.demo', params: {} }, resolutions: ['480p', '720p'], default_resolution: '720p',
+                   cny_per_sec: { '480p': 0.5, '720p': 1 }, audio_modes: ['tts_all', 'all_native', 'silent'] },
+                 { id: 'a-fast', label: { code: 'tier.a_fast', params: {} }, resolutions: ['768P', '480P'], default_resolution: '768P',
+                   cny_per_sec: { '768P': 0.4, '480P': 0.26 }, audio_modes: ['tts_all', 'silent'] },
+               ], resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3,
                audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'],
-               rate_note: '假厂商：不联网、不花钱', default_note: null },
+               rate_note: { code: 'rate.video', params: {} } },
   })
 }
 
+let lastSettings: Record<string, unknown> | undefined
 const clipOf = (id: string) => film!.clips.find((c) => c.id === id)!
 
 /** 模拟出片线程跑完一次：追加一次成功的尝试并采用它 */
@@ -128,7 +134,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
                 final: null, bgm: [], tools: true, music: {}, report: null })
   }
   if (sub === '/voices' && method === 'GET') {
-    return ok({ provider: 'fake', rate_note: '', voices: [], speakers: [], missing: [] })
+    return ok({ rate_note: '', voices: [], speakers: [], missing: [] })
   }
   calls.push(`${method} ${sub}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`)
   if (sub.startsWith('/files/')) {
@@ -164,6 +170,11 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
       Object.assign(c, { state: 'queued', queued_at: new Date().toISOString(), uncertain: false, error: null })
     }
     film = recount(film!)
+    return ok(film)
+  }
+  if (sub === '/session' && method === 'PATCH') {
+    lastSettings = body
+    film = recount({ ...film!, ...(body.tier ? { tier: body.tier } : {}) })
     return ok(film)
   }
   let m = sub.match(/^\/clips\/([^/]+)\/run$/)
@@ -275,7 +286,7 @@ const dlg = () => win.document.body.querySelector('[data-testid="money-confirm"]
 // 4. 批量：主按钮变「出剩余 N 段」；点了先弹确认（列各段、费率依据），不发请求
 const n = film!.clips.length - 1
 await click(button(`出剩余 ${n} 段`))
-must(has('确认出片') && has('费率依据：假厂商'), '弹出确认框、写费率依据')
+must(has('确认出片') && has('费率依据：按公开刊例价估算，未经账单核对'), '弹出确认框、写费率依据')
 must(!!dlg() && dlg()!.querySelectorAll('.film__rows tr').length === n, '确认框列出各段')
 must(!calls.some((c) => c.startsWith('POST /run')), '确认前不发批量请求')
 console.log('4. 批量先确认 ✓')
@@ -324,7 +335,7 @@ film = recount(film!)
 await refresh()
 must(has('1 段结果不明'), '总览提示待核对的段数')
 await click(bar(third))
-must(has('请到厂商控制台核对'), '段详情提示到控制台核对')
+must(has('请联系管理员核对'), '段详情提示联系管理员核对')
 before = calls.length
 await click(button('出这一段'))
 must(dlg()!.textContent!.includes('结果不明'), '确认框里写明结果不明')
@@ -472,16 +483,37 @@ console.log('10c. 出错后轮询不断 ✓')
   await settle()
 }
 
-// 10f. 缺省回落提示：options.default_note 为代码时出片设置区显示对应文案，为 null 时不显示
+// 10f. 设置区只有一个档位下拉：选项是中性名字；没有「厂商」下拉；摘要一行带档位名
 {
-  const NOTE = 'MiniMax 还没有开通，新会话先用 Seedance'
-  film = { ...film!, options: { ...film!.options, default_note: 'minimax_key_missing' } }
+  const { zh } = await import('../src/i18n/zh')
+  const setV = Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, 'value')!.set!
+  const pick = async (el: HTMLSelectElement, v: string) => {
+    await act(async () => { setV.call(el, v); el.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event) })
+    await settle()
+  }
+  // 有段在跑时设置不能改：先把还在跑的段放回待出
+  for (const c of film!.clips) if (['queued', 'running', 'downloading'].includes(c.state)) c.state = 'planned'
+  film = recount(film!)
   await refresh()
-  must((container.textContent ?? '').includes(NOTE), '有 default_note 时显示提示')
-  film = { ...film!, options: { ...film!.options, default_note: null } }
+  const sel = container.querySelector<HTMLSelectElement>('select[data-testid="film-tier"]')!
+  must(!!sel && [...sel.options].map((o) => o.textContent).join('|') === `${zh.srv.tier.demo}|${zh.srv.tier.a_fast}`, '档位下拉的选项')
+  must(container.querySelectorAll('.film__settings select').length === 3, '设置区只有档位、分辨率、声音三个下拉（没有厂商下拉）')
+  must((container.querySelector('.film__settings summary')?.textContent ?? '').includes(zh.srv.tier.demo), '摘要带档位名')
+  // 换到引擎 A · 快速：分辨率选项换成那一档的，当前 720p 不在其中 → 草稿取那一档的缺省 768P
+  await pick(sel, 'a-fast')
+  const res = container.querySelector<HTMLSelectElement>('select[data-testid="film-resolution"]')!
+  must([...res.options].map((o) => o.value).join('|') === '768P|480P' && res.value === '768P', '换档带出分辨率')
+  await click(button('应用设置'))
+  const body = lastSettings as Record<string, unknown>
+  must(body.tier === 'a-fast' && body.resolution === '768P' && !('provider' in body) && !('model' in body), '请求体用档位 id')
+  // 10f-2. 原档位已不可用（tier 为 null）：下拉停在占位项，摘要写「原档位已不可用」
+  film = { ...film!, tier: null }
   await refresh()
-  must(!(container.textContent ?? '').includes('MiniMax 还没有开通'), '为 null 时不显示')
-  console.log('10f. 缺省回落提示 ✓')
+  must((container.querySelector('.film__settings summary')?.textContent ?? '').includes(zh.film.panel.tierGone), '摘要')
+  must(container.querySelector<HTMLSelectElement>('select[data-testid="film-tier"]')!.value === '', '下拉占位')
+  film = { ...film!, tier: 'demo' }
+  await refresh()
+  console.log('10f. 档位下拉 ✓')
 }
 
 // 10g. 后端错误按界面语言渲染：有 error_msg 按代码、没有就原样显示旧的 error；错误条存原始 detail，切语言跟着变

@@ -710,6 +710,7 @@ export type AudioMode = 'tts_all' | 'dialogue_native' | 'all_native' | 'silent'
 
 /** 一段的一次出片尝试 */
 export interface FilmAttempt {
+  /** 这次任务的短键（不是服务商的任务号）；还没提交为 null */
   task_id: string | null
   /** cancelled：服务商确认已取消（不计费）；abandoned：用户不等了，服务商那边可能还在跑，后台盯到有结果 */
   state: 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abandoned'
@@ -851,9 +852,18 @@ export interface FilmFocus {
   taskId?: string
 }
 
+/** 出片档位：中性 id 与显示名（后端 render/tiers.py）；带这一档的可选分辨率、每秒价格、声音模式 */
+export interface FilmTierOption {
+  id: string
+  label: MsgLike
+  resolutions: string[]
+  default_resolution: string
+  cny_per_sec: Record<string, number>
+  audio_modes: AudioMode[]
+}
+
 export interface FilmSettings {
-  provider?: string
-  model?: string
+  tier?: string
   resolution?: string
   audio_mode?: AudioMode
   budget_cny?: number
@@ -861,8 +871,8 @@ export interface FilmSettings {
 }
 
 export interface FilmSession {
-  provider: string
-  model: string
+  /** 当前档位（中性 id）；原档位已不可用时为 null */
+  tier: string | null
   resolution: string
   audio_mode: AudioMode
   /** 上限按版本计 */
@@ -895,8 +905,7 @@ export interface FilmSession {
   /** 兼容：message 在后端子计划 4 之前是字符串 */
   gate?: { ok: boolean; message: MsgLike }
   options: {
-    providers: string[]
-    models: Record<string, { label: string }>
+    tiers: FilmTierOption[]
     resolutions: string[]
     cny_per_sec: Record<string, number>
     max_clip_sec: number
@@ -909,8 +918,6 @@ export interface FilmSession {
     rate_note: MsgLike
     /** 一段通常要等多久（秒，[下限, 上限]）：只用于显示「通常 x–y 分钟」 */
     typical_sec?: [number, number]
-    /** 缺省厂商回落到 Seedance 的原因代码（文案走 i18n）；没有回落为 null */
-    default_note: 'minimax_key_missing' | null
   }
 }
 
@@ -931,8 +938,6 @@ export interface VoiceSpeaker {
 }
 
 export interface VoicesInfo {
-  /** 这个声音模式不配音时为 null（音色表为空） */
-  provider: string | null
   rate_note: MsgLike
   voices: TtsVoice[]
   speakers: VoiceSpeaker[]

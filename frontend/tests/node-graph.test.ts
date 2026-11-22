@@ -20,10 +20,10 @@ const free = (id: string, over: Partial<FilmFreeNode> = {}): FilmFreeNode => ({
   over_refs: false, ...over,
 })
 const session = (clips: FilmClip[], frees: FilmFreeNode[] = []): FilmSession => ({
-  provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
+  tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
   confirm_over_cny: 20, spent_cny: 0, clips, free: frees, orphaned: [], counts: {}, reserved_cny: 0,
   uncertain_count: 0, remaining_cny: 0,
-  options: { providers: ['fake'], models: {}, resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
+  options: { tiers: [], resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
              max_refs: 3, audio_modes: ['tts_all'], rate_note: '' },
 })
 const img = (id: string) => [{ view: 'front' as const, uri: `https://img/${id}.png` }]

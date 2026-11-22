@@ -60,6 +60,12 @@ for (const s of ['从文字，到成片。', '小说转分镜', '完整性检查
   must(html().includes(s), `首页应有「${s}」`)
 }
 must(!!q('#features') && !!q('#workflow') && !!q('#faq'), '三个锚点')
+{
+  const { zh } = await import('../src/i18n/zh')
+  const trig = [...win.document.querySelectorAll('#faq button')].find((b) => b.textContent === zh.landing.faq.models.q)!
+  await click(trig)
+  must(html().includes(zh.landing.faq.models.a), 'FAQ「支持哪些模型」的回答渲染出来')
+}
 must(!q('[data-testid="auth-dialog"]'), '有账号时首页不自动弹出')
 console.log('1. 中文首页 ✓')
 

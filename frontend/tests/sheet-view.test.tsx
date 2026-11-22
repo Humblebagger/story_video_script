@@ -59,13 +59,13 @@ const clip = (id: string, shots: string[], over: Partial<FilmClip> = {}): FilmCl
   attempts: [], chosen: null, mute_native: false, uncertain: false, error: null, state: 'planned', ...over,
 })
 const film = {
-  provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
+  tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
   confirm_over_cny: 20, spent_cny: 0, orphaned: [], counts: {}, reserved_cny: 0, uncertain_count: 0, remaining_cny: 0,
   clips: [
     clip('E01-C01', ['E01-SH001', 'E01-SH002'], { duration: 8.5, prompt: LONG }),
     clip('E01-C02', ['E01-SH003'], { duration: 4, prompt: '中景，老栓走上大街' }),
   ],
-  options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['720p'], cny_per_sec: {},
+  options: { tiers: [], resolutions: ['720p'], cny_per_sec: {},
              max_clip_sec: 10, max_refs: 3, audio_modes: ['tts_all'], rate_note: '假厂商：不联网、不花钱' },
 } as unknown as FilmSession
 

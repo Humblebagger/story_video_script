@@ -66,7 +66,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
         </section>
       ) : (
         <>
-          <Settings key={[s.provider, s.model, s.resolution, s.audio_mode, s.budget_cny, s.confirm_over_cny].join('|')}
+          <Settings key={[s.tier, s.resolution, s.audio_mode, s.budget_cny, s.confirm_over_cny].join('|')}
                     s={s} film={film} />
           <Precheck s={s} gateOk={!film.gate} />
           <Overview s={s} film={film} selected={selected} blocked={blocked} />
@@ -84,53 +84,58 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
 
 /** 设置：首次展开，出过片后折叠。改了才能「应用设置」；有段在跑时不能改 */
 function Settings({ s, film }: { s: FilmSession; film: Film }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [draft, setDraft] = useState<FilmSettings>({})
-  const val = <K extends keyof FilmSettings>(k: K) => draft[k] ?? s[k]
+  const val = <K extends 'resolution' | 'audio_mode' | 'budget_cny' | 'confirm_over_cny'>(k: K) => draft[k] ?? s[k]
   const flying = anyInFlight(s)
   const tried = s.clips.some((c) => c.attempts.some((a) => a.state === 'succeeded'))
-  const otherProvider = !!draft.provider && draft.provider !== s.provider
+  const tiers = s.options.tiers
+  const tierId = draft.tier ?? s.tier ?? ''
+  const tierName = (id: string | null) => {
+    const x = tiers.find((o) => o.id === id)
+    return x ? formatMsg(x.label, locale) : t('film.panel.tierGone')
+  }
+  // 草稿换了档位：分辨率、价格、声音模式的可选项取那一档的；没换就用会话当前的
+  const picked = draft.tier && draft.tier !== s.tier ? tiers.find((o) => o.id === draft.tier) : undefined
+  const resolutions = picked ? picked.resolutions : s.options.resolutions
+  const prices = picked ? picked.cny_per_sec : s.options.cny_per_sec
+  const audioModes = picked ? picked.audio_modes : s.options.audio_modes
+  const pickTier = (id: string) => {
+    const nt = tiers.find((o) => o.id === id)
+    if (!nt) return
+    setDraft({
+      ...draft, tier: id,
+      resolution: nt.resolutions.includes(val('resolution')) ? draft.resolution : nt.default_resolution,
+      audio_mode: nt.audio_modes.includes(val('audio_mode')) ? draft.audio_mode : 'tts_all',
+    })
+  }
   return (
     <details className="film__settings film__card" open={!tried}>
       <summary>
-        {t('film.panel.settingsSum', { model: s.options.models[s.model]?.label ?? s.model, res: s.resolution,
+        {t('film.panel.settingsSum', { tier: tierName(s.tier), res: s.resolution,
           audio: label(AUDIO_MODE, s.audio_mode), cap: yuan(s.budget_cny) })}
       </summary>
       <label className="field">
-        <span>{t('film.panel.provider')}</span>
-        <select value={val('provider')}
-                onChange={(e) => setDraft({ ...draft, provider: e.target.value, model: undefined, resolution: undefined })}>
-          {[...new Set([s.provider, ...s.options.providers])].map((p) => <option key={p} value={p}>{p}</option>)}
+        <span>{t('film.panel.tier')}</span>
+        <select data-testid="film-tier" value={tierId} onChange={(e) => pickTier(e.target.value)}>
+          {s.tier === null && !draft.tier ? <option value="" disabled>{t('film.panel.tierGone')}</option> : null}
+          {tiers.map((o) => <option key={o.id} value={o.id}>{formatMsg(o.label, locale)}</option>)}
         </select>
       </label>
-      {s.options.default_note ? <p className="tlc__kfnote">{t(`film.panel.defaultNote.${s.options.default_note}`)}</p> : null}
-      {otherProvider ? (
-        <p className="tlc__kfnote">{t('film.panel.providerNote')}</p>
-      ) : (
-        <>
-          <label className="field">
-            <span>{t('film.panel.tier')}</span>
-            <select value={val('model')}
-                    onChange={(e) => setDraft({ ...draft, model: e.target.value, resolution: undefined })}>
-              {Object.entries(s.options.models).map(([id, m]) => <option key={id} value={id}>{m.label}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span>{t('film.panel.resolution')}</span>
-            <select value={val('resolution')} onChange={(e) => setDraft({ ...draft, resolution: e.target.value })}>
-              {s.options.resolutions.map((r) => {
-                const price = s.options.cny_per_sec[r]
-                return <option key={r} value={r}>{`${r}${price !== undefined ? t('film.panel.resPrice', { price }) : ''}`}</option>
-              })}
-            </select>
-          </label>
-        </>
-      )}
+      <label className="field">
+        <span>{t('film.panel.resolution')}</span>
+        <select data-testid="film-resolution" value={val('resolution')} onChange={(e) => setDraft({ ...draft, resolution: e.target.value })}>
+          {resolutions.map((r) => {
+            const price = prices[r]
+            return <option key={r} value={r}>{`${r}${price !== undefined ? t('film.panel.resPrice', { price }) : ''}`}</option>
+          })}
+        </select>
+      </label>
       <label className="field">
         <span>{t('film.panel.sound')}</span>
         <select value={val('audio_mode')}
                 onChange={(e) => setDraft({ ...draft, audio_mode: e.target.value as AudioMode })}>
-          {s.options.audio_modes.map((m) => <option key={m} value={m}>{label(AUDIO_MODE, m)}</option>)}
+          {audioModes.map((m) => <option key={m} value={m}>{label(AUDIO_MODE, m)}</option>)}
         </select>
       </label>
       <label className="field">

@@ -1179,10 +1179,10 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
 {
   const { pokeFilmTasks } = await import('../src/filmTasks')
   // 合成任务点开：画布已打开、侧栏停在别的页签、路由 state 已是 panel:'film' 时，再点一次仍切到「出片」并显示合成区
-  const session = { provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+  const session = { tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
     confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
     reserved_cny: 0, uncertain_count: 0,
-    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
+    options: { tiers: [], resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
                frame_with_refs: false, audio_modes: ['tts_all', 'silent'], rate_note: '假厂商', typical_sec: [180, 420] } }
   const d = await boot('/novels/n1/overview', 'alice')
@@ -1218,10 +1218,10 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
   const { pokeFilmTasks } = await import('../src/filmTasks')
   // 面板取消：带用户确认的种类；服务端已转成扣费种类回 409 → 重读后重新确认，确认前不发第二次
   const e = await boot('/novels/n1/overview', 'alice')
-  filmSession = { provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'silent', budget_cny: 100000,
+  filmSession = { tier: 'demo', resolution: '720p', audio_mode: 'silent', budget_cny: 100000,
     confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
     reserved_cny: 0, uncertain_count: 0,
-    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['720p'],
+    options: { tiers: [], resolutions: ['720p'],
                cny_per_sec: { '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
                frame_with_refs: false, audio_modes: ['silent'], rate_note: '假厂商', typical_sec: [180, 420] } }
   await act(async () => { await e.router.navigate('/novels/n1/chapters/c1/render/canvas') })
@@ -1268,10 +1268,10 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
 {
   const { pokeFilmTasks } = await import('../src/filmTasks')
   // 已打开画布且会话已加载时点片段任务：state 同时带 focus 与 panelReq，两个一次性请求都要清掉（不互相写回）
-  const session = { provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+  const session = { tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
     confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
     reserved_cny: 0, uncertain_count: 0,
-    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
+    options: { tiers: [], resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
                frame_with_refs: false, audio_modes: ['tts_all', 'silent'], rate_note: '假厂商', typical_sec: [180, 420] } }
   const d = await boot('/novels/n1/overview', 'alice')

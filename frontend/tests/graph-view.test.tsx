@@ -70,10 +70,10 @@ function makeSession(): FilmSession {
     }
   }
   return recount({
-    provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+    tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
     confirm_over_cny: 20, spent_cny: 0, clips, free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
     reserved_cny: 0, uncertain_count: 0,
-    options: { providers: ['fake'], models: { 'fake-1': { label: '假厂商' } }, resolutions: ['480p', '720p'],
+    options: { tiers: [], resolutions: ['480p', '720p'],
                cny_per_sec: { '480p': 0.5, '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
                frame_with_refs: false, audio_modes: ['tts_all', 'dialogue_native', 'all_native', 'silent'],
                rate_note: '假厂商：不联网、不花钱', typical_sec: [180, 420] },
@@ -125,7 +125,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
                 final: null, bgm: [], tools: true, music: {}, report: null })
   }
   if (sub === '/voices' && method === 'GET') {
-    return ok({ provider: 'fake', rate_note: '', voices: [], speakers: [], missing: [] })
+    return ok({ rate_note: '', voices: [], speakers: [], missing: [] })
   }
   calls.push(`${method} ${sub}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`)
   if (sub.startsWith('/files/')) {
@@ -190,7 +190,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: unknown }) => {
     if (outcome === 'abandoned') it.attempts[it.attempts.length - 1].state = 'abandoned'
     it.state = it.chosen === null ? 'planned' : 'done'
     film = recount(film!)
-    return ok(lenientCancel ? { ...film, options: { ...film!.options, models: {}, resolutions: [] }, cancel_outcome: outcome }
+    return ok(lenientCancel ? { ...film, options: { ...film!.options, tiers: [], resolutions: [] }, cancel_outcome: outcome }
                             : { ...film, cancel_outcome: outcome })
   }
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
@@ -262,7 +262,7 @@ function Host() {
 await act(async () => { root.render(<Host />) })
 await click(button('时间轴画布'))
 await click(exact('节点图'))
-must(!!container.querySelector('[data-testid="node-graph"]') && has('先在出片页签选好厂商与档位'), '没会话时的空状态')
+must(!!container.querySelector('[data-testid="node-graph"]') && has('先在出片页签选好档位'), '没会话时的空状态')
 await click(button('打开出片页签'))
 must(tab('出片')?.getAttribute('aria-pressed') === 'true', '打开出片页签')
 await click(button('建立出片会话'))
@@ -537,7 +537,7 @@ console.log('6c. 采用位置与无障碍 ✓')
   const after = calls.slice(at)
   const i = after.findIndex((c) => c.startsWith(`POST /clips/${third}/cancel`))
   must(i >= 0 && after.slice(i + 1).includes('GET /session'), `取消后重新读取会话：${after.join(' | ')}`)
-  must(!!container.querySelector('[data-testid="node-graph"]') && has('假厂商'), '界面没被降级响应弄坏')
+  must(!!container.querySelector('[data-testid="node-graph"]') && has('原档位已不可用'), '界面没被降级响应弄坏（档位表为空时摘要走占位）')
   lenientCancel = false
   console.log('6k. 取消后重读 ✓')
 }
@@ -658,7 +658,7 @@ const mkClip = (id: string, shots: string[]) => ({
   attempts: [], chosen: null, mute_native: false, uncertain: false, error: null, state: 'planned',
 })
 const session = {
-  provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
+  tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
   confirm_over_cny: 20, spent_cny: 0, free: [], orphaned: [], counts: {}, reserved_cny: 0, uncertain_count: 0,
   remaining_cny: 0,
   clips: [
@@ -666,7 +666,7 @@ const session = {
     mkClip('E01-C2', ['E01-SH004', 'E01-SH005', 'E01-SH006', 'E01-SH007', 'E01-SH099']),
     mkClip('E01-C3', []),
   ],
-  options: { providers: ['fake'], models: {}, resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
+  options: { tiers: [], resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
              max_refs: 3, audio_modes: ['tts_all'], rate_note: '' },
 } as unknown as FilmSession
 const film = { session, busy: false, error: null, files: {}, ensure: () => {}, createFree: async () => {} } as unknown as Film
@@ -724,7 +724,7 @@ await act(async () => { root.unmount() })
 const { NodeGraph } = await import('../src/components/NodeGraph')
 
 const session = {
-  provider: 'fake', model: 'fake-1', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
+  tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 200,
   confirm_over_cny: 20, spent_cny: 0, free: [], orphaned: [], counts: {}, reserved_cny: 0, uncertain_count: 0,
   remaining_cny: 0,
   clips: [{
@@ -732,7 +732,7 @@ const session = {
     dropped_refs: [], missing_refs: [], first_frame: null, frame_mode: null, fingerprint: 'fp', estimate_cny: 5,
     attempts: [], chosen: null, mute_native: false, uncertain: false, error: null, state: 'planned',
   }],
-  options: { providers: ['fake'], models: {}, resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
+  options: { tiers: [], resolutions: ['720p'], cny_per_sec: {}, max_clip_sec: 10,
              max_refs: 3, audio_modes: ['tts_all'], rate_note: '' },
 } as unknown as FilmSession
 const film = { session, busy: false, error: null, files: {}, ensure: () => {}, createFree: async () => {} } as unknown as Film

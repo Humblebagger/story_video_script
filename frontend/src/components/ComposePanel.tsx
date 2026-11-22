@@ -88,7 +88,7 @@ function Voices({ c }: { c: Compose }) {
   const name = (id: string | null) => v.voices.find((x) => x.id === id)?.name ?? id ?? ''
   return (
     <details className="compose__box" open={v.missing.length > 0}>
-      <summary>{t('compose.panel.voicesSum', { provider: v.provider ?? '' })}{v.missing.length ? t('compose.panel.voicesMissing', { n: v.missing.length }) : ''}</summary>
+      <summary>{t('compose.panel.voicesSum')}{v.missing.length ? t('compose.panel.voicesMissing', { n: v.missing.length }) : ''}</summary>
       <table className="compose__table">
         <tbody>
           {v.speakers.map((sp) => (
