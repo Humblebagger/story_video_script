@@ -85,8 +85,10 @@ class UsageCallback(BaseCallbackHandler):
         return total
 
 
-def build_chat_model(settings: Settings, *, model: Optional[str] = None):
-    """Settings → 配好的 ChatAnthropic。"""
+def build_chat_model(settings: Settings, *, model: Optional[str] = None,
+                     timeout: Optional[float] = None, streaming: bool = True):
+    """Settings → 配好的 ChatAnthropic。timeout：单次请求的超时秒数（缺省不限）；
+    streaming=False 用于很短的小调用（流式下超时只约束两次读取的间隔，不约束总时长）。"""
     try:
         from langchain_anthropic import ChatAnthropic
     except ImportError:
@@ -106,9 +108,11 @@ def build_chat_model(settings: Settings, *, model: Optional[str] = None):
         "max_retries": 0,
         # 改造前刻意走流式：22KB 提示词 + 最多 32000 输出 token，单次阻塞请求
         # 在网关上有超时风险。stream_usage 保证流式聚合后仍拿得到 usage。
-        "streaming": True,
-        "stream_usage": True,
+        "streaming": streaming,
+        "stream_usage": streaming,
     }
+    if timeout is not None:
+        kwargs["timeout"] = timeout
     if settings.base_url:
         # 字段名是 anthropic_api_url，不是 base_url（环境变量仍沿用 ANTHROPIC_BASE_URL）
         kwargs["anthropic_api_url"] = settings.base_url
@@ -259,13 +263,15 @@ class ChatInvoker:
     """
 
     def __init__(self, settings: Settings, *, model: Optional[str] = None,
-                 chat=None, usage: Optional[UsageCallback] = None, log=print) -> None:
+                 chat=None, usage: Optional[UsageCallback] = None, log=print,
+                 timeout: Optional[float] = None, streaming: bool = True) -> None:
         self._settings = settings
         self._model_name = model
         self._log = log
         self.usage = usage or UsageCallback()
+        extra = {} if timeout is None and streaming else {"timeout": timeout, "streaming": streaming}
         self._model = chat if chat is not None else build_chat_model(
-            settings, model=model)
+            settings, model=model, **extra)
         self._injected = chat is not None
         self._no_thinking = None     # 去掉 thinking 的备用模型，懒构造
         self._thinking_rejected = False

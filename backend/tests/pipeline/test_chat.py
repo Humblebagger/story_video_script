@@ -517,6 +517,24 @@ def main() -> int:
         assert e.code == "llm.gave_up" and e.params["cause"]["code"] == "llm.unavailable", e.code
     print("chat: 类型与请求 id 脱敏 / 通用 ModelAPIError 兜底 ✓")
 
+    # 超时与非流式：分类器这类小调用要能限定请求时长
+    from pipeline.chat import build_chat_model as _bcm
+    quick = _bcm(Settings(api_key="k"), timeout=15, streaming=False)
+    assert quick.streaming is False, "streaming=False 要传到模型上"
+    assert quick.default_request_timeout == 15, quick.default_request_timeout
+    normal = _bcm(Settings(api_key="k"))
+    assert normal.streaming is True and normal.default_request_timeout is None, "缺省行为不变"
+    seen = {}
+    import pipeline.chat as _cm
+    keep = _cm.build_chat_model
+    _cm.build_chat_model = lambda s, **kw: seen.update(kw) or FakeChat(responses=[])
+    try:
+        ChatInvoker(Settings(api_key="k"), timeout=15, streaming=False)
+    finally:
+        _cm.build_chat_model = keep
+    assert seen.get("timeout") == 15 and seen.get("streaming") is False, seen
+    print("chat: 请求超时与非流式参数 ✓")
+
     print("\nALL PASS")
     return 0
 
