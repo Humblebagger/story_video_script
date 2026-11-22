@@ -308,6 +308,15 @@ def part_api():
     assert r.status_code == 400, r.text
     assert c.get("/admin/users", headers=H).status_code == 200
     assert c.get("/admin/pricing", headers=H).status_code == 200
+    # 出片线路：档位背后的厂商、厂商内档位、密钥状态（只给管理员）
+    svc = c.get("/admin/service", headers=H).json()
+    film = svc["film"]
+    assert {r["id"] for r in film["tiers"]} >= {"a-standard", "b-fast"}
+    row = next(r for r in film["tiers"] if r["id"] == "a-standard")
+    assert row["provider"] == "minimax" and row["model"] == "minimax-h3" and isinstance(row["key_configured"], bool)
+    assert row["vendor_label"] == "MiniMax H3"
+    assert set(film) == {"default_provider", "fell_back", "tiers", "tts"} and set(film["tts"]) == {"provider", "key_configured"}
+    assert c.get("/admin/service", headers={"Authorization": f"Bearer {carol_tok}"}).status_code == 403
 
     # 月上限：上限 0 时提交转换被拒 429（不会真的启动转换）
     carol = auth.get_user_raw(carol_id)

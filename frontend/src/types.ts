@@ -360,6 +360,13 @@ export interface AdminService {
   model: string
   review_model: string | null
   api_key_configured: boolean
+  /** 出片线路：每个档位背后的厂商（旧后端没有）。管理员提示的数据也只来自这里 */
+  film?: {
+    default_provider: string
+    fell_back: boolean
+    tiers: { id: string; provider: string; model: string; vendor_label: string; key_configured: boolean }[]
+    tts: { provider: string; key_configured: boolean }
+  }
 }
 
 /* ---------- 小说级会话（backend/server/novels.py） ---------- */

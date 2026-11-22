@@ -19,6 +19,8 @@ export const zhAdmin = {
     goUsers: '查看用户', goUsage: '查看用量', goFailed: '去处理', goRunning: '查看任务', goModels: '查看全部',
     unpriced: '未定价模型：{models}（不计入金额，点这里去「用量与花费」页编辑价格表）',
     trend: '近 14 天每日金额',
+    filmRoutes: { title: '出片线路', tier: '档位', provider: '厂商', model: '厂商内档位', key: '密钥',
+                  keyOk: '已配置', keyMissing: '未配置', foot: '新会话缺省用 {provider}；配音：{tts}（{ttsKey}）' },
     refresh: '刷新',
     note: '金额按当前价格表估算。',
     dist: {

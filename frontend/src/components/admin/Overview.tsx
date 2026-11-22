@@ -1,5 +1,6 @@
 import { ArrowRight } from 'lucide-react'
 import { adminJobs, adminOverview, adminUsage, adminUsers } from './api'
+import { adminService } from '../../api'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n/core'
@@ -35,7 +36,8 @@ function OverviewBody({ data, error, reload }: Loaded<AdminOverview>) {
   const users = useLoad(adminUsers, [])
   const jobs = useLoad(adminJobs, [])
   const byModel = useLoad(() => adminUsage('model', 30), [])
-  const refresh = () => { reload(); users.reload(); jobs.reload(); byModel.reload() }
+  const svc = useLoad(adminService, [])
+  const refresh = () => { reload(); users.reload(); jobs.reload(); byModel.reload(); svc.reload() }
   const head = (
     <PageHead title={t('admin.nav.pages.overview')} hint={t('admin.overview.note')}>
       <RefreshButton label={t('admin.overview.refresh')} onClick={refresh} />
@@ -59,6 +61,7 @@ function OverviewBody({ data, error, reload }: Loaded<AdminOverview>) {
   const us = users.data ? userStats(users.data, Date.now()) : null
   const js = jobs.data ? jobStats(jobs.data) : null
   const ms = byModel.data ? modelShare(byModel.data.rows) : null
+  const film = svc.data?.film
   const pct = (part: number, total: number) => (total > 0 ? part / total : 0)
 
   const jobRows: DistRow[] = js ? [
@@ -131,6 +134,35 @@ function OverviewBody({ data, error, reload }: Loaded<AdminOverview>) {
                       to={adminPath('usage', { group: 'model' })} action={t('admin.overview.goModels')} />
           )}
         </div>
+      )}
+      {film && (
+        <Card className="adm__card gap-2 px-4 py-3" data-testid="film-routes">
+          <h3 className="text-sm font-semibold">{t('admin.overview.filmRoutes.title')}</h3>
+          <table className="adm__table">
+            <thead>
+              <tr>
+                <th>{t('admin.overview.filmRoutes.tier')}</th><th>{t('admin.overview.filmRoutes.provider')}</th>
+                <th>{t('admin.overview.filmRoutes.model')}</th><th>{t('admin.overview.filmRoutes.key')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {film.tiers.map((r) => (
+                <tr key={r.id}>
+                  <td className="adm__mono">{r.id}</td><td>{r.provider}</td><td className="adm__mono">{r.model}</td>
+                  <td className={r.key_configured ? undefined : 'text-destructive'}>
+                    {t(r.key_configured ? 'admin.overview.filmRoutes.keyOk' : 'admin.overview.filmRoutes.keyMissing')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-muted-foreground">
+            {t('admin.overview.filmRoutes.foot', {
+              provider: film.default_provider, tts: film.tts.provider,
+              ttsKey: t(film.tts.key_configured ? 'admin.overview.filmRoutes.keyOk' : 'admin.overview.filmRoutes.keyMissing'),
+            })}
+          </p>
+        </Card>
       )}
     </section>
   )

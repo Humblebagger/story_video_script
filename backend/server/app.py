@@ -2254,10 +2254,20 @@ def admin_jobs(user: dict = Depends(admin_user)):
 
 @app.get("/admin/service")
 def admin_service(user: dict = Depends(admin_user)):
-    """底层模型与密钥是否配置（账号菜单只给管理员显示）。"""
+    """底层模型与密钥是否配置（账号菜单只给管理员显示），以及出片线路：每个档位背后的厂商、厂商内档位与密钥状态。"""
     s = load_settings()
     review = s.review_model if s.review_enabled and s.review_model and s.review_model != s.model else None
-    return {"model": s.model, "review_model": review, "api_key_configured": bool(s.api_key)}
+    tts_name = render_providers.default_tts_name()
+    try:
+        render_providers.get_tts(tts_name)
+        tts_ok = True
+    except (KeyError, render_video_base.ProviderError):
+        tts_ok = False
+    return {"model": s.model, "review_model": review, "api_key_configured": bool(s.api_key),
+            "film": {"default_provider": render_providers.default_video_name(),
+                     "fell_back": render_providers.default_fell_back(),
+                     "tiers": render_tiers.admin_table(),
+                     "tts": {"provider": tts_name, "key_configured": tts_ok}}}
 
 
 @app.get("/admin/jobs/{vid}/debug")

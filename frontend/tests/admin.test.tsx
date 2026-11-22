@@ -66,6 +66,13 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
   if (path === '/admin/overview') await new Promise((r) => setTimeout(r, slowMs))
   if (path === '/admin/overview') return json({ users: 3, active_7d: 1, tokens_30d: 1234567,
     cost_30d: 13.5, running: 1, failed_7d: 2, daily, unpriced_models: ['mystery'] })
+  if (path === '/admin/service') return json({ model: 'm', review_model: null, api_key_configured: true, film: {
+    default_provider: 'minimax', fell_back: false,
+    tiers: [
+      { id: 'a-standard', provider: 'minimax', model: 'minimax-h3', vendor_label: 'MiniMax H3', key_configured: true },
+      { id: 'b-fast', provider: 'seedance', model: 'seedance-2.0-fast', vendor_label: 'Seedance 2.0 Fast', key_configured: false },
+    ],
+    tts: { provider: 'volc-tts', key_configured: true } } })
   if (path === '/admin/users') return json({ users })
   const m = path.match(/^\/admin\/users\/([^/]+)(\/password)?$/)
   if (m && method === 'GET') {
@@ -205,6 +212,15 @@ for (const s of ['用户', '7 天活跃', '30 天 token', '30 天金额', '运�
 must(text().includes('1,234,567') && text().includes('$13.50'), '数字与金额格式')
 must(text().includes('mystery'), '应提示未定价模型')
 must(container.querySelectorAll('.adm__chart circle').length === 14, '趋势图近 14 天，14 个点')
+{
+  const card = container.querySelector('[data-testid="film-routes"]')
+  must(!!card, '概览应有出片线路卡片')
+  const ct = card!.textContent ?? ''
+  must(ct.includes('出片线路') && ct.includes('minimax') && ct.includes('seedance-2.0-fast'), '线路卡片有厂商与厂商内档位')
+  must(ct.includes('已配置') && ct.includes('未配置'), '线路卡片有密钥状态')
+  must(ct.includes('a-standard') && ct.includes('b-fast'), '线路卡片有档位 id')
+  must(card!.querySelectorAll('tbody tr').length === 2, '两行')
+}
 console.log('1. 概览：卡片 / 格式 / 未定价提示 / 折线图 ✓')
 
 // 2. 用户：默认按注册时间倒序；点表头按本月金额排序；搜索

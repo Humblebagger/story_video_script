@@ -20,6 +20,8 @@ export const enAdmin: AdminMessages = {
     goUsers: 'View users', goUsage: 'View usage', goFailed: 'Review', goRunning: 'View jobs', goModels: 'View all',
     unpriced: 'Unpriced models: {models} (not counted in cost; click to edit the price table under Usage & cost)',
     trend: 'Daily cost, last 14 days',
+    filmRoutes: { title: 'Film routes', tier: 'Tier', provider: 'Vendor', model: 'Vendor tier', key: 'Key',
+                  keyOk: 'Configured', keyMissing: 'Not configured', foot: 'New sessions default to {provider}; voice: {tts} ({ttsKey})' },
     refresh: 'Refresh',
     note: 'Cost is estimated from the current price table.',
     dist: {
