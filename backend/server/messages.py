@@ -184,6 +184,21 @@ def with_ref(m: dict, ref: str) -> dict:
     return {**m, "message": base + REF_SUFFIX_ZH.format(ref=ref), "ref": ref}
 
 
+LEGACY: dict = {}     # 旧代码 → 新代码：已有会话与错误记录里的旧代码在出口处归一（Task 3 填表）
+
+
+def canonical(code: str) -> str:
+    return LEGACY.get(code, code)
+
+
+def registered(code: str) -> bool:
+    return code in _REG
+
+
+def params_of(code: str) -> tuple:
+    return _REG[code][0]
+
+
 def dump_codes() -> dict:
     return {c: {"params": list(p), "zh": z} for c, (p, z) in sorted(_REG.items())}
 
@@ -193,6 +208,7 @@ def dump_codes() -> dict:
 register("common.unknown", "{message}")
 register("common.more_lines", "…还有 {n} 行未显示")
 register("common.internal", "服务器出了点问题，请稍后重试；仍失败请联系管理员")
+register("common.failed_generic", "没有成功，请重试；仍失败请联系管理员")
 
 # 控制台名与费率说明（厂商属性，前端按代码渲染）
 register("console.generic", "厂商控制台")

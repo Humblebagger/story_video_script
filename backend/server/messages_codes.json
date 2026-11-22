@@ -483,6 +483,10 @@
     "params": [],
     "zh": "版本不存在"
   },
+  "common.failed_generic": {
+    "params": [],
+    "zh": "没有成功，请重试；仍失败请联系管理员"
+  },
   "common.image_too_big": {
     "params": [
       "mb"

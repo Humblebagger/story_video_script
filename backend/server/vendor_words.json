@@ -1,0 +1,6 @@
+{
+  "substr": ["minimax", "hailuo", "seedance", "doubao", "volcengine", "volces", "volc",
+             "bytedance", "deepseek", "anthropic", "claude", "openai", "kling", "jimeng"],
+  "word": ["ark", "gpt"],
+  "cjk": ["海螺", "豆包", "方舟", "火山", "字节跳动", "即梦", "可灵", "深度求索"]
+}
