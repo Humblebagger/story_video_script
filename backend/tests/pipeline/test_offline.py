@@ -842,13 +842,21 @@ def main() -> int:
     assert est["calibrated"] is False, "默认应标为未标定"
     assert est["rate"]["source"] and est["caveats"], "必须交代依据与不确定性"
     assert any("分辨率" in c for c in est["caveats"]), "分辨率未建模这条必须说出来"
-    mini = rp.build_plan(archived, model="seedance-2.0-mini")["estimate"]
+    mini = rp.build_plan(archived, model="lite")["estimate"]
     assert mini["cny_once"] < est["cny_once"], "mini 档应更便宜"
     pinned = rp.build_plan(archived, cny_per_second=1.0)["estimate"]
     assert pinned["calibrated"] is True
     assert abs(pinned["cny_once"] - pinned["playable_seconds"]) < 0.05, \
         "显式费率应直接生效（1 元/秒 → 费用等于可播秒数）"
-    assert {t["id"] for t in plan["tiers"]} >= {"seedance-2.0", "seedance-2.0-mini"}
+    assert {t["id"] for t in plan["tiers"]} == {"standard", "lite"}
+    assert plan["estimate"]["model"] == "standard"
+    from server import public as P
+    legacy = rp.build_plan(archived, 15.0, None, "seedance-2.0-mini")      # 旧 id 照样接受，响应里是新 id
+    assert legacy["estimate"]["model"] == "lite"
+    probe = {k: plan[k] for k in ("estimate", "tiers")}                     # 不扫 clips / assets：那是用户的分镜内容
+    assert not P.find_vendor_words(probe), P.find_vendor_words(probe)
+    head = "\n".join(l for l in md.splitlines() if l.startswith("#") or "发给" in l)
+    assert not P.find_vendor_words(head), P.find_vendor_words(head)
 
     # 切法变了，clip 数与切分都得跟着变
     short = rp.build_plan(archived, max_clip_seconds=5)

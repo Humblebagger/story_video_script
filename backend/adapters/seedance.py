@@ -51,7 +51,7 @@ def overview_section(doc, ep, clips, assets_idx, used_ids):
     out += ["", "## 怎么用这份文档（按顺序四步）", ""]
     out += [
         "1. **出素材** → 第一节：先把本集全部角色/场景/道具参考图生成好——后面每个 clip 都靠这些图锁外观",
-        "2. **逐 clip 生视频** → 第二节：从 Clip 1 起按顺序，把代码块整段发给 Seedance，按【参考】行上传对应参考图；clip 之间按\"衔接\"提示做尾帧接力",
+        "2. **逐 clip 生视频** → 第二节：从 Clip 1 起按顺序，把代码块整段发给视频生成模型，按【参考】行上传对应参考图；clip 之间按\"衔接\"提示做尾帧接力",
         "3. **配音** → 第三节：旁白与台词逐条 TTS（已标角色、情绪、音色提示与先后顺序）",
         "4. **配乐混音** → 第四节：按秒级分段的情绪曲线选曲/生成 BGM，与成片对齐",
         "",
@@ -169,11 +169,11 @@ def render_episode(doc, ep, max_clip_seconds):
             used.add(shot["location_ref"])
         used.update(p["ref"] if isinstance(p, dict) else p for p in shot.get("prop_refs", []))
 
-    md = [f"# {doc['meta']['title']} · {ep['id']} {ep.get('title', '')} —— Seedance 2.0 生产包", ""]
+    md = [f"# {doc['meta']['title']} · {ep['id']} {ep.get('title', '')} —— 视频生成生产包", ""]
     md += overview_section(doc, ep, clips, assets_idx, used)
     md += asset_section(doc, used)
 
-    md.append(f"## 二、Seedance 时间轴提示词（按 clip 依次生成，单 clip ≤{max_clip_seconds:g}s）")
+    md.append(f"## 二、时间轴提示词（按 clip 依次生成，单 clip ≤{max_clip_seconds:g}s）")
     md.append("")
     t0 = 0.0
     for i, clip in enumerate(clips, 1):

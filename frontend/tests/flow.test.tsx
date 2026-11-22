@@ -247,7 +247,7 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     const seconds = shots.reduce((a: number, s: { duration_sec: number }) =>
       a + s.duration_sec, 0)
     renderCalls.push({ seconds: b.max_clip_seconds, shots: shots.length,
-                       model: b.model ?? 'seedance-2.0' })
+                       model: b.model ?? 'standard' })
     return json({
       plan: {
         plan_version: '1', run_id: b.run_id, work_title: '药', chapter: '第一章',
@@ -268,25 +268,25 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
                   speech_overflow: 0, prompt: '写实，10秒，9:16竖屏',
                   reference_assets: [], narration: [] }],
         estimate: { clips: 1, seconds, asset_images_total: 1, asset_images_missing: 1,
-                    model: b.model ?? 'seedance-2.0',
-                    model_label: b.model === 'seedance-2.0-mini'
-                      ? 'Seedance 2.0 mini' : 'Seedance 2.0（标准）',
+                    model: b.model ?? 'standard',
+                    model_label: b.model === 'lite'
+                      ? '轻量档' : '标准档',
                     resolutions: '1080p 及以上',
-                    cny_per_second: b.cny_per_second ?? (b.model === 'seedance-2.0-mini' ? 0.47 : 0.95),
+                    cny_per_second: b.cny_per_second ?? (b.model === 'lite' ? 0.47 : 0.95),
                     playable_seconds: seconds + 13, speech_overflow_sec: 3, speech_cps: 4.5,
-                    cny_once: b.model === 'seedance-2.0-mini' ? 2.4 : 4.7,
-                    cny_with_retries: b.model === 'seedance-2.0-mini' ? 7.1 : 14.2,
+                    cny_once: b.model === 'lite' ? 2.4 : 4.7,
+                    cny_with_retries: b.model === 'lite' ? 7.1 : 14.2,
                     retry_factor: 3, calibrated: b.cny_per_second != null,
                     rate: { tokens_per_second: 20600, cny_per_million_tokens: 46,
-                            source: '2026-03 公开报道的方舟资费，非官方定价页' },
+                            source: '2026-03 公开报道的资费，非官方定价页' },
                     caveats: ['分辨率未建模：token 消耗与分辨率强相关。'],
                     note: '实际以控制台账单为准' },
-        tiers: [{ id: 'seedance-2.0', label: 'Seedance 2.0（标准）',
+        tiers: [{ id: 'standard', label: '标准档',
                   resolutions: '1080p 及以上', cny_per_second: 0.95 },
-                { id: 'seedance-2.0-mini', label: 'Seedance 2.0 mini',
+                { id: 'lite', label: '轻量档',
                   resolutions: '480P / 720P', cny_per_second: 0.47 }],
       },
-      packs: [{ episode: 'E01', title: '开端', markdown: '# 药 · E01 —— Seedance 2.0 生产包' }],
+      packs: [{ episode: 'E01', title: '开端', markdown: '# 药 · E01 —— 视频生成生产包' }],
     })
   }
 
@@ -1201,8 +1201,8 @@ await click(findByText('button', '渲染'))
 must(has('还没组装'), '未生成时应给出引导而不是空白')
 await click(findByText('button', '生成任务包'))
 await settle(150)
-must(renderCalls.length === 1 && renderCalls[0].seconds === 15,
-     '应按默认 15 秒上限请求任务包')
+must(renderCalls.length === 1 && renderCalls[0].seconds === 15 && renderCalls[0].model === 'standard',
+     '应按默认 15 秒上限与缺省档位 standard 请求任务包')
 must(has('个 clip') && has('秒成片'), '应摊开 clip 数与成片时长')
 must(has('¥4.7–14.2'), '费用必须给区间（一次过 → 抽卡），不能只给最乐观的数')
 must(has('张资产图待出'), '缺图数量要显式提示')
@@ -1230,11 +1230,11 @@ const tierSel = [...container.querySelectorAll('.rend__len select')][1] as unkno
 await act(async () => {
   const setV = Object.getOwnPropertyDescriptor(
     win.HTMLSelectElement.prototype, 'value')!.set!
-  setV.call(tierSel, 'seedance-2.0-mini')
+  setV.call(tierSel, 'lite')
   tierSel.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
 })
 await settle(150)
-must(renderCalls[renderCalls.length - 1].model === 'seedance-2.0-mini',
+must(renderCalls[renderCalls.length - 1].model === 'lite',
      '切换费率档位应重新估算')
 must(has('¥2.4–7.1'), 'mini 档的费用应随之减半')
 // 账必须按「能念完旁白」的实际时长算，否则预算是纸面数字

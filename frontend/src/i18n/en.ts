@@ -889,7 +889,7 @@ export const en: BaseMessages = {
     maxClip: 'Max clip length',
     secs: '{s} s',
     tier: 'Rate tier',
-    tierDefault: 'Seedance 2.0 (standard)',
+    tierDefault: 'Standard',
     rateTip: 'After calibrating against a real bill, enter it here and the estimate stops being a projection',
     rate: 'Actual CNY/s',
     ratePh: 'Empty = estimate',

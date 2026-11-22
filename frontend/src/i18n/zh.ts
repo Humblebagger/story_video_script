@@ -883,7 +883,7 @@ export const zh = {
     maxClip: '单 clip 上限',
     secs: '{s} 秒',
     tier: '费率档位',
-    tierDefault: 'Seedance 2.0（标准）',
+    tierDefault: '标准档',
     rateTip: '拿一次真实调用的账单标定后填这里，estimate 就不再是推算值',
     rate: '实测元/秒',
     ratePh: '留空=推算',

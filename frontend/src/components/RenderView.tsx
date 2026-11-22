@@ -26,7 +26,7 @@ function saveFile(name: string, text: string, mime = 'text/plain;charset=utf-8')
 
 /** 渲染任务包：把分镜 IR 变成能喂给视频模型的东西。
  *
- *  这一页刻意把「费用」放在最前面。按方舟公开资费，《药》这样一章 11 分钟的片子
+ *  这一页刻意把「费用」放在最前面。按公开资费，《药》这样一章 11 分钟的片子
  *  一次过就是三位数，抽卡到能用是四位数——在花钱之前先把提示词逐条看一遍，
  *  是这个界面存在的唯一理由。
  *
@@ -40,7 +40,7 @@ export function RenderView({ doc, runId }: Props) {
   /** 被完整性检查拦下时服务端附的报告——光说「422」用户没法据此修改 */
   const [blocked, setBlocked] = useState<VerificationReport | null>(null)
   const [maxClip, setMaxClip] = useState(15)
-  const [model, setModel] = useState('seedance-2.0')
+  const [model, setModel] = useState('standard')
   /** 拿真实账单标定过就填这里；空表示用推算值 */
   const [rate, setRate] = useState('')
   const [open, setOpen] = useState<string | null>(null)
@@ -114,7 +114,7 @@ export function RenderView({ doc, runId }: Props) {
             {t('renderPack.tier')}
             <select value={model} disabled={busy}
                     onChange={(e) => { setModel(e.target.value); void build({ model: e.target.value }) }}>
-              {(plan?.tiers ?? [{ id: 'seedance-2.0', label: t('renderPack.tierDefault') }])
+              {(plan?.tiers ?? [{ id: 'standard', label: t('renderPack.tierDefault') }])
                 .map((tier) => <option key={tier.id} value={tier.id}>{tier.label}</option>)}
             </select>
           </label>

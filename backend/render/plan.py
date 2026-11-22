@@ -44,27 +44,28 @@ DEFAULT_MAX_CLIP_SECONDS = 15.0
 #   2. mini 档的实际 token 消耗未见公开数据，这里沿用标准版的折算。
 # 所以费率必须可覆盖，并且界面上要如实交代依据。真正靠谱的做法只有一个：
 # 拿一次真实调用返回的 token usage 反标定，再把 STORYBOARD_RENDER_CNY_PER_SECOND 钉死。
-RATE_SOURCE = "2026-03 公开报道的方舟资费，非官方定价页，未经账单核对"
+RATE_SOURCE = "2026-03 公开报道的资费，非官方定价页，未经账单核对"
 
 TIERS = {
-    "seedance-2.0": {
-        "label": "Seedance 2.0（标准）",
+    "standard": {
+        "label": "标准档",
         "cny_per_million_tokens": 46.0,   # 不含视频输入；我们是图生视频，走这一档
         "tokens_per_second": 20600,       # 由「15 秒约 30.88 万 token」折算
         "resolutions": "1080p 及以上",
         "caveat": "官方口径约「1 元 1 秒」。该 token 数对应的分辨率未公开，推测 1080p；"
                   "换低分辨率会明显便宜。",
     },
-    "seedance-2.0-mini": {
-        "label": "Seedance 2.0 mini",
+    "lite": {
+        "label": "轻量档",
         "cny_per_million_tokens": 23.0,   # 0.023 元/千 token
         "tokens_per_second": 20600,
         "resolutions": "480P / 720P，4–15 秒",
-        "caveat": "资费为标准版一半。mini 的实际 token 消耗未见公开数据，"
+        "caveat": "资费为标准版一半。轻量档的实际 token 消耗未见公开数据，"
                   "此处沿用标准版折算，误差可能更大。",
     },
 }
-DEFAULT_TIER = "seedance-2.0"
+DEFAULT_TIER = "standard"
+LEGACY_TIERS = {"seedance-2.0": "standard", "seedance-2.0-mini": "lite"}    # 旧前端、旧书签里的 id
 
 # AI 视频一次过的概率不高，给一个抽卡系数，别让人只看到最乐观的那个数
 RETRY_FACTOR = 3.0
@@ -215,6 +216,7 @@ def estimate(clips: list, asset_entries: list, model: str = DEFAULT_TIER,
 
     cny_per_second 显式传入 > 环境变量标定值 > 按档位折算，三级覆盖。
     """
+    model = LEGACY_TIERS.get(model, model)
     tier = TIERS.get(model) or TIERS[DEFAULT_TIER]
     derived = tier["tokens_per_second"] * tier["cny_per_million_tokens"] / 1_000_000
     override = cny_per_second if cny_per_second is not None else _env_cny_per_second()
