@@ -122,6 +122,13 @@ def main() -> int:
     # 5. 当月花费与按天序列
     assert abs(usage.month_spent(U1, table, now=NOW) - 4.5) < 1e-9
     assert usage.month_spent(U2, table, now=NOW) == 0, "9 月的不算、未定价的不算"
+    # 内容检查与偏好整理的用量进后台统计，但不占用户月度上限
+    before = usage.month_spent(U1, table, now=NOW)
+    for purpose in ("safety", "preference"):
+        usage.record(user_id=U1, purpose=purpose, model="claude-sonnet-5", usage=tok(1_000_000),
+                     ok=True, at=NOW.isoformat())
+    assert usage.month_spent(U1, table, now=NOW) == before, "safety / preference 不计入月度上限"
+    assert sum(1 for r in usage.read(user_id=U1) if r["purpose"] in usage.UNCAPPED) == 2, "流水里照常有"
     series = usage.daily_series(rows, 3, table, now=NOW)
     assert [d["day"] for d in series] == ["2026-10-28", "2026-10-29", "2026-10-30"]
     assert [round(d["cost_usd"], 2) for d in series] == [0, 1.5, 3.0]

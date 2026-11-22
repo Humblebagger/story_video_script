@@ -121,6 +121,9 @@ def per_k_chars(rows: list, table: dict) -> dict:
             "p90": vals[math.ceil(0.9 * len(vals)) - 1]}
 
 
+UNCAPPED = frozenset({"safety", "preference"})     # 进后台成本统计，但不占用户月度上限
+
+
 def month_start(now: Optional[datetime] = None) -> datetime:
     now = now or datetime.now(timezone.utc)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -129,6 +132,8 @@ def month_start(now: Optional[datetime] = None) -> datetime:
 def month_spent(user_id: str, table: dict, now: Optional[datetime] = None) -> float:
     total = 0.0
     for r in read(since=month_start(now), user_id=user_id):
+        if r.get("purpose") in UNCAPPED:
+            continue
         c = pricing.cost(r, table)
         total += c or 0.0
     return total

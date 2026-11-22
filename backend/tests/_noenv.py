@@ -80,6 +80,7 @@ VENDOR_ENVS = ("MINIMAX_API_KEY", "ARK_API_KEY", "VOLC_TTS_API_KEY", "VOLC_TTS_A
 
 
 def install() -> None:
+    os.environ.setdefault("STORYBOARD_SAFETY", "0")   # 内容检查在测试里缺省关掉（要测它的脚本自己设回 1）
     for k in VENDOR_ENVS:           # shell 里的厂商密钥不能影响「只有假厂商」之类的断言；要用的测试自己设
         os.environ.pop(k, None)
     pathlib.Path.read_text = _read_text

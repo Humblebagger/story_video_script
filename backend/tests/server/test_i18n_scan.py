@@ -83,6 +83,8 @@ MODULES: dict = {
                       "_assistant_db", "assistant_clear", "_assistant_ctx", "_assistant_begin",
                       "_assistant_stream", "_assistant_model_or_503", "assistant_send",
                       "assistant_resume", "assistant_undo", "assistant_history"},
+    "safety/gate.py": None,
+    "safety/store.py": None,
 }
 
 
