@@ -2,7 +2,7 @@
  *  账号菜单用的 adminService 留在 src/api.ts（产品外壳要用）。 */
 import { jsonPost, req, send } from '../../api'
 import type {
-  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, UsageReport,
+  AdminJobs, AdminOverview, AdminUserDetail, AdminUserRow, AuditEntry, ErrorRefRow, PricingTable, SafetyBlockRow, UsageReport,
 } from '../../types'
 
 export function adminOverview() {
@@ -66,4 +66,22 @@ export function adminSavePricing(table: unknown) {
   return req<PricingTable>('/admin/pricing', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(table),
   })
+}
+
+/** 拦截列表（含摘录；每次查看写审计） */
+export async function adminSafetyBlocks(q: { status?: 'blocked' | 'released'; ref?: string } = {}): Promise<SafetyBlockRow[]> {
+  const p = new URLSearchParams()
+  if (q.status) p.set('status', q.status)
+  if (q.ref) p.set('ref', q.ref.trim())
+  const s = p.toString()
+  return (await req<{ blocks: SafetyBlockRow[] }>(`/admin/safety/blocks${s ? `?${s}` : ''}`)).blocks
+}
+
+/** 未放行的拦截条数（导航徽标用，不带摘录） */
+export async function adminSafetyCount(): Promise<number> {
+  return (await req<{ blocked: number }>('/admin/safety/count')).blocked
+}
+
+export function adminSafetyRelease(id: string) {
+  return req<SafetyBlockRow>(`/admin/safety/blocks/${encodeURIComponent(id)}/release`, { method: 'POST' })
 }

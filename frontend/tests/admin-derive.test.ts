@@ -69,6 +69,8 @@ eq(navCounts(ov({ failed_7d: 2, unpriced_models: ['a', 'b', 'c'] }), [ref(ago(1)
 eq(navCounts(ov({}), [ref(ago(30))], NOW), {}, '为 0 的不出现')
 eq(navCounts(null, null, NOW), {}, '数据还没到')
 eq(navCounts(null, [ref(ago(1))], NOW), { errors: 1 }, '概览没到，错误数照常')
+eq(navCounts(null, null, NOW, 4), { safety: 4 }, '未放行的拦截条数')
+eq(navCounts(null, null, NOW, 0), {}, '拦截为 0 不出现')
 must(badgeText(7) === '7' && badgeText(99) === '99' && badgeText(100) === '99+', '徽标文字')
 console.log('6. 导航计数 ✓')
 

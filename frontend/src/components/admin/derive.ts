@@ -64,14 +64,16 @@ export function modelShare(rows: UsageGroupRow[], top = 5): ModelShare {
   return { rows: out, calls: rows.reduce((sum, r) => sum + r.calls, 0) }
 }
 
-/** 导航项旁的计数：任务 = 近 7 天失败；用量 = 未定价模型数；错误 = 近 7 天的错误记录数。为 0 或数据没到就没有这一项 */
+/** 导航项旁的计数：任务 = 近 7 天失败；用量 = 未定价模型数；错误 = 近 7 天的错误记录数；内容拦截 = 未放行条数。
+ *  为 0 或数据没到就没有这一项 */
 export function navCounts(overview: AdminOverview | null, errors: ErrorRefRow[] | null,
-                          now: number): Partial<Record<AdminPage, number>> {
+                          now: number, blocked: number | null = null): Partial<Record<AdminPage, number>> {
   const out: Partial<Record<AdminPage, number>> = {}
   if (overview && overview.failed_7d > 0) out.jobs = overview.failed_7d
   if (overview && overview.unpriced_models.length > 0) out.usage = overview.unpriced_models.length
   const recent = errors ? errors.filter((e) => within(e.at, 7, now)).length : 0
   if (recent > 0) out.errors = recent
+  if (blocked && blocked > 0) out.safety = blocked
   return out
 }
 
@@ -82,5 +84,5 @@ export const badgeText = (n: number) => (n > 99 ? '99+' : String(n))
 export const NAV_GROUPS: { id: 'overview' | 'people' | 'ops'; pages: AdminPage[] }[] = [
   { id: 'overview', pages: ['overview'] },
   { id: 'people', pages: ['users', 'usage'] },
-  { id: 'ops', pages: ['jobs', 'errors', 'audit'] },
+  { id: 'ops', pages: ['jobs', 'errors', 'safety', 'audit'] },
 ]

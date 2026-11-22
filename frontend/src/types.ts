@@ -694,6 +694,24 @@ export interface ErrorRefRow {
   detail?: string
 }
 
+/** 后台的内容拦截记录（摘录是用户内容；列表接口每次查看都写审计） */
+export interface SafetyBlockRow {
+  id: string; at: string; last_at: string; hits: number
+  user_id: string | null; username: string | null
+  novel_id: string | null; novel_title: string | null
+  chapter_id: string | null; chapter_title: string | null
+  version_id: string | null; clip_id: string | null
+  stage: 'convert' | 'video' | 'tts'
+  category: string
+  /** 模型给的理由（自由文字）；系统理由在 reason_code 里（消息代码） */
+  reason: string; reason_code: string | null
+  excerpt: string
+  status: 'blocked' | 'released'
+  released_by: string | null; released_at: string | null
+  /** false：模型服务拒绝的记录，放行无效 */
+  releasable: boolean
+}
+
 export interface AuditEntry {
   at: string
   admin: string

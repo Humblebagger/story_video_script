@@ -54,6 +54,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     ok: false, status, text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) })
   if (path === '/admin/overview' && failOverview) return err(500, {
     code: 'common.internal', params: {}, message: '服务器出了点问题，请稍后再试（参考编号 K7Q2M9XD）', ref: 'K7Q2M9XD' })
+  if (path === '/admin/safety/count') return json({ blocked: 0 })
+  if (path.startsWith('/admin/safety/blocks')) return json({ blocks: [] })
   if (path === '/admin/errors') return json({ errors: [REF] })
   const em = path.match(/^\/admin\/errors\/(.+)$/)
   if (em) {
@@ -386,14 +388,14 @@ await click(button('刷新'))
 must(auditReqs() === auditBefore + 1, '审计刷新应重新请求')
 console.log('6. 审计 / 刷新 ✓')
 
-// 7. 外框：左侧导航六项，按传入的页显示内容，返回回调（地址、计数、收起等见 tests/admin-shell.test.tsx）
+// 7. 外框：左侧导航七项，按传入的页显示内容，返回回调（地址、计数、收起等见 tests/admin-shell.test.tsx）
 let back = 0
 const frame = (page: 'overview' | 'audit') => (
   <AdminView me={me} page={page} jobState={null} usageGroup="user" usageDays={30}
              onNav={() => {}} onBack={() => { back++ }} />)
 const navNames = () => [...container.querySelectorAll('.adm-nav__item')].map((a) => a.querySelector('span')!.textContent)
 await remount(frame('overview'))
-must(navNames().join() === '运营概览,用户,用量与花费,任务,错误,审计', `导航六项，实为 ${navNames()}`)
+must(navNames().join() === '运营概览,用户,用量与花费,任务,错误,内容拦截,审计', `导航七项，实为 ${navNames()}`)
 must(text().includes('30 天金额'), '概览页')
 await remount(frame('audit'))
 must(text().includes('管理员') && text().includes('之前') && text().includes('之后'), '审计页')
@@ -416,7 +418,7 @@ console.log('8. 骨架屏 / 迷你折线 ✓')
 
 // 9. 英文：导航文字
 await remount(<I18nProvider initial="en">{frame('overview')}</I18nProvider>)
-must(navNames().join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Audit', `英文导航，实为 ${navNames()}`)
+must(navNames().join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Blocked content,Audit', `英文导航，实为 ${navNames()}`)
 must(text().includes('Active (7d)'), '英文概览')
 await act(async () => { root.unmount() })
 root = createRoot(container as unknown as HTMLElement)

@@ -73,6 +73,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string }) => {
         usageRow('mystery', { calls: 2, unpriced: 2, records: 2 }),
       ] : [usageRow(group === 'user' ? 'bob' : ago(0).slice(0, 10), { calls: 42, cost_usd: 18 })] })
   }
+  if (path === '/admin/safety/count') return json({ blocked: 0 })
+  if (path.startsWith('/admin/safety/blocks')) return json({ blocks: [] })
   if (path === '/admin/errors') return json({ errors: [1, 2, 20].map((n) => ({
     ref: `REF0000${n}`, at: ago(n), user_id: 'u-bob', username: 'bob', code: 'common.internal', params: {}, where: 'GET /novels' })) })
   if (path === '/admin/audit') return json({ audit: [
@@ -317,9 +319,9 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   must(container.querySelector('h1')!.textContent === zhAdmin.title, '左上角标题')
   must([...container.querySelectorAll('.adm-nav__title')].map((e) => e.textContent).join() === '总览,用户与用量,运行', '三个分组')
   const links = () => [...container.querySelectorAll('.adm-nav__item')]
-  must(links().map((a) => a.getAttribute('href')).join() === '/admin,/admin/users,/admin/usage,/admin/jobs,/admin/errors,/admin/audit',
-       `六个导航项的地址，实为 ${links().map((a) => a.getAttribute('href'))}`)
-  must(links().map((a) => a.querySelector('span')!.textContent).join() === '运营概览,用户,用量与花费,任务,错误,审计', '导航项名字')
+  must(links().map((a) => a.getAttribute('href')).join() === '/admin,/admin/users,/admin/usage,/admin/jobs,/admin/errors,/admin/safety,/admin/audit',
+       `七个导航项的地址，实为 ${links().map((a) => a.getAttribute('href'))}`)
+  must(links().map((a) => a.querySelector('span')!.textContent).join() === '运营概览,用户,用量与花费,任务,错误,内容拦截,审计', '导航项名字')
   must(links().filter((a) => a.getAttribute('aria-current') === 'page').length === 1
        && byId('admin-nav-jobs')!.getAttribute('aria-current') === 'page' && byId('admin-nav-jobs')!.className.includes('is-on'), '当前页高亮')
   must(textOf('admin-count-jobs') === '3' && textOf('admin-count-errors') === '99+' && textOf('admin-count-usage') === '1'
@@ -333,7 +335,7 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   must(byId('admin-back')!.textContent === zhAdmin.back && text().includes('工具'), '返回产品链接与工具区')
   await remount(side(true))
   must(!container.querySelector('h1') && container.querySelectorAll('.adm-nav__title').length === 0, '收起：不显示标题与分组名')
-  must(links().length === 6 && links().every((a) => !a.querySelector('span:not(.adm-nav__badge)')), '收起：导航项只剩图标')
+  must(links().length === 7 && links().every((a) => !a.querySelector('span:not(.adm-nav__badge)')), '收起：导航项只剩图标')
   must(byId('admin-nav-errors')!.getAttribute('aria-label') === '错误' && byId('admin-back')!.getAttribute('aria-label') === zhAdmin.back
        && byId('admin-nav-toggle')!.getAttribute('aria-label') === '展开导航', '收起：图标带名字')
   must(textOf('admin-count-jobs') === '3', '收起：计数还在')
@@ -345,7 +347,7 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   const select = byId('admin-nav-select') as unknown as HTMLSelectElement
   must(select.value === 'jobs', '下拉选中当前页')
   must([...select.querySelectorAll('optgroup')].map((o) => o.getAttribute('label')).join() === '总览,用户与用量,运行', '下拉按分组')
-  must([...select.querySelectorAll('option')].map((o) => o.textContent).join() === '运营概览,用户,用量与花费（1）,任务（3）,错误（99+）,审计',
+  must([...select.querySelectorAll('option')].map((o) => o.textContent).join() === '运营概览,用户,用量与花费（1）,任务（3）,错误（99+）,内容拦截,审计',
        `下拉选项带计数，实为 ${[...select.querySelectorAll('option')].map((o) => o.textContent)}`)
   await act(async () => {
     select.value = 'audit'
@@ -354,7 +356,7 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   await click(byId('admin-back')!)
   must(log.join() === 'page audit,back', `下拉换页与返回，实为 ${log}`)
   await remount(<I18nProvider initial="en">{side(false)}</I18nProvider>)
-  must(links().map((a) => a.querySelector('span')!.textContent).join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Audit'
+  must(links().map((a) => a.querySelector('span')!.textContent).join() === 'Dashboard,Users,Usage & cost,Jobs,Errors,Blocked content,Audit'
        && byId('admin-back')!.textContent === enAdmin.back, '英文导航')
   await act(async () => { root.unmount() })
   root = createRoot(container as unknown as HTMLElement)
@@ -389,13 +391,13 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   const current = () => container.querySelector('.adm-nav__item[aria-current="page"]')?.getAttribute('data-testid')
 
   for (const [url, name, id] of [['/admin', '运营概览', 'overview'], ['/admin/users', '用户', 'users'],
-    ['/admin/usage', '用量与花费', 'usage'], ['/admin/jobs', '任务', 'jobs'], ['/admin/errors', '错误', 'errors'],
+    ['/admin/usage', '用量与花费', 'usage'], ['/admin/jobs', '任务', 'jobs'], ['/admin/errors', '错误', 'errors'], ['/admin/safety', '内容拦截', 'safety'],
     ['/admin/audit', '审计', 'audit']]) {
     await open(url)
     must(h2() === name && current() === `admin-nav-${id}`, `${url} 应打开「${name}」，实为 ${h2()} / ${current()}`)
     must(container.querySelectorAll('.adm__pagehead').length === 1 && !!byId('admin-sidebar'), `${url}：一个标题行、左侧导航`)
   }
-  console.log('7a. 六个地址各自打开对应的页 ✓')
+  console.log('7a. 七个地址各自打开对应的页 ✓')
 
   await open('/admin')
   must(textOf('admin-count-jobs') === '3' && textOf('admin-count-errors') === '2' && textOf('admin-count-usage') === '1'

@@ -7,7 +7,7 @@ import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { BRAND } from '../../brand'
-import { adminErrors, adminOverview } from './api'
+import { adminErrors, adminOverview, adminSafetyCount } from './api'
 import type { User } from '../../auth'
 import { adminPath } from '../../paths'
 import type { AdminPage, JobState, UsageDays, UsageGroup } from '../../paths'
@@ -19,6 +19,7 @@ import { JobsTab } from './JobsTab'
 import { AdminNavContext } from './navContext'
 import type { AdminNavFn } from './navContext'
 import { Overview } from './Overview'
+import { SafetyTab } from './SafetyTab'
 import { UsageTab } from './UsageTab'
 import { useLoad } from './useLoad'
 import { Users } from './Users'
@@ -66,7 +67,8 @@ export function AdminView(p: AdminViewProps) {
   // 概览数据放在外框：导航计数与概览页共用一份，每 30 秒刷新
   const overview = useLoad(adminOverview, [], 30000)
   const errors = useLoad(adminErrors, [], 60000)
-  const counts = navCounts(overview.data, errors.data, Date.now())
+  const blocked = useLoad(adminSafetyCount, [], 60000)
+  const counts = navCounts(overview.data, errors.data, Date.now(), blocked.data)
   const narrow = useNarrow()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const toggle = () => setCollapsed((v) => {
@@ -98,6 +100,7 @@ export function AdminView(p: AdminViewProps) {
             <JobsTab state={p.jobState} onState={(state) => p.onNav(adminPath('jobs', { state }), true)} />
           )}
           {p.page === 'errors' && <ErrorsTab />}
+          {p.page === 'safety' && <SafetyTab />}
           {p.page === 'audit' && <AuditTab />}
         </main>
       </div>

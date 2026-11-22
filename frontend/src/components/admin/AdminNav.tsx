@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import {
-  ArrowLeft, ChartColumn, LayoutDashboard, ListChecks, PanelLeftClose, PanelLeftOpen, ScrollText, TriangleAlert, Users,
+  ArrowLeft, ChartColumn, LayoutDashboard, ListChecks, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldAlert, TriangleAlert, Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ import { AdminLink } from './AdminLink'
 import { badgeText, NAV_GROUPS } from './derive'
 
 const ICONS: Record<AdminPage, LucideIcon> = {
-  overview: LayoutDashboard, users: Users, usage: ChartColumn, jobs: ListChecks, errors: TriangleAlert, audit: ScrollText,
+  overview: LayoutDashboard, users: Users, usage: ChartColumn, jobs: ListChecks, errors: TriangleAlert, safety: ShieldAlert, audit: ScrollText,
 }
 
 export interface AdminNavProps {
@@ -28,7 +28,7 @@ export interface AdminNavProps {
 function useCountLabel() {
   const { t } = useI18n()
   return (page: AdminPage, n: number) =>
-    (page === 'jobs' || page === 'errors' || page === 'usage' ? t(`admin.nav.counts.${page}`, { n }) : String(n))
+    (page === 'jobs' || page === 'errors' || page === 'usage' || page === 'safety' ? t(`admin.nav.counts.${page}`, { n }) : String(n))
 }
 
 /** 宽屏：左侧分组导航，可收起成只有图标的窄条。 */

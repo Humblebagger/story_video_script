@@ -13,7 +13,7 @@ export const CANVAS_STEPS = ['review', 'render', 'compose'] as const satisfies r
 export type CanvasView = 'timeline' | 'graph'
 
 /** 后台的页（/admin 是运营概览，其余是 /admin/<页>） */
-export const ADMIN_PAGES = ['overview', 'users', 'usage', 'jobs', 'errors', 'audit'] as const
+export const ADMIN_PAGES = ['overview', 'users', 'usage', 'jobs', 'errors', 'safety', 'audit'] as const
 export type AdminPage = (typeof ADMIN_PAGES)[number]
 /** 任务页的筛选（?state=）；null 为全部 */
 export const JOB_STATES = ['running', 'failed'] as const

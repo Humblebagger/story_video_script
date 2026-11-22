@@ -15,7 +15,7 @@ eq(parseLocation('/admin/x').loc, { kind: 'notFound' }, '/admin 下没有子路�
 console.log('1. 顶层 ✓')
 
 // 1b. 后台各页与筛选
-for (const page of ['users', 'usage', 'jobs', 'errors', 'audit']) {
+for (const page of ['users', 'usage', 'jobs', 'errors', 'safety', 'audit']) {
   eq(parseLocation(`/admin/${page}`), { loc: adm(page), fix: null }, `/admin/${page} 是后台的一页`)
 }
 eq(parseLocation('/admin/overview'), { loc: adm('overview'), fix: '/admin' }, '概览的规范地址是 /admin')

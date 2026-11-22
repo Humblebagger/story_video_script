@@ -5,8 +5,10 @@ import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
 import { errValue, formatMsg } from '@/i18n/serverMsg'
 import type { MsgLike } from '@/i18n/serverMsg'
-import { adminErrorRef, adminErrors } from './api'
+import { adminErrorRef, adminErrors, adminSafetyBlocks } from './api'
+import { adminPath } from '../../paths'
 import type { ErrorRefRow } from '../../types'
+import { AdminLink } from './AdminLink'
 import { when } from './format'
 import { Empty, ErrorBar, TableSkeleton } from './LoadState'
 import { PageHead, RefreshButton } from './PageHead'
@@ -42,12 +44,18 @@ export function ErrorsTab() {
   const [q, setQ] = useState('')
   const [hit, setHit] = useState<ErrorRefRow | null>(null)
   const [miss, setMiss] = useState<MsgLike>(null)
+  const [blockHit, setBlockHit] = useState<string | null>(null)
   const c = (k: string) => t(`admin.errors.cols.${k}` as 'admin.errors.cols.time')
   const explain = (r: ErrorRefRow) => formatMsg({ code: r.code, params: r.params }, locale)
   const lookup = async () => {
-    setHit(null); setMiss(null)
+    setHit(null); setMiss(null); setBlockHit(null)
     if (!q.trim()) return
-    try { setHit(await adminErrorRef(q)) } catch (e) { setMiss(errValue(e)) }
+    try { setHit(await adminErrorRef(q)) } catch (e) {
+      // 错误记录里没有：用户报来的可能是内容拦截的编号，再查一次拦截记录
+      const found = await adminSafetyBlocks({ ref: q }).catch(() => [])
+      if (found.length) setBlockHit(found[0].id)
+      else setMiss(errValue(e))
+    }
   }
   const row = (r: ErrorRefRow) => (
     <tr key={r.ref}>
@@ -77,6 +85,12 @@ export function ErrorsTab() {
         <Button size="sm" type="submit"><Search aria-hidden />{t('admin.errors.lookup')}</Button>
       </form>
       {miss && <p role="alert" className="text-sm text-destructive">{formatMsg(miss, locale)}</p>}
+      {blockHit && (
+        <p className="text-sm" data-testid="errors-safety-hit">
+          {t('admin.errors.safetyHit', { id: blockHit })}{' '}
+          <AdminLink to={adminPath('safety')}>{t('admin.errors.safetyGo')}</AdminLink>
+        </p>
+      )}
       {hit && <table className="adm__table">{head}<tbody>{row(hit)}</tbody></table>}
       {body}
     </section>
