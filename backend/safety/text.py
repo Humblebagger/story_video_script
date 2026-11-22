@@ -5,7 +5,7 @@ from typing import List
 
 SEG_MAX = 6000
 EXCERPT_MAX = 300
-_NEWLINES = re.compile("\r\n?| | ")
+_NEWLINES = re.compile(r"\r\n?|\u2028|\u2029")
 
 
 def normalize(text) -> str:

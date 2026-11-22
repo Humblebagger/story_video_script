@@ -12,10 +12,24 @@ from safety import blocklist, categories, text  # noqa: E402
 
 
 def main() -> int:
+    # 0. _noenv 明确关掉内容检查，不被 shell 里继承的 1 带偏
+    import os
+    import subprocess
+    out = subprocess.run([sys.executable, "-c", "import _noenv, os; print(os.environ['STORYBOARD_SAFETY'])"],
+                         cwd=str(ROOT / "tests"), env={**os.environ, "STORYBOARD_SAFETY": "1"},
+                         capture_output=True, text=True)
+    assert out.stdout.strip() == "0", (out.stdout, out.stderr)
+    print("0. _noenv 关闭内容检查 ✓")
+
     # 1. 规范化：去首尾空白、统一换行；hash 只看规范化后的文本
     assert text.normalize("  a\r\nb\rc\n ") == "a\nb\nc"
     assert text.text_hash("a\r\nb") == text.text_hash(" a\nb \n") and len(text.text_hash("x")) == 64
     assert text.text_hash("a") != text.text_hash("b")
+    assert text.normalize("a\u2028b\u2029c") == "a\nb\nc"
+    assert text.text_hash("a\u2028b") == text.text_hash("a\nb") == text.text_hash("a\r\nb")
+    assert text.text_hash("a\u2029b") == text.text_hash("a\nb")
+    src = Path(text.__file__).read_text(encoding="utf-8")
+    assert "\u2028" not in src and "\u2029" not in src, "源码里不留字面的行分隔符"
     print("1. 规范化与 hash ✓")
 
     # 2. 切段：不超过上限、段落边界优先、拼回去等于原文；单段超长硬切
