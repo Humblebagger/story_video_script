@@ -1827,6 +1827,19 @@ def _hide_root_deep(v, root):
     return v
 
 
+def _compose_safety(s: dict, lines: list) -> None:
+    """合成前检查配音文字：只查编辑过的版本（没编辑过的，文字出自已通过检查的原文转换）。"""
+    if not lines or not safety_gate.enabled():
+        return
+    o = s["owner"]
+    record = novels.get_version(o["user_id"], o["nid"], o["cid"], o["vid"])
+    if not record.get("edited_at"):
+        return
+    safety_gate.check_sync("\n".join(x["text"] for x in lines),
+                           {"stage": "tts", "user_id": o["user_id"], "novel_id": o["nid"],
+                            "chapter_id": o["cid"], "version_id": o["vid"]})
+
+
 def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tuple) -> None:
     def failed(err, detail: str = "") -> None:
         m = err.as_msg() if hasattr(err, "as_msg") else err
@@ -1840,6 +1853,7 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
 
     try:
         lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
+        _compose_safety(s, lines)
         tts = render_providers.get_tts() if lines else None     # 没有要配音的语音条就不需要配音密钥
         out = render_mix.compose(root, doc, s, tts=tts, keyframes=kfs,
                                  bgm=_bgm_files(root), draft=draft, tools=tools,
@@ -1848,6 +1862,8 @@ def _compose_worker(root, doc: dict, s: dict, kfs: dict, draft: bool, tools: tup
         render_session.compose_done(root, out["files"], out["report"])
     except render_mix.MixError as e:
         failed(e, e.stderr)
+    except (safety_gate.SafetyBlocked, safety_gate.SafetyUnavailable) as e:
+        failed(e)
     except Exception as e:  # noqa: BLE001  任何意外都要落到失败，不能卡在「合成中」
         ref = error_refs.record_exc(e, "compose.crashed", context=f"合成异常 root={root}",  # i18n: internal
                                     user_id=error_refs.user_of_root(root), where=f"compose {root}", logger=log)
