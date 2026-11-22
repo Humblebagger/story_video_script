@@ -68,6 +68,10 @@
     "params": [],
     "zh": "这条记录是模型服务拒绝，放行无效"
   },
+  "admin.safety.storage_failed": {
+    "params": [],
+    "zh": "拦截记录暂时无法读写，请稍后再试"
+  },
   "admin.self_disable": {
     "params": [],
     "zh": "不能停用自己"

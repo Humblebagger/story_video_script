@@ -671,9 +671,18 @@ def novels_update(nid: str, body: NovelBody, user: dict = Depends(novel_user)):
                        params=params)
 
 
+def _purge_safety(user_id: str, nid: str, cid: Optional[str] = None) -> None:
+    """用户删了作品或章节：拦截记录里对应的摘录与理由一并清空（记录保留）。"""
+    try:
+        safety_store.purge(user_id, nid, cid)
+    except Exception as e:  # noqa: BLE001  清理失败不影响删除本身
+        log.warning("清空拦截摘录失败 user=%s novel=%s %s", user_id, nid, type(e).__name__)  # i18n: internal
+
+
 @app.delete("/novels/{nid}")
 def novels_delete(nid: str, user: dict = Depends(novel_user)):
     _novel_call(novels.delete_novel, user["id"], nid)
+    _purge_safety(user["id"], nid)
     return {"deleted": nid}
 
 
@@ -698,6 +707,7 @@ def chapters_update(nid: str, cid: str, body: ChapterBody,
 @app.delete("/novels/{nid}/chapters/{cid}")
 def chapters_delete(nid: str, cid: str, user: dict = Depends(novel_user)):
     _novel_call(novels.delete_chapter, user["id"], nid, cid)
+    _purge_safety(user["id"], nid, cid)
     return {"deleted": cid}
 
 
@@ -1191,6 +1201,15 @@ _render_runner = render_runner.Runner(
     poll_sec=float(os.environ.get("STORYBOARD_RENDER_POLL_SEC", "10")),
     max_parallel=int(os.environ.get("STORYBOARD_RENDER_PARALLEL", "2")),
     safety_check=_render_safety)
+
+
+@app.on_event("startup")
+def _safety_cleanup():
+    """启动时清一次早于 90 天的拦截摘录与理由；之后写拦截记录时每天最多再清一次（safety.store.maybe_cleanup）。"""
+    try:
+        safety_store.cleanup()
+    except Exception as e:  # noqa: BLE001  清理失败不能挡住启动
+        log.warning("拦截记录清理失败 %s", type(e).__name__)  # i18n: internal
 
 
 @app.on_event("startup")
@@ -2421,6 +2440,58 @@ def admin_error_get(ref: str, user: dict = Depends(admin_user)):
     owner = auth.get_user_raw(row["user_id"]) if row.get("user_id") else None
     audit.write(user, "view_error_ref", owner, None, {"ref": row["ref"]})
     return _with_username([row])[0]
+
+
+def _safety_row(r: dict) -> dict:
+    """拦截记录给后台的形状：补作品与章节现在的名字（已删为 None）；不给文本 hash。"""
+    title, chapter = novels.titles(r["user_id"], r.get("novel_id"), r.get("chapter_id")) \
+        if r.get("user_id") else (None, None)
+    return {**{k: v for k, v in r.items() if k != "hash"}, "novel_title": title, "chapter_title": chapter}
+
+
+def _safety_storage_error(e: OSError) -> HTTPException:
+    log.warning("拦截记录存储失败 %s", type(e).__name__)  # i18n: internal  原文不外露
+    return HTTPException(503, detail=msg("admin.safety.storage_failed"))
+
+
+@app.get("/admin/safety/count")
+def admin_safety_count(user: dict = Depends(admin_user)):
+    """未放行的拦截条数（导航徽标用；不带摘录，不记审计）。"""
+    try:
+        return {"blocked": safety_store.count_blocked()}
+    except OSError as e:
+        raise _safety_storage_error(e)
+
+
+@app.get("/admin/safety/blocks")
+def admin_safety_blocks(status: Optional[Literal["blocked", "released"]] = None,
+                        days: Optional[int] = Query(None, ge=1, le=3650),
+                        ref: Optional[str] = Query(None, max_length=32),
+                        user: dict = Depends(admin_user)):
+    """拦截列表（含摘录，属于用户内容）：每次查看都写审计。"""
+    try:
+        rows = [_safety_row(r) for r in safety_store.list_blocks(status=status, days=days, ref=ref)]
+    except OSError as e:
+        raise _safety_storage_error(e)
+    audit.write(user, "view_safety_blocks", None, None, {"status": status, "days": days, "ref": ref, "n": len(rows)})
+    return {"blocks": _with_username(rows)}
+
+
+@app.post("/admin/safety/blocks/{block_id}/release")
+def admin_safety_release(block_id: str, user: dict = Depends(admin_user)):
+    """放行：这段文本此后通过检查（全站同文本都通过）。模型服务拒绝的记录放行无效（409）。"""
+    try:
+        row = safety_store.release(block_id, user["username"])
+    except safety_store.NotFound as e:
+        raise HTTPException(404, detail=to_detail(e))
+    except safety_store.StoreError as e:
+        raise HTTPException(409, detail=to_detail(e))
+    except OSError as e:
+        raise _safety_storage_error(e)
+    owner = auth.get_user_raw(row["user_id"]) if row.get("user_id") else None
+    audit.write(user, "release_safety_block", owner, {"status": "blocked"},
+                {"status": "released", "id": row["id"], "category": row["category"]})
+    return _with_username([_safety_row(row)])[0]
 
 
 @app.get("/admin/pricing")

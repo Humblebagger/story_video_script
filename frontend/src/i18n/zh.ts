@@ -1732,7 +1732,7 @@ export const zh = {
       },
       error_ref: { not_found: '没有这个参考编号：{ref}' },
       job: { not_found: '没有这次转换的调试日志：{id}' },
-      safety: { not_found: '没有这条拦截记录：{ref}', not_releasable: '这条记录是模型服务拒绝，放行无效' },
+      safety: { not_found: '没有这条拦截记录：{ref}', not_releasable: '这条记录是模型服务拒绝，放行无效', storage_failed: '拦截记录暂时无法读写，请稍后再试' },
     },
     assistant: {
       busy: '上一条还在回答', busy_clear: '助手正在回答，等它说完再清空', busy_undo: '助手正在回答，等它说完再撤销',
