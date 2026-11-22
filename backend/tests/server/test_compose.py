@@ -88,7 +88,7 @@ def main() -> int:
     from render.providers.base import ProviderError as _PE
 
     def _no_key():
-        raise _PE.of("tts.volc.no_key")
+        raise _PE.of("tts.vendor.no_key")
     real_lines = voice.speech_lines
     voice.speech_lines = lambda d: real_lines(d) + [{"id": "X-L1", "episode": "E01", "shot": "X", "kind": "dialogue",
                                                       "speaker": "", "text": "无名氏", "emotion": None}]
@@ -100,12 +100,12 @@ def main() -> int:
     assert unl["name"] == {"code": "voice.unlabeled", "params": {}}, unl
     providers.register_tts("fake", _no_key)
     r = c.get(R + "/voices", headers=H)
-    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.volc.no_key", r.text
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.vendor.no_key", r.text
     assert r.json()["detail"]["message"] == "配音服务还没有配置，请联系管理员"
     os.environ["STORYBOARD_TTS_PROVIDER"] = "nope"
     r = c.get(R + "/voices", headers=H)
     os.environ["STORYBOARD_TTS_PROVIDER"] = "fake"
-    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.unknown_provider", r.text
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "tts.vendor.misconfigured", r.text
     providers.register_tts("fake", lambda: TTS)
     v = c.put(R + "/voices", headers=H, json={"voices": {"narration": "fake-female"}}).json()
     narr = next(x for x in v["speakers"] if x["key"] == "narration")

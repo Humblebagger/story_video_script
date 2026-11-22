@@ -18,10 +18,11 @@ import httpx
 
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
+from render.providers import base
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, estimate_cny, last_frame_path, request_seconds, scrub,
                                    scrub_secrets)
-from server.messages import compact, msg, vendor
+from server.messages import msg
 
 log = logging.getLogger("render.providers.seedance")
 
@@ -56,33 +57,27 @@ def rewrite_refs(text: str) -> str:
     return _REF.sub(lambda m: f"@图片{next(n)}", text)
 
 
-def _with_fallback(e: ProviderError, full: str) -> ProviderError:
-    """中文兜底保持原样不截断（结构化的 vendor 参数仍限长）。"""
-    e.args = (full,) + e.args[1:]
-    return e
-
-
 # 方舟错误码 → 我们的代码（官方错误码页 https://www.volcengine.com/docs/82379/1299023）。
 # 匹配顺序：全名 → 「.PolicyViolation」后缀 → 族名（第一个「.」之前）→ Input*/Output* 前缀 +
 # SensitiveContentDetected / RiskDetection 后缀。
 # 限流族（RateLimitExceeded、ServerOverloaded、RequestBurstTooFast）不登记：落到可重试的瞬时分支。
 _ARK_EXACT = {
-    "OperationDenied.ServiceNotOpen": "film.ark.model_unavailable",
-    "OperationDenied.ServiceOverdue": "film.ark.overdue",
-    "OperationDenied.PermissionDenied": "film.ark.access_denied",
-    "InvalidEndpoint.ClosedEndpoint": "film.ark.model_unavailable",
+    "OperationDenied.ServiceNotOpen": "film.vendor.tier_unavailable",
+    "OperationDenied.ServiceOverdue": "film.vendor.balance",
+    "OperationDenied.PermissionDenied": "film.vendor.access_denied",
+    "InvalidEndpoint.ClosedEndpoint": "film.vendor.tier_unavailable",
 }
 _ARK_FAMILY = {
-    "AuthenticationError": "film.ark.auth", "InvalidSubscription": "film.ark.auth",
-    "AccountOverdueError": "film.ark.overdue",
-    "AccessDenied": "film.ark.access_denied", "InvalidAccountStatus": "film.ark.access_denied",
-    "InvalidEndpointOrModel": "film.ark.model_unavailable", "ModelNotOpen": "film.ark.model_unavailable",
-    "SetLimitExceeded": "film.ark.limit_paused",
-    "QuotaExceeded": "film.ark.quota",                # 官方是 429：额度不足或排队已满，可重试
-    "SensitiveContentDetected": "film.ark.input_moderated",
+    "AuthenticationError": "film.vendor.auth", "InvalidSubscription": "film.vendor.auth",
+    "AccountOverdueError": "film.vendor.balance",
+    "AccessDenied": "film.vendor.access_denied", "InvalidAccountStatus": "film.vendor.access_denied",
+    "InvalidEndpointOrModel": "film.vendor.tier_unavailable", "ModelNotOpen": "film.vendor.tier_unavailable",
+    "SetLimitExceeded": "film.vendor.limit_paused",
+    "QuotaExceeded": "film.vendor.quota",                # 官方是 429：额度不足或排队已满，可重试
+    "SensitiveContentDetected": "film.vendor.input_moderated",
 }
-_ARK_HTTP = {401: "film.ark.auth", 403: "film.ark.access_denied"}
-_ARK_TRANSIENT = {"film.ark.quota"}          # 映射后可重试的代码：只在 429 与明确拒绝的 4xx 上可重试；5xx 与任务终态 failed 保持原行为
+_ARK_HTTP = {401: "film.vendor.auth", 403: "film.vendor.access_denied"}
+_ARK_TRANSIENT = {"film.vendor.quota"}          # 映射后可重试的代码：只在 429 与明确拒绝的 4xx 上可重试；5xx 与任务终态 failed 保持原行为
 
 
 def _ark_code(code) -> Optional[str]:
@@ -93,14 +88,14 @@ def _ark_code(code) -> Optional[str]:
     if code in _ARK_EXACT:
         return _ARK_EXACT[code]
     if code.endswith(".PolicyViolation"):
-        return "film.ark.output_copyright" if out else "film.ark.copyright"
+        return "film.vendor.output_copyright" if out else "film.vendor.copyright"
     if fam in _ARK_FAMILY:
         return _ARK_FAMILY[fam]
     if fam.endswith(("SensitiveContentDetected", "RiskDetection")):
         if fam.startswith("Input"):
-            return "film.ark.input_moderated"
+            return "film.vendor.input_moderated"
         if out:
-            return "film.ark.output_moderated"
+            return "film.vendor.output_moderated"
     return None
 
 
@@ -134,20 +129,18 @@ def _reject(r: httpx.Response, key: str, *, model=None, task_id=None) -> Provide
         return _mapped(our, r.status_code, err or {}, key, request_id=r.headers.get("X-Request-Id"),
                        task_id=task_id, model=model)
     if err is None:
-        body = scrub(r.text, key)[:300]
-        return _with_fallback(ProviderError.of("film.provider.http_rejected", status=r.status_code,
-                                               detail=vendor(body)), f"HTTP {r.status_code}：{body}")
-    parts = [x for x in (err.get("code"), err.get("message")) if x]
-    zh = scrub("：".join(parts) or f"HTTP {r.status_code}", key)
-    text = scrub(": ".join(parts) or f"HTTP {r.status_code}", key)
-    return _with_fallback(ProviderError.of("film.provider.rejected", detail=vendor(text)), zh)
+        text = scrub(r.text, key)[:300] or f"HTTP {r.status_code}"
+    else:
+        parts = [x for x in (err.get("code"), err.get("message")) if x]
+        text = scrub(": ".join(parts) or f"HTTP {r.status_code}", key)
+    return ProviderError.from_msg(base.vendor_reject("film.vendor.rejected", text, who="seedance", secrets=(key,)))
 
 
 class Seedance:
     name = "seedance"
     console_name = "console.ark"
-    default_model = DEFAULT_MODEL
     rate_note = {"code": "rate.ark", "params": {}}
+    default_model = DEFAULT_MODEL
     typical_sec = (120, 480)        # 没有实测数据，先取保守区间 2–8 分钟；真跑后按实际校准
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
@@ -162,14 +155,14 @@ class Seedance:
         key = os.environ.get("ARK_API_KEY", "").strip()
         if not key:
             log.warning("未配置 ARK_API_KEY，请在 backend/.env 里设置")  # i18n: internal
-            raise ProviderError.of("film.ark.no_key")
+            raise ProviderError.of("film.vendor.no_key")
         return cls(key)
 
     def _model(self, model: str) -> dict:
         m = MODELS.get(model)
         if m is None:
             log.warning("%s", scrub_secrets(f"未知的 Seedance 档位：{model}", (self._key,)))  # i18n: internal
-            raise ProviderError.of("film.ark.unknown_model")
+            raise ProviderError.of("film.settings.no_model")
         return m
 
     def _per_m(self, model: str) -> float:
@@ -198,26 +191,26 @@ class Seedance:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
             log.warning("%s", scrub_secrets(f"连接方舟失败：{type(e).__name__} task={task_id} model={model}", (self._key,)))  # i18n: internal
-            raise TransientError.of("film.ark.connect_failed")
+            raise TransientError.of("film.vendor.connect_failed")
         except httpx.TransportError as e:
             log.warning("%s", scrub_secrets(
                 f"方舟连接异常：{type(e).__name__} submit={submit} task={task_id} model={model}", (self._key,)))  # i18n: internal
             if submit:
                 raise AmbiguousSubmit.of("film.provider.submit_cut")
-            raise TransientError.of("film.ark.connect_failed")
+            raise TransientError.of("film.vendor.connect_failed")
         if r.status_code == 429:
             err = _err_body(r)
             our = _ark_code((err or {}).get("code"))
             # 429 里只有 SetLimitExceeded 不重试、QuotaExceeded 用自己的代码；其余（含鉴权、审核等
             # 不该出现在 429 的码）一律当限流重试
-            if our in ("film.ark.limit_paused", "film.ark.quota"):
+            if our in ("film.vendor.limit_paused", "film.vendor.quota"):
                 raise _mapped(our, 429, err, self._key, request_id=r.headers.get("X-Request-Id"),
                               task_id=task_id, model=model)
-            raise TransientError.of("film.ark.throttled")
+            raise TransientError.of("film.vendor.throttled")
         if r.status_code >= 500:
             if submit:
-                raise AmbiguousSubmit.of("film.ark.http_ambiguous", status=r.status_code)
-            raise TransientError.of("film.ark.unavailable", status=r.status_code)
+                raise AmbiguousSubmit.of("film.vendor.http_ambiguous", status=r.status_code)
+            raise TransientError.of("film.vendor.unavailable", status=r.status_code)
         if meta is not None:
             meta["request_id"] = r.headers.get("X-Request-Id")
         if r.status_code >= 400:
@@ -226,8 +219,8 @@ class Seedance:
             return r.json()
         except ValueError:
             if submit:
-                raise AmbiguousSubmit.of("film.ark.not_json")
-            raise TransientError.of("film.ark.not_json")
+                raise AmbiguousSubmit.of("film.vendor.not_json")
+            raise TransientError.of("film.vendor.not_json")
 
     def submit(self, req: ClipRequest) -> str:
         m = self._model(req.model)
@@ -245,7 +238,7 @@ class Seedance:
                        model=m["id"], json=body)
         tid = j.get("id") if isinstance(j, dict) else None
         if not tid:
-            raise AmbiguousSubmit.of("film.ark.no_task_id")
+            raise AmbiguousSubmit.of("film.vendor.no_task_id")
         return tid
 
     def poll(self, task_id: str) -> TaskState:
@@ -262,13 +255,12 @@ class Seedance:
                 _mapped(our, "task", err, self._key, request_id=meta.get("request_id"), task_id=task_id)
             parts = [x for x in (err.get("code"), err.get("message")) if x]
             text = scrub(": ".join(parts), self._key)
-            zh = scrub("：".join(parts), self._key)              # 中文兜底保持原样
             m = (msg(our) if our
-                 else msg("film.provider.rejected", detail=vendor(text)) if text
-                 else msg("film.ark.task_expired") if raw == "expired"
+                 else base.vendor_reject("film.vendor.rejected", text, who="seedance", secrets=(self._key,)) if text
+                 else msg("film.vendor.task_expired") if raw == "expired"
                  else msg("film.provider.task_cancelled") if raw == "cancelled"
                  else msg("film.provider.generation_failed"))
-            error, error_msg = (zh if zh and not our else m["message"]), compact(m)
+            error, error_msg = m["message"], {k: m[k] for k in ("code", "params", "ref") if k in m}
         return TaskState(task_id, status, video_url=content.get("video_url"),
                          last_frame_url=content.get("last_frame_url"), error=error, error_msg=error_msg,
                          usage={"completion_tokens": (j.get("usage") or {}).get("completion_tokens")}
@@ -277,7 +269,7 @@ class Seedance:
     def _fetch(self, url: str, dest: Path) -> None:
         """结果地址是对象存储的签名直链：不带方舟密钥，24 小时有效。"""
         if not url:
-            raise ProviderError.of("film.ark.no_result_url")
+            raise ProviderError.of("film.vendor.no_result_url")
         dest.parent.mkdir(exist_ok=True)              # 不建上级目录：版本删了不能被下载重新建出来
         part = dest.with_name(dest.name + ".part")
         try:
@@ -285,7 +277,7 @@ class Seedance:
                 if r.status_code == 429 or r.status_code >= 500:
                     raise TransientError.of("film.provider.download_retry", status=r.status_code)
                 if r.status_code >= 400:
-                    raise ProviderError.of("film.ark.download_failed", status=r.status_code)
+                    raise ProviderError.of("film.provider.download_failed", status=r.status_code)
                 with open(part, "wb") as f:
                     for chunk in r.iter_bytes():
                         f.write(chunk)

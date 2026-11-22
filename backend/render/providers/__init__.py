@@ -5,9 +5,12 @@
 
 新增厂商：写 providers/<name>.py，在文件末尾 register 一行。测试用 register 换成自己的实例。
 """
+import logging
 import os
 
 from server.messages import UserError
+
+log = logging.getLogger("render.providers")
 
 
 class UnknownProvider(UserError, KeyError):
@@ -66,7 +69,8 @@ def get_video(name=None):
     if name not in _INSTANCES:
         factory = _FACTORIES.get(name)
         if factory is None:
-            raise UnknownProvider.of("film.provider.unknown", name=name)
+            log.warning("未注册的视频厂商：%s", name)  # i18n: internal
+            raise UnknownProvider.of("film.settings.no_model")
         _INSTANCES[name] = factory()
     return _INSTANCES[name]
 
@@ -122,7 +126,8 @@ def get_tts(name=None):
     if name not in _TTS_INSTANCES:
         factory = _TTS_FACTORIES.get(name)
         if factory is None:
-            raise UnknownTts.of("tts.unknown_provider", name=name)
+            log.warning("未注册的配音厂商：%s", name)  # i18n: internal
+            raise UnknownTts.of("tts.vendor.misconfigured")
         _TTS_INSTANCES[name] = factory()
     return _TTS_INSTANCES[name]
 

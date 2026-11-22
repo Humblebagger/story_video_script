@@ -229,7 +229,7 @@ def main() -> int:
     tid = abandon(c11)
 
     def boom():
-        raise base.ProviderError.of("film.fake.unknown_model")
+        raise base.ProviderError.of("film.settings.no_model")
 
     providers.register("fake", boom)
     try:

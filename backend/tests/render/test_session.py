@@ -544,7 +544,7 @@ def main() -> int:
     e = must_raise(sess.SessionError, build, resolution="4k")
     assert e.code == "film.settings.bad_resolution" and isinstance(e.params["options"], list)
     e = must_raise(sess.SessionError, build, provider="nope")
-    assert e.code == "film.provider.unknown", e.code
+    assert e.code == "film.settings.no_model", e.code
     with _LogGrab("render.session") as g:
         e = must_raise(sess.SessionError, build, model="nope-tier")
     assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e), (e.code, e.params)

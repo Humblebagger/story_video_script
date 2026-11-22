@@ -1080,6 +1080,7 @@ def _render_request(root, s: dict, clip: dict):
         caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style)
 
 
+render_video_base.record_reject = lambda code, detail: error_refs.record(code, detail, where="vendor")
 _render_runner = render_runner.Runner(
     _render_request,
     poll_sec=float(os.environ.get("STORYBOARD_RENDER_POLL_SEC", "10")),

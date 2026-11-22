@@ -102,14 +102,12 @@ def main() -> int:
 
     # 9. 面向最终用户的出片文案：不再带异常类名、档位 id、环境变量名等内部参数
     codes = M.dump_codes()
-    for c in ("film.ark.no_key", "film.minimax.no_key", "film.minimax.invalid_key",
-              "film.minimax.insufficient_balance", "film.minimax.moderated", "film.ark.unknown_model",
-              "film.minimax.unknown_model", "film.fake.unknown_model", "film.settings.no_model",
-              "film.ark.connect_failed", "film.minimax.connect_failed", "film.provider.submit_cut",
-              "film.provider.download_connect", "film.submit.crashed", "film.ark.not_json",
-              "film.minimax.not_json", "film.ark.no_task_id", "film.minimax.no_task_id", "film.ark.throttled"):
+    for c in ("film.vendor.no_key", "film.vendor.auth", "film.vendor.balance", "film.vendor.input_moderated",
+              "film.settings.no_model", "film.vendor.connect_failed", "film.provider.submit_cut",
+              "film.provider.download_connect", "film.submit.crashed", "film.vendor.not_json",
+              "film.vendor.no_task_id", "film.vendor.throttled", "film.vendor.rejected", "tts.vendor.rejected"):
         assert codes[c]["params"] == [], (c, codes[c])
-    assert codes["film.minimax.bad_resolution"]["params"] == ["resolution", "options"]
+    assert codes["film.settings.bad_resolution"]["params"] == ["resolution", "options"]
     assert codes["novel.unknown_params"]["params"] == ["keys"]
     assert codes["chapter.version.not_adoptable"]["params"] == []
     assert M.render_zh("film.provider.submit_cut", {}) == "网络中断"
@@ -122,8 +120,8 @@ def main() -> int:
     assert "K7Q2M9XD" not in r2["message"] and "ref" not in r2["params"]
 
     from render.providers.base import ProviderError
-    e = ProviderError.of("tts.volc.rejected", code="401", detail=M.vendor("x"))
-    assert e.params["code"] == "401" and str(e) == "豆包语音拒绝了请求（401）：x", "参数可以叫 code"
+    e = ProviderError.of("tts.vendor.failed", code="401")
+    assert e.params["code"] == "401" and str(e) == "配音合成失败（401）", "参数可以叫 code"
 
     # 子计划 4：长报告参数、换异常类型保留代码
     long = "行\n" * 5000

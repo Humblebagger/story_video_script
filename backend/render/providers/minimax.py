@@ -27,7 +27,7 @@ from pipeline.config import _load_dotenv
 from render.providers import base
 from render.providers.base import (AmbiguousSubmit, Caps, ClipRequest, ProviderError, TaskState,
                                    TransientError, last_frame_path, request_seconds)
-from server.messages import compact, msg, vendor
+from server.messages import compact, msg
 
 log = logging.getLogger("render.providers.minimax")
 
@@ -63,8 +63,8 @@ _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 _EXPIRED = (403, 404, 410)
 _ALIAS = {"insufficient_balance_error": "1008", "authorized_error": "1004", "rate_limit_error": "1002"}
 _HTTP_CODE = {402: "1008", 401: "1004", 422: "1026"}
-_KNOWN = {"1008": "film.minimax.insufficient_balance", "1004": "film.minimax.invalid_key",
-          "1026": "film.minimax.moderated"}
+_KNOWN = {"1008": "film.vendor.balance", "1004": "film.vendor.auth",
+          "1026": "film.vendor.input_moderated"}
 
 
 def rewrite_refs(text: str) -> str:
@@ -128,11 +128,8 @@ def _reject(code, msg_text, status=None, body: str = "", secret: str = "") -> Pr
     if key in _KNOWN:
         return ProviderError.of(_KNOWN[key])
     parts = [str(x) for x in (code, msg_text) if x]
-    if parts:
-        e = ProviderError.of("film.provider.rejected", detail=vendor(scrub(": ".join(parts), secret)))
-        e.args = (scrub("：".join(parts), secret),) + e.args[1:]       # 中文兜底保持原样
-        return e
-    return ProviderError.of("film.provider.http_rejected", status=status, detail=vendor(scrub(body, secret)))
+    text = ": ".join(parts) or scrub(body, secret) or f"HTTP {status}"
+    return ProviderError.from_msg(base.vendor_reject("film.vendor.rejected", text, who="minimax", secrets=(secret,)))
 
 
 def _even(x: float) -> int:
@@ -198,21 +195,21 @@ def _normalize(raw: bytes, mime: str) -> tuple:
 def _check_image(uri: str, label: dict) -> tuple:
     """返回 (要发出的地址, 计入请求体的字节数)。http(s)、mm_file:// 原样透传；data URI 校验格式与体积并规范化。"""
     if not isinstance(uri, str):
-        raise ProviderError.of("film.minimax.bad_image", label=label)
+        raise ProviderError.of("film.input.bad_image", label=label)
     if uri.startswith(("http://", "https://", "mm_file://")):
         return uri, len(uri)
     m = _DATA.match(uri)
     if not m:
-        raise ProviderError.of("film.minimax.bad_image", label=label)
+        raise ProviderError.of("film.input.bad_image", label=label)
     mime = m.group(1).strip().lower()
     if mime not in MIMES:
-        raise ProviderError.of("film.minimax.unsupported_format", label=label, mime=mime)
+        raise ProviderError.of("film.input.unsupported_format", label=label, mime=mime)
     try:
         raw = base64.b64decode(m.group(2), validate=True)
     except (binascii.Error, ValueError):
-        raise ProviderError.of("film.minimax.corrupt_image", label=label)
+        raise ProviderError.of("film.input.corrupt_image", label=label)
     if len(raw) > IMAGE_MAX_BYTES:
-        raise ProviderError.of("film.minimax.image_too_big", label=label, mb=f"{len(raw) / 1048576:.1f}")
+        raise ProviderError.of("film.input.image_too_big", label=label, mb=f"{len(raw) / 1048576:.1f}")
     raw, mime = _normalize(raw, mime)
     out = f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
     return out, len(out)
@@ -241,9 +238,9 @@ class _Expired(Exception):
 
 class MiniMax:
     name = "minimax"
-    default_model = DEFAULT_MODEL
     console_name = "console.minimax"
     rate_note = {"code": "rate.minimax", "params": {}}
+    default_model = DEFAULT_MODEL
     typical_sec = (180, 420)        # 2026-11-21 实测一段约 4–5 分钟，取保守区间 3–7 分钟
 
     def __init__(self, api_key: str, *, client=None, base_url: str = BASE_URL, timeout: float = 60.0):
@@ -258,7 +255,7 @@ class MiniMax:
         key = os.environ.get("MINIMAX_API_KEY", "").strip()
         if not key:
             log.warning("未配置 MINIMAX_API_KEY，请在 backend/.env 里设置")  # i18n: internal
-            raise ProviderError.of("film.minimax.no_key")
+            raise ProviderError.of("film.vendor.no_key")
         base_url = os.environ.get("STORYBOARD_MINIMAX_BASE_URL", "").strip() or BASE_URL
         return cls(key, base_url=base_url)
 
@@ -266,7 +263,7 @@ class MiniMax:
         m = MODELS.get(model)
         if m is None:
             log.warning("%s", base.scrub_secrets(f"未知的 MiniMax 档位：{model}", (self._key,)))  # i18n: internal
-            raise ProviderError.of("film.minimax.unknown_model")
+            raise ProviderError.of("film.settings.no_model")
         return m
 
     def caps(self, model: str) -> Caps:
@@ -289,31 +286,31 @@ class MiniMax:
             r = self._http.request(method, url, headers={"Authorization": f"Bearer {self._key}"}, **kw)
         except _NOT_SENT as e:
             log.warning("连接 MiniMax 失败：%s", type(e).__name__)  # i18n: internal
-            raise TransientError.of("film.minimax.connect_failed")
+            raise TransientError.of("film.vendor.connect_failed")
         except httpx.TransportError as e:
             log.warning("MiniMax 连接异常：%s submit=%s", type(e).__name__, submit)  # i18n: internal
             if submit:
                 raise AmbiguousSubmit.of("film.provider.submit_cut")
-            raise TransientError.of("film.minimax.connect_failed")
+            raise TransientError.of("film.vendor.connect_failed")
         try:
             j = r.json()
         except ValueError:
             j = None
         code, msg_text = _error_of(j)
         if r.status_code in (429, 529) or code == "1002":
-            raise TransientError.of("film.minimax.throttled", status=r.status_code)
+            raise TransientError.of("film.vendor.throttled")
         if r.status_code >= 500:
             if submit:
-                raise AmbiguousSubmit.of("film.minimax.http_ambiguous", status=r.status_code)
-            raise TransientError.of("film.minimax.unavailable", status=r.status_code)
+                raise AmbiguousSubmit.of("film.vendor.http_ambiguous", status=r.status_code)
+            raise TransientError.of("film.vendor.unavailable", status=r.status_code)
         if r.status_code >= 400:
             raise _reject(code, msg_text, r.status_code, r.text, self._key)
         if code:                                      # 2xx 但厂商明确报了错：没建任务
             raise _reject(code, msg_text, secret=self._key)
         if not isinstance(j, dict):
             if submit:
-                raise AmbiguousSubmit.of("film.minimax.not_json")
-            raise TransientError.of("film.minimax.not_json")
+                raise AmbiguousSubmit.of("film.vendor.not_json")
+            raise TransientError.of("film.vendor.not_json")
         return j
 
     def submit(self, req: ClipRequest) -> str:
@@ -321,37 +318,37 @@ class MiniMax:
         caps = self.caps(req.model)
         if req.resolution not in caps.resolutions:
             log.warning("%s", base.scrub_secrets(f'档位 {m["label"]} 不支持 {req.resolution}', (self._key,)))  # i18n: internal
-            raise ProviderError.of("film.minimax.bad_resolution", resolution=req.resolution,
+            raise ProviderError.of("film.settings.bad_resolution", resolution=req.resolution,
                                    options=list(caps.resolutions))
         if len(req.prompt) > PROMPT_MAX:
-            raise ProviderError.of("film.minimax.prompt_too_long", max=PROMPT_MAX, len=len(req.prompt))
+            raise ProviderError.of("film.input.prompt_too_long", max=PROMPT_MAX, len=len(req.prompt))
         content = [{"type": "text", "text": req.prompt}]
         size = len(req.prompt.encode("utf-8"))
         body = {"model": m["id"], "content": content, "resolution": req.resolution,
                 "duration": request_seconds(req.duration, caps), "aigc_watermark": False}
         if req.refs:
             for ref in req.refs:
-                label = compact(msg("film.minimax.label_first") if ref.role == "first_frame"
-                                else msg("film.minimax.label_ref", id=ref.asset_id))
+                label = compact(msg("film.input.label_first") if ref.role == "first_frame"
+                                else msg("film.input.label_ref", id=ref.asset_id))
                 url, n = _check_image(ref.source, label)
                 content.append({"type": "image_url", "image_url": {"url": url}, "role": "reference_image"})
                 size += n
         elif req.first_frame:
-            url, n = _check_image(req.first_frame, compact(msg("film.minimax.label_first")))
+            url, n = _check_image(req.first_frame, compact(msg("film.input.label_first")))
             content.append({"type": "image_url", "image_url": {"url": url}, "role": "first_frame"})
             size += n
         if req.refs or not req.first_frame:           # 参考生与文生显式给比例；图生由图决定
             if req.aspect == "adaptive" and req.refs and req.model == "minimax-h3-lite":
-                raise ProviderError.of("film.minimax.lite_needs_ratio")
+                raise ProviderError.of("film.input.needs_ratio")
             if req.aspect not in RATIOS:
-                raise ProviderError.of("film.minimax.bad_ratio", ratio=req.aspect, options=list(RATIOS))
+                raise ProviderError.of("film.input.bad_ratio", ratio=req.aspect, options=list(RATIOS))
             body["ratio"] = req.aspect
         if size > BODY_MAX_BYTES:
-            raise ProviderError.of("film.minimax.request_too_big", mb=f"{size / 1048576:.1f}")
+            raise ProviderError.of("film.input.request_too_big", mb=f"{size / 1048576:.1f}")
         j = self._call("POST", "/v2/video_generation", submit=True, json=body)
         tid = j.get("task_id")
         if not tid:
-            raise AmbiguousSubmit.of("film.minimax.no_task_id")
+            raise AmbiguousSubmit.of("film.vendor.no_task_id")
         return str(tid)
 
     def poll(self, task_id: str) -> TaskState:
@@ -368,14 +365,11 @@ class MiniMax:
                 err = t.get("error") if isinstance(t.get("error"), dict) else {}
                 code = _code(err.get("code") or err.get("type"), err.get("message"))
                 parts = [str(x) for x in (code, err.get("message")) if x]
-                text = scrub(": ".join(parts), self._key)
-                zh = scrub("：".join(parts), self._key)          # 中文兜底保持原样
+                text = ": ".join(parts)
                 m = (msg(_KNOWN[code]) if code in _KNOWN
-                     else msg("film.provider.rejected", detail=vendor(text)) if text
+                     else base.vendor_reject("film.vendor.rejected", text, who="minimax", secrets=(self._key,)) if text
                      else msg("film.provider.generation_failed"))
-                if m["code"] == "film.provider.rejected":
-                    m["message"] = zh
-            error, error_msg = m["message"], compact(m)
+            error, error_msg = m["message"], {k: m[k] for k in ("code", "params", "ref") if k in m}
         usage = t.get("usage") if status == "succeeded" and isinstance(t.get("usage"), dict) else {}
         return TaskState(task_id, status, video_url=content.get("url"), last_frame_url=None,
                          error=error, error_msg=error_msg, usage=dict(usage))
@@ -383,7 +377,7 @@ class MiniMax:
     def _fetch(self, url: Optional[str], dest: Path) -> None:
         """结果地址是限时签名直链：不带密钥。先写 .part 再改名；不建上级目录（版本删了不能被下载重建）。"""
         if not url:
-            raise ProviderError.of("film.minimax.no_result_url")
+            raise ProviderError.of("film.vendor.no_result_url")
         dest.parent.mkdir(exist_ok=True)
         part = dest.with_name(dest.name + ".part")
         try:
@@ -410,13 +404,13 @@ class MiniMax:
             try:
                 fresh = self.poll(st.task_id)
             except ProviderError:
-                raise ProviderError.of("film.minimax.url_expired")
+                raise ProviderError.of("film.vendor.result_expired")
             if fresh.status != "succeeded" or not fresh.video_url:
-                raise ProviderError.of("film.minimax.url_expired")
+                raise ProviderError.of("film.vendor.result_expired")
             try:
                 self._fetch(fresh.video_url, dest)
             except _Expired:
-                raise ProviderError.of("film.minimax.url_expired")
+                raise ProviderError.of("film.vendor.result_expired")
         return {"video": dest, "last_frame": _grab_last_frame(dest)}
 
     def cancel(self, task_id: str) -> bool:

@@ -308,7 +308,8 @@ class Runner:
             cost = provider.cost(st, req)
             if st.status == "failed":
                 gone = (st.error_msg or {}).get("code") == "film.provider.task_cancelled"
-                err = ({"code": st.error_msg["code"], "params": st.error_msg.get("params") or {}, "message": st.error}
+                err = ({"code": st.error_msg["code"], "params": st.error_msg.get("params") or {}, "message": st.error,
+                        **({"ref": st.error_msg["ref"]} if st.error_msg.get("ref") else {})}
                        if st.error_msg else (st.error or msg("film.provider.failed")))
                 sess.settle_abandoned(root, tid, "cancelled" if gone else "failed", cost=cost, error=err)
                 return

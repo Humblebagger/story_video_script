@@ -100,7 +100,7 @@ def main() -> int:
     must_raise(base.TransientError, status(429).submit, req)
     e = must_raise(base.ProviderError, status(400, {"error": {"code": "InvalidParameter",
                                                               "message": "duration 不合法"}}).submit, req)
-    assert "InvalidParameter" in str(e) and "duration 不合法" in str(e) and "k-secret" not in str(e)
+    assert e.code == "film.vendor.rejected" and "InvalidParameter" not in str(e) and "duration" not in str(e)
 
     def refused(request):
         raise httpx.ConnectError("connection refused", request=request)
@@ -145,7 +145,7 @@ def main() -> int:
     assert task({"id": "x", "status": "running"}).poll("x").status == "running"
     st = task({"id": "x", "status": "failed",
                "error": {"code": "OutputVideoSensitiveContentDetected", "message": "审核未通过"}}).poll("x")
-    assert st.status == "failed" and st.error_msg["code"] == "film.ark.output_moderated"
+    assert st.status == "failed" and st.error_msg["code"] == "film.vendor.output_moderated"
     assert "审核未通过" not in st.error      # 厂商原文不进界面，只进日志
     st = task({"id": "x", "status": "expired"}).poll("x")
     assert st.status == "failed" and st.error
@@ -185,25 +185,25 @@ def main() -> int:
     os.environ["ARK_API_KEY"] = ""
     with _LogGrab("render.providers.seedance") as g:
         e = must_raise(base.ProviderError, Seedance.from_env)
-    assert e.code == "film.ark.no_key" and "ARK_API_KEY" not in str(e) and ".env" not in str(e)
+    assert e.code == "film.vendor.no_key" and "ARK_API_KEY" not in str(e) and ".env" not in str(e)
     assert any("ARK_API_KEY" in x for x in g.lines), g.lines
     print("6. 密钥 ✓")
 
     # 7. 错误带代码
-    assert must_raise(base.ProviderError, Seedance.from_env).code == "film.ark.no_key"
+    assert must_raise(base.ProviderError, Seedance.from_env).code == "film.vendor.no_key"
     e = must_raise(base.TransientError, status(429).submit, req)
-    assert e.code == "film.ark.throttled"
+    assert e.code == "film.vendor.throttled"
     st = task({"id": "x", "status": "expired"}).poll("x")
-    assert st.error_msg["code"] == "film.ark.task_expired" and st.error == "任务超时"
+    assert st.error_msg["code"] == "film.vendor.task_expired" and st.error == "任务超时"
     assert Seedance.rate_note == {"code": "rate.ark", "params": {}} and Seedance.console_name == "console.ark"
     # 7b. 面向最终用户的文案：档位、异常类名不进界面，只进日志
     with _LogGrab("render.providers.seedance") as g:
         e = must_raise(base.ProviderError, sd.caps, "nope-tier")
-    assert e.code == "film.ark.unknown_model" and e.params == {} and "nope-tier" not in str(e)
+    assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e)
     assert any("nope-tier" in x for x in g.lines), g.lines
     with _LogGrab("render.providers.seedance") as g:
         e = must_raise(base.TransientError, ark(refused).submit, req)
-    assert e.code == "film.ark.connect_failed" and e.params == {} and "ConnectError" not in str(e)
+    assert e.code == "film.vendor.connect_failed" and e.params == {} and "ConnectError" not in str(e)
     assert any("ConnectError" in x for x in g.lines), g.lines
     with _LogGrab("render.providers.seedance") as g:
         e = must_raise(base.AmbiguousSubmit, raising(httpx.ReadTimeout).submit, req)
@@ -216,63 +216,67 @@ def main() -> int:
     assert any("ConnectError" in x for x in g.lines), g.lines
     print("7. 错误带代码 ✓")
 
-    # 8. 厂商原文脱敏（三条路径）且兜底不截断、结构化参数限长
+    # 8. 厂商原文脱敏（三条路径）：消息不带原话；原话脱敏后进日志，长度有上限
     def flat(o):
         return json.dumps(o, ensure_ascii=False)
     leak = "echo k-secret and Bearer OTHER_TOKEN " + "x" * 400
-    e = must_raise(base.ProviderError, status(400, {"error": {"code": "Bad", "message": leak}}).submit, req)
-    assert "k-secret" not in flat([str(e), e.args, e.params]) and "OTHER_TOKEN" not in flat([str(e), e.params])
-    assert len(str(e)) > 400 and len(e.params["detail"]["text"]) == 300
-    assert e.params["detail"]["text"].startswith("Bad: ") and str(e).startswith("Bad：")   # 结构化 ASCII，兜底全角
-    e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(400, text=leak)).submit, req)
-    assert "k-secret" not in flat([str(e), e.params]) and "OTHER_TOKEN" not in flat([str(e), e.params])
-    st = task({"id": "x", "status": "failed", "error": {"code": "Bad", "message": leak}}).poll("x")
-    assert "k-secret" not in flat([st.error, st.error_msg]) and "OTHER_TOKEN" not in flat([st.error, st.error_msg])
-    assert len(st.error) > 400 and len(st.error_msg["params"]["detail"]["text"]) == 300
-    assert st.error_msg["params"]["detail"]["text"].startswith("Bad: ") and st.error.startswith("Bad：")
+    with _LogGrab("render.providers.base") as g:
+        e = must_raise(base.ProviderError, status(400, {"error": {"code": "Bad", "message": leak}}).submit, req)
+    assert e.code == "film.vendor.rejected" and e.params == {} and "Bad" not in str(e) and "xxx" not in str(e)
+    assert any("Bad: " in x and "seedance" in x for x in g.lines), g.lines
+    assert "k-secret" not in flat(g.lines) and "OTHER_TOKEN" not in flat(g.lines)
+    with _LogGrab("render.providers.base") as g:
+        e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(400, text=leak)).submit, req)
+    assert e.code == "film.vendor.rejected" and "k-secret" not in flat([str(e), e.params, g.lines])
+    assert "OTHER_TOKEN" not in flat([str(e), e.params, g.lines])
+    with _LogGrab("render.providers.base") as g:
+        st = task({"id": "x", "status": "failed", "error": {"code": "Bad", "message": leak}}).poll("x")
+    assert st.error_msg["code"] == "film.vendor.rejected" and st.error_msg["params"] == {} and "Bad" not in st.error
+    assert "k-secret" not in flat([st.error, st.error_msg, g.lines]) and "OTHER_TOKEN" not in flat([st.error, st.error_msg, g.lines])
+    assert any("Bad: " in x for x in g.lines), g.lines
     print("8. 原文脱敏 ✓")
 
     # 9. 方舟错误码友好映射：界面只给友好文案，厂商原文只进日志
     KEY = "k-secret"
     ZH = {
-        "film.ark.auth": "视频服务（方舟）鉴权失败，请联系管理员",
-        "film.ark.overdue": "视频服务（方舟）账户欠费，暂时无法出片，请联系管理员",
-        "film.ark.access_denied": "视频服务（方舟）拒绝访问，请联系管理员",
-        "film.ark.model_unavailable": "所选的视频档位暂时不可用（模型未开通），请换一个档位或联系管理员",
-        "film.ark.limit_paused": "视频服务（方舟）已达到用量上限并暂停，请联系管理员",
-        "film.ark.quota": "额度不足或排队已满，持续失败请联系管理员",
-        "film.ark.input_moderated": "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试",
-        "film.ark.copyright": "这一段的描述可能涉及版权限制：改写后重试",
-        "film.ark.output_moderated": "生成的视频没通过内容审核：调整这一段的描述后重试",
-        "film.ark.output_copyright": "生成的视频可能涉及版权限制：调整这一段的描述后重试",
+        "film.vendor.auth": "视频生成服务鉴权失败，请联系管理员",
+        "film.vendor.balance": "视频生成服务账户余额不足，暂时无法出片，请联系管理员",
+        "film.vendor.access_denied": "视频生成服务拒绝访问，请联系管理员",
+        "film.vendor.tier_unavailable": "所选的视频档位暂时不可用，请换一个档位或联系管理员",
+        "film.vendor.limit_paused": "视频生成服务已达到用量上限并暂停，请联系管理员",
+        "film.vendor.quota": "额度不足或排队已满，持续失败请联系管理员",
+        "film.vendor.input_moderated": "这一段的画面描述或参考图没通过内容审核：改写描述或换参考图后重试",
+        "film.vendor.copyright": "这一段的描述可能涉及版权限制：改写后重试",
+        "film.vendor.output_moderated": "生成的视频没通过内容审核：调整这一段的描述后重试",
+        "film.vendor.output_copyright": "生成的视频可能涉及版权限制：调整这一段的描述后重试",
     }
 
     def body_of(code):
         return {"error": {"code": code, "message": f"vendor text with {KEY} Bearer OTHER_TOKEN"}}
 
     cases = [
-        (401, "AuthenticationError", "film.ark.auth"),
-        (401, "InvalidSubscription", "film.ark.auth"),
-        (403, "AccountOverdueError", "film.ark.overdue"),
-        (403, "AccessDenied", "film.ark.access_denied"),
-        (403, "InvalidAccountStatus", "film.ark.access_denied"),
-        (404, "InvalidEndpointOrModel.NotFound", "film.ark.model_unavailable"),
-        (404, "InvalidEndpointOrModel.ModelIDAccessDisabled", "film.ark.model_unavailable"),
-        (404, "ModelNotOpen", "film.ark.model_unavailable"),
-        (403, "OperationDenied.ServiceNotOpen", "film.ark.model_unavailable"),
-        (403, "OperationDenied.ServiceOverdue", "film.ark.overdue"),
-        (403, "OperationDenied.PermissionDenied", "film.ark.access_denied"),
-        (404, "InvalidEndpoint.ClosedEndpoint", "film.ark.model_unavailable"),
-        (400, "InputImageRiskDetection", "film.ark.input_moderated"),
-        (400, "InputVideoSensitiveContentDetected", "film.ark.input_moderated"),
-        (400, "InputTextRiskDetection.Foo", "film.ark.input_moderated"),
-        (400, "InputImageSensitiveContentDetected.PolicyViolation", "film.ark.copyright"),
-        (400, "SensitiveContentDetected.Violence", "film.ark.input_moderated"),
-        (400, "InputTextSensitiveContentDetected", "film.ark.input_moderated"),
-        (400, "InputImageSensitiveContentDetected", "film.ark.input_moderated"),
-        (400, "InputTextRiskDetection", "film.ark.input_moderated"),
-        (400, "SensitiveContentDetected.PolicyViolation", "film.ark.copyright"),
-        (400, "InputTextSensitiveContentDetected.PolicyViolation", "film.ark.copyright"),
+        (401, "AuthenticationError", "film.vendor.auth"),
+        (401, "InvalidSubscription", "film.vendor.auth"),
+        (403, "AccountOverdueError", "film.vendor.balance"),
+        (403, "AccessDenied", "film.vendor.access_denied"),
+        (403, "InvalidAccountStatus", "film.vendor.access_denied"),
+        (404, "InvalidEndpointOrModel.NotFound", "film.vendor.tier_unavailable"),
+        (404, "InvalidEndpointOrModel.ModelIDAccessDisabled", "film.vendor.tier_unavailable"),
+        (404, "ModelNotOpen", "film.vendor.tier_unavailable"),
+        (403, "OperationDenied.ServiceNotOpen", "film.vendor.tier_unavailable"),
+        (403, "OperationDenied.ServiceOverdue", "film.vendor.balance"),
+        (403, "OperationDenied.PermissionDenied", "film.vendor.access_denied"),
+        (404, "InvalidEndpoint.ClosedEndpoint", "film.vendor.tier_unavailable"),
+        (400, "InputImageRiskDetection", "film.vendor.input_moderated"),
+        (400, "InputVideoSensitiveContentDetected", "film.vendor.input_moderated"),
+        (400, "InputTextRiskDetection.Foo", "film.vendor.input_moderated"),
+        (400, "InputImageSensitiveContentDetected.PolicyViolation", "film.vendor.copyright"),
+        (400, "SensitiveContentDetected.Violence", "film.vendor.input_moderated"),
+        (400, "InputTextSensitiveContentDetected", "film.vendor.input_moderated"),
+        (400, "InputImageSensitiveContentDetected", "film.vendor.input_moderated"),
+        (400, "InputTextRiskDetection", "film.vendor.input_moderated"),
+        (400, "SensitiveContentDetected.PolicyViolation", "film.vendor.copyright"),
+        (400, "InputTextSensitiveContentDetected.PolicyViolation", "film.vendor.copyright"),
     ]
     for http, vcode, ours in cases:
         e = must_raise(base.ProviderError, status(http, body_of(vcode)).submit, req)
@@ -282,69 +286,72 @@ def main() -> int:
     # SetLimitExceeded 的 429：不重试（不是瞬时错误，也不是 AmbiguousSubmit），提交与查询都一样
     for call in (lambda s: s.submit(req), lambda s: s.poll("x")):
         e = must_raise(base.ProviderError, call, status(429, body_of("SetLimitExceeded")))
-        assert type(e) is base.ProviderError and e.code == "film.ark.limit_paused" and str(e) == ZH[e.code]
+        assert type(e) is base.ProviderError and e.code == "film.vendor.limit_paused" and str(e) == ZH[e.code]
         assert not isinstance(e, (base.TransientError, base.AmbiguousSubmit))
 
     # QuotaExceeded 是 429：免费额度用尽或排队已满，可重试，用自己的代码
     e = must_raise(base.TransientError, status(429, body_of("QuotaExceeded")).submit, req)
-    assert e.code == "film.ark.quota" and str(e) == ZH[e.code] and KEY not in flat([str(e), e.params])
+    assert e.code == "film.vendor.quota" and str(e) == ZH[e.code] and KEY not in flat([str(e), e.params])
     e = must_raise(base.TransientError, status(429, body_of("QuotaExceeded")).poll, "x")
-    assert e.code == "film.ark.quota"
+    assert e.code == "film.vendor.quota"
     e = must_raise(base.TransientError, status(403, body_of("QuotaExceeded")).submit, req)     # 非 429 同样可重试
-    assert e.code == "film.ark.quota"
+    assert e.code == "film.vendor.quota"
 
     # 429 里别的映射码不该出现：一律当限流重试，不给用户鉴权 / 审核之类的误导文案
     for vcode in ("AuthenticationError", "OperationDenied.ServiceNotOpen", "SensitiveContentDetected.Violence"):
         e = must_raise(base.TransientError, status(429, body_of(vcode)).submit, req)
-        assert e.code == "film.ark.throttled", (vcode, e.code)
+        assert e.code == "film.vendor.throttled", (vcode, e.code)
         e = must_raise(base.TransientError, status(429, body_of(vcode)).poll, "x")
-        assert e.code == "film.ark.throttled"
+        assert e.code == "film.vendor.throttled"
 
     # QuotaExceeded 只在 429 与明确拒绝的 4xx 可重试；5xx 照旧（提交含糊、查询不可用），不自动重提
     e = must_raise(base.AmbiguousSubmit, status(500, body_of("QuotaExceeded")).submit, req)
-    assert e.code == "film.ark.http_ambiguous"
+    assert e.code == "film.vendor.http_ambiguous"
     e = must_raise(base.TransientError, status(503, body_of("QuotaExceeded")).poll, "x")
-    assert e.code == "film.ark.unavailable"
+    assert e.code == "film.vendor.unavailable"
     # 查询返回 failed + QuotaExceeded：终态失败（不重试、不重提），文案是额度
     st = task({"id": "x", "status": "failed", "error": body_of("QuotaExceeded")["error"]}).poll("x")
-    assert st.status == "failed" and st.error_msg["code"] == "film.ark.quota" and st.error == ZH["film.ark.quota"]
+    assert st.status == "failed" and st.error_msg["code"] == "film.vendor.quota" and st.error == ZH["film.vendor.quota"]
 
     # 真正的限流仍可重试
     for vcode in ("RateLimitExceeded.EndpointRPMExceeded", "ServerOverloaded", "RequestBurstTooFast"):
         e = must_raise(base.TransientError, status(429, body_of(vcode)).submit, req)
-        assert e.code == "film.ark.throttled"
+        assert e.code == "film.vendor.throttled"
     e = must_raise(base.TransientError, ark(lambda r: httpx.Response(429, text="slow down")).submit, req)
-    assert e.code == "film.ark.throttled"
+    assert e.code == "film.vendor.throttled"
 
     # 轮询里的失败
-    for vcode, ours in (("OutputVideoSensitiveContentDetected", "film.ark.output_moderated"),
-                        ("OutputAudioSensitiveContentDetected", "film.ark.output_moderated"),
-                        ("OutputImageSensitiveContentDetected", "film.ark.output_moderated"),
-                        ("OutputImageRiskDetection", "film.ark.output_moderated"),
-                        ("OutputVideoSensitiveContentDetected.PolicyViolation", "film.ark.output_copyright")):
+    for vcode, ours in (("OutputVideoSensitiveContentDetected", "film.vendor.output_moderated"),
+                        ("OutputAudioSensitiveContentDetected", "film.vendor.output_moderated"),
+                        ("OutputImageSensitiveContentDetected", "film.vendor.output_moderated"),
+                        ("OutputImageRiskDetection", "film.vendor.output_moderated"),
+                        ("OutputVideoSensitiveContentDetected.PolicyViolation", "film.vendor.output_copyright")):
         st = task({"id": "x", "status": "failed", "error": body_of(vcode)["error"]}).poll("x")
         assert st.error_msg["code"] == ours and st.error == ZH[ours]
         assert KEY not in flat([st.error, st.error_msg])
 
-    # 未映射：照旧带厂商原文
-    e = must_raise(base.ProviderError, status(400, {"error": {"code": "InvalidParameter",
-                                                              "message": "duration 不合法"}}).submit, req)
-    assert e.code == "film.provider.rejected" and "duration 不合法" in e.params["detail"]["text"]
+    # 未映射：统一给 film.vendor.rejected，原文进日志
+    with _LogGrab("render.providers.base") as g:
+        e = must_raise(base.ProviderError, status(400, {"error": {"code": "InvalidParameter",
+                                                                  "message": "duration 不合法"}}).submit, req)
+    assert e.code == "film.vendor.rejected" and e.params == {} and "duration" not in str(e)
+    assert any("duration 不合法" in x for x in g.lines), g.lines
     for payload in ({"error": {}}, {}, {"error": None}, []):
-        e = must_raise(base.ProviderError, ark(lambda r, p=payload: httpx.Response(400, json=p)).submit, req)
-        assert e.code == "film.provider.rejected" and str(e) == "HTTP 400", (payload, e.code, str(e))
-        assert e.params["detail"]["text"] == "HTTP 400"
+        with _LogGrab("render.providers.base") as g:
+            e = must_raise(base.ProviderError, ark(lambda r, p=payload: httpx.Response(400, json=p)).submit, req)
+        assert e.code == "film.vendor.rejected" and e.params == {} and "HTTP" not in str(e), (payload, e.code, str(e))
+        assert any("HTTP 400" in x for x in g.lines), g.lines
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(401, text="nope")).submit, req)
-    assert e.code == "film.ark.auth"
+    assert e.code == "film.vendor.auth"
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(403, text="nope")).submit, req)
-    assert e.code == "film.ark.access_denied"
+    assert e.code == "film.vendor.access_denied"
     e = must_raise(base.ProviderError, ark(lambda r: httpx.Response(418, text="teapot")).submit, req)
-    assert e.code == "film.provider.http_rejected"
+    assert e.code == "film.vendor.rejected"
     e = must_raise(base.ProviderError, status(403, body_of("OperationDenied.InvalidState")).submit, req)
-    assert e.code == "film.provider.rejected"
+    assert e.code == "film.vendor.rejected"
     # 有 code 但没命中时不做 HTTP 回落
     e = must_raise(base.ProviderError, status(403, body_of("SomethingNew")).submit, req)
-    assert e.code == "film.provider.rejected"
+    assert e.code == "film.vendor.rejected"
 
     # 日志：命中映射时原文进 WARNING，密钥不进
     class _Grab(logging.Handler):

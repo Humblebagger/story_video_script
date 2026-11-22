@@ -133,7 +133,7 @@ def main() -> int:
     drain(runner)
     f = node()
     assert f["state"] == "failed" and "内容审核未通过" in (f["error"] or ""), f
-    assert f["error_msg"]["code"] == "film.provider.rejected", f["error_msg"]
+    assert f["error_msg"]["code"] == "film.fake.failed", f["error_msg"]
     assert f["attempts"][-1]["error_msg"] == f["error_msg"]
     fake.fail_with = None
     print("5. 厂商失败记错误 ✓")

@@ -108,7 +108,7 @@ def main() -> int:
         volc = VolcTts(api_key="k-secret", client=httpx.Client(transport=httpx.MockTransport(refused)))
         vv = {"narration": VOICES[0].id}
         _, failed = voice.synthesize(lines[:1], vv, volc, Path(d), retries=2, sleep=lambda s: None)
-        assert len(failed) == 1 and failed[0]["error_msg"]["code"] == "tts.volc.connect_failed", failed
+        assert len(failed) == 1 and failed[0]["error_msg"]["code"] == "tts.vendor.connect_failed", failed
         assert "自动重试" not in failed[0]["error"] and "retrying" not in failed[0]["error"], failed[0]["error"]
         from server.messages import render_zh
         assert "自动重试" not in render_zh(failed[0]["error_msg"]["code"], failed[0]["error_msg"]["params"]), failed[0]

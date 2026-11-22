@@ -657,7 +657,7 @@ def main() -> int:
     os.environ["ARK_API_KEY"] = os.environ["MINIMAX_API_KEY"] = ""
 
     def submit_reject17(req):
-        raise base.ProviderError.of("film.ark.auth")
+        raise base.ProviderError.of("film.vendor.auth")
 
     fake.submit = submit_reject17
     sess.queue_run(r17, [i17[0]])
@@ -666,7 +666,7 @@ def main() -> int:
     with _LogGrab("render.runner") as g:
         rn.tick()
     warns = [r for r in g.records if r.levelno == logging.WARNING]
-    assert any(str(r17) in r.getMessage() and i17[0] in r.getMessage() and "film.ark.auth" in r.getMessage()
+    assert any(str(r17) in r.getMessage() and i17[0] in r.getMessage() and "film.vendor.auth" in r.getMessage()
                for r in warns), g.lines
     fake.submit = real_submit17
 
@@ -710,7 +710,7 @@ def main() -> int:
         rn.tick()
     c = clip(r19, i19[0])
     assert c["state"] == "failed" and c["error"] == "审核未通过"
-    assert c["error_msg"] == {"code": "film.provider.rejected", "params": {"detail": {"t": "vendor", "text": "审核未通过"}}}
+    assert c["error_msg"] == {"code": "film.fake.failed", "params": {"detail": {"t": "vendor", "text": "审核未通过"}}}
     assert c["attempts"][-1]["error_msg"] == c["error_msg"]
     fake.fail_with = None
     print("17. 错误带代码与嵌套原因 ✓")

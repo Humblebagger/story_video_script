@@ -231,7 +231,7 @@ def main() -> int:
     assert "审核" in str(e)
     e = must_raise(base.ProviderError, answer(httpx.Response(400, json={"error": {"code": 2013,
                    "message": "prompt is required"}})).submit, q)                          # 8
-    assert "2013" in str(e) and "prompt is required" in str(e)
+    assert e.code == "film.vendor.rejected" and "2013" not in str(e) and "prompt is required" not in str(e)
     must_raise(base.AmbiguousSubmit, answer(httpx.Response(200, text="<html>")).submit, q)  # 10
     must_raise(base.AmbiguousSubmit, answer(httpx.Response(200, json={"base_resp": {"status_code": 0}})).submit, q)
     must_raise(base.TransientError, answer(httpx.Response(200, text="<html>")).poll, "t")
@@ -250,7 +250,7 @@ def main() -> int:
     st = task("failed", error={"code": "1026", "message": "sensitive"}).poll("t")
     assert st.status == "failed" and "审核" in st.error
     st = task("failed", error={"code": "2056", "message": "boom"}).poll("t")
-    assert st.error == "2056：boom"
+    assert st.error_msg["code"] == "film.vendor.rejected" and "boom" not in st.error
     assert task("cancelled").poll("t").error == "任务已取消"
     poll_seen = []
     mmx(lambda r: (poll_seen.append(r), httpx.Response(200, json={"task": {"status": "running"}}))[1]).poll("abc")
@@ -283,7 +283,7 @@ def main() -> int:
                        else httpx.Response(200, json={"task": {"status": "succeeded", "content": {"url": "https://cdn/x.mp4"}}}))
             e = must_raise(base.ProviderError, dead.download,
                            base.TaskState("t", "succeeded", video_url="https://cdn/x.mp4"), clips / "E01-C03.v1.mp4")
-            assert "7 天" in str(e)
+            assert e.code == "film.vendor.result_expired"
             must_raise(base.TransientError, mmx(lambda r: httpx.Response(503)).download,
                        base.TaskState("t", "succeeded", video_url="https://cdn/y.mp4"), clips / "E01-C04.v1.mp4")
         finally:
@@ -322,7 +322,7 @@ def main() -> int:
     os.environ["MINIMAX_API_KEY"] = ""
     with _LogGrab("render.providers.minimax") as g:
         e = must_raise(base.ProviderError, MiniMax.from_env)
-    assert e.code == "film.minimax.no_key" and "MINIMAX_API_KEY" not in str(e) and ".env" not in str(e)
+    assert e.code == "film.vendor.no_key" and "MINIMAX_API_KEY" not in str(e) and ".env" not in str(e)
     assert any("MINIMAX_API_KEY" in x for x in g.lines), g.lines
     os.environ["MINIMAX_API_KEY"] = "k-env"
     os.environ["STORYBOARD_MINIMAX_BASE_URL"] = "https://api.example.io"
@@ -347,7 +347,7 @@ def main() -> int:
     e = must_raise(base.ProviderError, m.submit, base.ClipRequest(
         prompt="p", model="minimax-h3-lite", duration=4, resolution="480P", aspect="adaptive",
         refs=[base.RefImage("C01", "character", "https://img/c01.png")]))
-    assert "Lite" in str(e) and "adaptive" in str(e) and len(seen) == n_sent, "Lite 参考生不发 adaptive"
+    assert e.code == "film.input.needs_ratio" and len(seen) == n_sent, "Lite 参考生不发 adaptive"
     leak = answer(httpx.Response(400, json={"error": {"code": 2013, "message":
                   "bad Authorization: Bearer k-secret and key k-secret " + "x" * 600}}))
     e = must_raise(base.ProviderError, leak.submit, q)
@@ -365,30 +365,32 @@ def main() -> int:
     # 10. 错误带代码
     def code_of(resp=None, exc=None, cls=base.ProviderError):
         return must_raise(cls, answer(resp, exc).submit, q)
-    assert code_of(httpx.Response(402, json={})).code == "film.minimax.insufficient_balance"
-    assert code_of(httpx.Response(401, json={})).code == "film.minimax.invalid_key"
-    assert code_of(httpx.Response(422, json={"error": {"code": 1026, "message": "x"}})).code == "film.minimax.moderated"
+    assert code_of(httpx.Response(402, json={})).code == "film.vendor.balance"
+    assert code_of(httpx.Response(401, json={})).code == "film.vendor.auth"
+    assert code_of(httpx.Response(422, json={"error": {"code": 1026, "message": "x"}})).code == "film.vendor.input_moderated"
     st = task("failed", error={"code": "1026", "message": "sensitive"}).poll("t")
-    assert st.error_msg["code"] == "film.minimax.moderated" and "审核" in st.error
+    assert st.error_msg["code"] == "film.vendor.input_moderated" and "审核" in st.error
     assert task("cancelled").poll("t").error_msg["code"] == "film.provider.task_cancelled"
-    e = code_of(httpx.Response(400, json={"error": {"code": 2013, "message": "echo k-secret here"}}))
-    assert e.code == "film.provider.rejected" and e.params["detail"]["t"] == "vendor"
-    assert "k-secret" not in json.dumps(e.params, ensure_ascii=False)
-    assert e.params["detail"]["text"].startswith("2013: ") and str(e).startswith("2013：")   # 结构化 ASCII，兜底全角
-    st = task("failed", error={"code": "2056", "message": "boom k-secret"}).poll("t")
-    assert st.error_msg["code"] == "film.provider.rejected" and "k-secret" not in json.dumps(st.error_msg)
-    assert st.error_msg["params"]["detail"]["text"].startswith("2056: ") and st.error.startswith("2056：")
+    with _LogGrab("render.providers.base") as g:
+        e = code_of(httpx.Response(400, json={"error": {"code": 2013, "message": "echo k-secret here"}}))
+    assert e.code == "film.vendor.rejected" and e.params == {} and "2013" not in str(e) and "k-secret" not in str(e)
+    assert any("2013" in x and "minimax" in x for x in g.lines) and all("k-secret" not in x for x in g.lines), g.lines
+    with _LogGrab("render.providers.base") as g:
+        st = task("failed", error={"code": "2056", "message": "boom k-secret"}).poll("t")
+    assert st.error_msg["code"] == "film.vendor.rejected" and st.error_msg["params"] == {}
+    assert "boom" not in st.error and "k-secret" not in json.dumps(st.error_msg)
+    assert any("2056" in x and "boom" in x for x in g.lines) and all("k-secret" not in x for x in g.lines), g.lines
     with _LogGrab("render.providers.minimax") as g:
         e = code_of(exc=httpx.ReadTimeout("x"), cls=base.AmbiguousSubmit)
     assert e.code == "film.provider.submit_cut" and e.params == {} and str(e) == "网络中断"
     assert any("ReadTimeout" in x for x in g.lines), g.lines
     with _LogGrab("render.providers.minimax") as g:
         e = code_of(exc=httpx.ConnectError("x"), cls=base.TransientError)
-    assert e.code == "film.minimax.connect_failed" and e.params == {} and "ConnectError" not in str(e)
+    assert e.code == "film.vendor.connect_failed" and e.params == {} and "ConnectError" not in str(e)
     assert any("ConnectError" in x for x in g.lines), g.lines
     with _LogGrab("render.providers.minimax") as g:
         e = must_raise(base.ProviderError, MiniMax("k").caps, "nope-tier")
-    assert e.code == "film.minimax.unknown_model" and e.params == {} and "nope-tier" not in str(e)
+    assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e)
     assert any("nope-tier" in x for x in g.lines), g.lines
     # 档位参数里的密钥与 Bearer 凭据不进日志
     OTHER = "FAKE-ARK-ENV-VALUE-xyz"
@@ -407,19 +409,19 @@ def main() -> int:
     with _LogGrab("render.providers.minimax") as g:
         e = must_raise(base.ProviderError, answer(None).submit, base.ClipRequest(
             prompt="p", model="minimax-h3", duration=4, resolution="9999P"))
-    assert e.code == "film.minimax.bad_resolution" and set(e.params) == {"resolution", "options"}
+    assert e.code == "film.settings.bad_resolution" and set(e.params) == {"resolution", "options"}
     assert any("9999P" in x for x in g.lines), g.lines
     e = must_raise(base.ProviderError, mmx(lambda r: httpx.Response(200)).submit, base.ClipRequest(
         prompt="p", model="minimax-h3", duration=4, resolution="768P",
         refs=[base.RefImage("C01", "character", "data:image/png;base64,@@@@!!!")]))
-    assert e.code == "film.minimax.corrupt_image"
-    assert e.params["label"] == {"code": "film.minimax.label_ref", "params": {"id": "C01"}}
+    assert e.code == "film.input.corrupt_image"
+    assert e.params["label"] == {"code": "film.input.label_ref", "params": {"id": "C01"}}
     with tempfile.TemporaryDirectory() as d:
         dead = mmx(lambda r: httpx.Response(403) if r.url.host == "cdn"
                    else httpx.Response(200, json={"task": {"status": "succeeded", "content": {"url": "https://cdn/x.mp4"}}}))
         e = must_raise(base.ProviderError, dead.download,
                        base.TaskState("t", "succeeded", video_url="https://cdn/x.mp4"), Path(d) / "c" / "a.mp4")
-        assert e.code == "film.minimax.url_expired"
+        assert e.code == "film.vendor.result_expired"
     assert MiniMax.rate_note == {"code": "rate.minimax", "params": {}} and MiniMax.console_name == "console.minimax"
     print("10. 错误带代码 ✓")
 

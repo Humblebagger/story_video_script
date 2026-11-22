@@ -22,9 +22,9 @@ import httpx
 
 from pipeline.config import ROOT as BACKEND_ROOT
 from pipeline.config import _load_dotenv
+from render.providers import base
 from render.providers.base import ProviderError, TransientError, scrub
 from render.providers.tts_base import BilledError, TtsCaps, TtsResult, Voice, tts_cost, write_wav
-from server.messages import vendor
 
 log = logging.getLogger("render.providers.tts_volc")
 
@@ -70,7 +70,7 @@ def _safe_code(code, secrets: list):
 
 
 def _reject(r: httpx.Response, secrets: list) -> ProviderError:
-    """4xx：厂商给了 message 就带上（先抹掉密钥与 Bearer 凭据），否则只报 HTTP 状态。"""
+    """4xx：厂商给了 message 就按「厂商拒绝」处理（原话脱敏后进日志与错误记录，不给用户），否则只报 HTTP 状态。"""
     try:
         d = r.json()
         if not isinstance(d, dict):
@@ -82,8 +82,9 @@ def _reject(r: httpx.Response, secrets: list) -> ProviderError:
         msg, code = _clean(r.text, secrets)[:200], r.status_code    # 先抹掉再截断，免得密钥被截半漏出
     msg = _clean(msg, secrets)
     if msg:
-        return ProviderError.of("tts.volc.rejected", code=str(_safe_code(code, secrets)), detail=vendor(msg))
-    return ProviderError.of("tts.volc.rejected_http", status=r.status_code)
+        return ProviderError.from_msg(base.vendor_reject(
+            "tts.vendor.rejected", f"{_safe_code(code, secrets)}: {msg}", who="volc", secrets=secrets))
+    return ProviderError.of("tts.vendor.rejected_http", status=r.status_code)
 
 
 class VolcTts:
@@ -95,7 +96,7 @@ class VolcTts:
         if not api_key and not (app_id and access_key):
             log.warning("未配置豆包语音密钥：在 backend/.env 写 VOLC_TTS_API_KEY（新版控制台），"
                         "或 VOLC_TTS_APP_ID 与 VOLC_TTS_ACCESS_KEY（旧版控制台）")  # i18n: internal
-            raise ProviderError.of("tts.volc.no_key")
+            raise ProviderError.of("tts.vendor.no_key")
         self._auth = ({"X-Api-Key": api_key} if api_key
                       else {"X-Api-App-Id": app_id, "X-Api-Access-Key": access_key})
         self._http = client or httpx.Client(timeout=timeout)
@@ -131,7 +132,7 @@ class VolcTts:
         try:
             with self._http.stream("POST", self._url, headers=headers, json=body) as r:
                 if r.status_code == 429 or r.status_code >= 500:
-                    raise TransientError.of("tts.volc.unavailable", status=r.status_code)
+                    raise TransientError.of("tts.vendor.unavailable", status=r.status_code)
                 if r.status_code >= 400:
                     r.read()
                     raise _reject(r, list(self._auth.values()))
@@ -145,9 +146,9 @@ class VolcTts:
                     try:
                         msg = json.loads(line)
                     except ValueError:
-                        raise self._billed("tts.volc.not_json", text) from None
+                        raise self._billed("tts.vendor.not_json", text) from None
                     if not isinstance(msg, dict):
-                        raise self._billed("tts.volc.not_object", text)
+                        raise self._billed("tts.vendor.not_json", text)
                     code = msg.get("code", 0)
                     if code == DONE:
                         done = True
@@ -156,20 +157,20 @@ class VolcTts:
                         detail = msg.get("message") or ""
                         safe_code = _safe_code(code, list(self._auth.values()))
                         if detail:
-                            raise self._billed("tts.volc.failed_detail", text, code=safe_code,
-                                               detail=vendor(self._scrub(detail)))
-                        raise self._billed("tts.volc.failed", text, code=safe_code)
+                            base.vendor_reject("tts.vendor.rejected", f"{safe_code}: {detail}", who="volc",
+                                               secrets=list(self._auth.values()))    # 只取副作用：原话进日志与错误记录
+                        raise self._billed("tts.vendor.failed", text, code=safe_code)
                     if msg.get("data"):
                         try:
                             pcm += base64.b64decode(msg["data"], validate=True)
                         except (binascii.Error, ValueError, TypeError):
-                            raise self._billed("tts.volc.bad_audio", text) from None
+                            raise self._billed("tts.vendor.bad_audio", text) from None
         except httpx.TransportError as e:
             log.warning("豆包语音连接异常：%s seen=%s", type(e).__name__, seen)  # i18n: internal
             if seen:
-                raise self._billed("tts.volc.cut", text) from None
-            raise TransientError.of("tts.volc.connect_failed") from None
+                raise self._billed("tts.vendor.cut", text) from None
+            raise TransientError.of("tts.vendor.connect_failed") from None
         if not done or not pcm:
-            raise self._billed("tts.volc.incomplete", text)
+            raise self._billed("tts.vendor.incomplete", text)
         duration = write_wav(Path(dest), bytes(pcm), SAMPLE_RATE)
         return TtsResult(Path(dest), duration, tts_cost(len(text), self.caps), len(text))

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol
 
-from server.messages import UserError
+from server.messages import UserError, msg, with_ref
 
 log = logging.getLogger("render.providers.base")
 
@@ -459,6 +459,23 @@ def scrub_secrets(text, extra=()) -> str:
     非空密钥一律抹掉，没有最短长度。"""
     keys = [os.environ.get(n, "") for n in SECRET_ENVS] + list(extra)
     return _mask(str(text), keys)
+
+
+record_reject = None    # 由 server.app 装上：(code, detail) -> 参考编号。缺省不记（厂商模块的单元测试不碰数据目录）
+
+
+def vendor_reject(code: str, raw, *, who: str, secrets=()) -> dict:
+    """厂商说不清或我们不认识的拒绝：原话不给用户。脱敏后写日志；装了 record_reject 就记一条错误记录，
+    消息带参考编号，管理员按编号在后台查到原话与厂商名。返回消息对象（code 的模板不得有参数）。"""
+    detail = scrub_secrets(f"{who}: {raw}", secrets)[:2000]
+    log.warning("%s", f"厂商拒绝 code={code} {detail}")  # i18n: internal
+    m = msg(code)
+    if record_reject is not None:
+        try:
+            m = with_ref(m, record_reject(code, detail))
+        except Exception as e:  # noqa: BLE001  记不上不能挡住报错本身
+            log.error("%s", scrub_secrets(f"厂商拒绝记录失败 {type(e).__name__}: {e}", secrets))  # i18n: internal
+    return m
 
 
 def request_seconds(duration: float, caps: Caps) -> int:

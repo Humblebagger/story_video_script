@@ -42,7 +42,7 @@ class FakeVideo:
     def caps(self, model):
         if model not in self.models:
             log.warning("%s", scrub_secrets(f"未知的假厂商档位：{model}"))  # i18n: internal
-            raise ProviderError.of("film.fake.unknown_model")
+            raise ProviderError.of("film.settings.no_model")
         return self._caps
 
     def rewrite_prompt(self, text):
@@ -69,7 +69,7 @@ class FakeVideo:
             return TaskState(task_id, "running")
         if self.fail_with:
             return TaskState(task_id, "failed", error=self.fail_with,
-                             error_msg=compact(msg("film.provider.rejected", detail=vendor(self.fail_with))))
+                             error_msg=compact(msg("film.fake.failed", detail=vendor(self.fail_with))))
         return TaskState(task_id, "succeeded", video_url=f"fake://{task_id}.mp4",
                          last_frame_url=f"fake://{task_id}.jpg",
                          usage={"seconds": request_seconds(t["req"].duration, self._caps)})

@@ -171,7 +171,7 @@ def main() -> int:
 
     # 8. 厂商建不起来（密钥被撤、配置变了）：取消照常落账、返回 200 与取消结局，后台跟踪一致
     def broken():
-        raise render_video_base.ProviderError.of("film.fake.unknown_model")
+        raise render_video_base.ProviderError.of("film.settings.no_model")
 
     c.post(R + f"/clips/{x}/run", headers=H, json={})                 # 排队中，还没提交
     runner.tick()                                                     # 提交并跑起来

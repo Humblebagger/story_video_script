@@ -77,8 +77,8 @@ def main() -> int:
         providers.get_tts("nope")
         raise AssertionError("未注册的厂商应抛 KeyError")
     except KeyError as e:
-        assert e.code == "tts.unknown_provider" and e.params == {"name": "nope"}, (e.code, e.params)
-        assert e.as_msg()["message"] == "未知的配音厂商：nope"
+        assert e.code == "tts.vendor.misconfigured" and e.params == {}, (e.code, e.params)
+        assert "nope" not in e.as_msg()["message"]
     os.environ.pop("STORYBOARD_TTS_PROVIDER")
     assert "fake" not in providers.tts_names(), "假 TTS 不是默认时不出现在可选里"
     print("3. 注册表 ✓")

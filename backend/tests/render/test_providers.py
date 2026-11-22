@@ -112,11 +112,11 @@ def main() -> int:
     os.environ["MINIMAX_API_KEY"] = ""          # 先置空串：.env 不会覆盖已有变量
     with _LogGrab("render.providers.minimax") as g:
         e = must_raise(base.ProviderError, providers.get_video, "minimax")
-    assert e.code == "film.minimax.no_key" and "MINIMAX_API_KEY" not in str(e)
+    assert e.code == "film.vendor.no_key" and "MINIMAX_API_KEY" not in str(e)
     assert any("MINIMAX_API_KEY" in x for x in g.lines), g.lines
     with _LogGrab("render.providers.fake") as g:
         e = must_raise(base.ProviderError, FakeVideo().caps, "nope-tier")
-    assert e.code == "film.fake.unknown_model" and e.params == {} and "nope-tier" not in str(e)
+    assert e.code == "film.settings.no_model" and e.params == {} and "nope-tier" not in str(e)
     assert any("nope-tier" in x for x in g.lines), g.lines
     print("4. 注册表 ✓")
 
@@ -146,7 +146,7 @@ def main() -> int:
 
     # 6. 错误带代码
     e = must_raise(KeyError, providers.get_video, "nope")
-    assert e.code == "film.provider.unknown" and e.args[0] == "未知的视频厂商：nope"
+    assert e.code == "film.settings.no_model" and e.params == {} and "nope" not in e.args[0]
     assert FakeVideo().rate_note["code"] == "rate.fake"
     print("6. 错误带代码 ✓")
 
@@ -524,6 +524,22 @@ def main() -> int:
     assert f2.cancel_calls == [tid, tid]
     assert base.try_cancel(f2, "nope") is False
     print("取消 ✓")
+
+    # vendor_reject：消息不带原话；没装钩子没有编号；装了钩子带编号，钩子收到脱敏后的原话与厂商名
+    base.record_reject = None
+    with _LogGrab("render.providers.base") as g:
+        m = base.vendor_reject("film.vendor.rejected", "bad prompt k-secret", who="minimax", secrets=("k-secret",))
+    assert m["code"] == "film.vendor.rejected" and m["params"] == {} and "ref" not in m and "bad prompt" not in m["message"]
+    assert any("bad prompt" in x and "minimax" in x for x in g.lines) and all("k-secret" not in x for x in g.lines)
+    seen = []
+    base.record_reject = lambda code, detail: (seen.append((code, detail)), "AB12CD34")[1]
+    m = base.vendor_reject("film.vendor.rejected", "bad prompt k-secret", who="minimax", secrets=("k-secret",))
+    assert m["ref"] == "AB12CD34" and "AB12CD34" in m["message"]
+    assert seen == [("film.vendor.rejected", "minimax: bad prompt ***")]
+    base.record_reject = lambda *_a: (_ for _ in ()).throw(OSError("disk"))     # 钩子出错不能挡住报错
+    assert "ref" not in base.vendor_reject("film.vendor.rejected", "x", who="minimax")
+    base.record_reject = None
+    print("vendor_reject ✓")
 
     print("\nALL PASS")
     return 0
