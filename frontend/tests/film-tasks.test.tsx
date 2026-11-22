@@ -19,7 +19,16 @@ g.requestAnimationFrame = (cb: (t: number) => void) =>
   setTimeout(() => cb(performance.now()), 16) as unknown as number
 g.cancelAnimationFrame = (id: number) => clearTimeout(id)
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { FilmTask } from '../src/types'
+
+// 共用词表（backend/server/vendor_words.json）；不 import vendor-words.test.ts：它一导入就会执行
+const vw = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/server/vendor_words.json'), 'utf-8')) as
+  { substr: string[]; word: string[]; cjk: string[] }
+const vwEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const VENDOR_RE = new RegExp([...vw.substr.map(vwEsc), ...vw.cjk.map(vwEsc),
+  ...vw.word.map((w) => `(?<![a-z0-9])${vwEsc(w)}(?![a-z0-9])`)].sort((a, b) => b.length - a.length).join('|'), 'i')
 
 const must = (cond: boolean, msg: string) => { if (!cond) throw new Error('✗ ' + msg) }
 const task = (over: Partial<FilmTask> = {}): FilmTask => ({
@@ -212,7 +221,7 @@ const {
        `合成：步骤与已等，没有通常时长：${running[2].textContent}`)
   const cancelBtns = running.map((li) => li.querySelector('[data-testid="activity-film-cancel"]'))
   must(cancelBtns[0]?.textContent === '不等了' && cancelBtns[1]?.textContent === '取消' && !cancelBtns[2], '可取消的才有取消入口；合成没有')
-  must(!/minimax|seedance|fake|假厂商/i.test(text), '面板里不出现厂商名')
+  must(!VENDOR_RE.test(text) && !/假厂商/.test(text), '面板里不出现厂商名')
   const endedLis = [...zone('queue-ended').querySelectorAll('li')]
   must(endedLis.map((li) => li.getAttribute('data-testid') === 'activity-done' ? 'job' : 'task').join()
        === 'task,task,job,task,task,task,task', '转换与出片按结束时间混排')
