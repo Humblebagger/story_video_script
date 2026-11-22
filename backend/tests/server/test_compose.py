@@ -495,6 +495,47 @@ def main() -> int:
         os.environ.pop("VOLC_TTS_API_KEY", None)
     print("11. 合成线程：带代码的错误落 error_msg，意外异常只给固定说法、日志脱敏 ✓")
 
+    # 12. 全链路编号与计费：带编号的已计费配音失败 → 真实合成线程（配音 → compose.lines_failed）→ 会话存储 → 公开响应；
+    # 每条语音条恰好合成一次（不重试），费用按固定输入算出、只计一次
+    from collections import Counter
+    from render.providers.tts_base import BilledError
+    from server.messages import msg as _msg, with_ref as _wref
+    mix.compose, mix.tools = real_compose, (lambda: ("ffmpeg", "ffprobe"))
+    render_session.recover(root)          # 前面的步骤可能留着「合成中」
+    mode12 = render_session.load(root)["audio_mode"]
+    with render_session.mutate(root) as s_:
+        s_["audio_mode"] = "tts_all"
+    sess12 = render_session.load(root)
+    want = Counter(x["text"] for x in voice.tts_lines(voice.speech_lines(DOC), "tts_all"))
+    assert want and all(len(t) <= TTS.caps.max_chars for t in want), "夹具的每条语音条不超过单次字数上限（不会被切开）"
+    seen12 = Counter()
+    real_synth = TTS.synthesize
+
+    def synth_billed(text, *a, **k):
+        seen12[text] += 1
+        raise BilledError.from_msg(_wref(_msg("tts.vendor.failed", code=45000000), "AB12CD34"), 0.07)
+    TTS.synthesize = synth_billed
+    try:
+        exp = c.get(R + "/compose", headers=H).json()["tts_cny"]
+        spent0 = render_session.load(root)["spent_cny"]
+        r12 = c.post(R + "/compose", headers=H, json={"expected_cny": exp})
+        assert r12.status_code == 200, r12.text
+        wait(root)
+    finally:
+        TTS.synthesize = real_synth
+    assert all(n == 1 for n in want.values()), "夹具里每条语音条文本唯一，才能按文本断言各一次"
+    assert all(v == 1 for v in seen12.values()), f"每条恰好一次、不重试：{seen12}"
+    assert set(seen12) == set(want), "每个文本都合成过"
+    n12 = sum(seen12.values())
+    assert round(render_session.load(root)["spent_cny"] - spent0, 2) == round(0.07 * n12, 2), "每条只计一次费"
+    f12 = c.get(R + "/compose", headers=H).json()["final"]
+    assert f12["state"] == "failed" and f12["error_msg"]["code"] == "compose.lines_failed", f12
+    assert f12["error_msg"]["ref"] == "AB12CD34" and "AB12CD34" in f12["error"], f12
+    with render_session.mutate(root) as s_:
+        s_["audio_mode"] = mode12
+    mix.tools, mix.compose = real_tools, real_compose
+    print("12. 带编号的配音失败经合成线程到公开响应：编号在、每条一次、只计一次费 ✓")
+
     mix.tools, mix.compose = real_tools, real_compose
     print("\nALL PASS")
     return 0

@@ -34,7 +34,22 @@ def main() -> int:
             else:
                 raise AssertionError(f"{name} 没被拦住")
             assert _noenv.VIOLATIONS == [".env"], (name, _noenv.VIOLATIONS)
+        for mode in ("r+", "w+", "a+", "r+b", "w+b", "a+b", "rb", "r"):         # 带 + 的读写模式也要拦
+            for opener in (open, io.open, lambda f, m: fake.open(m)):
+                _noenv.VIOLATIONS.clear()
+                try:
+                    opener(fake, mode)
+                except AssertionError:
+                    assert _noenv.VIOLATIONS == [".env"], (mode, _noenv.VIOLATIONS)
+                else:
+                    raise AssertionError(f"模式 {mode} 没被拦住")
         _noenv.VIOLATIONS.clear()
+        for mode in ("w", "a", "x", "wb", "ab"):                                  # 纯写不拦（测试可在临时目录造假 .env）
+            target = Path(d) / f"sub{mode}" / ".env"
+            target.parent.mkdir()
+            with open(target, mode if mode != "x" else "x") as f:
+                f.write(b"K=V\n" if "b" in mode else "K=V\n")
+        assert _noenv.VIOLATIONS == []
         other = Path(d) / "a.txt"
         other.write_text("x", encoding="utf-8")
         assert other.read_text() == "x" and other.read_bytes() == b"x"        # 别的文件照读

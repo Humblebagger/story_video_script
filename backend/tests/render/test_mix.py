@@ -222,8 +222,8 @@ def main() -> int:
                 class caps:
                     voices, emotions, max_chars, cny_per_k_chars = [], False, 300, 1.0
 
-                def synthesize(self, *a, **k):
-                    calls.append(1)
+                def synthesize(self, text, *a, **k):
+                    calls.append(text)
                     raise BilledError.from_msg(_wr(msg("tts.vendor.failed", code=45000000), "AB12CD34"), 0.07)
 
             class _AnyVoice(dict):
@@ -233,8 +233,9 @@ def main() -> int:
             voice.resolve_voices = lambda *a, **k: (_AnyVoice(), [])
             e = raises(lambda: mix.compose(root, doc, dict(base, audio_mode="tts_all"), **dict(args, tts=_Billed(), on_cost=spent.append)))
             assert e.code == "compose.lines_failed", e.code
-            n_lines = len(calls)
-            assert n_lines >= 1 and spent == [0.07] * n_lines, (calls, spent)       # 每条只调一次、只计一次费
+            # 固定夹具有 3 条语音条（S1、S2、S3 的旁白与台词）：每条文本恰好合成一次（不重试），各计一次费
+            assert sorted(calls) == sorted(["一" * 9, "二" * 9, "三" * 9]), calls
+            assert spent == [0.07, 0.07, 0.07] and round(sum(spent), 2) == 0.21, spent
             sroot = root / "sess"
             sroot.mkdir()
             (sroot / "session.json").write_text(json.dumps({"final": {}, "clips": [], "free": [], "owner": {}}), encoding="utf-8")

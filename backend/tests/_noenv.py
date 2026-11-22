@@ -44,7 +44,7 @@ _real_io_open = io.open
 
 def _trip(p, a=(), k=None):
     mode = str((a[0] if a else (k or {}).get("mode", "r")))
-    if any(c in mode for c in "wax"):       # 只拦读；写（如测试在临时目录造假 .env）不拦
+    if "+" not in mode and any(c in mode for c in "wax"):       # 只豁免纯写（测试在临时目录造假 .env）；带 + 的读写模式要拦
         return
     if not isinstance(p, int) and _is_env(p):
         VIOLATIONS.append(".env")
