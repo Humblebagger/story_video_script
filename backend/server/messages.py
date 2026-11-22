@@ -220,6 +220,15 @@ register("common.failed_generic", "没有成功，请重试；仍失败请联系
 # 费率说明（不点名厂商；前端按代码渲染）
 register("rate.video", "按公开刊例价估算，未经账单核对")
 register("rate.tts", "配音按字符计费，按公开刊例价估算，未经账单核对")
+
+# 出片档位显示名（render/tiers.py）
+register("tier.a_standard", "引擎 A · 标准")
+register("tier.a_fast", "引擎 A · 快速")
+register("tier.a_lite", "引擎 A · 经济")
+register("tier.b_standard", "引擎 B · 标准")
+register("tier.b_fast", "引擎 B · 快速")
+register("tier.b_lite", "引擎 B · 经济")
+register("tier.demo", "演示（不联网、不花钱）")
 # 厂商通用
 register("film.provider.failed", "厂商返回失败")
 register("film.provider.generation_failed", "生成失败")

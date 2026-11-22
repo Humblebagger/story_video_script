@@ -28,6 +28,7 @@ MODULES: dict = {
     "render/providers/seedance.py": None,
     "render/providers/minimax.py": None,
     "render/providers/__init__.py": None,
+    "render/tiers.py": None,
     "render/session.py": None,
     "render/free.py": None,
     "render/compose.py": None,

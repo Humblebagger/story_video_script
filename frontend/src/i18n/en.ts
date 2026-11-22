@@ -1338,6 +1338,7 @@ export const en: BaseMessages = {
   srv: {
     common: { more_lines: '…not shown: {n} more', image_too_big: 'The image is empty or larger than {mb} MB', unknown: '{message}', internal: 'Something went wrong on the server. Please try again; if it keeps failing, contact the administrator.', failed_generic: 'That didn\'t work. Please try again; if it keeps failing, contact the administrator.' },
     rate: { video: 'Estimated from public list prices; not reconciled against billing', tts: 'Voiceover is billed per character; estimated from public list prices, not reconciled against billing' },
+    tier: { a_standard: 'Engine A · Standard', a_fast: 'Engine A · Fast', a_lite: 'Engine A · Economy', b_standard: 'Engine B · Standard', b_fast: 'Engine B · Fast', b_lite: 'Engine B · Economy', demo: 'Demo (offline, free)' },
     film: {
       provider: {
         failed: 'The provider reported a failure',

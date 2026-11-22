@@ -1332,6 +1332,7 @@ export const zh = {
   srv: {
     common: { more_lines: '…还有 {n} 行未显示', image_too_big: '图片为空或超过 {mb}MB', unknown: '{message}', internal: '服务器出了点问题，请稍后重试；仍失败请联系管理员', failed_generic: '没有成功，请重试；仍失败请联系管理员' },
     rate: { video: '按公开刊例价估算，未经账单核对', tts: '配音按字符计费，按公开刊例价估算，未经账单核对' },
+    tier: { a_standard: '引擎 A · 标准', a_fast: '引擎 A · 快速', a_lite: '引擎 A · 经济', b_standard: '引擎 B · 标准', b_fast: '引擎 B · 快速', b_lite: '引擎 B · 经济', demo: '演示（不联网、不花钱）' },
     film: {
       provider: {
         failed: '厂商返回失败',

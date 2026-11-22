@@ -1612,6 +1612,34 @@
     "params": [],
     "zh": "按公开刊例价估算，未经账单核对"
   },
+  "tier.a_fast": {
+    "params": [],
+    "zh": "引擎 A · 快速"
+  },
+  "tier.a_lite": {
+    "params": [],
+    "zh": "引擎 A · 经济"
+  },
+  "tier.a_standard": {
+    "params": [],
+    "zh": "引擎 A · 标准"
+  },
+  "tier.b_fast": {
+    "params": [],
+    "zh": "引擎 B · 快速"
+  },
+  "tier.b_lite": {
+    "params": [],
+    "zh": "引擎 B · 经济"
+  },
+  "tier.b_standard": {
+    "params": [],
+    "zh": "引擎 B · 标准"
+  },
+  "tier.demo": {
+    "params": [],
+    "zh": "演示（不联网、不花钱）"
+  },
   "tts.concat_mismatch": {
     "params": [],
     "zh": "拼接的语音片段参数不一致"
