@@ -277,7 +277,7 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
       {c.uncertain && (
         <p className="tlc__kferr">{t('film.panel.clipUncertain')}</p>
       )}
-      {itemError(c, locale) && <p className="tlc__kferr">{withHint(itemError(c, locale), hintFor(c.error_msg?.code, tierHint(s.tier), null))}</p>}
+      {itemError(c, locale) && <p className="tlc__kferr" data-testid="detail-error">{withHint(itemError(c, locale), hintFor(c.error_msg?.code, tierHint(s.tier), null))}</p>}
       <details>
         <summary>{t('film.panel.promptSum')}</summary>
         <pre className="film__prompt">{c.prompt}</pre>
@@ -358,7 +358,7 @@ function FreeDetail({ n, s, film }: { n: FilmFreeNode; s: FilmSession; film: Fil
         <b><i className={`film__dot film__dot--${n.state}`} aria-hidden="true" />{t('graph.free.detail', { id: n.id })}</b>
         <span>{label(FILM_STATE, n.state)} · {n.duration}s · {yuan(n.estimate_cny)}</span>
       </header>
-      {itemError(n, locale) && <p className="tlc__kferr">{withHint(itemError(n, locale), hintFor(n.error_msg?.code, tierHint(s.tier), null))}</p>}
+      {itemError(n, locale) && <p className="tlc__kferr" data-testid="detail-error">{withHint(itemError(n, locale), hintFor(n.error_msg?.code, tierHint(s.tier), null))}</p>}
       <pre className="film__prompt">{n.prompt || t('film.panel.none')}</pre>
       <p className="film__line">{t('film.panel.refs', { list: n.refs.length ? n.refs.join(sep) : t('film.panel.none') })}</p>
       <p className="film__line">{t('film.panel.firstFrame', { v: firstFrameText({ first_frame: n.first_frame, frame_mode: null }) })}</p>

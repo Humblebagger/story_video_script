@@ -661,14 +661,15 @@ console.log('6c. 采用位置与无障碍 ✓')
     await click(button('时间轴画布'))
     await click(exact('节点图'))
     await click(tab('出片')!)
+    await refresh()
     await click(card(first))
     const clipBox = container.querySelector('section.film__clip:not([data-testid])')!
-    const clipTop = clipBox.querySelector('.tlc__kferr')?.textContent ?? ''
+    const clipTop = clipBox.querySelector('[data-testid="detail-error"]')?.textContent ?? null
     const clipRows = [...clipBox.querySelectorAll('[data-testid="attempt-error"]')].map((x) => x.textContent ?? '')
     await click(card('F09'))
     const freeBox = container.querySelector('[data-testid="free-detail"]')!
     return { clipText: clipBox.textContent ?? '', clipTop, clipRows, freeText: freeBox.textContent ?? '',
-             freeTop: freeBox.querySelector('.tlc__kferr')?.textContent ?? '',
+             freeTop: freeBox.querySelector('[data-testid="detail-error"]')?.textContent ?? null,
              freeRows: [...freeBox.querySelectorAll('[data-testid="attempt-error"]')].map((x) => x.textContent ?? '') }
   }
   const P = await grab(null)
@@ -678,11 +679,26 @@ console.log('6c. 采用位置与无障碍 ✓')
   must(!P.clipText.includes('ZZ-Vendor') && !P.freeText.includes('ZZ-Vendor'), '普通用户无括号')
   const A = await grab(HINTS)
   const ZZ = '（ZZ-Vendor Demo）'
+  must(P.clipTop === bal && P.freeTop === bal, `普通用户：当前错误段落存在且无括号：${P.clipTop}|${P.freeTop}`)
   must(A.clipTop === bal + ZZ, `H4 片段详情当前失败：${A.clipTop}`)
   must(A.freeTop === bal + ZZ, `H4 自由节点详情当前失败：${A.freeTop}`)
   must(A.clipRows.filter(Boolean).join('|') === `${bal}${ZZ}|${zh.srv.film.submit.stale}`, `H4 片段历史尝试行：${A.clipRows.join('|')}`)
   must(A.freeRows.filter(Boolean).join('|') === `${bal}${ZZ}|${zh.srv.film.submit.stale}`, `H4 自由节点历史尝试行：${A.freeRows.join('|')}`)
   must(A.clipText.replaceAll(ZZ, '') === P.clipText && A.freeText.replaceAll(ZZ, '') === P.freeText, '各区域去掉提示后与普通用户一致')
+  // 历史失败后重试成功并采用、当前错误已清空（state: done）：历史行仍显示原因，当前错误段落不存在
+  const ok: FilmAttempt = { ...bad('x'), task_id: 'x-ok', state: 'succeeded', cost_cny: 5, error: null, error_msg: null }
+  Object.assign(clipOf(first), { state: 'done', error: null, error_msg: null })
+  Object.assign(freeOf('F09'), { state: 'done', error: null, error_msg: null, attempts: [...freeOf('F09').attempts, ok], chosen: 2 })
+  film = recount(film!)
+  const P2 = await grab(null)
+  const A2 = await grab(HINTS)
+  must(P2.clipTop === null && P2.freeTop === null && A2.clipTop === null && A2.freeTop === null, `当前错误已清空：没有当前错误段落 ${P2.clipTop}|${P2.freeTop}|${A2.clipTop}|${A2.freeTop}`)
+  must(P2.clipRows.filter(Boolean).join('|') === `${bal}|${zh.srv.film.submit.stale}` && P2.freeRows.filter(Boolean).join('|') === `${bal}|${zh.srv.film.submit.stale}`,
+       `普通用户：已成功的节点历史行仍有中性原因 ${P2.clipRows.join('|')} / ${P2.freeRows.join('|')}`)
+  must(A2.clipRows.filter(Boolean).join('|') === `${bal}${ZZ}|${zh.srv.film.submit.stale}` && A2.freeRows.filter(Boolean).join('|') === `${bal}${ZZ}|${zh.srv.film.submit.stale}`,
+       `管理员：已成功的节点历史行带提示 ${A2.clipRows.join('|')} / ${A2.freeRows.join('|')}`)
+  must(!P2.clipText.includes('ZZ-Vendor') && !P2.freeText.includes('ZZ-Vendor'), '普通用户无括号')
+  must(A2.clipText.replaceAll(ZZ, '') === P2.clipText && A2.freeText.replaceAll(ZZ, '') === P2.freeText, '已成功：各区域去掉提示后与普通用户一致')
   console.log('6n. 管理员提示（详情与历史尝试） ✓')
 }
 
