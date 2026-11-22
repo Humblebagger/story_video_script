@@ -1334,8 +1334,9 @@ def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]
     _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                  allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     moved: list = []
-    s = _render_call(render_session.queue_run, root, clip_ids, expected_cny, migrated=moved)
-    _render_runner.release_checks(owner, set(moved))   # 只作废本次实际迁移到排队的段（批量不碰无关的段）
+    s = _render_runner.migrate(       # 排队与作废同一临界区；只作废本次实际迁移到排队的段（批量不碰无关的段）
+        owner, lambda: _render_call(render_session.queue_run, root, clip_ids, expected_cny, migrated=moved),
+        lambda _s: moved)
     _render_runner.watch(root)
     return _film_view(s)
 
@@ -1357,8 +1358,9 @@ def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str, expect:
         except (KeyError, render_video_base.ProviderError):
             provider = None                     # 厂商建不起来（如密钥被撤）：按取消不了处理
         confirmed = provider is not None and render_video_base.try_cancel(provider, task_id)
-    s = _render_call(render_session.cancel, root, item_id, task_id, confirmed, expect)
-    _render_runner.release_checks({"user_id": user["id"], "nid": nid, "cid": cid, "vid": vid}, {item_id})
+    s = _render_runner.migrate(       # 取消与作废同一临界区：出片线程不会在两步之间写回失败
+        {"user_id": user["id"], "nid": nid, "cid": cid, "vid": vid},
+        lambda: _render_call(render_session.cancel, root, item_id, task_id, confirmed, expect), {item_id})
     _render_runner.watch(root)                  # 不等了的那次还要盯；没有要盯的，下一轮自己放下
     out = _film_view(s, True)     # 厂商建不起来也要把已落账的取消如实返回
     out["cancel_outcome"] = "dequeued" if task_id is None else "cancelled" if confirmed else "abandoned"
@@ -1459,8 +1461,9 @@ def render_free_run(nid: str, cid: str, vid: str, fid: str, body: Optional[Rende
                     user: dict = Depends(novel_user)):
     """生成一次（与单段出片同一套确认线与上限）。过验证门；超过确认线要带 expected_cny。"""
     root, ctx = _free_ctx(user, nid, cid, vid, gate=True)
-    s = _render_call(render_free.queue, root, ctx, fid, body.expected_cny if body else None)
-    _render_runner.release_checks({"user_id": user["id"], "nid": nid, "cid": cid, "vid": vid}, {fid})   # 重跑：上一代登记作废
+    s = _render_runner.migrate(       # 重跑：排队与作废上一代登记同一临界区
+        {"user_id": user["id"], "nid": nid, "cid": cid, "vid": vid},
+        lambda: _render_call(render_free.queue, root, ctx, fid, body.expected_cny if body else None), {fid})
     _render_runner.watch(root)
     return _film_view(s)
 

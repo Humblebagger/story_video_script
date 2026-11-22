@@ -23,6 +23,9 @@ from render import compose, providers, session as sess  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
 from render.runner import Runner  # noqa: E402
 from safety import gate  # noqa: E402
+from fakes import FakeChat  # noqa: E402
+from pipeline.chat import ChatInvoker  # noqa: E402
+from pipeline.config import Settings  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 OWNER = {"user_id": "u", "nid": "n", "cid": "c", "vid": "v"}
@@ -170,9 +173,6 @@ def main() -> int:
     assert flags[q] is True and sum(1 for f in flags.values() if f) == 1, flags
     print("7. app 接线与视图标注 ✓")
     # 7b. 同一段每轮都来问：用真实 gate，只分类一次，之后拿到结论（等待者键是 (用户, 作品, 版本, 片段)，没有重提逻辑）
-    from fakes import FakeChat
-    from pipeline.chat import ChatInvoker
-    from pipeline.config import Settings
     started, go, made = threading.Event(), threading.Event(), []
 
     def slow_pass(_m):
@@ -254,21 +254,19 @@ def main() -> int:
     runner5.release_checks(OWNER)          # 空操作也安全
     print("9. 检查标记随取消与移除清掉 ✓")
 
-    # 10. 回调期间取消（第四轮 2）：显式取消一律作废登记；回调返回后生命周期已变，丢弃 wait 与失败写回
+    # 10. 回调与作废互斥（第五轮）：回调进行中 release 要等回调结束；结束后标记清掉、forget 收到键
     forgot10 = []
     tmp6 = tempfile.TemporaryDirectory()
     root6 = Path(tmp6.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
     sess.build(root6, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
     t6 = firsts[1]
     key6 = ("u", "n", "c", "v", t6)
-    started10, go10, mode = threading.Event(), threading.Event(), {"out": "wait"}
+    started10, go10 = threading.Event(), threading.Event()
 
     def check10(r, sn, c):
         started10.set()
         assert go10.wait(10)
-        if isinstance(mode["out"], Exception):
-            raise mode["out"]
-        return mode["out"]
+        return "wait"
     runner6 = Runner(builder, sleep=lambda _s: None, max_parallel=4, safety_check=check10,
                      safety_forget=forgot10.append)
     sess.queue_run(root6, [t6])
@@ -276,60 +274,202 @@ def main() -> int:
     th = threading.Thread(target=runner6.tick)
     th.start()
     assert started10.wait(10)
-    sess.cancel(root6, t6)
-    runner6.release_checks(OWNER, {t6})                # 回调还没返回：_checking 里没有这个键
-    assert forgot10 == [key6], forgot10
+    rel = threading.Thread(target=runner6.release_checks, args=(OWNER, {t6}))
+    rel.start()
+    rel.join(0.3)
+    assert rel.is_alive() and forgot10 == [], "回调进行中，作废要等它结束（生命周期锁）"
     go10.set()
     th.join(10)
-    assert not runner6.is_checking(OWNER, t6), "取消之后回调才返回的 wait 不恢复标记"
-    # 10b. 回调期间取消并重新排队（自由节点重跑同理），回调随后报不可用：失败不写回新一轮
-    started10.clear()
-    go10.clear()
-    mode["out"] = gate.unavailable_error()
-    sess.queue_run(root6, [t6])
-    runner6.watch(root6)
-    th = threading.Thread(target=runner6.tick)
-    th.start()
-    assert started10.wait(10)
-    sess.cancel(root6, t6)
-    sess.queue_run(root6, [t6])
-    runner6.release_checks(OWNER, {t6})
-    go10.set()
-    th.join(10)
-    c6 = clip(root6, t6)
-    assert c6["state"] == "queued" and c6["attempts"] == [] and not c6.get("error_msg"), c6
-    mode["out"] = "pass"
-    runner6.tick()                                     # 新一轮重新检查，按新结论提交
-    assert clip(root6, t6)["state"] == "running"
-    print("10. 回调期间取消 ✓")
+    rel.join(10)
+    assert forgot10 == [key6] and not runner6.is_checking(OWNER, t6), forgot10
+    print("10. 回调与作废互斥 ✓")
 
     # 11. 接口层：自由节点重跑作废旧登记；批量出片只作废 queue_run 实际迁移到 queued 的段
     calls = []
     runner_app = app_mod._render_runner
-    real_release, real_free_ctx, real_free_queue = runner_app.release_checks, app_mod._free_ctx, app_mod.render_free.queue
+    real_forget, real_free_ctx, real_free_queue = runner_app.safety_forget, app_mod._free_ctx, app_mod.render_free.queue
     real_render_ctx, real_style = app_mod._render_ctx, app_mod._style_for
     tmp7 = tempfile.TemporaryDirectory()
     root7 = Path(tmp7.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
     sess.build(root7, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
-    runner_app.release_checks = lambda owner, ids=None: calls.append((dict(owner), None if ids is None else set(ids)))
+    runner_app.safety_forget = calls.append
     app_mod._free_ctx = lambda *_a, **_k: (root7, None)
     app_mod.render_free.queue = lambda r, _ctx, _fid, _e=None: sess.load(r)
     app_mod._render_ctx = lambda *_a: (root7, doc, {}, OWNER)
     app_mod._style_for = lambda *_a: None
     try:
         app_mod.render_free_run("n", "c", "v", "F1", None, user={"id": "u"})
-        assert calls == [(OWNER, {"F1"})], calls
+        assert calls == [("u", "n", "c", "v", "F1")], calls
         waiting = firsts[2]
         sess.queue_run(root7, [waiting])                # 这一段已在排队等检查，与本次批量无关
         targets, total = sess.run_quote(sess.load(root7), None)
-        want = {c["id"] for c in targets}
-        assert waiting not in want and want
+        want = {("u", "n", "c", "v", c["id"]) for c in targets}
+        assert ("u", "n", "c", "v", waiting) not in want and want
+        del calls[:]
         app_mod._film_run({"id": "u"}, "n", "c", "v", None, total)
-        assert calls[-1] == (OWNER, want), calls[-1]
+        assert set(calls) == want and len(calls) == len(want), calls
     finally:
-        runner_app.release_checks, app_mod._free_ctx, app_mod.render_free.queue = real_release, real_free_ctx, real_free_queue
+        runner_app.safety_forget, app_mod._free_ctx, app_mod.render_free.queue = real_forget, real_free_ctx, real_free_queue
         app_mod._render_ctx, app_mod._style_for = real_render_ctx, real_style
     print("11. 接口层只作废本次排队的 ✓")
+
+    # 12. 迁移与作废在同一生命周期临界区（第五轮）：真实 gate + 假模型，经接口函数走
+    from safety import store
+    from safety.text import normalize, text_hash
+    U = {"id": "u"}
+    cur = {}
+    replies = []
+
+    def make12():
+        return ChatInvoker(Settings(api_key="k", transport_retries=0), chat=FakeChat(responses=[replies.pop(0)]))
+
+    def ok_reply():
+        return json.dumps({"blocked": False, "category": None, "reason": ""})
+
+    def new_root():
+        t = tempfile.TemporaryDirectory()
+        cur["tmp"] = t
+        cur["root"] = Path(t.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+        sess.build(cur["root"], doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+        return cur["root"]
+
+    def fresh(cid):
+        p = clip(cur["root"], cid)["prompt"]
+        with store._lock:
+            store._verdicts_data().pop(text_hash(normalize(p)), None)
+
+    def idle():
+        for _ in range(500):
+            if not gate.pending():
+                return
+            __import__("time").sleep(0.01)
+        raise AssertionError("分类任务没跑完")
+
+    def quote(cid):
+        return sess.run_quote(sess.load(cur["root"]), [cid])[1]
+
+    saved = (app_mod._render_runner, app_mod._render_ctx, app_mod._style_for, app_mod.novels.render_dir,
+             gate._make_chat, sess.queue_run)
+    runner8 = Runner(builder, sleep=lambda _s: None, max_parallel=4, safety_check=app_mod._render_safety,
+                     safety_forget=gate.forget)
+    app_mod._render_runner = runner8
+    app_mod._render_ctx = lambda *_a: (cur["root"], doc, {}, OWNER)
+    app_mod._style_for = lambda *_a: None
+    app_mod.novels.render_dir = lambda *_a: cur["root"]
+    gate._make_chat = make12
+    os.environ["STORYBOARD_SAFETY"] = "1"
+    try:
+        # 12a. queue 之后、release 之前 runner 想登记检查：被挡到 release 之后，本轮终态不被删除
+        r8 = new_root()
+        x = firsts[0]
+        fresh(x)
+        replies[:] = ["坏输出"]
+        queued, go = threading.Event(), threading.Event()
+        real_q = saved[5]
+
+        def q_wrap(*a, **k):
+            out = real_q(*a, **k)
+            queued.set()
+            assert go.wait(10)
+            return out
+        sess.queue_run = q_wrap
+        runner8.watch(r8)
+        total = quote(x)
+        t_run = threading.Thread(target=app_mod._film_run, args=(U, "n", "c", "v", [x], total))
+        t_run.start()
+        assert queued.wait(10)
+        tk = threading.Thread(target=runner8.tick)
+        tk.start()
+        tk.join(0.5)
+        idle()
+        go.set()
+        t_run.join(10)
+        tk.join(10)
+        sess.queue_run = real_q
+        idle()
+        runner8.tick()
+        cx = clip(r8, x)
+        assert cx["state"] == "failed" and cx["error_msg"]["code"] == "safety.unavailable" and replies == [], (cx["state"], replies)
+        gate.forget(("u",), prefix=True)
+        # 12b. 出片线程读到快照之后、写回之前，这一段被取消；它的检查报错 → 保持已取消，不变成 failed
+        r8 = new_root()
+        x2, y2 = firsts[0], firsts[1]
+        sess.queue_run(r8, [x2])
+        sess.queue_run(r8, [y2])
+        asked12 = []
+
+        def cb12b(r, sn, c):
+            asked12.append(c["id"])
+            if c["id"] == x2:
+                app_mod._film_cancel(U, "n", "c", "v", y2)     # 同一轮 tick 里，y2 的快照已读过
+                return "wait"
+            raise gate.unavailable_error()
+        runner8.safety_check = cb12b
+        runner8.watch(r8)
+        runner8.tick()
+        cy = clip(r8, y2)
+        assert cy["state"] == "planned" and not cy.get("error_msg"), (cy["state"], cy.get("error_msg"))
+        assert asked12 == [x2], asked12
+        runner8.safety_check = app_mod._render_safety
+        gate.forget(("u",), prefix=True)
+        # 12c. 旧回调在取消并重新排队之后才登记 → 不可能：取消与重排要等回调结束；旧回调的登记随后作废，新一轮重新分类
+        r8 = new_root()
+        x3 = firsts[2]
+        fresh(x3)
+        replies[:] = ["坏输出", ok_reply()]
+        s3, g3 = threading.Event(), threading.Event()
+
+        def cb12c(r, sn, c):
+            s3.set()
+            assert g3.wait(10)
+            return app_mod._render_safety(r, sn, c)
+        runner8.safety_check = cb12c
+        total = quote(x3)
+        sess.queue_run(r8, [x3])
+        runner8.watch(r8)
+        tk = threading.Thread(target=runner8.tick)
+        tk.start()
+        assert s3.wait(10)
+
+        def cancel_and_rerun():
+            app_mod._film_cancel(U, "n", "c", "v", x3)
+            app_mod._film_run(U, "n", "c", "v", [x3], total)
+        t_cr = threading.Thread(target=cancel_and_rerun)
+        t_cr.start()
+        t_cr.join(0.3)
+        assert t_cr.is_alive(), "回调进行中，取消与重排要等它结束"
+        g3.set()
+        tk.join(10)
+        t_cr.join(10)
+        runner8.safety_check = app_mod._render_safety
+        idle()                                        # 旧回调登记的任务：不可用，但票据已作废
+        runner8.tick()                                # 新一轮：重新登记、重新分类（通过）
+        idle()
+        runner8.tick()
+        cx3 = clip(r8, x3)
+        assert cx3["state"] == "running" and replies == [], (cx3["state"], cx3.get("error_msg"), replies)
+        gate.forget(("u",), prefix=True)
+        # 12d. 迁移失败（金额对不上、不能取消）不 release
+        r8 = new_root()
+        spy = []
+        runner8.safety_forget = spy.append
+        try:
+            app_mod._film_run(U, "n", "c", "v", [firsts[0]], quote(firsts[0]) + 1)
+            raise AssertionError("应 409")
+        except app_mod.HTTPException as e:
+            assert e.status_code == 409
+        try:
+            app_mod._film_cancel(U, "n", "c", "v", firsts[0])
+            raise AssertionError("应 409")
+        except app_mod.HTTPException as e:
+            assert e.status_code == 409
+        assert spy == [], spy
+        runner8.safety_forget = gate.forget
+    finally:
+        (app_mod._render_runner, app_mod._render_ctx, app_mod._style_for, app_mod.novels.render_dir,
+         gate._make_chat, sess.queue_run) = saved
+        os.environ["STORYBOARD_SAFETY"] = "0"
+    print("12. 迁移与作废同一临界区 ✓")
 
     print("\nALL PASS")
     return 0

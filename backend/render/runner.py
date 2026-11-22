@@ -43,7 +43,9 @@ class Runner:
         self.safety_check = safety_check
         self.safety_forget = safety_forget   # (检查键) → None：段取消、重新排队或会话移除时作废它的等待登记
         self._checking: dict = {}        # 等内容检查结论的 (用户, 小说, 章节, 版本, 段) → 会话目录
-        self._life: dict = {}            # 检查键 → 生命周期 token：每次作废（取消、重新排队、移除）加一
+        # 生命周期锁：段的「排队 / 取消迁移 + 作废检查登记」与出片线程的「检查回调 + 写回」互斥。
+        # 锁顺序固定：_life_lock → _guard → 会话锁。异步模型分类不在锁内（回调只做毫秒级的查询与登记）。
+        self._life_lock = threading.RLock()
         self.poll_sec = poll_sec
         self.max_parallel = max_parallel
         self.retries = retries
@@ -74,13 +76,12 @@ class Runner:
         self._release_root(root)
 
     def _release_key(self, key) -> None:
-        """这一段不再等检查结论：清掉标记、生命周期 token 加一（正在进行的回调结果作废），
-        并让检查入口作废它的等待登记与未读结论。"""
-        with self._guard:
-            self._checking.pop(key, None)
-            self._life[key] = self._life.get(key, 0) + 1
-        if self.safety_forget is not None:
-            self.safety_forget(key)
+        """这一段不再等检查结论：清掉标记，并让检查入口作废它的等待登记与未读结论（代次加一）。"""
+        with self._life_lock:
+            with self._guard:
+                self._checking.pop(key, None)
+            if self.safety_forget is not None:
+                self.safety_forget(key)
 
     def _release_root(self, root) -> None:
         with self._guard:
@@ -89,16 +90,24 @@ class Runner:
             self._release_key(k)
 
     def release_checks(self, owner: dict, item_ids=None) -> None:
-        """显式取消或重新排队时调用：这些段一律作废上一代的检查登记，不看 _checking 里有没有
-        （回调可能正在登记、还没返回）。item_ids=None 只作废该版本已知的键（标记中或回调进行中的）。"""
+        """作废这些段（缺省：该版本正标记等检查的段）上一代的检查登记。给了 ID 就一律作废，不看 _checking。"""
         prefix = self._check_key(owner, "")[:4]
-        if item_ids is not None:
-            keys = [prefix + (i,) for i in item_ids]
-        else:
-            with self._guard:
-                keys = [k for k in set(self._checking) | set(self._life) if k[:4] == prefix]
-        for k in keys:
-            self._release_key(k)
+        with self._life_lock:
+            if item_ids is not None:
+                keys = [prefix + (i,) for i in item_ids]
+            else:
+                with self._guard:
+                    keys = [k for k in self._checking if k[:4] == prefix]
+            for k in keys:
+                self._release_key(k)
+
+    def migrate(self, owner: dict, fn, ids):
+        """接口侧的统一入口：在生命周期锁内做会话迁移 fn()（排队、取消），成功后作废实际迁移的段的检查登记。
+        ids 是 ID 集合，或 fn 结果 → ID 集合的函数。fn 抛异常就不作废，原样上抛。"""
+        with self._life_lock:
+            result = fn()
+            self.release_checks(owner, set(ids(result) if callable(ids) else ids))
+            return result
 
     def recover(self, data_dir) -> int:
         """扫描全部会话，续上还有在跑的段的会话。返回续上的会话数。"""
@@ -240,29 +249,27 @@ class Runner:
         if self.safety_check is None:
             return True
         key = self._check_key(s.get("owner"), c["id"])
-        with self._guard:
-            token = self._life.setdefault(key, 0)     # 回调期间被作废（token 变了）的结果整个丢弃
-        try:
-            verdict = self.safety_check(root, s, c)
-        except Exception as e:
-            with self._guard:                          # 持锁判断并写回：作废与写回互斥
-                if self._life.get(key) != token:
-                    return False                       # 回调期间取消或重新排队：失败不写回新一轮
-                self._checking.pop(key, None)
-                if isinstance(e, UserError):           # 拦截、暂时无法检查：不提交、不花钱
+        with self._life_lock:
+            # 锁内重读：本轮快照之后被取消或重新排队的，以当前状态为准（不对已取消的写失败）
+            now = sess.load(root)
+            cur = next((x for x in sess.items(now) if x["id"] == c["id"]), None) if now else None
+            if cur is None or cur["state"] != "queued" or sess.waiting_on_relay(now, cur):
+                return False
+            try:
+                verdict = self.safety_check(root, now, cur)
+            except Exception as e:
+                if isinstance(e, UserError):               # 拦截、暂时无法检查：不提交、不花钱
                     sess.submit_failed(root, c["id"], e)
-                else:                                  # 检查自己出错同样不放行
+                else:                                      # 检查自己出错同样不放行
                     log.warning("%s", _scrub_secrets(f'内容检查出错 root={root} clip={c["id"]} {type(e).__name__}: {e}', None))  # i18n: internal
                     sess.submit_failed(root, c["id"], msg("safety.unavailable"))
-            self._release_key(key)
-            return False
-        with self._guard:
-            if self._life.get(key) != token:
-                return False                           # 已作废：不恢复标记，这一轮也不提交，下一轮重新问
-            if verdict == "wait":
-                self._checking[key] = str(root)
-            else:
-                self._checking.pop(key, None)
+                self._release_key(key)
+                return False
+            with self._guard:
+                if verdict == "wait":
+                    self._checking[key] = str(root)
+                else:
+                    self._checking.pop(key, None)
         return verdict != "wait"
 
     def _settle(self, root) -> None:

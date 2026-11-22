@@ -30,6 +30,7 @@ let blocks = [
                       releasable: false }),
 ]
 const calls: string[] = []
+const mode = { errors500: false, safety503: false }
 g.fetch = async (url: string, init?: { method?: string }) => {
   const path = String(url).replace(/^\/api/, '')
   const method = init?.method ?? 'GET'
@@ -39,6 +40,7 @@ g.fetch = async (url: string, init?: { method?: string }) => {
   const err = (status: number, detail: unknown) => ({
     ok: false, status, text: async () => JSON.stringify({ detail }), json: async () => ({ detail }) })
   if (path.startsWith('/admin/safety/blocks') && method === 'GET') {
+    if (mode.safety503) return err(503, { code: 'admin.safety.audit_failed', params: {}, message: 'x' })
     const q = new URL('http://x' + path).searchParams
     return json({ blocks: blocks.filter((b) => (!q.get('status') || b.status === q.get('status'))
       && (!q.get('ref') || b.id === q.get('ref')!.toUpperCase())) })
@@ -50,6 +52,7 @@ g.fetch = async (url: string, init?: { method?: string }) => {
   }
   if (path === '/admin/errors') return json({ errors: [] })
   if (path.startsWith('/admin/errors/')) {
+    if (mode.errors500) return err(500, { code: 'common.internal', params: {}, message: '服务器出了点问题' })
     return err(404, { code: 'admin.error_ref.not_found', params: { ref: path.split('/').pop() }, message: '没有这个参考编号' })
   }
   throw new Error(`桩后端未实现的路径: ${method} ${path}`)
@@ -160,6 +163,24 @@ const wrap = (node: ReactNode) => (
   await submit(container.querySelector('form')!)
   must(!byId('errors-safety-hit') && !!container.querySelector('[role="alert"]'), '两边都没有：照旧报找不到')
   console.log('4. 错误页转查 ✓')
+
+  // 5. 只在错误记录返回「没有这个编号」时转查；转查失败显示这次失败，不当成没有
+  mode.errors500 = true
+  let before = calls.length
+  await type(container.querySelector('input')!, 'BLOCK002')
+  await submit(container.querySelector('form')!)
+  must(!calls.slice(before).some((c) => c.startsWith('GET /admin/safety/blocks')), `错误记录查询本身失败不转查，实为 ${calls.slice(before)}`)
+  must(!!container.querySelector('[role="alert"]') && !byId('errors-safety-hit'), '显示错误记录查询的失败')
+  mode.errors500 = false
+  mode.safety503 = true
+  before = calls.length
+  await type(container.querySelector('input')!, 'BLOCK002')
+  await submit(container.querySelector('form')!)
+  must(calls.slice(before).includes('GET /admin/safety/blocks?ref=BLOCK002'), '404 才转查')
+  const alert = container.querySelector('[role="alert"]')?.textContent ?? ''
+  must(alert.includes('审计记录写入失败') && !alert.includes('没有这个参考编号'), `转查失败显示那次失败，实为 ${alert}`)
+  mode.safety503 = false
+  console.log('5. 转查失败 ✓')
 }
 
 await act(async () => { root.unmount() })

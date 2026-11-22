@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
 import { errValue, formatMsg } from '@/i18n/serverMsg'
 import type { MsgLike } from '@/i18n/serverMsg'
+import { ApiError } from '../../api'
 import { adminErrorRef, adminErrors, adminSafetyBlocks } from './api'
 import { adminPath } from '../../paths'
 import type { ErrorRefRow } from '../../types'
@@ -13,6 +14,10 @@ import { when } from './format'
 import { Empty, ErrorBar, TableSkeleton } from './LoadState'
 import { PageHead, RefreshButton } from './PageHead'
 import { useLoad } from './useLoad'
+
+/** 错误记录接口明确答复「没有这个编号」 */
+const notFound = (e: unknown) => e instanceof ApiError && e.status === 404
+  && (e.detail as { code?: unknown } | null)?.code === 'admin.error_ref.not_found'
 
 /** 展开时才取 detail：单条接口每次查看都写审计，列表不带 detail */
 function Detail({ r }: { r: ErrorRefRow }) {
@@ -51,8 +56,10 @@ export function ErrorsTab() {
     setHit(null); setMiss(null); setBlockHit(null)
     if (!q.trim()) return
     try { setHit(await adminErrorRef(q)) } catch (e) {
+      if (!notFound(e)) { setMiss(errValue(e)); return }       // 查询本身失败：照实显示，不转查
       // 错误记录里没有：用户报来的可能是内容拦截的编号，再查一次拦截记录
-      const found = await adminSafetyBlocks({ ref: q }).catch(() => [])
+      let found
+      try { found = await adminSafetyBlocks({ ref: q }) } catch (e2) { setMiss(errValue(e2)); return }   // 转查失败显示这次失败
       if (found.length) setBlockHit(found[0].id)
       else setMiss(errValue(e))
     }
