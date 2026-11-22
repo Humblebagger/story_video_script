@@ -737,7 +737,8 @@ def _injected_items(params: ConvertParams, seed: Optional[dict],
         items += [str(title or ""), s]
     items += [str(n or "") for n in context.names.values()]
     for e in context.lifecycle:
-        items += [str(e.get("detail") or ""), str((e.get("since") or {}).get("chapter_title") or "")]
+        since = e.get("since") or {}
+        items += [str(e.get("detail") or ""), str(since.get("chapter_title") or ""), str(since.get("unit_ref") or "")]
     for c in context.constraints:
         items += [str(c.get("text") or ""), str(c.get("negative_prompt") or "")]
     return [i.strip() for i in items if i and i.strip()]
@@ -1183,7 +1184,7 @@ def _render_safety(root, s: dict, clip: dict) -> str:
     sctx = {"stage": "video", "user_id": o["user_id"], "novel_id": o["nid"], "chapter_id": o["cid"],
             "version_id": o["vid"], "clip_id": clip["id"]}
     text = clip.get("prompt") or ""
-    waiter = (o["user_id"], o["nid"], o["vid"], clip["id"])      # 同一个片段每轮都是同一个等待者
+    waiter = (o["user_id"], o["nid"], o["cid"], o["vid"], clip["id"])   # 同一个片段每轮都是同一个等待者（与 runner 的检查键一致）
     result = safety_gate.lookup(text, sctx, waiter)
     if result is None:
         safety_gate.classify_async(text, sctx, waiter)          # 重复调用只登记一次，不重复分类
@@ -1200,7 +1201,7 @@ _render_runner = render_runner.Runner(
     _render_request,
     poll_sec=float(os.environ.get("STORYBOARD_RENDER_POLL_SEC", "10")),
     max_parallel=int(os.environ.get("STORYBOARD_RENDER_PARALLEL", "2")),
-    safety_check=_render_safety)
+    safety_check=_render_safety, safety_forget=safety_gate.forget)
 
 
 @app.on_event("startup")
@@ -1329,6 +1330,7 @@ def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]
     _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                  allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     s = _render_call(render_session.queue_run, root, clip_ids, expected_cny)
+    _render_runner.release_checks(owner, set(clip_ids) if clip_ids else None)   # 重新排队：上一代的检查登记作废
     _render_runner.watch(root)
     return _film_view(s)
 
@@ -1351,6 +1353,7 @@ def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str, expect:
             provider = None                     # 厂商建不起来（如密钥被撤）：按取消不了处理
         confirmed = provider is not None and render_video_base.try_cancel(provider, task_id)
     s = _render_call(render_session.cancel, root, item_id, task_id, confirmed, expect)
+    _render_runner.release_checks({"user_id": user["id"], "nid": nid, "cid": cid, "vid": vid}, {item_id})
     _render_runner.watch(root)                  # 不等了的那次还要盯；没有要盯的，下一轮自己放下
     out = _film_view(s, True)     # 厂商建不起来也要把已落账的取消如实返回
     out["cancel_outcome"] = "dequeued" if task_id is None else "cancelled" if confirmed else "abandoned"

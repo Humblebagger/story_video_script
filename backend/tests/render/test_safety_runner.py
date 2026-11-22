@@ -134,7 +134,7 @@ def main() -> int:
         sess_now = sess.load(root)
         item = clip(root, a)
         assert app_mod._render_safety(root, sess_now, item) == "wait"
-        assert queued_texts == [(item["prompt"], "video", a)] and seen_waiters[-1] == ("u", "n", "v", a), seen_waiters
+        assert queued_texts == [(item["prompt"], "video", a)] and seen_waiters[-1] == ("u", "n", "c", "v", a), seen_waiters
         state["r"] = ("pass",)
         assert app_mod._render_safety(root, sess_now, item) == "pass"
         state["r"] = ("block", "AB12CD34", "drugs")
@@ -159,7 +159,7 @@ def main() -> int:
     q = s3["clips"][0]["id"]
     s3 = sess.queue_run(root3, [q])
     with app_mod._render_runner._guard:
-        app_mod._render_runner._checking.add(Runner._check_key(OWNER, q))
+        app_mod._render_runner._checking[Runner._check_key(OWNER, q)] = "x"
     try:
         view = app_mod._film_view(s3)
     finally:
@@ -204,6 +204,55 @@ def main() -> int:
         gate._make_chat = real_make
         os.environ["STORYBOARD_SAFETY"] = "0"
     print("7b. 只分类一次 ✓")
+
+    # 8. 检查绑定快照（I1）：检查通过之后、begin_submit 之前正文被改并重新排队 → 不提交未检查的文本，下一轮重新检查
+    tmp4 = tempfile.TemporaryDirectory()
+    root4 = Path(tmp4.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+    sess.build(root4, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    t4 = firsts[0]
+    asked4, flag = [], {"done": False}
+
+    def check4(r, sn, c):
+        asked4.append(c["prompt"])
+        if not flag["done"]:
+            flag["done"] = True
+            with sess.mutate(r) as s2:
+                next(x for x in sess.items(s2) if x["id"] == c["id"])["prompt"] = "未检查的新文本"
+        return "pass"
+    n_sub = len(fake.submitted)
+    runner4 = Runner(builder, sleep=lambda _s: None, max_parallel=4, safety_check=check4)
+    sess.queue_run(root4, [t4])
+    runner4.watch(root4)
+    runner4.tick()
+    c4 = clip(root4, t4)
+    assert len(fake.submitted) == n_sub and c4["state"] == "queued" and c4["attempts"] == [], c4
+    assert all("未检查的新文本" not in str(r.prompt) for r in fake.submitted[n_sub:])
+    runner4.tick()
+    assert asked4[1] == "未检查的新文本", "下一轮对新文本重新检查"
+    print("8. 检查绑定快照 ✓")
+
+    # 9. 取消、移除会话时检查标记与等待登记一并清掉（M1）
+    forgot = []
+    tmp5 = tempfile.TemporaryDirectory()
+    root5 = Path(tmp5.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+    sess.build(root5, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    runner5 = Runner(builder, sleep=lambda _s: None, max_parallel=4, safety_check=lambda *_a: "wait",
+                     safety_forget=forgot.append)
+    sess.queue_run(root5, [t4])
+    runner5.watch(root5)
+    runner5.tick()
+    assert runner5.is_checking(OWNER, t4)
+    sess.cancel(root5, t4)
+    runner5.tick()
+    assert not runner5.is_checking(OWNER, t4) and forgot == [("u", "n", "c", "v", t4)], forgot
+    sess.queue_run(root5, [t4])
+    runner5.watch(root5)
+    runner5.tick()
+    assert runner5.is_checking(OWNER, t4)
+    runner5._forget(root5)
+    assert not runner5.is_checking(OWNER, t4) and len(forgot) == 2
+    runner5.release_checks(OWNER)          # 空操作也安全
+    print("9. 检查标记随取消与移除清掉 ✓")
 
     print("\nALL PASS")
     return 0

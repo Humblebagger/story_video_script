@@ -11,6 +11,7 @@ import time
 import traceback
 from pathlib import Path
 
+from safety.text import text_hash
 from render import compose, session as sess
 from render.providers import base, get_video
 from server import error_refs
@@ -33,14 +34,15 @@ class Runner:
     def __init__(self, request_builder, *, poll_sec: float = 10.0, max_parallel: int = 2,
                  retries: int = 3, sleep=time.sleep, clock=time.monotonic,
                  poll_give_up_sec: float = 6 * 3600, download_give_up_sec: float = 20 * 3600,
-                 abandoned_give_up_sec: float = 3600, safety_check=None):
+                 abandoned_give_up_sec: float = 3600, safety_check=None, safety_forget=None):
         """request_builder(root, session, item) → (ClipRequest, 实际首帧来源)；item 是剧本段或自由节点。
         分镜改了抛 compose.Stale；自由节点复查不过抛 compose.FreeInvalid。
         safety_check(root, session, item) → "pass" | "wait"；拦截或暂时无法检查时抛带代码的 UserError。
         它只能做毫秒级的查询（缓存、词表），要调模型的由它自己排到别的线程，这里下一轮再问。"""
         self.request_builder = request_builder
         self.safety_check = safety_check
-        self._checking: set = set()      # 等内容检查结论的 (用户, 小说, 章节, 版本, 段)
+        self.safety_forget = safety_forget   # (检查键) → None：段取消、重新排队或会话移除时作废它的等待登记
+        self._checking: dict = {}        # 等内容检查结论的 (用户, 小说, 章节, 版本, 段) → 会话目录
         self.poll_sec = poll_sec
         self.max_parallel = max_parallel
         self.retries = retries
@@ -68,6 +70,28 @@ class Runner:
     def _forget(self, root) -> None:
         with self._guard:
             self._roots.discard(Path(root))
+        self._release_root(root)
+
+    def _release_key(self, key) -> None:
+        """这一段不再等检查结论：清掉标记，并让检查入口作废它的等待登记与未读结论。"""
+        with self._guard:
+            self._checking.pop(key, None)
+        if self.safety_forget is not None:
+            self.safety_forget(key)
+
+    def _release_root(self, root) -> None:
+        with self._guard:
+            keys = [k for k, r in self._checking.items() if r == str(root)]
+        for k in keys:
+            self._release_key(k)
+
+    def release_checks(self, owner: dict, item_ids=None) -> None:
+        """取消或重新排队时调用：这些段（缺省该版本全部段）上一代的检查登记作废。"""
+        with self._guard:
+            keys = [k for k in self._checking
+                    if k[:4] == self._check_key(owner, "")[:4] and (item_ids is None or k[4] in item_ids)]
+        for k in keys:
+            self._release_key(k)
 
     def recover(self, data_dir) -> int:
         """扫描全部会话，续上还有在跑的段的会话。返回续上的会话数。"""
@@ -180,10 +204,12 @@ class Runner:
                     break
                 try:
                     if c["state"] != "queued" or sess.waiting_on_relay(s, c):
+                        if self._checking and self._check_key(s.get("owner"), c["id"]) in self._checking:
+                            self._release_key(self._check_key(s.get("owner"), c["id"]))   # 不再排队（取消等）
                         continue
                     if not self._safety(root, s, c):
                         continue
-                    if self._submit(root, provider, s, c):
+                    if self._submit(root, provider, s, c, self.safety_check is not None):
                         busy += 1
                 except Exception as e:
                     if self._isolate(root, e):
@@ -210,8 +236,7 @@ class Runner:
         try:
             verdict = self.safety_check(root, s, c)
         except Exception as e:
-            with self._guard:
-                self._checking.discard(key)
+            self._release_key(key)
             if isinstance(e, UserError):               # 拦截、暂时无法检查：不提交、不花钱
                 sess.submit_failed(root, c["id"], e)
             else:                                      # 检查自己出错同样不放行
@@ -220,9 +245,9 @@ class Runner:
             return False
         with self._guard:
             if verdict == "wait":
-                self._checking.add(key)
+                self._checking[key] = str(root)
             else:
-                self._checking.discard(key)
+                self._checking.pop(key, None)
         return verdict != "wait"
 
     def _settle(self, root) -> None:
@@ -234,6 +259,11 @@ class Runner:
                 s = None
             if s is None or not sess.needs_runner(s):
                 self._roots.discard(Path(root))
+                drop = True
+            else:
+                drop = False
+        if drop:
+            self._release_root(root)
 
     def _transient(self, kind, root, c, task_id, e, give_up) -> bool:
         """记下瞬时失败；超过期限返回 True（调用方应放弃）。"""
@@ -364,8 +394,9 @@ class Runner:
             return
         sess.settle_abandoned(root, tid, "succeeded", cost=cost, files=files)
 
-    def _submit(self, root, provider, s, c) -> bool:
-        snap = sess.begin_submit(root, c["id"])
+    def _submit(self, root, provider, s, c, checked: bool = False) -> bool:
+        # 检查过的文本要和提交时会话里的一致：检查之后被改了就不提交，下一轮重新检查
+        snap = sess.begin_submit(root, c["id"], text_hash(c.get("prompt") or "") if checked else None)
         if snap is None:
             return False
         try:

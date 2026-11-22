@@ -344,6 +344,54 @@ def main() -> int:
     assert store.get_verdict(text_hash("批量甲"))["verdict"] == "pass" and store.get_verdict(text_hash("批量乙"))["verdict"] == "pass"
     print("14. 批量合并文本缓存 ✓")
 
+    # 15. 等待者生命周期（I2/I3）
+    # 15a. lookup 返回 None → 任务完成写入终态 → classify_async：终态不被删、不起新任务，仍交付一次
+    started, go = threading.Event(), threading.Event()
+
+    def hold_bad(_m):
+        started.set()
+        assert go.wait(10)
+        return "坏输出"
+    script(hold_bad)
+    wk = ("u", "n", "c", "v", "E09-C01")
+    assert gate.classify_async("交错提示词", vctx, wk) is True and started.wait(10)
+    assert gate.lookup("交错提示词", vctx, wk) is None
+    go.set()
+    wait_idle()                                       # 此刻终态已写入
+    n = len(CALLS)
+    assert gate.classify_async("交错提示词", vctx, wk) is False and len(CALLS) == n, "不删终态、不起新任务"
+    assert gate.lookup("交错提示词", vctx, wk) == ("unavailable",)
+    assert gate.lookup("交错提示词", vctx, wk) is None
+    # 15b. 取消(forget) → 迟到失败 → 重新排队：旧失败不挂回，重新分类
+    started, go = threading.Event(), threading.Event()
+    script(hold_bad, reply(False))
+    assert gate.classify_async("取消提示词", vctx, wk) is True and started.wait(10)
+    gate.forget(wk)
+    go.set()
+    wait_idle()
+    assert gate.lookup("取消提示词", vctx, wk) is None, "迟到的失败没有挂回已取消的等待者"
+    n = len(CALLS)
+    assert gate.classify_async("取消提示词", vctx, wk) is True
+    wait_idle()
+    assert len(CALLS) == n + 1 and gate.lookup("取消提示词", vctx, wk) == ("pass",), "重新排队重新分类"
+    # 15c. forget 也清掉未读结论；prefix 批量
+    script("坏输出")
+    assert gate.classify_async("未读提示词", vctx, wk) is True
+    wait_idle()
+    gate.forget(("u", "n", "c", "v"), prefix=True)
+    assert gate.lookup("未读提示词", vctx, wk) is None
+    # 15d. 临时结论超过有效期当作不存在
+    script("坏输出")
+    assert gate.classify_async("过期提示词", vctx, wk) is True
+    wait_idle()
+    real_now = gate._now
+    gate._now = lambda: real_now() + gate.TEMP_TTL_SEC + 1
+    try:
+        assert gate.lookup("过期提示词", vctx, wk) is None
+    finally:
+        gate._now = real_now
+    print("15. 等待者生命周期 ✓")
+
     assert blocklist.match("含有 child porn 的第三段") == "minor_sexual"
     print("\nALL PASS")
     return 0

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from render import compose
+from safety.text import text_hash
 from render.providers import base, default_fell_back, default_video_name, get_video, names
 from server.messages import UserError, compact, money, msg, render_zh, vendor
 
@@ -561,12 +562,16 @@ def cancel(root, item_id: str, task_id: Optional[str] = None, confirmed: bool = 
 
 # ---------- 出片线程侧迁移 ----------
 
-def begin_submit(root, clip_id: str) -> Optional[dict]:
+def begin_submit(root, clip_id: str, expect_prompt_hash: Optional[str] = None) -> Optional[dict]:
     """提交前：再查一次上限（实际花费可能超过预估），追加一次「提交中」的尝试，返回段的快照。
-    不该提交（不在排队、超上限）返回 None；超上限的段转 failed。"""
+    不该提交（不在排队、超上限）返回 None；超上限的段转 failed。
+    expect_prompt_hash：内容检查通过的那份文本的 hash；会话锁内发现现在的提示词已不是它（检查之后被改了），
+    返回 None、不追加尝试，下一轮重新检查。"""
     with mutate(root) as s:
         c = _item(s, clip_id)
         if c["state"] != "queued":
+            return None
+        if expect_prompt_hash is not None and text_hash(c.get("prompt") or "") != expect_prompt_hash:
             return None
         last = c["attempts"][-1] if c["attempts"] else None
         if last and last["state"] == "submitting" and not last.get("task_id"):

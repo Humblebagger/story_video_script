@@ -49,10 +49,15 @@ def policy() -> str:
 
 
 def _read(path, default):
+    """文件不存在才是空数据；权限、读写错误、JSON 损坏一律上抛（调用方保持内存未加载，不拿空数据冒充）。"""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return default
+    try:
+        return json.loads(text)
+    except ValueError as e:
+        raise OSError(f"{path.name} unparsable") from e
 
 
 def _write(path, data) -> None:

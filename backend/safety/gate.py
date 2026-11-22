@@ -168,10 +168,12 @@ def check_items_sync(items, ctx: dict) -> None:
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="safety")
 _plock = threading.Lock()
 _pending: set = set()      # 正在排队或分类中的文本 hash
-_waiters: dict = {}        # hash → 正在等这次分类的等待者键集合（同一键重复登记只算一个）
+_waiters: dict = {}        # hash → {等待者键: 登记时的代次}（同一键重复登记只算一个）
+_gen: dict = {}            # 等待者键 → 代次；forget 让它加一，之后迟到的结果不再挂回旧登记
 _temp: dict = {}           # (hash, 等待者键) → (结论, 时刻)：只在进程内、不进结论缓存的临时终态
                            # 结论是 ("unavailable",)，或模型拒答的 ("block", 编号, 类别)；该等待者读一次即清
-TEMP_TTL_SEC = 600.0       # 没人来读的临时结论（比如片段被取消）超时清掉
+TEMP_TTL_SEC = 600.0       # 没人来读的临时结论超时即视为不存在
+_now = time.monotonic
 
 
 def pending() -> int:
@@ -179,21 +181,33 @@ def pending() -> int:
         return len(_pending)
 
 
-def _prune_temp(now: float) -> None:
-    for k in [k for k, (_r, at) in _temp.items() if now - at > TEMP_TTL_SEC]:
-        del _temp[k]
+def forget(waiter, prefix: bool = False) -> None:
+    """这个等待者不等了（片段取消、重新排队、会话移除）：撤掉它的全部登记与未读结论，代次加一，
+    正在跑的任务之后的结果不会再挂回它。prefix=True 时 waiter 是元组前缀，批量处理。"""
+    def hit(w):
+        return (isinstance(w, tuple) and w[:len(waiter)] == waiter) if prefix else w == waiter
+    with _plock:
+        for h in list(_waiters):
+            for w in [w for w in _waiters[h] if hit(w)]:
+                del _waiters[h][w]
+            if not _waiters[h]:
+                del _waiters[h]
+        for k in [k for k in _temp if hit(k[1])]:
+            del _temp[k]
+        for w in {w for w in _gen if hit(w)} | ({waiter} if not prefix else set()):
+            _gen[w] = _gen.get(w, 0) + 1
 
 
 def lookup(text, ctx: dict, waiter=None):
-    """先查这个等待者的临时结论（读一次即清），再查缓存与词表（毫秒级）：
+    """先查这个等待者的临时结论（读一次即清，超过有效期当作没有），再查缓存与词表（毫秒级）：
     ("pass",) / ("block", 编号, 类别) / ("unavailable",)；还不知道返回 None。
-    waiter：稳定的等待者键（出片线程用 (用户, 版本, 片段)）；不传则所有匿名调用方共用一个键。"""
+    waiter：稳定的等待者键（出片线程用 (用户, 小说, 章节, 版本, 片段)）；不传则所有匿名调用方共用一个键。"""
     body = normalize(text)
     if not enabled() or not body:
         return ("pass",)
     with _plock:
         entry = _temp.pop((text_hash(body), waiter), None)
-    if entry is not None:
+    if entry is not None and _now() - entry[1] <= TEMP_TTL_SEC:
         return entry[0]
     try:
         return _local(body, ctx)
@@ -202,13 +216,14 @@ def lookup(text, ctx: dict, waiter=None):
 
 
 def classify_async(text, ctx: dict, waiter=None) -> bool:
-    """把分类交给专用线程池。同一文本已在排队返回 False。
-    同一等待者键重复调用只登记一次；这个等待者上一代没读走的临时结论在这里作废，开始新一代检查。"""
+    """只负责登记并把分类交给专用线程池。同一文本已在排队返回 False；同一 (文本, 等待者) 已有
+    没读走的结论时也返回 False，不删它、不起新任务（下一次 lookup 交付）。"""
     body = normalize(text)
     h = text_hash(body)
     with _plock:
-        _temp.pop((h, waiter), None)
-        _waiters.setdefault(h, set()).add(waiter)
+        if (h, waiter) in _temp:
+            return False
+        _waiters.setdefault(h, {})[waiter] = _gen.get(waiter, 0)
         if h in _pending:
             return False
         _pending.add(h)
@@ -223,12 +238,12 @@ def classify_async(text, ctx: dict, waiter=None) -> bool:
             final = ("unavailable",)
         finally:
             with _plock:
-                who = _waiters.pop(h, set())
+                who = _waiters.pop(h, {})
                 if final is not None:
-                    now = time.monotonic()
-                    _prune_temp(now)
-                    for w in who:
-                        _temp[(h, w)] = (final, now)
+                    now = _now()
+                    for w, g in who.items():
+                        if _gen.get(w, 0) == g:
+                            _temp[(h, w)] = (final, now)
                 _pending.discard(h)
 
     _pool.submit(job)

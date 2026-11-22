@@ -302,6 +302,37 @@ def main() -> int:
         assert next(r for r in store.list_blocks() if r["id"] == rid6)["excerpt"] == "", trigger
     print("17. release/purge 触发清理 ✓")
 
+    # 18. 读取错误不当空数据（I4）：补写失败 → 重读失败 → 恢复 → 重复放行 → 重载
+    rid7 = store.record_block("读失败文本", category="drugs", reason="x", ctx=CTX)
+    with store._lock:
+        row = next(r for r in store._blocks_data() if r["id"] == rid7)
+        row.update(status="released", released_by="root", released_at=row["at"])
+        store._save_blocks()
+    store._reset_for_test()
+    store._write = lambda path, data: (_ for _ in ()).throw(OSError("disk full"))
+    try:
+        must_raise(OSError, store.get_verdict, text_hash("读失败文本"))     # 对账补写失败
+    finally:
+        store._write = real_write
+    real_read = store._read
+    store._read = lambda path, default: (_ for _ in ()).throw(OSError("io error"))
+    try:
+        must_raise(OSError, store.get_verdict, text_hash("读失败文本"))     # 重读失败：不能把空 blocks 当真
+        must_raise(OSError, store.find_block, rid7)
+    finally:
+        store._read = real_read
+    assert store.find_block(rid7)["status"] == "released", "恢复后重读到真实记录"
+    assert store.get_verdict(text_hash("读失败文本"))["released"] is True
+    assert store.release(rid7, "root")["status"] == "released"
+    store._reset_for_test()
+    assert _json.loads(store.VERDICTS_FILE.read_text(encoding="utf-8"))[text_hash("读失败文本")]["released"] is True
+    # 文件不存在才是空；损坏的 JSON 上抛
+    assert real_read(store.DIR / "不存在.json", []) == []
+    bad = store.DIR / "坏.json"
+    bad.write_text("{坏", encoding="utf-8")
+    must_raise(OSError, real_read, bad, {})
+    print("18. 读取错误不当空数据 ✓")
+
     print("\nALL PASS")
     return 0
 

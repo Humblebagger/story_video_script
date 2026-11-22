@@ -155,14 +155,14 @@ def main() -> int:
     params = ConvertParams(**marks)
     ctx = NovelContext(
         lifecycle=[{"character_id": "C01", "type": "deceased", "detail": "标记状态备注",
-                    "since": {"chapter_title": "标记状态所在章"}}],
+                    "since": {"chapter_title": "标记状态所在章", "unit_ref": "标记单元引用"}}],
         names={"C01": "标记人物名"}, outline="标记梗概", synopses=[("标记历史章标题", "标记章摘要")],
         constraints=[{"text": "标记创作限制", "negative_prompt": "标记负面提示"}])
     seed = {"characters": [{"id": "C01", "name": "标记资产卡名", "desc": "标记资产卡描述"}]}
     joined = "\n".join(app_mod._injected_items(params, seed, ctx))
     for name in marks:
         assert marks[name] in joined, f"ConvertParams.{name} 没进检查清单"
-    for m in ("标记状态备注", "标记状态所在章", "标记人物名", "标记梗概", "标记历史章标题", "标记章摘要",
+    for m in ("标记状态备注", "标记状态所在章", "标记单元引用", "标记人物名", "标记梗概", "标记历史章标题", "标记章摘要",
               "标记创作限制", "标记负面提示", "标记资产卡名", "标记资产卡描述"):
         assert m in joined, m
     print("8. 注入项清单覆盖 ✓")
