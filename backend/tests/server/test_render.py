@@ -138,6 +138,15 @@ def main() -> int:
         r = c.get(R + "/files/" + bad, headers=H)
         assert r.status_code == 404 and r.json()["detail"]["code"] == "film.file.not_found", (bad, r.status_code)
     assert c.get(R + "/files/final/ep1.srt", headers=H).status_code == 200
+    # 合成报告（前端下载页会取）是唯一放行的 json：文本字段里的厂商词被打码；别的 json 仍拒绝
+    (rdir / "final" / "mix_report.json").write_text(json.dumps(
+        {"episodes": [{"episode": "E01", "seconds": 3, "notes": [{"code": "x", "params": {"t": "MiniMax 挂了"}}],
+                       "placeholders": [], "stale": []}]}, ensure_ascii=False), encoding="utf-8")
+    r = c.get(R + "/files/final/mix_report.json", headers=H)
+    assert r.status_code == 200 and "MiniMax" not in r.text and "***" in r.text and r.json()["episodes"][0]["seconds"] == 3, r.text
+    assert c.get(R + "/files/final/timeline.json", headers=H).status_code == 404
+    assert c.get(R + "/files/session.json", headers=H).status_code == 404
+    assert c.get(R + "/files/clips/mix_report.json", headers=H).status_code == 404
     assert c.get(R + "/files/" + done["attempts"][0]["file"], headers=H).status_code == 200
     # 映射表里没有的（厂商, 档位）组合：视图 tier 为 null，不抛错、不带厂商与模型
     import copy as _copy

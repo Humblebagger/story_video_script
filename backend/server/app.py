@@ -1372,6 +1372,16 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid).resolve()
     target = (root / path).resolve()
     rel = target.relative_to(root).parts if root in target.parents else ()
+    if rel == ("final", "mix_report.json") and target.is_file():     # 唯一放行的 json：合成报告，文本打码后给
+        try:
+            data = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise HTTPException(404, detail=msg("film.file.not_found"))
+
+        def red(v):
+            return (public.redact(v) if isinstance(v, str) else [red(x) for x in v] if isinstance(v, list)
+                    else {k: red(x) for k, x in v.items()} if isinstance(v, dict) else v)
+        return JSONResponse(red(data))
     if (not rel or any(p.startswith(".") for p in rel) or target.suffix.lower() not in RENDER_FILE_EXTS
             or not target.is_file()):
         raise HTTPException(404, detail=msg("film.file.not_found"))
