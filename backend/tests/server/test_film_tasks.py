@@ -276,9 +276,10 @@ def main() -> int:
     for v in SENT.values():
         assert v not in raw, v
     allowed = {"id", "novel_id", "chapter_id", "version_id", "work_title", "chapter", "item_id", "kind", "state",
-               "elapsed_sec", "typical_sec", "ended_at", "cost_cny", "cancel", "error", "step", "shot_ids"}
+               "elapsed_sec", "typical_sec", "ended_at", "cost_cny", "cancel", "error", "step", "shot_ids", "tier"}
     for t in tasks():
         assert set(t) <= allowed, set(t) - allowed
+    assert tasks() and all(t["tier"] is None for t in tasks()), "档位不在映射表里：tier 为 None"
     print("9. 任务列表不泄露厂商、地址、密钥 ✓")
 
     # 以下几项接在哨兵测试之后：先把会话还原成正常的厂商与模型，去掉哨兵地址
@@ -291,6 +292,7 @@ def main() -> int:
                 a.pop("last_frame_url", None)
             if it["state"] in render_session.IN_FLIGHT:
                 it["state"] = "planned"
+    assert tasks() and all("tier" in t and t["tier"] == "demo" for t in tasks()), "还原后每条任务的 tier 为 demo"
 
     # 12. 取消种类：还没提交是 free，已提交是 paid；结束的没有
     z = c.get(R + "/session", headers=H).json()["clips"][2]["id"]
@@ -350,6 +352,7 @@ def main() -> int:
     render_session.begin_compose(root, fingerprint="fp", tts_cny=0.0, draft=True)
     render_session.compose_done(root, ["final/a.mp4"], "ok")
     assert [(t["state"], t["error"]) for t in tasks() if t["kind"] == "compose"] == [("done", None)]
+    assert [t["tier"] for t in tasks() if t["kind"] == "compose"] == ["demo"], "合成任务也带 tier"
     print("14. 成片合成 ✓")
 
     # 15. 已结束的最多返回这么多条，最新的在前

@@ -17,6 +17,7 @@ import { useReducedMotion } from 'motion/react'
 import { fmtEta, JOB_STATUS, label } from '@/labels'
 import { clockText, endedItems, jobWhere, taskWait, taskWhere } from '@/filmTasks'
 import { cny } from '@/lib/fmt'
+import { hintFor, useTierHint, useTtsHint, useWithHint } from '../../adminHints'
 import type { MsgKey } from '@/i18n/core'
 import type { FilmTask, JobStatus, JobSummary } from '@/types'
 
@@ -65,6 +66,9 @@ export function ActivityPanel({
   assistant?: ReactNode
 }) {
   const { t, locale } = useI18n()
+  const tierHint = useTierHint()
+  const ttsHint = useTtsHint()
+  const withHint = useWithHint()
   const reduced = !!useReducedMotion()
   const ref = useRef<HTMLElement>(null)
   useEffect(() => { ref.current?.focus({ preventScroll: true }) }, [])
@@ -92,8 +96,15 @@ export function ActivityPanel({
     const text = clockText(iso)
     return text ? <span className="text-xs tabular-nums text-muted-foreground">{text}</span> : null
   }
-  const reason = (failed: boolean, err: unknown) =>
-    (failed ? <p className="activity__log" data-testid="activity-reason">{err ? formatMsg(err, locale) : t('activity.failedHint')}</p> : null)
+  const reason = (failed: boolean, err: unknown, tier?: string | null) => {
+    if (!failed) return null
+    const code = (err as { code?: string } | null | undefined)?.code
+    return (
+      <p className="activity__log" data-testid="activity-reason">
+        {err ? withHint(formatMsg(err, locale), hintFor(code, tierHint(tier), ttsHint)) : t('activity.failedHint')}
+      </p>
+    )
+  }
   const jobBody = (j: DoneJob) => (
     <>
       {where(jobWhere(j))}
@@ -203,7 +214,7 @@ export function ActivityPanel({
                       {tk.state === 'late' && tk.cost_cny != null && (
                         <p className="text-xs text-muted-foreground">{t('activity.film.late', { cost: cny(tk.cost_cny) })}</p>
                       )}
-                      {reason(tk.state === 'failed', tk.error)}
+                      {reason(tk.state === 'failed', tk.error, tk.tier)}
                     </button>
                   </li>
                 )

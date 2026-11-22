@@ -825,6 +825,8 @@ export interface FilmTask {
   id: string
   item_id: string
   kind: 'clip' | 'free' | 'compose'
+  /** 所在会话的中性档位 id；管理员提示用 */
+  tier?: string | null
   novel_id: string
   chapter_id: string
   version_id: string

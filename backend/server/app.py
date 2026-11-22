@@ -1471,8 +1471,9 @@ def _film_tasks(uid: str) -> list:
         except (KeyError, render_video_base.ProviderError):
             typical = list(render_video_base.DEFAULT_TYPICAL_SEC)
         title, chapter = novels.titles(uid, o.get("nid"), o.get("cid"))
+        tier = render_tiers.tier_of(s.get("provider"), s.get("model"))
         for c in render_session.items(s):
-            row = {"id": f'{o.get("vid")}:{c["id"]}', "item_id": c["id"],
+            row = {"id": f'{o.get("vid")}:{c["id"]}', "tier": tier, "item_id": c["id"],
                    "kind": "free" if render_session.is_free(c["id"]) else "clip",
                    "novel_id": o.get("nid"), "chapter_id": o.get("cid"), "version_id": o.get("vid"),
                    "work_title": title, "chapter": chapter, "typical_sec": typical,
@@ -1495,7 +1496,7 @@ def _film_tasks(uid: str) -> list:
                                 "ended_at": a["settled_at"], "cost_cny": a.get("cost_cny")})
         # 成片合成：一个版本一条。合成中带当前步骤；没有进度百分比、没有通常时长，也不能取消
         f = s.get("final") or {}
-        row = {"id": f'{o.get("vid")}:compose', "item_id": "compose", "kind": "compose",
+        row = {"id": f'{o.get("vid")}:compose', "tier": tier, "item_id": "compose", "kind": "compose",
                "novel_id": o.get("nid"), "chapter_id": o.get("cid"), "version_id": o.get("vid"),
                "work_title": title, "chapter": chapter, "typical_sec": None,
                "ended_at": None, "elapsed_sec": None, "cost_cny": None,
@@ -1522,7 +1523,7 @@ def render_tasks(user: dict = Depends(novel_user)):
     typical_sec（合成没有）、ended_at、cost_cny（只有 late 有）、cancel（free / paid / null）、
     error（失败原因，消息对象，没有错误信息时为 null）、step（合成的当前步骤）、shot_ids（这一段含哪些镜头；
     自由节点为它挂靠的那一段的镜头，合成为空）。work_title、chapter 是现在的名字（改名后跟着变），读不到为 null。
-    不带厂商与档位。"""
+    tier：所在会话的中性档位 id（不在映射表里为 null）；不带厂商名。"""
     return {"tasks": _film_tasks(user["id"]),
             "server_now": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 

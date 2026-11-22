@@ -580,5 +580,44 @@ console.log('18. 预览读取失败可重试 ✓')
   console.log('20. 合成进度、失败原因、报告按界面语言渲染，旧数据原样 ✓')
 }
 
+// 21. 管理员提示（H6、H7）：配音面板标题与配音服务侧的合成失败原因后面带配音厂商字样；没有提示数据时一字不差
+{
+  const { I18nProvider } = await import('../src/i18n')
+  const { AdminHintsProvider } = await import('../src/adminHints')
+  const { zh } = await import('../src/i18n/zh')
+  const base = { files: [], report: null, error: null, detail: null, draft: true, stale: false }
+  const HINTS = {
+    default_provider: 'minimax', fell_back: false,
+    tiers: [{ id: 'demo', provider: 'fake', model: 'fake-1', vendor_label: 'ZZ-Vendor Demo', key_configured: true }],
+    tts: { provider: 'zz-tts', key_configured: true },
+  }
+  preview.final = { ...base, state: 'failed', error: 'x', detail: null,
+                    error_msg: { code: 'tts.vendor.unavailable', params: { status: 503 } } }
+  const show = async (hints: typeof HINTS | null) => {
+    await act(async () => {
+      root.render(<I18nProvider key={`i-${hints ? 'a' : 'p'}`} initial="zh"><AdminHintsProvider value={hints}><Host key={`h-${hints ? 'a' : 'p'}`} /></AdminHintsProvider></I18nProvider>)
+    })
+    await settle()
+    if (!tab('出片')) await click(button('时间轴画布'))
+    await click(tab('出片')!)
+    await settle()
+    return { sum: [...container.querySelectorAll('summary')].map((x) => x.textContent ?? ''), all: container.textContent ?? '' }
+  }
+  const plain = await show(null)
+  must(plain.sum.some((x) => x.startsWith(zh.compose.panel.voicesSum) && !x.includes('zz-tts')) && !plain.all.includes('zz-tts'), '没有提示数据：不带')
+  const adm = await show(HINTS)
+  must(adm.sum.some((x) => x.startsWith(`${zh.compose.panel.voicesSum}（zz-tts）`)), 'H6 配音面板标题带配音厂商')
+  must(adm.all.includes(zh.srv.tts.vendor.unavailable.replace('{status}', '503') + '（zz-tts）'), 'H7 合成失败原因带配音厂商')
+  must(adm.all.replaceAll('（zz-tts）', '') === plain.all, '提示只是附加')
+  // 不是配音服务侧的失败码：不带
+  preview.final = { ...base, state: 'failed', error: 'x', detail: null, error_msg: { code: 'compose.crashed', params: {} } }
+  await show(HINTS)
+  await refresh()
+  const fin = container.querySelector('.compose__final p')?.textContent ?? ''
+  must(fin.includes(zh.srv.compose.crashed) && !fin.includes('zz-tts'), `别的失败不带：${fin}`)
+  console.log('21. 管理员提示（配音面板、合成失败） ✓')
+  preview.final = null
+}
+
 await act(async () => { root.unmount() })
 console.log('\nALL PASS')

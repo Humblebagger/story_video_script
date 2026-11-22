@@ -10,6 +10,7 @@ import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
 import { formatMsg, itemError } from '@/i18n/serverMsg'
+import { hintFor, useTierHint, useWithHint } from '../adminHints'
 import { anyInFlight, batchSummary, firstFrameText, inFlight, mainAction, playableAttempt, precheck } from '../film'
 import type { Film } from '../useFilm'
 import { ComposePanel } from './ComposePanel'
@@ -73,7 +74,7 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
           {clip
             ? <ClipDetail key={clip.id} c={clip} s={s} film={film} blocked={blocked} onPickShot={onPickShot}
                           onPlay={onPlay} onCancel={onCancel} />
-            : freeSel ? <FreeDetail key={freeSel.id} n={freeSel} film={film} />
+            : freeSel ? <FreeDetail key={freeSel.id} n={freeSel} s={s} film={film} />
             : <p className="tlc__kfnote">{t('film.panel.pickClip')}</p>}
           <ComposePanel film={film} dirty={dirty} />
         </>
@@ -85,6 +86,8 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
 /** 设置：首次展开，出过片后折叠。改了才能「应用设置」；有段在跑时不能改 */
 function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const { t, locale } = useI18n()
+  const tierHint = useTierHint()
+  const withHint = useWithHint()
   const [draft, setDraft] = useState<FilmSettings>({})
   const val = <K extends 'resolution' | 'audio_mode' | 'budget_cny' | 'confirm_over_cny'>(k: K) => draft[k] ?? s[k]
   const flying = anyInFlight(s)
@@ -95,7 +98,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const tierId = tierValid ? picked0! : ''
   const tierName = (id: string | null) => {
     const x = tiers.find((o) => o.id === id)
-    return x ? formatMsg(x.label, locale) : t('film.panel.tierGone')
+    return x ? withHint(formatMsg(x.label, locale), tierHint(x.id)) : t('film.panel.tierGone')
   }
   // 草稿换了档位：分辨率、价格、声音模式的可选项取那一档的；没换就用会话当前的
   const picked = draft.tier && draft.tier !== s.tier ? tiers.find((o) => o.id === draft.tier) : undefined
@@ -121,7 +124,7 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
         <span>{t('film.panel.tier')}</span>
         <select data-testid="film-tier" value={tierId} onChange={(e) => pickTier(e.target.value)}>
           {!tierValid ? <option value="" disabled>{t('film.panel.tierGone')}</option> : null}
-          {tiers.map((o) => <option key={o.id} value={o.id}>{formatMsg(o.label, locale)}</option>)}
+          {tiers.map((o) => <option key={o.id} value={o.id}>{withHint(formatMsg(o.label, locale), tierHint(o.id))}</option>)}
         </select>
       </label>
       <label className="field">
@@ -239,6 +242,8 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
   onCancel?: (id: string) => void
 }) {
   const { t, locale } = useI18n()
+  const tierHint = useTierHint()
+  const withHint = useWithHint()
   const sep = t('common.listSep')
   const [watch, setWatch] = useState<number | null>(null)
   const file = watch === null ? null : (c.attempts[watch]?.file ?? null)
@@ -272,7 +277,7 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
       {c.uncertain && (
         <p className="tlc__kferr">{t('film.panel.clipUncertain')}</p>
       )}
-      {itemError(c, locale) && <p className="tlc__kferr">{itemError(c, locale)}</p>}
+      {itemError(c, locale) && <p className="tlc__kferr">{withHint(itemError(c, locale), hintFor(c.error_msg?.code, tierHint(s.tier), null))}</p>}
       <details>
         <summary>{t('film.panel.promptSum')}</summary>
         <pre className="film__prompt">{c.prompt}</pre>
@@ -337,8 +342,10 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
 }
 
 /** 选中的自由节点：完整正文、参考、首帧、全部尝试（可播放）、失败原因；编辑与生成在节点图的卡片上 */
-function FreeDetail({ n, film }: { n: FilmFreeNode; film: Film }) {
+function FreeDetail({ n, s, film }: { n: FilmFreeNode; s: FilmSession; film: Film }) {
   const { t, locale } = useI18n()
+  const tierHint = useTierHint()
+  const withHint = useWithHint()
   const sep = t('common.listSep')
   const [watch, setWatch] = useState<number | null>(null)
   const file = watch === null ? null : (n.attempts[watch]?.file ?? null)
@@ -350,7 +357,7 @@ function FreeDetail({ n, film }: { n: FilmFreeNode; film: Film }) {
         <b><i className={`film__dot film__dot--${n.state}`} aria-hidden="true" />{t('graph.free.detail', { id: n.id })}</b>
         <span>{label(FILM_STATE, n.state)} · {n.duration}s · {yuan(n.estimate_cny)}</span>
       </header>
-      {itemError(n, locale) && <p className="tlc__kferr">{itemError(n, locale)}</p>}
+      {itemError(n, locale) && <p className="tlc__kferr">{withHint(itemError(n, locale), hintFor(n.error_msg?.code, tierHint(s.tier), null))}</p>}
       <pre className="film__prompt">{n.prompt || t('film.panel.none')}</pre>
       <p className="film__line">{t('film.panel.refs', { list: n.refs.length ? n.refs.join(sep) : t('film.panel.none') })}</p>
       <p className="film__line">{t('film.panel.firstFrame', { v: firstFrameText({ first_frame: n.first_frame, frame_mode: null }) })}</p>

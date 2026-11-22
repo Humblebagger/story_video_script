@@ -9,6 +9,7 @@ import { StatusPill } from '@/components/common/StatusPill'
 import type { Tone } from '@/components/common/StatusPill'
 import { useI18n } from '@/i18n/core'
 import { itemError } from '@/i18n/serverMsg'
+import { hintFor, useTierHint, useWithHint } from '../adminHints'
 import type { MsgKey } from '@/i18n/core'
 import { FILM_STATE, label } from '../labels'
 import {
@@ -158,6 +159,9 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, tags, onDer
   onCancel?: () => void
 }) {
   const { t, locale } = useI18n()
+  const tierHint = useTierHint()
+  const withHint = useWithHint()
+  const err = withHint(itemError(c, locale), hintFor(c.error_msg?.code, tierHint(s.tier), null))
   const ok = c.attempts.map((a, i) => ({ a, i })).filter((x) => x.a.state === 'succeeded' && x.a.file)
   const at = ok.findIndex((x) => x.i === c.chosen)
   const lock = !!blocked || inFlight(c) || film.busy
@@ -194,7 +198,7 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, tags, onDer
       <p className="ngv__dim">
         {t('graph.spent', { spent: yuan(spent), est: yuan(c.estimate_cny) })} · {t('graph.attempts', { n: c.attempts.length })}
       </p>
-      {itemError(c, locale) && <p className="ngv__err" title={itemError(c, locale)}>{itemError(c, locale)}</p>}
+      {itemError(c, locale) && <p className="ngv__err" title={err}>{err}</p>}
       <div className="ngv__acts" onClick={(e) => e.stopPropagation()}>
         <SpendButton text={t(redo ? 'graph.redo' : 'graph.run', { cost: yuan(c.estimate_cny) })} cny={c.estimate_cny}
                      must={c.uncertain || needsConfirm(c, s)} disabled={lock}
@@ -219,6 +223,9 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
   assetOptions: { id: string; name: string }[]
 }) {
   const { t, locale } = useI18n()
+  const tierHint = useTierHint()
+  const withHint = useWithHint()
+  const err = withHint(itemError(n, locale), hintFor(n.error_msg?.code, tierHint(s.tier), null))
   const lock = !!blocked || inFlight(n) || film.busy
   const { patchFree } = film
   const [text, setText] = useState(n.prompt)
@@ -313,7 +320,7 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
           </select>
         </label>
       </div>
-      {itemError(n, locale) && <p className="ngv__err" title={itemError(n, locale)}>{itemError(n, locale)}</p>}
+      {itemError(n, locale) && <p className="ngv__err" title={err}>{err}</p>}
       <div className="ngv__acts" onClick={(e) => e.stopPropagation()}>
         <SpendButton text={t('graph.free.generate', { cost: yuan(n.estimate_cny) })} cny={n.estimate_cny}
                      must={n.uncertain || n.estimate_cny > s.confirm_over_cny}

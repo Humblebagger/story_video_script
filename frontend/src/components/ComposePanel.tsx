@@ -18,6 +18,7 @@ import { useCompose } from '../useCompose'
 import type { Compose } from '../useCompose'
 import type { Film } from '../useFilm'
 import type { FilmSession } from '../types'
+import { hintFor, useTtsHint, useWithHint } from '../adminHints'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
 /** 忙着，或确认框开着（改了会让确认的金额对不上） */
@@ -78,6 +79,8 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
 /** 各说话人的音色：缺音色的展开并标红；选「按提示默认」恢复默认 */
 function Voices({ c }: { c: Compose }) {
   const { t, locale } = useI18n()
+  const ttsHint = useTtsHint()
+  const withHint = useWithHint()
   const v = c.voices
   if (!c.preview!.lines) return <p className="tlc__kfnote">{t('compose.panel.noLines')}</p>
   if (!v) {
@@ -88,7 +91,7 @@ function Voices({ c }: { c: Compose }) {
   const name = (id: string | null) => v.voices.find((x) => x.id === id)?.name ?? id ?? ''
   return (
     <details className="compose__box" open={v.missing.length > 0}>
-      <summary>{t('compose.panel.voicesSum')}{v.missing.length ? t('compose.panel.voicesMissing', { n: v.missing.length }) : ''}</summary>
+      <summary>{withHint(t('compose.panel.voicesSum'), ttsHint)}{v.missing.length ? t('compose.panel.voicesMissing', { n: v.missing.length }) : ''}</summary>
       <table className="compose__table">
         <tbody>
           {v.speakers.map((sp) => (
@@ -160,6 +163,8 @@ function Music({ c }: { c: Compose }) {
 /** 成片：状态、失败时的 ffmpeg 输出、各集播放与下载、合成报告 */
 function Final({ c }: { c: Compose }) {
   const { t, locale } = useI18n()
+  const ttsHint = useTtsHint()
+  const withHint = useWithHint()
   const sep = t('common.listSep')
   const f = c.preview!.final!
   const r = c.preview!.report
@@ -174,7 +179,7 @@ function Final({ c }: { c: Compose }) {
   const tone = f.state === 'failed' ? 'tlc__kferr' : f.stale ? 'tlc__notice' : 'tlc__kfnote'
   return (
     <section className="compose__final">
-      <p className={tone}>{finalText(f)}</p>
+      <p className={tone}>{withHint(finalText(f), f.state === 'failed' ? hintFor(f.error_msg?.code, null, ttsHint) : null)}</p>
       {f.state === 'failed' && f.detail && (
         <details>
           <summary>{t('compose.panel.ffmpegOut')}</summary>

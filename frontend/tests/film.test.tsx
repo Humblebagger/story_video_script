@@ -600,6 +600,49 @@ console.log('10c. 出错后轮询不断 ✓')
   await settle()
 }
 
+// 10i. 管理员提示：外面包 AdminHintsProvider 时档位下拉、摘要、生成服务侧的失败原因后面有括号里的厂商字样；
+//      没有数据时与普通用户一字不差。厂商字样只来自提示数据
+{
+  const { zh } = await import('../src/i18n/zh')
+  const { AdminHintsProvider } = await import('../src/adminHints')
+  const HINTS = {
+    default_provider: 'minimax', fell_back: false,
+    tiers: [
+      { id: 'demo', provider: 'fake', model: 'fake-1', vendor_label: 'ZZ-Vendor Demo', key_configured: true },
+      { id: 'a-fast', provider: 'minimax', model: 'minimax-h3-highspeed', vendor_label: 'MiniMax H3 Highspeed', key_configured: true },
+    ],
+    tts: { provider: 'zz-tts', key_configured: true },
+  }
+  const [ca, cb] = [film!.clips[2].id, film!.clips[3].id]
+  Object.assign(clipOf(ca), { state: 'failed', error: 'x', error_msg: { code: 'film.vendor.balance', params: {} } })
+  Object.assign(clipOf(cb), { state: 'failed', error: 'y', error_msg: { code: 'film.submit.stale', params: {} } })
+  film = recount(film!)
+  const renderPanel = async (hints: typeof HINTS | null) => {
+    await act(async () => { root.render(<AdminHintsProvider value={hints}><Host key={`h-${hints ? 'a' : 'p'}`} withVersion /></AdminHintsProvider>) })
+    await click(button('时间轴画布'))
+    await click(tab('出片')!)
+    await settle()
+    await click(bar(ca))
+    const t1 = container.textContent ?? ''
+    await click(bar(cb))
+    return t1 + '\n' + (container.textContent ?? '')
+  }
+  const plain = await renderPanel(null)
+  must(!plain.includes('ZZ-Vendor') && !plain.includes('MiniMax'), '没有提示数据：不出现厂商字样')
+  const admin = await renderPanel(HINTS)
+  const opts = [...container.querySelectorAll<HTMLOptionElement>('select[data-testid="film-tier"] option')].map((o) => o.textContent)
+  must(opts.join('|') === `${zh.srv.tier.demo}（ZZ-Vendor Demo）|${zh.srv.tier.a_fast}（MiniMax H3 Highspeed）`, 'H1 下拉选项')
+  must((container.querySelector('.film__settings summary')?.textContent ?? '').includes(`${zh.srv.tier.demo}（ZZ-Vendor Demo）`), 'H2 摘要')
+  must(admin.includes(`${zh.srv.film.vendor.balance}（ZZ-Vendor Demo）`), 'H4 生成服务侧的失败带提示')
+  must(admin.includes(zh.srv.film.submit.stale) && !admin.includes(`${zh.srv.film.submit.stale}（`), '别的失败不带')
+  must(admin.replaceAll('（ZZ-Vendor Demo）', '').replaceAll('（MiniMax H3 Highspeed）', '') === plain, '提示只是附加')
+  console.log('10i. 管理员提示（出片面板） ✓')
+  await act(async () => { root.render(<Host key="v1" withVersion />) })
+  await click(button('时间轴画布'))
+  await click(tab('出片')!)
+  await settle()
+}
+
 // 10h. 验证门提示随语言变化（消息对象）
 {
   const { I18nProvider } = await import('../src/i18n')

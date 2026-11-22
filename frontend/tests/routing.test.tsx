@@ -118,6 +118,13 @@ let adminSvcCalls = 0
 let svcGate: Promise<void> | null = null
 /** 放行后 /admin/service 回 401（旧会话迟到的失效响应） */
 let svcUnauth = false
+/** 管理员提示的数据（测试里可以写厂商名）；svcFail 时 /admin/service 回 500 */
+const ADMIN_HINTS = {
+  default_provider: 'minimax', fell_back: false,
+  tiers: [{ id: 'demo', provider: 'fake', model: 'fake-1', vendor_label: 'ZZ-Vendor Demo', key_configured: true }],
+  tts: { provider: 'zz-tts', key_configured: true },
+}
+let svcFail = false
 const jobsById: Record<string, unknown> = {}
 let jobsList: unknown[] = []
 /** 本人的出片任务（GET /render/tasks 原样返回） */
@@ -149,7 +156,8 @@ g.fetch = async (url: string, init?: { method?: string; body?: string; headers?:
     if (svcGate) await svcGate
     if (unauth) return { ok: false, status: 401, text: async () => '{"detail":"未登录"}', json: async () => ({ detail: '未登录' }) }
     if (!/tok-root/.test(init?.headers?.Authorization ?? '')) return err(403, '需要管理员')
-    return json({ model: 'stub-model', review_model: null, api_key_configured: false })
+    if (svcFail) return err(500, { code: 'common.internal', params: {}, message: 'boom' })
+    return json({ model: 'stub-model', review_model: null, api_key_configured: false, film: ADMIN_HINTS })
   }
   if (path === '/auth/login' && method === 'POST') {
     const b = JSON.parse(init!.body!)
@@ -1310,6 +1318,67 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
   must(flight.rawTasks === calls, `退出后旧响应返回不应再补刷：${calls} -> ${flight.rawTasks}`)
   tasksDelay = 0
   await f.done()
+}
+
+
+// 管理员提示的整条链路：数据只来自 /admin/service；普通用户永远不请求；缓存只在内存，退出或换账号即清空
+{
+  const session = { tier: 'demo', resolution: '720p', audio_mode: 'tts_all', budget_cny: 100000,
+    confirm_over_cny: 20, spent_cny: 0, clips: [], free: [], free_seq: 0, orphaned: [], counts: {}, remaining_cny: 0,
+    reserved_cny: 0, uncertain_count: 0,
+    options: { tiers: [{ id: 'demo', label: { code: 'tier.demo', params: {} }, resolutions: ['720p'], default_resolution: '720p',
+                         cny_per_sec: { '720p': 1 }, audio_modes: ['tts_all', 'silent'] }],
+               resolutions: ['720p'], cny_per_sec: { '720p': 1 }, max_clip_sec: 10, max_refs: 3, first_frame: true,
+               frame_with_refs: false, audio_modes: ['tts_all', 'silent'], rate_note: '', typical_sec: [180, 420] } }
+  const tabOf = (name: string) => [...doc.body.querySelectorAll('.tlc__tabs button')]
+    .find((x) => (x.textContent ?? '').trim() === name) as unknown as HTMLElement | undefined
+  const tierOptions = () => [...doc.body.querySelectorAll<HTMLOptionElement>('select[data-testid="film-tier"] option')].map((o) => o.textContent ?? '')
+  const openCanvas = async (a: Awaited<ReturnType<typeof boot>>) => {
+    filmSession = session
+    await act(async () => { await a.router.navigate('/novels/n1/chapters/c1/render/canvas') })
+    await settle(400)
+    await click(tabOf('出片')!)
+    await settle(200)
+  }
+  const ZZ = '（ZZ-Vendor Demo）'
+  // a) 普通用户：打开画布、展开出片设置、打开任务面板，全程 0 次 /admin/service，页面上没有提示字样
+  adminSvcCalls = 0
+  const u = await boot('/novels/n1/overview', 'alice')
+  await openCanvas(u)
+  must(tierOptions().length === 1, `普通用户有档位下拉：${tierOptions().join('|')}`)
+  await click(u.q('[data-testid="activity-bell"]')!)
+  must(adminSvcCalls === 0 && !doc.body.textContent!.includes('ZZ-Vendor'), '普通用户不请求、不显示')
+  await u.done()
+  // b) 管理员：me() 返回后请求恰好 1 次；档位下拉的选项带提示
+  adminSvcCalls = 0
+  const a = await boot('/novels/n1/overview', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+  await openCanvas(a)
+  must(adminSvcCalls === 1 && tierOptions().some((x) => x.endsWith(ZZ)), `管理员看得到：${adminSvcCalls} ${tierOptions().join('|')}`)
+  // c) 来回切页面、重开面板不再请求
+  await act(async () => { await a.router.navigate('/novels/n1/overview') })
+  await settle(200)
+  await openCanvas(a)
+  await click(a.q('[data-testid="activity-bell"]')!)
+  must(adminSvcCalls === 1 && tierOptions().some((x) => x.endsWith(ZZ)), '不重复请求')
+  // d) 退出登录，再以普通用户登录、回到同一个画布：没有新的请求，没有提示字样
+  await click(a.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
+  await settle(200)
+  must(!doc.body.textContent!.includes('ZZ-Vendor'), '退出后页面上没有提示')
+  await openLogin(a.container)
+  await loginAs('alice', 'pw')
+  await settle(400)
+  await openCanvas(a)
+  must(adminSvcCalls === 1 && tierOptions().length === 1 && !doc.body.textContent!.includes('ZZ-Vendor'), '退出后清空，普通用户不请求')
+  await a.done()
+  // e) /admin/service 失败的管理员：界面与普通用户一样，不报错
+  svcFail = true
+  adminSvcCalls = 0
+  const f = await boot('/novels/n1/overview', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
+  await openCanvas(f)
+  must(adminSvcCalls >= 1 && tierOptions().length === 1 && !doc.body.textContent!.includes('ZZ-Vendor'), '请求失败：与普通用户一样')
+  svcFail = false
+  await f.done()
+  console.log('管理员提示：链路 ✓')
 }
 
 

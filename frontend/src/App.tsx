@@ -1,3 +1,4 @@
+import { AdminHintsProvider } from './adminHints'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -1171,8 +1172,9 @@ export default function App() {
     </div>
   )
 
+  const adminHints = svcInfo && user?.role === 'admin' && svcInfo.uid === user.id ? svcInfo.info.film ?? null : null
   return (
-    <>
+    <AdminHintsProvider value={adminHints}>
       {confirmUi}
       <Tour />
       <input
@@ -1358,6 +1360,6 @@ export default function App() {
           </div>
       </AppShell>
       )}
-    </>
+    </AdminHintsProvider>
   )
 }

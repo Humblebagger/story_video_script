@@ -239,6 +239,42 @@ const {
     ['v1:E01-C01', false], ['v1:E01-C02', true], ['v1:E01-C03', false], ['v1:E01-C04:t9', true], ['v1:E01-C05', false],
     ['v1:E01-C06', false], ['v2:compose', false],
   ]), `点击回调：${JSON.stringify(opened)}`)
+  // 4b. 管理员提示（H5、H7）：生成服务侧的失败带档位的厂商字样，配音服务侧的带配音厂商；没有数据或档位不在表里不带
+  {
+    const { AdminHintsProvider } = await import('../src/adminHints')
+    const { zh } = await import('../src/i18n/zh')
+    const HINTS = {
+      default_provider: 'minimax', fell_back: false,
+      tiers: [{ id: 'demo', provider: 'fake', model: 'fake-1', vendor_label: 'ZZ-Vendor Demo', key_configured: true }],
+      tts: { provider: 'zz-tts', key_configured: true },
+    }
+    const bal = { code: 'film.vendor.balance', params: {}, message: 'x' }
+    const failedTasks = [
+      task({ id: 'v1:A', item_id: 'A', state: 'failed', ended_at: '2026-11-21T03:00:00+00:00', tier: 'demo', error: bal }),
+      task({ id: 'v1:B', item_id: 'B', state: 'failed', ended_at: '2026-11-21T02:59:00+00:00', tier: null, error: bal }),
+      task({ id: 'v1:compose', item_id: 'compose', kind: 'compose', state: 'failed', typical_sec: null, shot_ids: [], tier: 'demo',
+             ended_at: '2026-11-21T02:58:00+00:00', error: { code: 'tts.vendor.unavailable', params: { status: 503 }, message: 'x' } }),
+      task({ id: 'v1:D', item_id: 'D', state: 'failed', ended_at: '2026-11-21T02:57:00+00:00', tier: 'demo',
+             error: { code: 'film.submit.stale', params: {}, message: 'x' } }),
+    ]
+    const view = (hints: typeof HINTS | null) => (
+      <I18nProvider initial="zh">
+        <AdminHintsProvider value={hints}>
+          <ActivityPanel running={[]} done={[]} onOpen={() => {}} onClose={() => {}}
+                         film={{ live: [], ended: failedTasks, at: Date.now() }} />
+        </AdminHintsProvider>
+      </I18nProvider>)
+    const reasons = () => [...container.querySelectorAll('[data-testid="activity-reason"]')].map((e) => e.textContent)
+    await act(async () => { root.render(view(null)) })
+    const plain = reasons()
+    must(plain.length === 4 && !plain.join('').includes('ZZ-Vendor') && !plain.join('').includes('zz-tts'), '没有提示数据：不带')
+    await act(async () => { root.render(view(HINTS)) })
+    const adm = reasons()
+    must(adm[0] === `${zh.srv.film.vendor.balance}（ZZ-Vendor Demo）`, 'H5 生成服务侧的失败带提示')
+    must(adm[1] === zh.srv.film.vendor.balance, '档位为 null 不带')
+    must(adm[2] === `${zh.srv.tts.vendor.unavailable.replace('{status}', '503')}（zz-tts）`, 'H7 配音服务侧的失败带配音厂商')
+    must(adm[3] === zh.srv.film.submit.stale, '别的失败不带')
+  }
   await act(async () => { root.unmount() })
   console.log('4. 任务面板 ✓')
 }

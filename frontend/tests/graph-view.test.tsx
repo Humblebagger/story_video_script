@@ -723,6 +723,40 @@ must(texts('E01-C1').join('|') === 'SH001 Wide·Static|SH002 Close-up·Push in|S
 await act(async () => { root.render(graph) })
 setCurrentLocale('zh')
 console.log('片段卡镜头标签（英文） ✓')
+
+// 管理员提示（H3）：片段卡与自由节点卡上，生成服务侧的失败原因后面带档位的厂商字样；没有提示数据时一字不差
+{
+  const { AdminHintsProvider } = await import('../src/adminHints')
+  const { zh } = await import('../src/i18n/zh')
+  const HINTS = {
+    default_provider: 'minimax', fell_back: false,
+    tiers: [{ id: 'demo', provider: 'fake', model: 'fake-1', vendor_label: 'ZZ-Vendor Demo', key_configured: true }],
+    tts: { provider: 'zz-tts', key_configured: true },
+  }
+  const failed = { ...session,
+    clips: [{ ...mkClip('E01-C1', ['E01-SH001']), state: 'failed', error: 'x', error_msg: { code: 'film.vendor.balance', params: {} } },
+            { ...mkClip('E01-C2', ['E01-SH004']), state: 'failed', error: 'y', error_msg: { code: 'film.submit.stale', params: {} } }],
+    free: [{ id: 'F01', prompt: 'p', refs: [], first_frame: null, target: null, duration: 5, estimate_cny: 5, attempts: [],
+             chosen: null, state: 'failed', error: 'z', error_msg: { code: 'film.vendor.balance', params: {} } }],
+  } as unknown as FilmSession
+  const fFilm = { ...film, session: failed } as unknown as Film
+  const view = (hints: typeof HINTS | null) => (
+    <AdminHintsProvider value={hints}>
+      <NodeGraph film={fFilm} doc={tagDoc} styleUrl={null} kfUrls={{}}
+                 selected={null} blocked={null} onSelect={() => {}} onOpenAssets={() => {}} onOpenFilm={() => {}} />
+    </AdminHintsProvider>)
+  const errsOf = () => [...container.querySelectorAll('.ngv__err')].map((e) => e.textContent)
+  await act(async () => { root.render(view(null)) })
+  const plain = errsOf()
+  must(plain.length === 3 && plain.every((x) => !x?.includes('ZZ-Vendor')), '没有提示数据：不带厂商字样')
+  await act(async () => { root.render(view(HINTS)) })
+  const adm = errsOf()
+  must(adm[0] === `${zh.srv.film.vendor.balance}（ZZ-Vendor Demo）` && adm[2] === adm[0], 'H3 片段卡与自由节点卡带提示')
+  must(adm[1] === zh.srv.film.submit.stale, '别的失败不带')
+  must(adm.map((x) => x?.replaceAll('（ZZ-Vendor Demo）', '')).join('|') === plain.join('|'), '提示只是附加')
+  console.log('管理员提示（节点卡） ✓')
+  await act(async () => { root.render(graph) })
+}
 await act(async () => { root.unmount() })
 }
 
