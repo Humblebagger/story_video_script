@@ -78,7 +78,7 @@ from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Reques
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import iterate_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -97,6 +97,7 @@ from render import plan as render_plan_mod
 from render import compose as render_compose
 from render import providers as render_providers
 from render import runner as render_runner
+from render import tiers as render_tiers
 from render import session as render_session
 from render import free as render_free
 from render import mix as render_mix
@@ -105,7 +106,7 @@ from render import voice as render_voice
 from render.providers import base as render_video_base
 from pipeline.manifest import sum_usage
 from server import admin as admin_mod
-from server import audit, auth, error_refs, library, novels, pricing, store, summary, usage
+from server import audit, auth, error_refs, library, novels, pricing, public, store, summary, usage
 from server.messages import REPORT_MAX, UserError, compact, lines_of, money, msg, ref, render_zh, to_detail, vendor, with_ref
 # 人读版生产包（Markdown）与机器可读清单共用 render/plan.py 的提示词组装
 from adapters import seedance
@@ -1040,13 +1041,28 @@ def _render_call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except render_session.NotFound as e:
-        raise HTTPException(404, detail=to_detail(e))
+        raise HTTPException(404, detail=_public_detail(to_detail(e)))
     except render_session.Conflict as e:
-        raise HTTPException(409, detail=to_detail(e, expected_cny=e.expected_cny))
+        raise HTTPException(409, detail=_public_detail(to_detail(e, expected_cny=e.expected_cny)))
     except render_session.Corrupt:
         raise HTTPException(500, detail=msg("film.session.corrupt_admin"))
     except render_session.SessionError as e:
-        raise HTTPException(422, detail=to_detail(e))
+        raise HTTPException(422, detail=_public_detail(to_detail(e)))
+
+
+def _public_detail(d):
+    """HTTP 错误的 detail：带代码的消息过普通用户出口（旧代码归一、原文打码），附加字段（如 expected_cny）保留。"""
+    if isinstance(d, dict) and d.get("code"):
+        extra = {k: v for k, v in d.items() if k not in ("code", "params", "message", "ref")}
+        return {**public.public_msg(d), **extra}
+    return d
+
+
+def _film_view(s: dict, lenient: bool = False) -> dict:
+    """出片会话给界面的视图：会话层的完整视图过一遍普通用户出口（不带厂商、模型、厂商任务号、下载地址）。"""
+    v = _render_call(render_session.view, s, lenient)
+    return public.film_view(v, tier=render_tiers.tier_of(s.get("provider"), s.get("model")),
+                            tiers=render_tiers.options(), rate_note=compact(msg("rate.video")))
 
 
 def _style_for(uid: str, nid: str) -> Optional[dict]:
@@ -1101,12 +1117,24 @@ def _start_render_runner():
 
 
 class RenderSettingsBody(BaseModel):
-    provider: Optional[str] = None
-    model: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")       # 厂商与厂商内档位不再从接口进来；带了就 422
+    tier: Optional[str] = None                      # 中性档位 id（render/tiers.py）
     resolution: Optional[str] = None
     audio_mode: Optional[str] = None
     budget_cny: Optional[float] = Field(None, gt=0, le=100000)
     confirm_over_cny: Optional[float] = Field(None, ge=0, le=100000)
+
+
+def _settings_patch(body: Optional[RenderSettingsBody]) -> dict:
+    """请求体 → 会话层的设置修改：档位 id 换成厂商与厂商内档位。"""
+    patch = body.model_dump(exclude_none=True) if body else {}
+    tier = patch.pop("tier", None)
+    if tier is not None:
+        try:
+            patch["provider"], patch["model"] = render_tiers.resolve(tier)
+        except KeyError:
+            raise HTTPException(422, detail=msg("film.settings.no_model"))
+    return patch
 
 
 class RenderRunBody(BaseModel):
@@ -1126,10 +1154,10 @@ def render_session_post(nid: str, cid: str, vid: str, body: Optional[RenderSetti
                         user: dict = Depends(novel_user)):
     """过验证门、按设置切段，生成或重建会话（不花钱）。"""
     root, doc, kfs, owner = _render_ctx(user, nid, cid, vid)
-    patch = body.model_dump(exclude_none=True) if body else {}
+    patch = _settings_patch(body)
     s = _render_call(render_session.build, root, doc, owner=owner, patch=patch, keyframes=kfs,
                      style=_style_for(owner["user_id"], owner["nid"]))
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 def _gate_status(user: dict, nid: str, cid: str, vid: str) -> dict:
@@ -1156,7 +1184,7 @@ def render_session_get(nid: str, cid: str, vid: str, user: dict = Depends(novel_
         raise HTTPException(404, detail=msg("film.session.none"))
     s = _render_call(render_session.build, root, doc, owner=owner, patch={}, keyframes=kfs,
                      allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
-    out = _render_call(render_session.view, s)
+    out = _film_view(s)
     out["gate"] = _gate_status(user, nid, cid, vid)
     return out
 
@@ -1169,9 +1197,9 @@ def render_session_patch(nid: str, cid: str, vid: str, body: RenderSettingsBody,
     if render_session.load(root) is None:
         raise HTTPException(404, detail=msg("film.session.none"))
     s = _render_call(render_session.build, root, doc, owner=owner,
-                     patch=body.model_dump(exclude_none=True), keyframes=kfs,
+                     patch=_settings_patch(body), keyframes=kfs,
                      style=_style_for(owner["user_id"], owner["nid"]))
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 def _film_quote(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]) -> dict:
@@ -1193,7 +1221,7 @@ def _film_run(user: dict, nid: str, cid: str, vid: str, clip_ids: Optional[list]
                  allow_in_flight=True, style=_style_for(owner["user_id"], owner["nid"]))
     s = _render_call(render_session.queue_run, root, clip_ids, expected_cny)
     _render_runner.watch(root)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 class RenderCancelBody(BaseModel):
@@ -1215,7 +1243,7 @@ def _film_cancel(user: dict, nid: str, cid: str, vid: str, item_id: str, expect:
         confirmed = provider is not None and render_video_base.try_cancel(provider, task_id)
     s = _render_call(render_session.cancel, root, item_id, task_id, confirmed, expect)
     _render_runner.watch(root)                  # 不等了的那次还要盯；没有要盯的，下一轮自己放下
-    out = _render_call(render_session.view, s, True)     # 厂商建不起来也要把已落账的取消如实返回
+    out = _film_view(s, True)     # 厂商建不起来也要把已落账的取消如实返回
     out["cancel_outcome"] = "dequeued" if task_id is None else "cancelled" if confirmed else "abandoned"
     return out
 
@@ -1248,7 +1276,7 @@ def render_clip_chosen(nid: str, cid: str, vid: str, clip_id: str, body: RenderC
                        user: dict = Depends(novel_user)):
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
     s = _render_call(render_session.set_chosen, root, clip_id, body.attempt)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 @app.patch(_R + "/clips/{clip_id}")
@@ -1256,7 +1284,7 @@ def render_clip_patch(nid: str, cid: str, vid: str, clip_id: str, body: RenderCl
                       user: dict = Depends(novel_user)):
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
     s = _render_call(render_session.set_mute, root, clip_id, body.mute_native)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 class FreeCreateBody(BaseModel):
@@ -1289,7 +1317,7 @@ def render_free_create(nid: str, cid: str, vid: str, body: Optional[FreeCreateBo
     """新建自由节点；带 from_clip 时从这一段派生（预填正文、参考、时长，挂靠这一段）。不花钱。"""
     root, ctx = _free_ctx(user, nid, cid, vid)
     s = _render_call(render_free.create, root, ctx, body.from_clip if body else None)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 @app.patch(_R + "/free/{fid}")
@@ -1298,7 +1326,7 @@ def render_free_patch(nid: str, cid: str, vid: str, fid: str, body: FreePatchBod
     """改正文、参考、首帧、时长、挂靠：只改传了的字段（显式传 null 为清掉）。在跑 409，校验不过 422。"""
     root, ctx = _free_ctx(user, nid, cid, vid)
     s = _render_call(render_free.update, root, ctx, fid, body.model_dump(exclude_unset=True))
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 @app.delete(_R + "/free/{fid}")
@@ -1306,7 +1334,7 @@ def render_free_delete(nid: str, cid: str, vid: str, fid: str, user: dict = Depe
     """删节点与只属于它的文件。在跑或被别的节点当尾帧来源时 409。"""
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
     s = _render_call(render_free.delete, root, fid)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 @app.post(_R + "/free/{fid}/run")
@@ -1316,7 +1344,7 @@ def render_free_run(nid: str, cid: str, vid: str, fid: str, body: Optional[Rende
     root, ctx = _free_ctx(user, nid, cid, vid, gate=True)
     s = _render_call(render_free.queue, root, ctx, fid, body.expected_cny if body else None)
     _render_runner.watch(root)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 @app.post(_R + "/free/{fid}/cancel")
@@ -1331,7 +1359,7 @@ def render_free_chosen(nid: str, cid: str, vid: str, fid: str, body: RenderChose
                        user: dict = Depends(novel_user)):
     root = _novel_call(novels.render_dir, user["id"], nid, cid, vid)
     s = _render_call(render_free.set_chosen, root, fid, body.attempt)
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 @app.get(_R + "/files/{path:path}")
@@ -1346,7 +1374,6 @@ def render_file(nid: str, cid: str, vid: str, path: str, user: dict = Depends(no
 
 FILM_RECENT_SEC = 86400     # 任务列表里「已结束」保留多久（秒）：一天
 FILM_RECENT_MAX = 30        # 已结束的最多返回多少条（最新的在前）
-_VENDOR_WORDS = re.compile(r"minimax|seedance|hailuo|doubao|volc|\bark\b|方舟|海螺|豆包|火山", re.I)  # i18n: internal
 
 
 def _has_vendor_text(v) -> bool:
@@ -1365,7 +1392,7 @@ def _public_error(obj: dict, *names) -> Optional[dict]:
     m, text = obj.get("error_msg"), obj.get("error") or ""
     if not m and not text:
         return None
-    if _has_vendor_text((m or {}).get("params") or {}) or _VENDOR_WORDS.search(text):
+    if _has_vendor_text((m or {}).get("params") or {}) or public.VENDOR_RE.search(text):
         return None
     if any(n and str(n).lower() in text.lower() for n in names):
         return None
@@ -1375,6 +1402,12 @@ def _public_error(obj: dict, *names) -> Optional[dict]:
     if isinstance(m.get("ref"), str) and re.fullmatch(r"[0-9A-Z]{1,16}", m["ref"]):
         out["ref"] = m["ref"]       # 参考编号：排障用，唯一放行的其它字段
     return out
+
+
+def _task_msg(obj: dict) -> Optional[dict]:
+    """任务队列里的失败原因或步骤：过普通用户出口。有代码按代码；只有文字的给通用文案；什么都没有为 None。"""
+    text, m = public.error_pair(obj)
+    return None if m is None else {**m, "message": text}
 
 
 def _cancel_kind(c: dict) -> Optional[str]:
@@ -1435,13 +1468,12 @@ def _film_tasks(uid: str) -> list:
             elif ended is not None and ended >= since and c.get("ended_as"):
                 out.append({**row, "state": c["ended_as"], "ended_at": c["ended_at"],
                             "elapsed_sec": max(0, round(ended - queued)) if queued else None,
-                            "error": (_public_error(c, s.get("provider"), s.get("model"))
-                                      if c["ended_as"] == "failed" else None)})
+                            "error": _task_msg(c) if c["ended_as"] == "failed" else None})
             for a in c.get("attempts") or []:
                 settled = _iso_ts(a.get("settled_at"))
                 if (a.get("late") and not a.get("free_id") and a.get("state") == "succeeded"
                         and settled is not None and settled >= since):
-                    out.append({**row, "id": f'{row["id"]}:{a["task_id"]}', "state": "late",
+                    out.append({**row, "id": f'{row["id"]}:{public.task_key(a["task_id"])}', "state": "late",
                                 "ended_at": a["settled_at"], "cost_cny": a.get("cost_cny")})
         # 成片合成：一个版本一条。合成中带当前步骤；没有进度百分比、没有通常时长，也不能取消
         f = s.get("final") or {}
@@ -1451,15 +1483,14 @@ def _film_tasks(uid: str) -> list:
                "ended_at": None, "elapsed_sec": None, "cost_cny": None,
                "cancel": None, "error": None, "step": None, "shot_ids": []}
         started, finished = _iso_ts(f.get("started_at")), _iso_ts(f.get("finished_at"))
-        names = (s.get("provider"), s.get("model"))
         if f.get("state") in render_session.COMPOSE_BUSY:
             out.append({**row, "state": f["state"],
-                        "step": _public_error({"error_msg": f.get("step_msg"), "error": f.get("step")}, *names),
+                        "step": _task_msg({"error_msg": f.get("step_msg")}),
                         "elapsed_sec": max(0, round(now - started)) if started else None})
         elif f.get("state") in ("done", "failed") and finished is not None and finished >= since:
             out.append({**row, "state": f["state"], "ended_at": f["finished_at"],
                         "elapsed_sec": max(0, round(finished - started)) if started else None,
-                        "error": _public_error(f, *names) if f["state"] == "failed" else None})
+                        "error": _task_msg(f) if f["state"] == "failed" else None})
     live = [t for t in out if t["ended_at"] is None]
     past = sorted((t for t in out if t["ended_at"] is not None), key=lambda t: t["ended_at"], reverse=True)
     return live + past[:FILM_RECENT_MAX]
@@ -1471,7 +1502,7 @@ def render_tasks(user: dict = Depends(novel_user)):
     FILM_RECENT_MAX 条。每项：id、item_id、kind（clip / free / compose）、novel_id、chapter_id、version_id、
     work_title、chapter、state（queued / running / downloading / done / failed / cancelled / late）、elapsed_sec、
     typical_sec（合成没有）、ended_at、cost_cny（只有 late 有）、cancel（free / paid / null）、
-    error（失败原因，消息对象，不能给普通用户看的为 null）、step（合成的当前步骤）、shot_ids（这一段含哪些镜头；
+    error（失败原因，消息对象，没有错误信息时为 null）、step（合成的当前步骤）、shot_ids（这一段含哪些镜头；
     自由节点为它挂靠的那一段的镜头，合成为空）。work_title、chapter 是现在的名字（改名后跟着变），读不到为 null。
     不带厂商与档位。"""
     return {"tasks": _film_tasks(user["id"]),
@@ -1499,9 +1530,9 @@ def _tts():
     try:
         return render_providers.get_tts()
     except KeyError as e:
-        raise HTTPException(422, detail=to_detail(e))
+        raise HTTPException(422, detail=_public_detail(to_detail(e)))
     except render_video_base.ProviderError as e:
-        raise HTTPException(422, detail=to_detail(e))
+        raise HTTPException(422, detail=_public_detail(to_detail(e)))
 
 
 def _bgm_files(root) -> dict:
@@ -1524,12 +1555,12 @@ def render_voices(nid: str, cid: str, vid: str, user: dict = Depends(novel_user)
     s = _session_or_404(root)
     lines = render_voice.tts_lines(render_voice.speech_lines(doc), s["audio_mode"])
     if not lines:       # 这个声音模式不配音：不取配音厂商，没配密钥也能看
-        return {"provider": None, "rate_note": "", "voices": [], "speakers": [], "missing": []}
+        return {"rate_note": "", "voices": [], "speakers": [], "missing": []}
     tts = _tts()
     voices, missing = render_voice.resolve_voices(doc, lines, s.get("voices") or {}, tts.caps)
     info = render_voice.speakers(doc)
     chosen = s.get("voices") or {}
-    return {"provider": tts.name, "rate_note": compact(msg("rate.tts")),
+    return {"rate_note": compact(msg("rate.tts")),
             "voices": [{"id": x.id, "name": x.name, "gender": x.gender} for x in tts.caps.voices],
             "speakers": [{"key": k, "name": (info.get(k) or {}).get("name") or k or compact(msg("voice.unlabeled")),
                           "hint": (info.get(k) or {}).get("hint"), "voice": voices.get(k), "chosen": chosen.get(k)}
@@ -1583,6 +1614,7 @@ def _compose_preview(user: dict, nid: str, cid: str, vid: str, draft: bool) -> t
         p["report"] = json.loads(rep.read_text(encoding="utf-8")) if rep and rep.is_file() else None
     except (OSError, ValueError):
         p["report"] = None      # 报告坏了不影响预览
+    p["final"], p["report"] = public.scrub_errors(p["final"]), public.scrub_errors(p["report"])
     p["bgm"] = sorted(bgm)
     p["tools"] = render_mix.tools() is not None
     p["music"] = {ep["id"]: ep.get("music") or {} for ep in doc.get("episodes") or []}
@@ -1629,7 +1661,7 @@ def _compose_start(user: dict, nid: str, cid: str, vid: str, draft: bool,
                          name=f"compose-{vid}", daemon=True)
     _compose_threads[str(root)] = t
     t.start()
-    return _render_call(render_session.view, s)
+    return _film_view(s)
 
 
 def _export_check(user: dict, nid: str, cid: str, vid: str) -> tuple:

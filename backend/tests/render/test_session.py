@@ -24,6 +24,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 from render import providers, session as sess  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
+from server import public  # noqa: E402
 from server.messages import cause_of, msg, money, vendor, with_ref  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
@@ -129,8 +130,10 @@ def main() -> int:
     c = clip(s, first)
     t1 = c["attempts"][0]["task_id"]
     assert c["state"] == "done" and c["chosen"] == 0
-    assert c["attempts"][0]["file"] == f"clips/{first}.{t1}.mp4", "文件按任务 id 命名"
-    assert c["attempts"][0]["last_frame"] == f"clips/{first}.{t1}.last.jpg"
+    k1 = public.task_key(t1)
+    assert c["attempts"][0]["file"] == f"clips/{first}.{k1}.mp4", "文件按任务号的短键命名（不带厂商任务号）"
+    assert c["attempts"][0]["last_frame"] == f"clips/{first}.{k1}.last.jpg"
+    assert sess.clip_dest(root, "E01-C01", "cgt-1").name == "E01-C01." + public.task_key("cgt-1") + ".mp4"
     assert s["spent_cny"] == c["attempts"][0]["cost_cny"] > 0
     print("3. 走完一段 ✓")
 
@@ -152,7 +155,7 @@ def main() -> int:
     # 5. 接力：上一段完成后给出尾帧路径；上一段在跑时等待
     c2 = clip(s, second)
     assert c2["first_frame"] == f"relay:{first}" and not sess.waiting_on_relay(s, c2)
-    assert sess.relay_frame(root, s, c2) == root / f"clips/{first}.{t1}.last.jpg"
+    assert sess.relay_frame(root, s, c2) == root / f"clips/{first}.{k1}.last.jpg"
     s = sess.queue_run(root, [second])
     third = next(c for c in s["clips"] if c["first_frame"] == f"relay:{second}")
     assert sess.waiting_on_relay(s, third)

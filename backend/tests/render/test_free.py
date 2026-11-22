@@ -24,6 +24,7 @@ os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 from render import compose, free, providers, session as sess  # noqa: E402
 from render.providers import base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
+from server import public  # noqa: E402
 
 YAO = ROOT / "tests" / "real_text_yao" / "output_merged.json"
 OWNER = {"user_id": "u", "nid": "n", "cid": "c", "vid": "v"}
@@ -166,7 +167,7 @@ def part_session():
     s = sess.load(root)
     f = item(s, "F01")
     assert f["state"] == "done" and f["chosen"] == 0 and f["attempts"][0]["fingerprint"] is None
-    assert f["attempts"][0]["file"] == f"clips/F01.{tid}.mp4" and (root / f["attempts"][0]["file"]).is_file()
+    assert f["attempts"][0]["file"] == f"clips/F01.{public.task_key(tid)}.mp4" and (root / f["attempts"][0]["file"]).is_file()
     assert s["spent_cny"] == round(spent0 + f["attempts"][0]["cost_cny"], 2) > spent0
     print("6. 迁移函数 ✓")
 

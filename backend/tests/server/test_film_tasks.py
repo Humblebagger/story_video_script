@@ -31,7 +31,7 @@ from render import providers, session as render_session  # noqa: E402
 from render.providers import base as render_video_base  # noqa: E402
 from render.providers.fake import FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
-from server import auth, novels  # noqa: E402
+from server import auth, novels, public  # noqa: E402
 
 FAKE = FakeVideo(polls_to_finish=2)
 providers.register("fake", lambda: FAKE)
@@ -107,7 +107,8 @@ def main() -> int:
     r = c.post(R + f"/clips/{x}/cancel", headers=H)
     assert r.status_code == 200, r.text
     s = r.json()
-    tid = pick(s, x)["attempts"][-1]["task_id"]
+    tid = render_session.load(root)["clips"][0]["attempts"][-1]["task_id"]       # 厂商任务号（视图里只有短键）
+    assert pick(s, x)["attempts"][-1]["task_id"] == public.task_key(tid) != tid
     assert s["cancel_outcome"] == "abandoned" and FAKE.cancel_calls == [tid]
     assert pick(s, x)["state"] == "planned" and pick(s, x)["attempts"][-1]["state"] == "abandoned"
     assert s["reserved_cny"] == pick(s, x)["estimate_cny"] and runner.watching() == [root]
@@ -118,7 +119,7 @@ def main() -> int:
     assert att["state"] == "succeeded" and att["late"] is True and s["spent_cny"] == att["cost_cny"] > 0
     assert pick(s, x)["chosen"] is None and pick(s, x)["state"] == "planned" and s["reserved_cny"] == 0
     late = [t for t in tasks() if t["state"] == "late"]
-    assert len(late) == 1 and late[0]["id"] == f"v1:{x}:{tid}" and late[0]["cost_cny"] == att["cost_cny"]
+    assert len(late) == 1 and late[0]["id"] == f"v1:{x}:{public.task_key(tid)}" and late[0]["cost_cny"] == att["cost_cny"]
     assert late[0]["item_id"] == x
     print("4. 不等了 → 后来出了结果 ✓")
 
@@ -181,12 +182,13 @@ def main() -> int:
         r = c.post(R + f"/clips/{x}/cancel", headers=H)
         assert r.status_code == 200, r.text
         assert r.json()["cancel_outcome"] == "abandoned"
-        need = {"providers": list, "models": dict, "resolutions": list, "cny_per_sec": dict, "max_clip_sec": (int, float),
+        need = {"resolutions": list, "cny_per_sec": dict, "max_clip_sec": (int, float),
                 "max_refs": (int, float), "first_frame": bool, "frame_with_refs": bool, "audio_modes": list,
                 "rate_note": (str, dict), "typical_sec": list}
         o = r.json()["options"]
-        assert all(isinstance(o.get(k), ty) for k, ty in need.items()) and "default_note" in o, o
-        assert o["models"] == {} and o["resolutions"] == []
+        assert isinstance(o.get("tiers"), list)
+        assert all(isinstance(o.get(k), ty) for k, ty in need.items()) and not {"providers", "models", "default_note"} & set(o), o
+        assert o["tiers"] == [] and o["resolutions"] == []
         s = render_session.load(root)
         assert pick(s, x)["state"] == "done" and pick(s, x)["attempts"][-1]["state"] == "abandoned"
         assert runner.watching() == [root], "不等了的那次仍要盯"
@@ -199,8 +201,8 @@ def main() -> int:
         # 厂商未注册（配置指向不存在的厂商）：同样结构完整
         with render_session.mutate(root) as ms:
             ms["provider"] = "no-such-vendor"
-        v = render_session.view(render_session.load(root), True)
-        assert all(isinstance(v["options"].get(k), ty) for k, ty in need.items()), v["options"]
+        v = render_session.view(render_session.load(root), True)       # 会话层的完整视图仍带厂商清单
+        assert all(isinstance(v["options"].get(k), ty) for k, ty in {"providers": list, "models": dict, **need}.items()), v["options"]
         with render_session.mutate(root) as ms:
             ms["provider"] = "fake"
     finally:
@@ -308,19 +310,28 @@ def main() -> int:
         with render_session.mutate(root) as ss:
             cz = next(k for k in ss["clips"] if k["id"] == z)
             cz["state"] = "failed"
-            render_session.set_error(cz, err)
+            if isinstance(err, dict) and "error_msg" in err:        # 旧数据：直接写成存档里的样子
+                cz.update(err)
+            else:
+                render_session.set_error(cz, err)
             render_session._ended(cz, "failed")
         return row(z)
 
     t = fail_with(msg("film.download.not_playable"))
     assert t["state"] == "failed" and t["error"]["code"] == "film.download.not_playable" and t["error"]["message"]
-    assert fail_with("视频服务（MiniMax）超时")["error"] is None
-    assert fail_with("fake-1 不可用")["error"] is None, "会话的模型名也算"
+    # 旧代码归一：带厂商名的旧代码经出口换成中性代码，文字里没有厂商词
+    t = fail_with({"error": "余额不足（MiniMax）", "error_msg": {"code": "film.minimax.insufficient_balance", "params": {}}})
+    assert t["error"]["code"] == "film.vendor.balance" and not public.find_vendor_words(t["error"]), t["error"]
+    # 只有文字、没有代码：通用文案；什么都没有：null
+    t = fail_with("视频服务（MiniMax）超时")
+    assert t["error"]["code"] == "common.failed_generic" and not public.find_vendor_words(t["error"]), t["error"]
+    assert fail_with("fake-1 不可用")["error"]["code"] == "common.failed_generic"
+    assert fail_with(None)["error"] is None
     with render_session.mutate(root) as ss:
         cz = next(k for k in ss["clips"] if k["id"] == z)
         cz["error_msg"] = {"code": "film.download.not_playable", "params": {"detail": {"t": "vendor", "text": "x"}}}
         cz["error"] = "下载的文件不能播放"
-    assert row(z)["error"] is None, "带厂商原话的不给"
+    assert row(z)["error"]["code"] == "film.download.not_playable" and not public.find_vendor_words(row(z)["error"]), "厂商原话被丢弃"
     print("13. 失败原因 ✓")
 
     # 14. 成片合成也在队列里：合成中带步骤、不能取消、没有通常时长；结束后带结局与失败原因；一个版本只有一条
@@ -425,7 +436,7 @@ def main() -> int:
     assert row("compose")["step"]["code"] == "compose.step.start"
     with render_session.mutate(root) as ss:
         ss["final"]["step"], ss["final"]["step_msg"] = "正在向 MiniMax 提交", None
-    assert row("compose")["state"] == "running" and row("compose")["step"] is None, "步骤里的厂商名不给"
+    assert row("compose")["state"] == "running" and row("compose")["step"] is None, "步骤没有代码时为 null"
     with render_session.mutate(root) as ss:
         ss["final"]["step"] = "视频服务 fake-1 合成"
     assert row("compose")["step"] is None, "会话的模型名也算"

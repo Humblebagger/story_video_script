@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import ToolException, tool
 
 from render import session
-from server import auth, novels, summary
+from server import auth, novels, public, summary
 from server.library import KINDS
 from server.messages import UserError, ref
 
@@ -255,7 +255,7 @@ def film_status(config: RunnableConfig, chapter: Optional[str] = None) -> str:
     s = _session(uid, nid, ch["id"], vid)
     if not s:
         return _dump({"chapter": ch["title"], "version": vid, "session": None})
-    pending, more = _cap([{"id": c["id"], "state": c["state"], "error": c.get("error"),
+    pending, more = _cap([{"id": c["id"], "state": c["state"], "error": public.error_pair(c)[0],
                            "estimate_cny": c.get("estimate_cny"), "uncertain": bool(c.get("uncertain"))}
                           for c in s.get("clips") or [] if c.get("state") != "done"])
     return _dump({"chapter": ch["title"], "version": vid,

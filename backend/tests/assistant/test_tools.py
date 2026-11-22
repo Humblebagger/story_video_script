@@ -14,13 +14,15 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 _TMP = tempfile.TemporaryDirectory()
 os.environ["STORYBOARD_DATA_DIR"] = _TMP.name
+os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 # 测试不读真实的 backend/.env：load_settings 里的 _load_dotenv 换成空操作（脚本独占进程，无需还原）
 import pipeline.config as _pipeline_config  # noqa: E402
 _pipeline_config._load_dotenv = lambda *_a, **_k: None
 
 from langchain_core.tools import ToolException  # noqa: E402
 from assistant import tools as T  # noqa: E402
-from server import auth, novels  # noqa: E402
+from render import session as render_session  # noqa: E402
+from server import auth, novels, public  # noqa: E402
 
 DOC = json.loads((ROOT / "tests" / "real_text_yao" / "output_merged.json").read_text(encoding="utf-8"))
 
@@ -129,6 +131,21 @@ def main() -> int:
     assert p["outline"] == "老栓买药救子。"
     f = json.loads(call(T.film_status, C))
     assert f["session"] is None
+    # 6b. 失败原因出口：旧的带厂商名的文字与旧代码，给模型的输出里没有厂商词、有中性中文原因
+    root = novels.render_dir(uid, nid, c1, "v1")
+    render_session.build(root, copy.deepcopy(DOC), owner={"user_id": uid, "nid": nid, "cid": c1, "vid": "v1"},
+                         patch={}, keyframes={})
+    with render_session.mutate(root) as ss:
+        ss["clips"][0]["state"] = "failed"
+        ss["clips"][0]["error"] = "MiniMax 账户余额不足"
+        ss["clips"][0]["error_msg"] = {"code": "film.minimax.insufficient_balance", "params": {}}
+    out = call(T.film_status, C)
+    f = json.loads(out)
+    assert public.find_vendor_words(f["session"]["pending"]) == [], f["session"]["pending"]
+    err = next(x for x in f["session"]["pending"] if x["state"] == "failed")["error"]
+    assert "余额不足" in err and "联系管理员" in err, err
+    print("6b. film_status 失败原因不带厂商名 ✓")
+
     T.jobs_source = lambda u: [
         {"id": "j1", "status": "running", "novel_id": nid, "chapter": "第二章 刑场", "progress": {"done_chars": 5, "total_chars": 10}, "last_log": "第 1 批"},
         {"id": "j2", "status": "succeeded", "novel_id": nid, "chapter": "x", "progress": None, "last_log": None},

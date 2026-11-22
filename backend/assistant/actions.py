@@ -124,7 +124,7 @@ def generate_storyboard(config: RunnableConfig, tool_call_id: Annotated[str, Inj
 @_tool(response_format="content_and_artifact")
 def film_run(config: RunnableConfig, tool_call_id: Annotated[str, InjectedToolCallId],
              chapter: Optional[str] = None, clip_ids: Optional[list[str]] = None):
-    """出片（视频生成）。clip_ids 缺省为这一章所有没出或失败的段，也可以点名几段重做。会花钱：先给用户一张带金额（元）的确认卡，用户点确认才开始。要求用户已在出片那一步选好厂商与档位。chapter 缺省为当前章。"""
+    """出片（视频生成）。clip_ids 缺省为这一章所有没出或失败的段，也可以点名几段重做。会花钱：先给用户一张带金额（元）的确认卡，用户点确认才开始。要求用户已在出片那一步选好档位。chapter 缺省为当前章。"""
     uid, nid, _ = _ctx(config)
     user, ids = {"id": uid}, (clip_ids or None)
 

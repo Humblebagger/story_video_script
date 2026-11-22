@@ -30,7 +30,7 @@ from server.messages import msg  # noqa: E402
 from render import providers, session as render_session  # noqa: E402
 from render.providers.fake import FAKE_MP4, FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
-from server import auth, novels  # noqa: E402
+from server import auth, novels, public  # noqa: E402
 
 FAKE = FakeVideo()
 providers.register("fake", lambda: FAKE)
@@ -69,7 +69,23 @@ def main() -> int:
     r = c.post(R + "/session", headers=H, json={})
     assert r.status_code == 200, r.text
     s = r.json()
-    assert s["provider"] == "fake" and s["audio_mode"] == "tts_all" and "owner" not in s
+    assert "provider" not in s and "model" not in s and s["tier"] == "demo"
+    assert s["audio_mode"] == "tts_all" and "owner" not in s
+    # 视图是给普通用户的：没有厂商与模型，档位是中性 id
+    assert [t["id"] for t in s["options"]["tiers"]] == ["demo"] and s["options"]["tiers"][0]["label"] == {"code": "tier.demo", "params": {}}
+    assert not {"providers", "models", "default_note"} & set(s["options"])
+    assert s["options"]["rate_note"] == {"code": "rate.video", "params": {}}
+    # 设置只收 tier：不认识的 422；带 provider / model 的 422（不再接受）
+    r = c.patch(R + "/session", headers=H, json={"tier": "nope"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "film.settings.no_model"
+    assert c.patch(R + "/session", headers=H, json={"provider": "fake"}).status_code == 422
+    assert c.patch(R + "/session", headers=H, json={"model": "fake-1"}).status_code == 422
+    r = c.patch(R + "/session", headers=H, json={"tier": "demo", "resolution": "480p"})
+    assert r.status_code == 200 and r.json()["tier"] == "demo" and r.json()["resolution"] == "480p"
+    # 存储没变：会话文件里仍是厂商与档位
+    raw_s = render_session.load(app_mod.novels.render_dir(uid, nid, cid, "v1"))
+    assert raw_s["provider"] == "fake" and raw_s["model"] == "fake-1"
+    assert c.patch(R + "/session", headers=H, json={"resolution": "720p"}).status_code == 200
     assert s["clips"] and all(x["state"] == "planned" for x in s["clips"])
     assert s["options"]["resolutions"] == ["480p", "720p"]
     assert c.patch(R + "/session", headers=H, json={"resolution": "4k"}).status_code == 422
@@ -100,6 +116,12 @@ def main() -> int:
     assert done["state"] == "done" and s["spent_cny"] == done["attempts"][0]["cost_cny"] > 0
     f = c.get(R + "/files/" + done["attempts"][0]["file"], headers=H)
     assert f.status_code == 200 and f.content == FAKE_MP4
+    # 尝试只有白名单字段，任务号是短键，文件名用短键
+    a = done["attempts"][0]
+    real = render_session.load(app_mod.novels.render_dir(uid, nid, cid, "v1"))["clips"][1]["attempts"][-1]
+    assert a["task_id"] == public.task_key(real["task_id"]) != real["task_id"]
+    assert not {"video_url", "last_frame_url", "usage", "billing", "known_cost_cny"} & set(a)
+    assert a["file"] == f'clips/{done["id"]}.{a["task_id"]}.mp4'
     assert c.get(R + "/files/clips/nope.mp4", headers=H).status_code == 404
     assert c.get(R + "/files/%2e%2e/%2e%2e/versions/v1.json", headers=H).status_code == 404
     print("3. 试段与取文件 ✓")

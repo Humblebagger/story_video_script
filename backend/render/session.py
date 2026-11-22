@@ -7,7 +7,6 @@
 import json
 import logging
 import os
-import re
 import shutil
 import tempfile
 import threading
@@ -661,14 +660,14 @@ def note_error(root, clip_id: str, err, task_id: Optional[str] = None) -> None:
 
 
 def clip_dest(root, clip_id: str, task_id: str) -> Path:
-    """一次尝试的视频文件路径：按任务 id 命名，同一段 id 再出现时也不会覆盖已付费的旧文件
-    （尾帧按 base.last_frame_path 随之命名）。只在会话目录还在时建 clips/，版本删了不重建。"""
+    """一次尝试的视频文件路径：按任务号的短键命名（文件名不带厂商任务号；已有文件不改名），同一段 id 再出现时
+    也不会覆盖已付费的旧文件（尾帧按 base.last_frame_path 随之命名）。只在会话目录还在时建 clips/，版本删了不重建。"""
     root = Path(root)
     if not root.is_dir():
         raise NotFound.of("film.session.dir_gone")
     (root / "clips").mkdir(exist_ok=True)
-    safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(task_id))
-    return root / "clips" / f"{clip_id}.{safe}.mp4"
+    from server import public                 # 放函数里：server 包依赖 render，不反过来在模块级导入
+    return root / "clips" / f"{clip_id}.{public.task_key(task_id)}.mp4"
 
 
 def _rel(root, p) -> Optional[str]:

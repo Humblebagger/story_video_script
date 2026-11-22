@@ -71,7 +71,8 @@ def main() -> int:
 
     # 2. 音色：按提示默认、缺音色列出、选择与清除、无效音色 422
     v = c.get(R + "/voices", headers=H).json()
-    assert v["provider"] == "fake" and {x["id"] for x in v["voices"]} == {"fake-male", "fake-female"}
+    assert "provider" not in v and v["rate_note"] == {"code": "rate.tts", "params": {}}
+    assert {x["id"] for x in v["voices"]} == {"fake-male", "fake-female"}
     keys = [x["key"] for x in v["speakers"]]
     assert keys[0] == "narration" or "narration" in keys
     narr = next(x for x in v["speakers"] if x["key"] == "narration")
@@ -266,9 +267,10 @@ def main() -> int:
     assert c.post(R + "/compose", headers=H, json={"expected_cny": exp}).status_code == 200
     wait(root)
     f = c.get(R + "/compose", headers=H).json()["final"]
-    assert f["state"] == "failed" and "混音" in f["error"] and f["detail"].startswith("Invalid argument")
+    # 没有代码的旧式错误：不外放原文，换通用文案；详情仍隐去服务器路径
+    assert f["state"] == "failed" and f["error_msg"]["code"] == "common.failed_generic" and f["detail"].startswith("Invalid argument")
+    assert "混音" not in f["error"] and "E01.joined" not in json.dumps(f, ensure_ascii=False), f
     assert str(root) not in f["error"] + f["detail"] and str(Path(root).resolve()) not in f["detail"], f
-    assert "…/final/work/E01.joined.mp4" in f["error"], "报错里隐去服务器路径"
     assert f["files"] == ["final/E01.mp4"] and f["stale"] is False, "失败不改现有成片的出处，没改动就不过期"
     assert f["files_fingerprint"] == p2["fingerprint"] and f["files_draft"] is True
 
