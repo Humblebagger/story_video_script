@@ -471,6 +471,111 @@ def main() -> int:
         os.environ["STORYBOARD_SAFETY"] = "0"
     print("12. 迁移与作废同一临界区 ✓")
 
+    # 13. 提交凭据是实际检查过的那份快照（终审 1）：tick 读到 A → 检查前改成 B（检查的是 B）→ 提交前改回 A：不提交
+    tmp9 = tempfile.TemporaryDirectory()
+    root9 = Path(tmp9.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+    sess.build(root9, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    x9, y9 = firsts[0], firsts[1]
+    A9 = clip(root9, y9)["prompt"]
+    B9 = A9 + "（检查过的改写）"
+
+    def set_prompt(r, cid, text):
+        with sess.mutate(r) as s2:
+            next(x for x in sess.items(s2) if x["id"] == cid)["prompt"] = text
+    checks13 = []
+
+    def cb13(r, sn, c):
+        checks13.append((c["id"], c["prompt"]))
+        if c["id"] == x9:
+            set_prompt(r, y9, B9)                       # 取消、编辑、重排：y9 的 tick 快照仍是 A
+            return "wait"
+        return "pass"
+    real_begin = sess.begin_submit
+
+    def begin13(r, cid, h=None):
+        if cid == y9:
+            set_prompt(r, y9, A9)                       # 检查之后、提交之前又改回 A
+        return real_begin(r, cid, h)
+    runner9 = Runner(builder, sleep=lambda _s: None, max_parallel=4, safety_check=cb13)
+    sess.queue_run(root9, [x9, y9])
+    runner9.watch(root9)
+    n_sub = len(fake.submitted)
+    sess.begin_submit = begin13
+    try:
+        runner9.tick()
+    finally:
+        sess.begin_submit = real_begin
+    assert (y9, B9) in checks13 and (y9, A9) not in checks13, checks13
+    c9 = clip(root9, y9)
+    assert len(fake.submitted) == n_sub and c9["state"] == "queued" and c9["attempts"] == [], \
+        "检查的是 B，提交时是 A：不提交"
+    print("13. 提交凭据是检查过的快照 ✓")
+
+    # 14. 自由节点：检查正文 + 引用资产名称（终审 2）；检查时的名称映射作为凭据随快照交给 request_builder
+    import copy
+    from render import compose as compose_mod
+    cards = doc["assets"]["characters"]
+    aid = cards[0]["id"]
+    free = {"id": "F01", "prompt": "雨夜街头", "refs": [aid], "first_frame": None, "duration": 4.0}
+    s14 = {"owner": OWNER}
+    bad_doc = copy.deepcopy(doc)
+    bad_doc["assets"]["characters"][0]["name"] = "含有 child porn 的名字"
+    real_get_version, real_make = app_mod.novels.get_version, gate._make_chat
+    cur_doc = {"d": bad_doc}
+    app_mod.novels.get_version = lambda *_a: {"result": cur_doc["d"]}
+    gate._make_chat = lambda: (_ for _ in ()).throw(RuntimeError("测试不调模型"))
+    os.environ["STORYBOARD_SAFETY"] = "1"
+    seen14 = []
+    real_lookup = gate.lookup
+    try:
+        try:
+            app_mod._render_safety(None, s14, free)
+            raise AssertionError("资产名称违规应被拦下")
+        except gate.SafetyBlocked:
+            pass
+        cur_doc["d"] = doc
+        gate.lookup = lambda text, ctx, waiter=None: seen14.append(text) or ("pass",)
+        out = app_mod._render_safety(None, s14, free)
+        name0 = cards[0]["name"]
+        assert seen14[-1] == compose_mod.free_check_text(free, {aid: name0}) and name0 in seen14[-1], seen14
+        assert out == ("pass", {aid: name0}), out
+    finally:
+        app_mod.novels.get_version, gate._make_chat, gate.lookup = real_get_version, real_make, real_lookup
+        os.environ["STORYBOARD_SAFETY"] = "0"
+    # runner 把凭据随快照交给 request_builder
+    tmp10 = tempfile.TemporaryDirectory()
+    root10 = Path(tmp10.name) / "users" / "u" / "novels" / "n" / "chapters" / "c" / "render" / "v"
+    sess.build(root10, doc, owner=OWNER, patch={"budget_cny": 100000}, keyframes={})
+    got_proof = []
+
+    def builder14(r, sn, c):
+        got_proof.append(c.get("safety_proof"))
+        return builder(r, sn, c)
+    runner10 = Runner(builder14, sleep=lambda _s: None, max_parallel=4,
+                      safety_check=lambda *_a: ("pass", {"C01": "检查时的名字"}))
+    sess.queue_run(root10, [firsts[0]])
+    runner10.watch(root10)
+    runner10.tick()
+    assert got_proof == [{"C01": "检查时的名字"}] and clip(root10, firsts[0])["state"] == "running", got_proof
+    # _render_request 把凭据交给 request_for_free（names=）
+    captured = {}
+    real_rff = app_mod.render_compose.request_for_free
+    real_kf, real_style2, real_tail = app_mod._keyframe_paths, app_mod._style_for, app_mod.render_free.tail_frame
+    app_mod.render_compose.request_for_free = lambda *a, **k: captured.update(k) or ("req", None)
+    app_mod.novels.get_version = lambda *_a: {"result": doc}
+    app_mod._keyframe_paths = lambda *_a: {}
+    app_mod._style_for = lambda *_a: None
+    app_mod.render_free.tail_frame = lambda *_a: None
+    try:
+        sess_v = {"owner": OWNER, "provider": "fake", "model": "fake-1"}
+        app_mod._render_request(None, sess_v, dict(free, safety_proof={aid: "凭据名"}))
+        assert captured.get("names") == {aid: "凭据名"}, captured
+    finally:
+        app_mod.render_compose.request_for_free = real_rff
+        app_mod.novels.get_version, app_mod._keyframe_paths = real_get_version, real_kf
+        app_mod._style_for, app_mod.render_free.tail_frame = real_style2, real_tail
+    print("14. 自由节点检查资产名称、凭据随快照 ✓")
+
     print("\nALL PASS")
     return 0
 

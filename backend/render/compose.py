@@ -476,12 +476,36 @@ def request_for(doc: dict, session: dict, clip: dict, *, keyframes: dict, relay_
     return req, used
 
 
+def free_ref_line(asset_id: str, text: str) -> str:
+    """自由节点追加的一行参考：检查文本与厂商请求共用这一种拼法。"""
+    return f"【参考】{ref(asset_id)} {strip_placeholders(text)}"
+
+
+def free_ref_names(doc: dict, node: dict) -> dict:
+    """节点引用的资产（不含风格图）现在的名称：资产 id → 名称。版本里已没有的资产不在其中。"""
+    idx = assets_index(doc)
+    out = {}
+    for aid in node.get("refs") or []:
+        slot = asset_slot(idx, aid) if aid != STYLE_ID else None
+        if slot is not None:
+            out[aid] = slot["name"]
+    return out
+
+
+def free_check_text(node: dict, names: dict) -> str:
+    """自由节点提交前要检查的文本：正文 + 按 refs 顺序的各资产名称参考行（与 request_for_free 的拼法一致）。"""
+    body = strip_placeholders(node.get("prompt") or "").strip()
+    return "\n".join([body] + [free_ref_line(aid, names[aid]) for aid in node.get("refs") or [] if aid in names])
+
+
 def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, tail_frame,
-                     caps, rewrite, style: Optional[dict] = None) -> tuple:
+                     caps, rewrite, style: Optional[dict] = None, names: Optional[dict] = None) -> tuple:
     """自由节点 → 厂商请求。返回 (ClipRequest, 实际使用的首帧来源或 None)。
 
     node["prompt"] 只是正文；这里按 refs 顺序补【首帧】/【参考】行再整体改写，占位符编号与请求里
     图片的顺序一致（Seedance 按出现顺序编 @图片n）。tail_frame：首帧为 tail:<id> 时那次尝试的尾帧文件。
+    names：内容检查时的「资产 id → 名称」凭据。给了就只用它：引用的资产不在其中、或与版本现在的名称
+    不一致（检查之后改了名或删了），抛 FreeInvalid，不提交未检查的名称。
     """
     body = strip_placeholders(node.get("prompt") or "").strip()
     if not body:
@@ -495,10 +519,12 @@ def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, t
             slots.append({"asset_id": STYLE_ID, "role": "style", "text": STYLE_TEXT, "source": style["source"]})
             continue
         slot = asset_slot(idx, aid)
+        if names is not None and (aid not in names or slot is None or slot["name"] != names[aid]):
+            raise FreeInvalid.of("film.free_invalid.ref_changed", id=aid)
         src = image_for(slot, idx) if slot else None
         if not src:
             raise FreeInvalid.of("film.free_invalid.no_ref_image", id=aid)
-        slots.append({**slot, "text": slot["name"], "source": src})
+        slots.append({**slot, "text": names[aid] if names is not None else slot["name"], "source": src})
     ff = node.get("first_frame")
     image, used = None, None
     if ff:
@@ -525,7 +551,7 @@ def request_for_free(doc: dict, session: dict, node: dict, *, keyframes: dict, t
         refs.append(RefImage(FIRST, "first_frame", image))
         image = None
     for sl in slots:
-        lines.append(f"【参考】{ref(sl['asset_id'])} {strip_placeholders(sl['text'])}")
+        lines.append(free_ref_line(sl["asset_id"], sl["text"]))
         refs.append(RefImage(sl["asset_id"], sl["role"], sl["source"]))
     aspect = (doc.get("meta") or {}).get("video", {}).get("aspect_ratio", "9:16")
     req = ClipRequest(prompt=rewrite("\n".join(lines)), model=session["model"], duration=node["duration"],

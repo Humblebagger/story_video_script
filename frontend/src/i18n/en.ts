@@ -1483,6 +1483,7 @@ export const en: BaseMessages = {
         no_ref_image: '{id} no longer has a usable reference image',
         keyframe_gone: 'The keyframe used as first frame is gone: {shot}',
         tail_gone: 'The last frame used as first frame cannot be found: {id}',
+        ref_changed: 'Reference asset {id} was renamed or removed after the content check; please generate again',
       },
     },
     tts: {

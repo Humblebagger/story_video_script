@@ -924,6 +924,12 @@
     ],
     "zh": "{id} 没有可用的参考图了"
   },
+  "film.free_invalid.ref_changed": {
+    "params": [
+      "id"
+    ],
+    "zh": "参考资产 {id} 在内容检查之后改了名称或被删除，请重新生成"
+  },
   "film.free_invalid.style_gone": {
     "params": [],
     "zh": "风格图已删除，请从参考里去掉它"

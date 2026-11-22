@@ -10,6 +10,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+from typing import Optional
 
 from safety.text import text_hash
 from render import compose, session as sess
@@ -223,9 +224,10 @@ class Runner:
                         if self._checking and self._check_key(s.get("owner"), c["id"]) in self._checking:
                             self._release_key(self._check_key(s.get("owner"), c["id"]))   # 不再排队（取消等）
                         continue
-                    if not self._safety(root, s, c):
+                    ticket = self._safety(root, s, c)
+                    if ticket is None:
                         continue
-                    if self._submit(root, provider, s, c, self.safety_check is not None):
+                    if self._submit(root, provider, s, c, ticket):
                         busy += 1
                 except Exception as e:
                     if self._isolate(root, e):
@@ -245,16 +247,18 @@ class Runner:
             return self._check_key(owner, item_id) in self._checking
 
     def _safety(self, root, s, c) -> bool:
-        """提交前的内容检查，在 begin_submit 之前。可以提交返回 True；等结论或已判失败返回 False。"""
+        """提交前的内容检查，在 begin_submit 之前。等结论或已判失败返回 None；可以提交返回提交凭据：
+        {"hash": 实际检查过的提示词 hash, "session": 支撑这次检查的会话快照, "proof": 回调给的附加凭据}。
+        没配检查回调时凭据里 hash 为 None（不做比对）。"""
         if self.safety_check is None:
-            return True
+            return {"hash": None, "session": s, "proof": None}
         key = self._check_key(s.get("owner"), c["id"])
         with self._life_lock:
             # 锁内重读：本轮快照之后被取消或重新排队的，以当前状态为准（不对已取消的写失败）
             now = sess.load(root)
             cur = next((x for x in sess.items(now) if x["id"] == c["id"]), None) if now else None
             if cur is None or cur["state"] != "queued" or sess.waiting_on_relay(now, cur):
-                return False
+                return None
             try:
                 verdict = self.safety_check(root, now, cur)
             except Exception as e:
@@ -264,13 +268,17 @@ class Runner:
                     log.warning("%s", _scrub_secrets(f'内容检查出错 root={root} clip={c["id"]} {type(e).__name__}: {e}', None))  # i18n: internal
                     sess.submit_failed(root, c["id"], msg("safety.unavailable"))
                 self._release_key(key)
-                return False
+                return None
             with self._guard:
                 if verdict == "wait":
                     self._checking[key] = str(root)
                 else:
                     self._checking.pop(key, None)
-        return verdict != "wait"
+        if verdict == "wait":
+            return None
+        proof = verdict[1] if isinstance(verdict, tuple) else None    # ("pass", 凭据) 或 "pass"
+        # 凭据绑定锁内实际检查的那份快照（cur），不用 tick 开头读到的 c：A→B→A 时检查的是 B，提交 A 会被拒
+        return {"hash": text_hash(cur.get("prompt") or ""), "session": now, "proof": proof}
 
     def _settle(self, root) -> None:
         """没有未完成的段就不再盯。读取与移除在锁内，与 watch 互斥，避免刚排队的段被漏掉。"""
@@ -416,11 +424,15 @@ class Runner:
             return
         sess.settle_abandoned(root, tid, "succeeded", cost=cost, files=files)
 
-    def _submit(self, root, provider, s, c, checked: bool = False) -> bool:
-        # 检查过的文本要和提交时会话里的一致：检查之后被改了就不提交，下一轮重新检查
-        snap = sess.begin_submit(root, c["id"], text_hash(c.get("prompt") or "") if checked else None)
+    def _submit(self, root, provider, s, c, ticket: Optional[dict] = None) -> bool:
+        # 提交凭据来自检查：提交时会话里的提示词必须就是检查过的那份，否则不提交，下一轮重新检查
+        ticket = ticket or {"hash": None, "session": s, "proof": None}
+        snap = sess.begin_submit(root, c["id"], ticket["hash"])
         if snap is None:
             return False
+        if ticket["proof"] is not None:
+            snap["safety_proof"] = ticket["proof"]       # 检查时的附加凭据（自由节点：资产 id → 名称），组装请求只用它
+        s = ticket["session"]
         try:
             req, used = self.request_builder(root, s, snap)
         except compose.Stale:

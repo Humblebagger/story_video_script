@@ -1477,6 +1477,7 @@ export const zh = {
         no_ref_image: '{id} 没有可用的参考图了',
         keyframe_gone: '首帧用的关键帧没了：{shot}',
         tail_gone: '首帧用的尾帧找不到了：{id}',
+        ref_changed: '参考资产 {id} 在内容检查之后改了名称或被删除，请重新生成',
       },
     },
     tts: {

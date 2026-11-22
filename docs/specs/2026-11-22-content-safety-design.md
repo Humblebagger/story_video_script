@@ -83,7 +83,9 @@
 
 ### 3.2 视频提交前（stage=video）
 
-位置：`render/runner.py` 提交循环，在 `begin_submit` **之前**。文本用会话里存的 `c["prompt"]`（段）或自由节点的 `node["prompt"]`，不含偏好短句（偏好短句保存时单独检查，见偏好 spec §6）。
+位置：`render/runner.py` 提交循环，在 `begin_submit` **之前**。文本用会话里存的 `c["prompt"]`（段），或自由节点的正文**加它引用的各资产名称**（`compose.free_check_text`：与 `request_for_free` 追加 `【参考】…` 行同一拼法），不含偏好短句（偏好短句保存时单独检查，见偏好 spec §6）。
+
+- 检查与提交绑定：通过时 runner 拿到提交凭据——锁内实际检查过的那份提示词的 hash 与会话快照；`begin_submit` 只按这份 hash 比对（提交时的提示词不是检查过的就不提交，下一轮重查）。自由节点另带检查时的「资产 id → 名称」映射，随快照交给 `request_builder`，`request_for_free` 只用这份映射；引用的资产不在映射里或与版本现在的名称不一致，抛 `FreeInvalid`（`film.free_invalid.ref_changed`，不付费）。
 
 - 所有段与自由节点一律按「缓存 → 词表 → 分类」，不区分版本是否编辑过。
 - `Runner` 新增注入的 `safety_check` 回调（与 `request_builder` 同样方式，测试可替换），tick 线程里只做 `lookup`（缓存 + 词表，毫秒级）：

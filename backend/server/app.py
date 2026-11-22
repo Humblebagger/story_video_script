@@ -1174,7 +1174,8 @@ def _render_request(root, s: dict, clip: dict):
     if render_session.is_free(clip["id"]):
         return render_compose.request_for_free(
             record.get("result") or {}, s, clip, keyframes=kfs, tail_frame=render_free.tail_frame(root, s, clip),
-            caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style)
+            caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style,
+            names=clip.get("safety_proof"))      # 检查时的资产名称凭据（内容检查关闭时为 None，按版本现读）
     return render_compose.request_for(
         record.get("result") or {}, s, clip,
         keyframes=kfs, relay_frame=render_session.relay_frame(root, s, clip),
@@ -1183,11 +1184,18 @@ def _render_request(root, s: dict, clip: dict):
 
 def _render_safety(root, s: dict, clip: dict) -> str:
     """出片线程提交前的内容检查：只查缓存与词表；还没有结论的交给 safety 的线程池，本轮等。
-    文本用会话里存的提示词（段）或自由节点的正文。"""
+    文本用会话里存的提示词（段），或自由节点的正文加它引用的各资产名称（与请求里追加的参考行同一拼法）。
+    自由节点通过时返回 ("pass", 资产 id → 名称)：组装请求只用这份检查过的名称。"""
     o = s["owner"]
     sctx = {"stage": "video", "user_id": o["user_id"], "novel_id": o["nid"], "chapter_id": o["cid"],
             "version_id": o["vid"], "clip_id": clip["id"]}
-    text = clip.get("prompt") or ""
+    names = None
+    if render_session.is_free(clip["id"]):
+        record = novels.get_version(o["user_id"], o["nid"], o["cid"], o["vid"])
+        names = render_compose.free_ref_names(record.get("result") or {}, clip)
+        text = render_compose.free_check_text(clip, names)
+    else:
+        text = clip.get("prompt") or ""
     waiter = (o["user_id"], o["nid"], o["cid"], o["vid"], clip["id"])   # 同一个片段每轮都是同一个等待者（与 runner 的检查键一致）
     result = safety_gate.lookup(text, sctx, waiter)
     if result is None:
@@ -1197,7 +1205,7 @@ def _render_safety(root, s: dict, clip: dict) -> str:
         raise safety_gate.blocked_error(result[2], result[1])
     if result[0] == "unavailable":
         raise safety_gate.unavailable_error()
-    return "pass"
+    return ("pass", names) if names is not None else "pass"
 
 
 render_video_base.record_reject = lambda code, detail: error_refs.record(code, detail, where="vendor")

@@ -155,6 +155,25 @@ def main() -> int:
     must_raise(compose.FreeInvalid, req_for, node(prompt="{ref:C01} @图片1"))
     print("8. 反复清理与清空 ✓")
 
+    # 9. 检查凭据（终审 2）：给了名称映射就只用它；引用的资产不在映射里或与当前版本不一致 → FreeInvalid；检查文本与参考行同一拼法
+    n9 = node(refs=[chars[0], chars[1]])
+    names = {chars[0]: name(chars[0]), chars[1]: name(chars[1])}
+    req, _ = compose.request_for_free(doc, SESSION, n9, keyframes={}, tail_frame=None, caps=caps,
+                                      rewrite=lambda t: t, style=None, names=names)
+    text = compose.free_check_text(n9, names)
+    assert text == req.prompt, (text, req.prompt)
+    assert names[chars[0]] in text and text.startswith("雨夜街头\n【参考】")
+    e = must_raise(compose.FreeInvalid, compose.request_for_free, doc, SESSION, n9, keyframes={}, tail_frame=None,
+                   caps=caps, rewrite=lambda t: t, style=None, names={chars[0]: names[chars[0]]})
+    assert e.code == "film.free_invalid.ref_changed", e.code
+    d9 = copy.deepcopy(doc)
+    d9["assets"]["characters"][0]["name"] = "检查之后改的名字"
+    e = must_raise(compose.FreeInvalid, compose.request_for_free, d9, SESSION, n9, keyframes={}, tail_frame=None,
+                   caps=caps, rewrite=lambda t: t, style=None, names=names)
+    assert e.code == "film.free_invalid.ref_changed"
+    assert compose.free_ref_names(doc, n9) == names
+    print("9. 检查凭据 ✓")
+
     print("\nALL PASS")
     return 0
 

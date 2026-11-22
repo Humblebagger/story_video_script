@@ -445,6 +445,7 @@ register("film.free_invalid.style_gone", "风格图已删除，请从参考里�
 register("film.free_invalid.no_ref_image", "{id} 没有可用的参考图了")
 register("film.free_invalid.keyframe_gone", "首帧用的关键帧没了：{shot}")
 register("film.free_invalid.tail_gone", "首帧用的尾帧找不到了：{id}")
+register("film.free_invalid.ref_changed", "参考资产 {id} 在内容检查之后改了名称或被删除，请重新生成")
 
 # 配音厂商与音色
 register("tts.unknown_voice", "未知的音色：{voice}")
