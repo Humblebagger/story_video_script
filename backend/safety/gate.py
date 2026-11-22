@@ -7,6 +7,7 @@ lookup + classify_async：出片线程用——tick 里只查缓存与词表，�
 import logging
 import os
 import threading
+import time
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -59,15 +60,23 @@ def _make_chat():
     return classifier.make_chat()
 
 
+def _cached(text: str):
+    """只查结论缓存（含放行）：("pass",) / ("block", 编号, 类别)；没有返回 None。"""
+    v = store.get_verdict(text_hash(text))
+    if v is not None and v["verdict"] == "pass":
+        return ("pass",)
+    if v is not None and v["verdict"] == "block":
+        store.touch_block(v["block_id"])
+        return ("block", v["block_id"], v["category"])
+    return None
+
+
 def _local(text: str, ctx: dict):
     """缓存与词表能定的结论：("pass",) / ("block", 编号, 类别)；定不了返回 None。"""
     with _guard():
-        v = store.get_verdict(text_hash(text))
-        if v is not None and v["verdict"] == "pass":
-            return ("pass",)
-        if v is not None and v["verdict"] == "block":
-            store.touch_block(v["block_id"])
-            return ("block", v["block_id"], v["category"])
+        hit = _cached(text)
+        if hit is not None:
+            return hit
         category = blocklist.match(text)
         if category:
             bid = store.record_block(text, category=category, reason_code=BLOCKLIST_REASON, ctx=ctx)
@@ -142,7 +151,11 @@ def check_items_sync(items, ctx: dict) -> None:
             raise blocked_error(result[2], result[1])
     if not todo:
         return
-    result = _classify("\n\n".join(todo), ctx)
+    joined = "\n\n".join(todo)
+    with _guard():
+        result = _cached(joined)          # 合并文本也先看缓存：重复拦截不重新分类，放行后分类器不可用也能过
+    if result is None:
+        result = _classify(joined, ctx)
     if result[0] == "block":
         raise blocked_error(result[2], result[1])
     with _guard():
@@ -155,9 +168,10 @@ def check_items_sync(items, ctx: dict) -> None:
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="safety")
 _plock = threading.Lock()
 _pending: set = set()      # 正在排队或分类中的文本 hash
-_waiters: dict = {}        # hash → 正在等这次分类结果的调用方个数
-_temp: dict = {}           # hash → [结论, 还剩几个等待者要读]：只在进程内、不进结论缓存的终态
-                           # 结论是 ("unavailable",)，或模型拒答的 ("block", 编号, 类别)；读完即清
+_waiters: dict = {}        # hash → 正在等这次分类的等待者键集合（同一键重复登记只算一个）
+_temp: dict = {}           # (hash, 等待者键) → (结论, 时刻)：只在进程内、不进结论缓存的临时终态
+                           # 结论是 ("unavailable",)，或模型拒答的 ("block", 编号, 类别)；该等待者读一次即清
+TEMP_TTL_SEC = 600.0       # 没人来读的临时结论（比如片段被取消）超时清掉
 
 
 def pending() -> int:
@@ -165,42 +179,39 @@ def pending() -> int:
         return len(_pending)
 
 
-def _take_temp(h: str):
-    with _plock:
-        entry = _temp.get(h)
-        if entry is None:
-            return None
-        entry[1] -= 1
-        if entry[1] <= 0:
-            del _temp[h]
-        return entry[0]
+def _prune_temp(now: float) -> None:
+    for k in [k for k, (_r, at) in _temp.items() if now - at > TEMP_TTL_SEC]:
+        del _temp[k]
 
 
-def lookup(text, ctx: dict):
-    """只查缓存与词表（毫秒级）：("pass",) / ("block", 编号, 类别) / ("unavailable",)；还不知道返回 None。
-    异步分类的临时终态（不可用、模型拒答）每个等待者读到一次，读完清掉，再来就是 None（重新分类）。"""
+def lookup(text, ctx: dict, waiter=None):
+    """先查这个等待者的临时结论（读一次即清），再查缓存与词表（毫秒级）：
+    ("pass",) / ("block", 编号, 类别) / ("unavailable",)；还不知道返回 None。
+    waiter：稳定的等待者键（出片线程用 (用户, 版本, 片段)）；不传则所有匿名调用方共用一个键。"""
     body = normalize(text)
     if not enabled() or not body:
         return ("pass",)
+    with _plock:
+        entry = _temp.pop((text_hash(body), waiter), None)
+    if entry is not None:
+        return entry[0]
     try:
-        result = _local(body, ctx)
+        return _local(body, ctx)
     except SafetyUnavailable:
         return ("unavailable",)
-    if result is not None:
-        return result
-    return _take_temp(text_hash(body))
 
 
-def classify_async(text, ctx: dict) -> bool:
-    """把分类交给专用线程池。同一文本已在排队返回 False（调用方也算一个等待者，各读一次结果）。"""
+def classify_async(text, ctx: dict, waiter=None) -> bool:
+    """把分类交给专用线程池。同一文本已在排队返回 False。
+    同一等待者键重复调用只登记一次；这个等待者上一代没读走的临时结论在这里作废，开始新一代检查。"""
     body = normalize(text)
     h = text_hash(body)
     with _plock:
-        _waiters[h] = _waiters.get(h, 0) + 1
+        _temp.pop((h, waiter), None)
+        _waiters.setdefault(h, set()).add(waiter)
         if h in _pending:
             return False
         _pending.add(h)
-        _temp.pop(h, None)
 
     def job():
         final = None
@@ -212,9 +223,12 @@ def classify_async(text, ctx: dict) -> bool:
             final = ("unavailable",)
         finally:
             with _plock:
-                n = _waiters.pop(h, 1)
+                who = _waiters.pop(h, set())
                 if final is not None:
-                    _temp[h] = [final, max(1, n)]
+                    now = time.monotonic()
+                    _prune_temp(now)
+                    for w in who:
+                        _temp[(h, w)] = (final, now)
                 _pending.discard(h)
 
     _pool.submit(job)

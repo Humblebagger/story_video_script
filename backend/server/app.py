@@ -61,6 +61,7 @@ import logging
 import os
 import re
 import copy
+import dataclasses
 import json
 import sys
 import threading
@@ -304,7 +305,7 @@ def _record_model_refusal(job: dict, text: str) -> None:
     """转换途中底层模型拒绝处理：消息照旧，另记一条拦截记录让管理员看得到（只记不缓存，放行无效）。"""
     try:
         safety_store.record_block(
-            text, category="unspecified", reason_code=safety_store.REFUSED, cache=False,
+            text, category="unspecified", reason_code=safety_store.REFUSED, cache=False, audit=True,
             ctx={"stage": "convert", "user_id": job.get("user_id"), "novel_id": job.get("novel_id"),
                  "chapter_id": job.get("chapter_id"), "version_id": job.get("version_id") or job.get("id")})
     except Exception as e:  # noqa: BLE001  记账失败不能影响失败收尾
@@ -713,13 +714,20 @@ def _strings(v) -> list:
 
 def _injected_items(params: ConvertParams, seed: Optional[dict],
                     context: novel_memory.NovelContext) -> list:
-    """转换时随原文一起送给模型的、用户能手写的文字，按条返回：风格前缀、梗概、每张资产卡、每章摘要、每条人物状态备注、每条创作限制。"""
-    items = [params.style_prefix or "", context.outline or ""]
+    """转换时随原文一起送给模型的、用户能手写的文字，按条返回：制作参数里的全部文字
+    （作品标题、章节标题、风格前缀、色调等，服务端不限定取值，一律当自由文本）、梗概、每张资产卡、
+    每章标题与摘要、人物名与状态备注及所在章节标题、每条创作限制。
+    与 pipeline/prompt.py 的【制作参数】、novel_memory 的注入块保持同步。"""
+    items = [str(getattr(params, f.name) or "") for f in dataclasses.fields(params)]
+    items += [context.outline or ""]
     for group in (seed or {}).values():
         cards = group if isinstance(group, (list, tuple)) else [group]
         items += ["\n".join(_strings(card)) for card in cards]
-    items += [s for _title, s in context.synopses]
-    items += [str(e.get("detail") or "") for e in context.lifecycle]
+    for title, s in context.synopses:
+        items += [str(title or ""), s]
+    items += [str(n or "") for n in context.names.values()]
+    for e in context.lifecycle:
+        items += [str(e.get("detail") or ""), str((e.get("since") or {}).get("chapter_title") or "")]
     for c in context.constraints:
         items += [str(c.get("text") or ""), str(c.get("negative_prompt") or "")]
     return [i.strip() for i in items if i and i.strip()]
@@ -1158,11 +1166,6 @@ def _render_request(root, s: dict, clip: dict):
         caps=provider.caps(s["model"]), rewrite=provider.rewrite_prompt, style=style)
 
 
-_safety_asked: dict = {}      # (用户, 版本, 段, 文本 hash) → 上次交给分类线程池的时刻
-_safety_asked_lock = threading.Lock()
-_SAFETY_REASK_SEC = 120.0     # 同一段每轮都来问：只交一次分类（gate 按交的次数计等待者）；超时再交，防取消后遗留
-
-
 def _render_safety(root, s: dict, clip: dict) -> str:
     """出片线程提交前的内容检查：只查缓存与词表；还没有结论的交给 safety 的线程池，本轮等。
     文本用会话里存的提示词（段）或自由节点的正文。"""
@@ -1170,19 +1173,11 @@ def _render_safety(root, s: dict, clip: dict) -> str:
     sctx = {"stage": "video", "user_id": o["user_id"], "novel_id": o["nid"], "chapter_id": o["cid"],
             "version_id": o["vid"], "clip_id": clip["id"]}
     text = clip.get("prompt") or ""
-    key = (o["user_id"], o["nid"], o["cid"], o["vid"], clip["id"], safety_text.text_hash(safety_text.normalize(text)))
-    result = safety_gate.lookup(text, sctx)
+    waiter = (o["user_id"], o["nid"], o["vid"], clip["id"])      # 同一个片段每轮都是同一个等待者
+    result = safety_gate.lookup(text, sctx, waiter)
     if result is None:
-        now = time.monotonic()
-        with _safety_asked_lock:
-            fresh = now - _safety_asked.get(key, -1e9) < _SAFETY_REASK_SEC
-            if not fresh:
-                _safety_asked[key] = now
-        if not fresh:
-            safety_gate.classify_async(text, sctx)
+        safety_gate.classify_async(text, sctx, waiter)          # 重复调用只登记一次，不重复分类
         return "wait"
-    with _safety_asked_lock:
-        _safety_asked.pop(key, None)
     if result[0] == "block":
         raise safety_gate.blocked_error(result[2], result[1])
     if result[0] == "unavailable":

@@ -85,7 +85,7 @@ def main() -> int:
     new_calls = CLASSIFIED[seen:]
     assert len(new_calls) == 1 and "他推门进屋。" not in new_calls and "C01" in new_calls[0], new_calls
     seen = len(CLASSIFIED)
-    _cid, _vid, job = run("他推门进屋。", "一再续")
+    _cid, _vid, job = run("他推门进屋。", "一续")   # 章节标题也是被检查的注入文本，保持不变才零次分类
     assert job["status"] == "succeeded" and len(CLASSIFIED) == seen, "没有任何变化：零次分类"
     print("1. 通过与缓存 ✓")
 
@@ -135,6 +135,37 @@ def main() -> int:
     finally:
         os.environ["STORYBOARD_SAFETY"] = "1"
     print("6. 开关 ✓")
+
+    # 7. 已放行的原文，转换中生成模型仍拒答：照旧写不可放行的审计记录（I4）
+    text7 = "禁写，这一章会遇到模型拒答。"
+    _c, _v, job = run(text7, "七")
+    assert job["status"] == "failed" and job["error_msg"]["code"] == "safety.blocked", job["error_msg"]
+    store.release(job["error_msg"]["ref"], "root")
+    cid7, vid7, job = run(text7, "七续")
+    assert job["status"] == "failed" and job["error_msg"]["code"] == "llm.content_blocked", job["error_msg"]
+    rows = [r for r in store.list_blocks() if r["chapter_id"] == cid7]
+    assert len(rows) == 1 and rows[0]["reason_code"] == store.REFUSED and rows[0]["releasable"] is False, rows
+    print("7. 放行后的生成拒答仍有记录 ✓")
+
+    # 8. 注入项清单覆盖实际进入提示词的全部用户文字（I5）：每类字段单独放一个标记，缺哪个都能看出
+    import dataclasses
+    from pipeline.convert import ConvertParams
+    from pipeline.novel_memory import NovelContext
+    marks = {f.name: f"标记{f.name}" for f in dataclasses.fields(ConvertParams)}
+    params = ConvertParams(**marks)
+    ctx = NovelContext(
+        lifecycle=[{"character_id": "C01", "type": "deceased", "detail": "标记状态备注",
+                    "since": {"chapter_title": "标记状态所在章"}}],
+        names={"C01": "标记人物名"}, outline="标记梗概", synopses=[("标记历史章标题", "标记章摘要")],
+        constraints=[{"text": "标记创作限制", "negative_prompt": "标记负面提示"}])
+    seed = {"characters": [{"id": "C01", "name": "标记资产卡名", "desc": "标记资产卡描述"}]}
+    joined = "\n".join(app_mod._injected_items(params, seed, ctx))
+    for name in marks:
+        assert marks[name] in joined, f"ConvertParams.{name} 没进检查清单"
+    for m in ("标记状态备注", "标记状态所在章", "标记人物名", "标记梗概", "标记历史章标题", "标记章摘要",
+              "标记创作限制", "标记负面提示", "标记资产卡名", "标记资产卡描述"):
+        assert m in joined, m
+    print("8. 注入项清单覆盖 ✓")
 
     print("\nALL PASS")
     return 0

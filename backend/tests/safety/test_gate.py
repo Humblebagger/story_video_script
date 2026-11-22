@@ -151,6 +151,7 @@ def main() -> int:
     wait_idle()
     assert gate.lookup("又一条提示词", vctx) == ("unavailable",)
     assert gate.lookup("又一条提示词", vctx) is None
+    assert gate.lookup("又一条提示词", vctx, "w") is None, "另一个等待者没登记过，不会读到别人的结论"
     print("8. 异步不可用 ✓")
 
     # 8b. 异步模型拒答：不进结论缓存，但每个等待者都读到同编号的 unspecified 拦截；读完清掉，再检查重新分类
@@ -161,20 +162,23 @@ def main() -> int:
         assert go.wait(10)
         raise LLMError.coded("llm.content_blocked")
     script(hold_refuse)
-    assert gate.classify_async("被拒的提示词", vctx) is True and started.wait(10)
-    assert gate.classify_async("被拒的提示词", vctx) is False, "第二个等待者"
+    assert gate.classify_async("被拒的提示词", vctx, "a") is True and started.wait(10)
+    assert gate.classify_async("被拒的提示词", vctx, "b") is False, "第二个等待者"
+    for _ in range(3):      # 同一等待者每轮重复调用：不重复登记
+        assert gate.classify_async("被拒的提示词", vctx, "a") is False
     go.set()
     wait_idle()
     assert store.get_verdict(text_hash("被拒的提示词")) is None
-    r1, r2 = gate.lookup("被拒的提示词", vctx), gate.lookup("被拒的提示词", vctx)
-    assert r1[0] == "block" and r1[2] == "unspecified" and r1 == r2, (r1, r2)
-    assert store.find_block(r1[1])["releasable"] is False
-    assert gate.lookup("被拒的提示词", vctx) is None, "读完即清，再来就是未知"
+    ra, rb = gate.lookup("被拒的提示词", vctx, "a"), gate.lookup("被拒的提示词", vctx, "b")
+    assert ra[0] == "block" and ra[2] == "unspecified" and ra == rb, (ra, rb)
+    assert store.find_block(ra[1])["releasable"] is False
+    assert gate.lookup("被拒的提示词", vctx, "a") is None and gate.lookup("被拒的提示词", vctx, "b") is None, \
+        "各自读完即清，旧结论不再返回"
     script(reply(False))
     n = len(CALLS)
-    assert gate.classify_async("被拒的提示词", vctx) is True
+    assert gate.classify_async("被拒的提示词", vctx, "a") is True
     wait_idle()
-    assert gate.lookup("被拒的提示词", vctx) == ("pass",) and len(CALLS) == n + 1, "重新分类"
+    assert gate.lookup("被拒的提示词", vctx, "a") == ("pass",) and len(CALLS) == n + 1, "重新分类"
     print("8b. 异步模型拒答 ✓")
 
     # 9. 开关关掉：一律通过、不调模型、不查词表
@@ -270,6 +274,75 @@ def main() -> int:
     script(reply(False))
     assert gate.check_sync("磁盘满的正常文本", CTX) is None, "恢复后能正常检查"
     print("12. 存储失败按不可用处理 ✓")
+
+    # 13. 等待者身份（I2）：单个片段跨多轮 tick 只算一个等待者；失败后重试重新分类，旧结论不返回
+    started, go = threading.Event(), threading.Event()
+
+    def hold_refuse2(_m):
+        started.set()
+        assert go.wait(10)
+        raise LLMError.coded("llm.content_blocked")
+    script(hold_refuse2)
+    w1 = ("u", "v", "E01-C01")
+    assert gate.lookup("多轮提示词", vctx, w1) is None
+    assert gate.classify_async("多轮提示词", vctx, w1) is True and started.wait(10)
+    for _ in range(3):                                 # 后面几轮 tick：lookup 仍未知、classify_async 不重复登记
+        assert gate.lookup("多轮提示词", vctx, w1) is None
+        assert gate.classify_async("多轮提示词", vctx, w1) is False
+    go.set()
+    wait_idle()
+    first = gate.lookup("多轮提示词", vctx, w1)
+    assert first[0] == "block" and first[2] == "unspecified"
+    assert gate.lookup("多轮提示词", vctx, w1) is None, "同一个片段只算一个等待者，读一次就没了（旧代结论不残留）"
+    script(reply(False))                               # 用户重试：新一代检查，重新分类
+    n = len(CALLS)
+    assert gate.lookup("多轮提示词", vctx, w1) is None and gate.classify_async("多轮提示词", vctx, w1) is True
+    wait_idle()
+    assert gate.lookup("多轮提示词", vctx, w1) == ("pass",) and len(CALLS) == n + 1
+    # 两个片段共享同一 hash：各读一次同一结论，一次分类
+    started, go = threading.Event(), threading.Event()
+
+    def hold_unavail(_m):
+        started.set()
+        assert go.wait(10)
+        return "坏输出"
+    script(hold_unavail)
+    n = len(CALLS)
+    wa, wb = ("u", "v", "E01-C02"), ("u", "v", "E01-C03")
+    assert gate.classify_async("共享提示词", vctx, wa) is True and started.wait(10)
+    assert gate.classify_async("共享提示词", vctx, wb) is False
+    go.set()
+    wait_idle()
+    assert len(CALLS) == n + 1
+    assert gate.lookup("共享提示词", vctx, wa) == ("unavailable",) and gate.lookup("共享提示词", vctx, wb) == ("unavailable",)
+    assert gate.lookup("共享提示词", vctx, wa) is None and gate.lookup("共享提示词", vctx, wb) is None
+    # 片段 a 读完后重试 → 新一代；片段 b 的未读结论不受影响（这里 b 也已读完，改测未读情形）
+    script(hold_unavail)
+    started.clear()
+    go.clear()
+    assert gate.classify_async("共享提示词", vctx, wa) is True and gate.classify_async("共享提示词", vctx, wb) is False
+    assert started.wait(10)
+    go.set()
+    wait_idle()
+    assert gate.lookup("共享提示词", vctx, wa) == ("unavailable",)
+    script(reply(False))
+    assert gate.classify_async("共享提示词", vctx, wa) is True      # a 读完后重试，开始新一代
+    wait_idle()
+    assert gate.lookup("共享提示词", vctx, wb) == ("unavailable",), "b 还没读的上一代结论不被 a 的重试吞掉"
+    print("13. 等待者身份 ✓")
+
+    # 14. 批量检查合并文本的缓存（I1）：重复拦截零新增分类；放行后分类器不可用仍通过
+    script(reply(True, "drugs", "x"))
+    batch = ["批量甲", "批量乙"]
+    e1 = must_raise(gate.SafetyBlocked, gate.check_items_sync, batch, CTX)
+    n = len(CALLS)
+    e2 = must_raise(gate.SafetyBlocked, gate.check_items_sync, batch, CTX)
+    assert e2.ref == e1.ref and len(CALLS) == n, "合并文本命中拦截缓存，不再分类"
+    store.release(e1.ref, "root")
+    gate._make_chat = lambda: (_ for _ in ()).throw(RuntimeError("分类器不可用"))
+    assert gate.check_items_sync(batch, CTX) is None, "放行后不调分类器也通过"
+    assert store.get_verdict(text_hash("批量甲"))["verdict"] == "pass" and store.get_verdict(text_hash("批量乙"))["verdict"] == "pass"
+    print("14. 批量合并文本缓存 ✓")
 
     assert blocklist.match("含有 child porn 的第三段") == "minor_sexual"
     print("\nALL PASS")

@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
+sys.path.insert(0, str(ROOT / "tests" / "pipeline"))
 import _noenv  # noqa: E402,F401  测试不读真实 .env
 os.environ["STORYBOARD_VIDEO_PROVIDER"] = "fake"
 os.environ["STORYBOARD_DATA_DIR"] = tempfile.mkdtemp()
@@ -126,13 +127,14 @@ def main() -> int:
     queued_texts = []
     real_lookup, real_async = gate.lookup, gate.classify_async
     state = {"r": None}
-    gate.lookup = lambda text, ctx: state["r"]
-    gate.classify_async = lambda text, ctx: queued_texts.append((text, ctx["stage"], ctx["clip_id"])) or True
+    seen_waiters = []
+    gate.lookup = lambda text, ctx, waiter=None: seen_waiters.append(waiter) or state["r"]
+    gate.classify_async = lambda text, ctx, waiter=None: queued_texts.append((text, ctx["stage"], ctx["clip_id"])) or True
     try:
         sess_now = sess.load(root)
         item = clip(root, a)
         assert app_mod._render_safety(root, sess_now, item) == "wait"
-        assert queued_texts == [(item["prompt"], "video", a)]
+        assert queued_texts == [(item["prompt"], "video", a)] and seen_waiters[-1] == ("u", "n", "v", a), seen_waiters
         state["r"] = ("pass",)
         assert app_mod._render_safety(root, sess_now, item) == "pass"
         state["r"] = ("block", "AB12CD34", "drugs")
@@ -166,20 +168,42 @@ def main() -> int:
     flags = {c["id"]: c.get("safety_checking") for c in view["clips"]}
     assert flags[q] is True and sum(1 for f in flags.values() if f) == 1, flags
     print("7. app 接线与视图标注 ✓")
-    # 7b. 同一段每轮都来问：只交一次分类
-    state["r"] = None
-    queued_texts.clear()
-    gate.lookup, gate.classify_async = lambda text, ctx: state["r"], \
-        (lambda text, ctx: queued_texts.append(1) or True)
+    # 7b. 同一段每轮都来问：用真实 gate，只分类一次，之后拿到结论（等待者键是 (用户, 作品, 版本, 片段)，没有重提逻辑）
+    import threading
+    from fakes import FakeChat
+    from pipeline.chat import ChatInvoker
+    from pipeline.config import Settings
+    started, go, made = threading.Event(), threading.Event(), []
+
+    def slow_pass(_m):
+        started.set()
+        assert go.wait(10)
+        return json.dumps({"blocked": False, "category": None, "reason": ""})
+
+    def make():
+        made.append(1)
+        return ChatInvoker(Settings(api_key="k", transport_retries=0), chat=FakeChat(responses=[slow_pass]))
+    real_make = gate._make_chat
+    gate._make_chat = make
+    os.environ["STORYBOARD_SAFETY"] = "1"
     try:
-        app_mod._safety_asked.clear()
+        item = clip(root, a)
+        assert not hasattr(app_mod, "_safety_asked"), "不再有重提绕行逻辑"
         for _ in range(3):
-            assert app_mod._render_safety(root, sess.load(root), clip(root, a)) == "wait"
-        assert len(queued_texts) == 1, queued_texts
+            assert app_mod._render_safety(root, sess.load(root), item) == "wait"
+            if len(made) == 1:
+                assert started.wait(10)
+        assert len(made) == 1, made
+        go.set()
+        for _ in range(500):
+            if not gate.pending():
+                break
+            __import__("time").sleep(0.01)
+        assert app_mod._render_safety(root, sess.load(root), item) == "pass" and len(made) == 1
     finally:
-        gate.lookup, gate.classify_async = real_lookup, real_async
-        app_mod._safety_asked.clear()
-    print("7b. 只交一次分类 ✓")
+        gate._make_chat = real_make
+        os.environ["STORYBOARD_SAFETY"] = "0"
+    print("7b. 只分类一次 ✓")
 
     print("\nALL PASS")
     return 0
