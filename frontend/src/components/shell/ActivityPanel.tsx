@@ -17,7 +17,7 @@ import { useReducedMotion } from 'motion/react'
 import { fmtEta, JOB_STATUS, label } from '@/labels'
 import { clockText, endedItems, jobWhere, taskWait, taskWhere } from '@/filmTasks'
 import { cny } from '@/lib/fmt'
-import { hintFor, useTierHint, useTtsHint, useWithHint } from '../../adminHints'
+import { hintForMsg, useTierHint, useTtsHint, useWithHint } from '../../adminHints'
 import type { MsgKey } from '@/i18n/core'
 import type { FilmTask, JobStatus, JobSummary } from '@/types'
 
@@ -98,10 +98,9 @@ export function ActivityPanel({
   }
   const reason = (failed: boolean, err: unknown, tier?: string | null) => {
     if (!failed) return null
-    const code = (err as { code?: string } | null | undefined)?.code
     return (
       <p className="activity__log" data-testid="activity-reason">
-        {err ? withHint(formatMsg(err, locale), hintFor(code, tierHint(tier), ttsHint)) : t('activity.failedHint')}
+        {err ? withHint(formatMsg(err, locale), hintForMsg(err, tierHint(tier), ttsHint)) : t('activity.failedHint')}
       </p>
     )
   }

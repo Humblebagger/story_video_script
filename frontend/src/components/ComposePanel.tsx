@@ -18,7 +18,7 @@ import { useCompose } from '../useCompose'
 import type { Compose } from '../useCompose'
 import type { Film } from '../useFilm'
 import type { FilmSession } from '../types'
-import { hintFor, useTtsHint, useWithHint } from '../adminHints'
+import { hintForMsg, useTtsHint, useWithHint } from '../adminHints'
 
 const yuan = (n: number) => `¥${n.toFixed(2)}`
 /** 忙着，或确认框开着（改了会让确认的金额对不上） */
@@ -179,7 +179,7 @@ function Final({ c }: { c: Compose }) {
   const tone = f.state === 'failed' ? 'tlc__kferr' : f.stale ? 'tlc__notice' : 'tlc__kfnote'
   return (
     <section className="compose__final">
-      <p className={tone}>{withHint(finalText(f), f.state === 'failed' ? hintFor(f.error_msg?.code, null, ttsHint) : null)}</p>
+      <p className={tone}>{withHint(finalText(f), f.state === 'failed' ? hintForMsg(f.error_msg, null, ttsHint) : null)}</p>
       {f.state === 'failed' && f.detail && (
         <details>
           <summary>{t('compose.panel.ffmpegOut')}</summary>

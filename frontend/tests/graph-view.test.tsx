@@ -637,6 +637,55 @@ console.log('6c. 采用位置与无障碍 ✓')
   console.log('6m. 点名的尝试还没读到：先重读再播 ✓')
 }
 
+// 6n. 管理员提示（H4）：片段详情、自由节点详情、两类历史尝试行，分别定位；去掉提示后与普通用户一字不差
+{
+  const { AdminHintsProvider } = await import('../src/adminHints')
+  const { zh } = await import('../src/i18n/zh')
+  const HINTS = {
+    default_provider: 'minimax', fell_back: false,
+    tiers: [{ id: 'demo', provider: 'fake', model: 'fake-1', vendor_label: 'ZZ-Vendor Demo', key_configured: true }],
+    tts: { provider: 'zz-tts', key_configured: true },
+  }
+  const bad = (code: string): FilmAttempt => ({ task_id: `x-${code}`, state: 'failed', cost_cny: 0, file: null, last_frame: null,
+    error: '旧', error_msg: { code, params: {} } as FilmAttempt['error_msg'], at: '2026-11-11T03:00:00+00:00', fingerprint: 'fp',
+    first_frame_used: null })
+  // 当前已成功（采用在前面的成功尝试上）、历史曾失败：失败尝试追加在后面，不动采用下标
+  clipOf(first).attempts.push(bad('film.vendor.balance'), bad('film.submit.stale'))
+  Object.assign(clipOf(first), { state: 'failed', error: 'c', error_msg: { code: 'film.vendor.balance', params: {} } })
+  const f9: FilmFreeNode = { id: 'F09', target: null, target_shots: null, target_lost: false, prompt: 'p', refs: [], first_frame: null,
+    duration: 5, estimate_cny: 5, state: 'failed', error: 'f', error_msg: { code: 'film.vendor.balance', params: {} } as FilmFreeNode['error_msg'],
+    uncertain: false, attempts: [bad('film.vendor.balance'), bad('film.submit.stale')], chosen: null, created_at: '', over_refs: false }
+  film = recount({ ...film!, free: [...(film!.free ?? []), f9] })
+  const grab = async (hints: typeof HINTS | null) => {
+    await act(async () => { root.render(<AdminHintsProvider value={hints}><Host /></AdminHintsProvider>) })
+    await click(button('时间轴画布'))
+    await click(exact('节点图'))
+    await click(tab('出片')!)
+    await click(card(first))
+    const clipBox = container.querySelector('section.film__clip:not([data-testid])')!
+    const clipTop = clipBox.querySelector('.tlc__kferr')?.textContent ?? ''
+    const clipRows = [...clipBox.querySelectorAll('[data-testid="attempt-error"]')].map((x) => x.textContent ?? '')
+    await click(card('F09'))
+    const freeBox = container.querySelector('[data-testid="free-detail"]')!
+    return { clipText: clipBox.textContent ?? '', clipTop, clipRows, freeText: freeBox.textContent ?? '',
+             freeTop: freeBox.querySelector('.tlc__kferr')?.textContent ?? '',
+             freeRows: [...freeBox.querySelectorAll('[data-testid="attempt-error"]')].map((x) => x.textContent ?? '') }
+  }
+  const P = await grab(null)
+  const bal = zh.srv.film.vendor.balance
+  must(P.clipRows.filter(Boolean).join('|') === `${bal}|${zh.srv.film.submit.stale}` && P.freeRows.filter(Boolean).join('|') === `${bal}|${zh.srv.film.submit.stale}`,
+       `普通用户：历史尝试行有中性原因 ${P.clipRows.join('|')}`)
+  must(!P.clipText.includes('ZZ-Vendor') && !P.freeText.includes('ZZ-Vendor'), '普通用户无括号')
+  const A = await grab(HINTS)
+  const ZZ = '（ZZ-Vendor Demo）'
+  must(A.clipTop === bal + ZZ, `H4 片段详情当前失败：${A.clipTop}`)
+  must(A.freeTop === bal + ZZ, `H4 自由节点详情当前失败：${A.freeTop}`)
+  must(A.clipRows.filter(Boolean).join('|') === `${bal}${ZZ}|${zh.srv.film.submit.stale}`, `H4 片段历史尝试行：${A.clipRows.join('|')}`)
+  must(A.freeRows.filter(Boolean).join('|') === `${bal}${ZZ}|${zh.srv.film.submit.stale}`, `H4 自由节点历史尝试行：${A.freeRows.join('|')}`)
+  must(A.clipText.replaceAll(ZZ, '') === P.clipText && A.freeText.replaceAll(ZZ, '') === P.freeText, '各区域去掉提示后与普通用户一致')
+  console.log('6n. 管理员提示（详情与历史尝试） ✓')
+}
+
 // 7. 切回时间轴：节点图收起
 await click(exact('时间轴'))
 must(!container.querySelector('[data-testid="node-graph"]'), '切回时间轴')

@@ -263,6 +263,13 @@ const {
       task({ id: 'v1:B', item_id: 'B', state: 'failed', ended_at: '2026-11-21T02:59:00+00:00', tier: null, error: bal }),
       task({ id: 'v1:compose', item_id: 'compose', kind: 'compose', state: 'failed', typical_sec: null, shot_ids: [], tier: 'demo',
              ended_at: '2026-11-21T02:58:00+00:00', error: { code: 'tts.vendor.unavailable', params: { status: 503 }, message: 'x' } }),
+      task({ id: 'v1:N1', item_id: 'N1', kind: 'compose', state: 'failed', typical_sec: null, shot_ids: [], tier: 'demo',
+             ended_at: '2026-11-21T02:56:00+00:00', error: { code: 'compose.lines_failed', params: { items: [
+        { code: 'compose.line_failed', params: { id: 'L01', cause: { code: 'tts.vendor.unavailable', params: { status: 503 } } } },
+        { code: 'compose.line_failed', params: { id: 'L02', cause: { code: 'tts.vendor.unavailable', params: { status: 503 } } } }] } } }),
+      task({ id: 'v1:N2', item_id: 'N2', kind: 'compose', state: 'failed', typical_sec: null, shot_ids: [], tier: 'demo',
+             ended_at: '2026-11-21T02:55:00+00:00', error: { code: 'compose.lines_failed', params: { items: [
+        { code: 'compose.line_failed', params: { id: 'L01', cause: { code: 'tts.unknown_voice', params: { voice: 'v' } } } }] } } }),
       task({ id: 'v1:D', item_id: 'D', state: 'failed', ended_at: '2026-11-21T02:57:00+00:00', tier: 'demo',
              error: { code: 'film.submit.stale', params: {}, message: 'x' } }),
     ]
@@ -276,13 +283,15 @@ const {
     const reasons = () => [...container.querySelectorAll('[data-testid="activity-reason"]')].map((e) => e.textContent)
     await act(async () => { root.render(view(null)) })
     const plain = reasons()
-    must(plain.length === 4 && !plain.join('').includes('ZZ-Vendor') && !plain.join('').includes('zz-tts'), '没有提示数据：不带')
+    must(plain.length === 6 && !plain.join('').includes('ZZ-Vendor') && !plain.join('').includes('zz-tts'), '没有提示数据：不带')
     await act(async () => { root.render(view(HINTS)) })
     const adm = reasons()
     must(adm[0] === `${zh.srv.film.vendor.balance}（ZZ-Vendor Demo）`, 'H5 生成服务侧的失败带提示')
     must(adm[1] === zh.srv.film.vendor.balance, '档位为 null 不带')
     must(adm[2] === `${zh.srv.tts.vendor.unavailable.replace('{status}', '503')}（zz-tts）`, 'H7 配音服务侧的失败带配音厂商')
     must(adm[3] === zh.srv.film.submit.stale, '别的失败不带')
+    must(adm[4] === plain[4] + '（zz-tts）', `嵌套的配音服务失败带配音厂商：${adm[4]}`)
+    must(adm[5] === plain[5], '嵌套的非配音服务原因不带')
   }
   await act(async () => { root.unmount() })
   console.log('4. 任务面板 ✓')

@@ -30,6 +30,25 @@ export function hintFor(code: string | undefined, tierHint: string | null, ttsHi
   return null
 }
 
+/** 合成失败里嵌着的配音服务失败：compose.lines_failed → params.items[] → compose.line_failed → params.cause，
+ *  以及 compose.voice_failed → params.cause。只在 compose.* 的外层码下往参数里找 tts.vendor.*，别的 compose 错误不加 */
+function nestedTts(v: unknown, depth = 0): boolean {
+  if (depth > 6 || !v || typeof v !== 'object') return false
+  if (Array.isArray(v)) return v.some((x) => nestedTts(x, depth + 1))
+  const o = v as { code?: unknown; params?: unknown; items?: unknown }
+  if (typeof o.code === 'string' && o.code.startsWith('tts.vendor.')) return true
+  return nestedTts(o.params, depth + 1) || nestedTts(o.items, depth + 1) || Object.values(o).some((x) => x && typeof x === 'object' && nestedTts(x, depth + 1))
+}
+
+/** 整条消息对象该带哪种提示：顶层码按 hintFor；compose.* 的外层码再看嵌套的配音失败 */
+export function hintForMsg(m: unknown, tierHint: string | null, ttsHint: string | null): string | null {
+  const o = m as { code?: unknown; params?: unknown } | null | undefined
+  const code = typeof o?.code === 'string' ? o.code : undefined
+  const top = hintFor(code, tierHint, ttsHint)
+  if (top || !code?.startsWith('compose.')) return top
+  return nestedTts(o?.params) ? ttsHint : null
+}
+
 /** (原文, 提示) → 有提示就在后面加括号；括号的写法走语言包 common.paren */
 export function useWithHint(): (text: string, hint: string | null) => string {
   const { t } = useI18n()

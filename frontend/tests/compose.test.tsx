@@ -609,6 +609,23 @@ console.log('18. 预览读取失败可重试 ✓')
   must(adm.sum.some((x) => x.startsWith(`${zh.compose.panel.voicesSum}（zz-tts）`)), 'H6 配音面板标题带配音厂商')
   must(adm.all.includes(zh.srv.tts.vendor.unavailable.replace('{status}', '503') + '（zz-tts）'), 'H7 合成失败原因带配音厂商')
   must(adm.all.replaceAll('（zz-tts）', '') === plain.all, '提示只是附加')
+  // 真实嵌套结构（mix.py：compose.lines_failed → items[] → compose.line_failed → cause）里是配音服务失败：带；其它原因：不带
+  preview.final = { ...base, state: 'failed', error: 'x', detail: null, error_msg: { code: 'compose.lines_failed', params: { items: [
+        { code: 'compose.line_failed', params: { id: 'L01', cause: { code: 'tts.vendor.unavailable', params: { status: 503 } } } },
+        { code: 'compose.line_failed', params: { id: 'L02', cause: { code: 'tts.vendor.unavailable', params: { status: 503 } } } }] } } }
+  await show(HINTS)
+  await refresh()
+  must((container.querySelector('.compose__final p')?.textContent ?? '').endsWith('（zz-tts）'), '嵌套的配音服务失败带配音厂商')
+  preview.final = { ...base, state: 'failed', error: 'x', detail: null, error_msg: { code: 'compose.lines_failed', params: { items: [
+        { code: 'compose.line_failed', params: { id: 'L01', cause: { code: 'tts.unknown_voice', params: { voice: 'v' } } } }] } } }
+  await refresh()
+  must(!(container.querySelector('.compose__final p')?.textContent ?? '').includes('zz-tts'), '嵌套的非配音服务原因不带')
+  preview.final = { ...base, state: 'failed', error: 'x', detail: null,
+                    error_msg: { code: 'compose.voice_failed', params: { cause: { code: 'tts.vendor.no_key', params: {} } } } }
+  await refresh()
+  must((container.querySelector('.compose__final p')?.textContent ?? '').endsWith('（zz-tts）'), 'voice_failed 的配音服务原因带提示')
+  preview.final = { ...base, state: 'failed', error: 'x', detail: null, error_msg: { code: 'compose.crashed', params: {} } }
+  await refresh()
   // 不是配音服务侧的失败码：不带
   preview.final = { ...base, state: 'failed', error: 'x', detail: null, error_msg: { code: 'compose.crashed', params: {} } }
   await show(HINTS)

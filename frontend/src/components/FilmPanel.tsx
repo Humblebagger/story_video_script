@@ -307,6 +307,7 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
                 <td>{when(a.at)}</td>
                 <td>{label(ATTEMPT_STATE, a.state)}{a.late ? ` · ${t('film.lateTag')}` : ''}</td>
                 <td>{yuan(a.cost_cny)}</td>
+                <td data-testid="attempt-error" className="tlc__kferr">{withHint(itemError(a, locale), hintFor(a.error_msg?.code, tierHint(s.tier), null))}</td>
                 <td>
                   {a.state === 'succeeded' && a.file && (
                     <button className="tlc__linkbtn" onClick={() => setWatch(i)}>{t('film.panel.play')}</button>
@@ -370,6 +371,7 @@ function FreeDetail({ n, s, film }: { n: FilmFreeNode; s: FilmSession; film: Fil
                 <td>{when(a.at)}</td>
                 <td>{label(ATTEMPT_STATE, a.state)}</td>
                 <td>{yuan(a.cost_cny)}</td>
+                <td data-testid="attempt-error" className="tlc__kferr">{withHint(itemError(a, locale), hintFor(a.error_msg?.code, tierHint(s.tier), null))}</td>
                 <td>
                   {a.state === 'succeeded' && a.file && (
                     <button className="tlc__linkbtn" onClick={() => setWatch(i)}>{t('film.panel.play')}</button>
