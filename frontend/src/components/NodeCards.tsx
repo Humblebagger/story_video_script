@@ -11,7 +11,7 @@ import { useI18n } from '@/i18n/core'
 import { itemError } from '@/i18n/serverMsg'
 import { hintFor, useTierHint, useWithHint } from '../adminHints'
 import type { MsgKey } from '@/i18n/core'
-import { FILM_STATE, label } from '../labels'
+import { filmStateText } from '../labels'
 import {
   cancelKind, chosenAttempt, copyIndex, inFlight, needsConfirm, playableAttempt, slotsNeeded, tailSources, waitedSec, waitLine,
 } from '../film'
@@ -173,7 +173,7 @@ export function ClipCard({ clip: c, s, film, blocked, hot, fallback, tags, onDer
     <>
       <header className="ngv__head">
         <b>{c.id}</b><span className="ngv__dim">{c.duration}s</span>
-        <StatusPill tone={TONE[c.state]}>{label(FILM_STATE, c.state)}</StatusPill>
+        <StatusPill tone={TONE[c.state]}>{filmStateText(c)}</StatusPill>
         {c.uncertain && <StatusPill tone="warn">{t('graph.uncertainTag')}</StatusPill>}
       </header>
       {tags.length > 0 && (
@@ -265,7 +265,7 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
     <>
       <header className="ngv__head">
         <b>{n.id}</b>
-        <StatusPill tone={TONE[n.state]}>{label(FILM_STATE, n.state)}</StatusPill>
+        <StatusPill tone={TONE[n.state]}>{filmStateText(n)}</StatusPill>
         <span className="ngv__dim">{n.target ? t('graph.free.replaces', { id: n.target }) : t('graph.free.standalone')}</span>
       </header>
       {n.target_lost && !n.target && <p className="ngv__warn">{t('graph.free.lost')}</p>}

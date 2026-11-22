@@ -83,4 +83,8 @@ export const AUDIO_MODE: Record<AudioMode, string> = localized<AudioMode>(zh.enu
 
 export const FILM_STATE: Record<FilmClipState, string> = localized<FilmClipState>(zh.enums.filmState as Record<FilmClipState, string>, en.enums.filmState as Record<FilmClipState, string>)
 
+/** 段或自由节点的状态文字：排队中且在等内容检查结论时显示「内容检查中」 */
+export const filmStateText = (c: { state: FilmClipState; safety_checking?: boolean }): string =>
+  (c.state === 'queued' && c.safety_checking ? tr('srv.film.safety_checking') : label(FILM_STATE, c.state))
+
 export const ATTEMPT_STATE: Record<FilmAttempt['state'], string> = localized<FilmAttempt['state']>(zh.enums.attemptState as Record<FilmAttempt['state'], string>, en.enums.attemptState as Record<FilmAttempt['state'], string>)

@@ -124,6 +124,7 @@ const yuan = (n: number) => `¥${n.toFixed(2)}`
 export function laneText(c: FilmClip, now: number): string {
   switch (laneKind(c)) {
     case 'busy': {
+      if (c.state === 'queued' && c.safety_checking) return tr('srv.film.safety_checking')
       const since = waitedSec(c, now)
       return since === null ? tr('film.waitUnknown') : tr('film.busy', { wait: fmtClock(since) })
     }

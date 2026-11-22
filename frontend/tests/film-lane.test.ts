@@ -7,6 +7,7 @@ import {
   laneKind, laneText, laneTitle, mainAction, needsConfirm, playableAttempt, pollDelay, POLL_FAST_MS, POLL_SLOW_MS,
   precheck, slotsNeeded, spanAt, tailSources, waitedSec, waitLine, clockOffset,
 } from '../src/film'
+import { filmStateText } from '../src/labels'
 import { setCurrentLocale } from '../src/i18n/core'
 import { en } from '../src/i18n/en'
 import { zh } from '../src/i18n/zh'
@@ -202,6 +203,22 @@ const session = (clips: FilmClip[], over: Partial<FilmSession> = {}): FilmSessio
     must(texts.length > 30 && texts.every((x) => !vendor.test(x)), `文案里不出现厂商名：${texts.find((x) => vendor.test(x))}`)
   }
   console.log('7. 等待、取消与播放 ✓')
+}
+
+// 内容检查中：排队且带 safety_checking 的段，横条与状态文字都换成「内容检查中」
+{
+  setCurrentLocale('zh')
+  const checking = clip('C1', [], { state: 'queued', safety_checking: true, queued_at: new Date(1000).toISOString() })
+  const plain = clip('C2', [], { state: 'queued', queued_at: new Date(1000).toISOString() })
+  must(laneText(checking, 6000) === zh.srv.film.safety_checking, `横条文字，实为 ${laneText(checking, 6000)}`)
+  must(laneText(plain, 6000) !== zh.srv.film.safety_checking, '普通排队照旧显示等待时长')
+  must(filmStateText(checking) === '内容检查中' && filmStateText(plain) === zh.enums.filmState.queued, '状态文字')
+  must(filmStateText(clip('C3', [], { state: 'running', safety_checking: true })) === zh.enums.filmState.running,
+    '只有排队中才显示检查中')
+  setCurrentLocale('en')
+  must(filmStateText(checking) === en.srv.film.safety_checking, '英文')
+  setCurrentLocale('zh')
+  console.log('内容检查中 ✓')
 }
 
 console.log('\nALL PASS')

@@ -767,6 +767,8 @@ export interface FilmClip {
   error_msg?: ServerMsg | null
   state: FilmClipState
   queued_at?: string
+  /** 排队中、正在等内容检查的结论（服务端标注，只在 queued 时有意义） */
+  safety_checking?: boolean
   /** 最近一次结束的时间与结局（任务列表用） */
   ended_at?: string
   ended_as?: 'done' | 'failed' | 'cancelled'
@@ -797,6 +799,8 @@ export interface FilmFreeNode {
   error: string | null
   error_msg?: ServerMsg | null
   uncertain: boolean
+  /** 排队中、正在等内容检查的结论（服务端标注，只在 queued 时有意义） */
+  safety_checking?: boolean
   attempts: FilmAttempt[]
   chosen: number | null
   created_at: string

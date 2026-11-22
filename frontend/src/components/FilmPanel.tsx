@@ -4,7 +4,7 @@
  *  有未保存的改动或完整性检查没过时，所有出片按钮禁用并写明原因。 */
 import { useEffect, useRef, useState } from 'react'
 import { Play } from 'lucide-react'
-import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, label } from '../labels'
+import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, filmStateText, label } from '../labels'
 import { Button } from '@/components/ui/button'
 import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
@@ -255,7 +255,7 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
     <section className="film__clip film__card">
       <header>
         <b><i className={`film__dot film__dot--${c.state}`} aria-hidden="true" />{c.id}</b>
-        <span>{t('film.panel.clipMeta', { state: label(FILM_STATE, c.state), dur: c.duration, cost: yuan(c.estimate_cny) })}{c.truncated ? t('film.panel.clipCut') : ''}</span>
+        <span>{t('film.panel.clipMeta', { state: filmStateText(c), dur: c.duration, cost: yuan(c.estimate_cny) })}{c.truncated ? t('film.panel.clipCut') : ''}</span>
       </header>
       {flying && (
         <WaitRow item={c} typical={s.options.typical_sec} disabled={film.busy} offset={film.clockOffset}
@@ -356,7 +356,7 @@ function FreeDetail({ n, s, film }: { n: FilmFreeNode; s: FilmSession; film: Fil
     <section className="film__clip film__card" data-testid="free-detail">
       <header>
         <b><i className={`film__dot film__dot--${n.state}`} aria-hidden="true" />{t('graph.free.detail', { id: n.id })}</b>
-        <span>{label(FILM_STATE, n.state)} · {n.duration}s · {yuan(n.estimate_cny)}</span>
+        <span>{filmStateText(n)} · {n.duration}s · {yuan(n.estimate_cny)}</span>
       </header>
       {itemError(n, locale) && <p className="tlc__kferr" data-testid="detail-error">{withHint(itemError(n, locale), hintFor(n.error_msg?.code, tierHint(s.tier), null))}</p>}
       <pre className="film__prompt">{n.prompt || t('film.panel.none')}</pre>
