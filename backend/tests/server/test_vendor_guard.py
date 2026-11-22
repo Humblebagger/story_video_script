@@ -28,7 +28,8 @@ os.environ.pop("ARK_API_KEY", None)
 os.environ["STORYBOARD_RENDER_RUNNER"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
-from render import plan as render_plan, providers, session as render_session, tiers  # noqa: E402
+import re  # noqa: E402
+from render import mix as render_mix, plan as render_plan, providers, session as render_session, tiers  # noqa: E402
 from render.providers.fake import FakeTts, FakeVideo  # noqa: E402
 from server import app as app_mod  # noqa: E402
 from server import auth, novels  # noqa: E402
@@ -54,36 +55,90 @@ providers.register_tts("volc", lambda: StubVolc())
 FORBIDDEN_KEYS = ("video_url", "last_frame_url", "billing", "known_cost_cny", "provider", "providers", "models", "default_note")
 # usage 不在禁止名单里：转换清单的尝试记录里有同名的用量字段（合法）。出片尝试里的 usage 在第 5 步单独断言。
 DOC = json.loads((ROOT / "tests" / "real_text_yao" / "output_merged.json").read_text(encoding="utf-8"))
-SEEN: set = set()
-SEEN_PATHS: set = set()
+SEEN_ROUTES: set = set()      # (方法, 路径模板)：clean 按实际请求的方法登记
+TASK_KEY = re.compile(r"t[0-9a-f]{16}")
 RT = "/novels/{nid}/chapters/{cid}/versions/{vid}/render"
 
 
-def clean(label, resp, *, route=None, content=False, models=()):
-    """这次响应里没有厂商词、没有禁止的键。content=True：响应里有用户的分镜正文，只查键名，不做全文扫词。"""
-    assert resp.status_code < 500, (label, resp.status_code, resp.text[:300])
+
+
+def _drop(v, keys):
+    """扫词前去掉用户自己的内容字段（按键名，任意深度）；其余——键名、错误对象、服务端文案——照扫。"""
+    if isinstance(v, dict):
+        return {k: _drop(x, keys) for k, x in v.items() if k not in keys}
+    if isinstance(v, list):
+        return [_drop(x, keys) for x in v]
+    return v
+
+
+def _pieces(v):
+    """请求体里的所有值（含整体与各层子值）。"""
+    out = [v]
+    if isinstance(v, dict):
+        for x in v.values():
+            out += _pieces(x)
+    elif isinstance(v, list):
+        for x in v:
+            out += _pieces(x)
+    return out
+
+
+def _echo_free(body, sent):
+    """422 会把请求里的输入（整体或其中某个值）回显进 input 字段；只去掉能证明来自请求的那些，其余照扫。"""
+    if isinstance(body, dict):
+        return {k: _echo_free(x, sent) for k, x in body.items() if not (k == "input" and x in _pieces(sent))}
+    if isinstance(body, list):
+        return [_echo_free(x, sent) for x in body]
+    return body
+
+
+def clean(label, resp, status, *, route, exclude=(), models_at=None, sent=None):
+    """响应状态码精确等于 status；整份响应没有厂商词（exclude：只去掉这些用户内容字段）、没有禁止的键；
+    登记 (方法, 路径模板)。models_at：{字段路径: 允许的取值}，只有这些位置的 model 字符串放行。"""
+    assert resp.status_code == status, (label, resp.status_code, status, resp.text[:300])
     body = resp.json()
-    if not content:
-        assert not P.find_vendor_words(body), (label, P.find_vendor_words(body))
+    scan = _drop(body, set(exclude))
+    if sent is not None:
+        scan = _echo_free(scan, sent)
+    assert not P.find_vendor_words(scan), (label, P.find_vendor_words(scan))
+    models_at = models_at or {}
 
     def walk(v, path="$"):
         if isinstance(v, dict):
             for k, x in v.items():
                 assert k not in FORBIDDEN_KEYS, (label, f"{path}.{k}")
-                # models：这个接口里 model 字段合法的取值（/render/plan 的 estimate.model 是估价费率档，如 standard，不是厂商模型）
-                assert not (k == "model" and isinstance(x, str) and x not in models), (label, f"{path}.model")
+                if k == "model" and isinstance(x, str):
+                    assert x in models_at.get(f"{path}.model", ()), (label, f"{path}.model", x)
                 walk(x, f"{path}.{k}")
         elif isinstance(v, list):
             for i, x in enumerate(v):
                 walk(x, f"{path}[{i}]")
-    walk(body)
-    SEEN.add(label)
-    if route:
-        SEEN_PATHS.add(route)
-    return resp
+    walk(scan if sent is None else _echo_free(body, sent))
+    SEEN_ROUTES.add((resp.request.method, route))
+    return body
 
 
-def drain(limit=200):
+def film_shape(label, body):
+    """会话视图的形状：clips / free / orphaned 三个容器里都有带毒的非空尝试，逐个断言白名单、短键与错误归一。"""
+    allowed = set(P.ATTEMPT_KEYS) | {"task_id", "error", "error_msg"}
+    for cont in ("clips", "free", "orphaned"):
+        atts = [(h["id"], at) for h in body[cont] for at in h["attempts"]]
+        assert len(atts) >= 2, (label, cont, "带毒的尝试应还在", len(atts))
+        for hid, at in atts:
+            assert set(at) <= allowed, (label, cont, hid, sorted(set(at) - allowed))
+            assert at["task_id"] is None or TASK_KEY.fullmatch(at["task_id"]), (label, cont, at["task_id"])
+        rej = [at for _h, at in atts if (at.get("error_msg") or {}).get("code")]
+        assert rej and all(at["error_msg"]["code"] == "film.vendor.rejected" for at in rej), (label, cont, rej)
+    assert "tier" in body and "provider" not in body and "model" not in body, label
+    byid = {c["id"]: c for c in body["clips"]}
+    if byid[D]["state"] == "failed":
+        assert byid[D]["error_msg"]["code"] == "film.vendor.balance", (label, byid[D]["error_msg"])
+    if byid[E]["state"] == "failed":
+        assert byid[E]["error_msg"]["code"] == "common.failed_generic", (label, byid[E]["error_msg"])
+    SEEN_FILM.add(label)
+
+
+def drain(limit=400):
     runner = app_mod._render_runner
     for _ in range(limit):
         if not runner.watching():
@@ -96,7 +151,62 @@ def pick(s, iid):
     return next(x for x in s["clips"] + s["free"] if x["id"] == iid)
 
 
+SIGN = "https://x.volces.com/v.mp4?X-Tos-Signature=zz"
+A = D = E = None
+SEEN_FILM: set = set()
+REAL: dict = {}
+
+
+def bad_attempts(tag):
+    """两次带毒的尝试：被拒（带厂商原话、签名地址、计费快照、用量、一个服务端以后可能新增的字段）；迟到成功。"""
+    return [
+        {"task_id": f"cgt-{tag}-1", "state": "failed", "video_url": SIGN, "last_frame_url": SIGN,
+         "usage": {"model": "doubao-seedance-2-0"}, "vendor_note": "MiniMax internal",
+         "billing": {"provider": "minimax", "model": "minimax-h3", "resolution": "768P", "duration": 5, "estimate_cny": 2.5},
+         "known_cost_cny": 2.5, "cost_cny": 0,
+         "error_msg": {"code": "film.provider.rejected", "params": {"detail": {"t": "vendor", "text": "MiniMax: prompt rejected"}}},
+         "error": "MiniMax: prompt rejected"},
+        {"task_id": f"cgt-doubao-seedance-{tag}", "state": "succeeded", "late": True, "settled_at": render_session._now(),
+         "cost_cny": 1.0, "video_url": SIGN, "vendor_note": "Seedance"},
+    ]
+
+
+def poison(root):
+    """把带厂商词的原始数据写进会话文件（可重复调用：每次把这几处重置成同样的带毒状态）。"""
+    now = render_session._now()
+    with render_session.mutate(root) as s:
+        byid = {x["id"]: x for x in s["clips"]}
+        a, d, e = byid[A], byid[D], byid[E]
+        d.update(state="failed", error="视频服务（MiniMax）账户余额不足，暂时无法出片，请联系管理员",
+                 error_msg={"code": "film.minimax.insufficient_balance", "params": {}}, ended_at=now, ended_as="failed")
+        e.update(state="failed", error="KeyError: 'video_url' Seedance sk-live-12345 " + SIGN, error_msg=None,
+                 ended_at=now, ended_as="failed")
+        a["attempts"] = [REAL["clip"]] + bad_attempts("c")
+        f1 = next(n for n in s["free"] if n["id"] == "F01")
+        f1["attempts"] = [REAL["free"]] + bad_attempts("f")
+        s["orphaned"] = [{"id": "E77-C77", "shots": [], "attempts": bad_attempts("o"), "chosen": None}]
+        s["final"] = {"state": "failed", "started_at": now, "finished_at": now, "step": "配音", "step_msg": None,
+                      "error": "豆包语音拒绝了请求（45000）：Doubao TTS quota",
+                      "error_msg": {"code": "tts.volc.rejected",
+                                    "params": {"code": "45000", "detail": {"t": "vendor", "text": "Doubao TTS quota"}}},
+                      "detail": "ffmpeg … volc", "fingerprint": "x", "files": {"E01": "final/E01.mp4"},
+                      "report": "final/mix_report.json"}
+
+
+def write_report(root):
+    rep = {"notes": [], "episodes": [{"episode": "E01", "notes": [{"shot": "SH001", "kind": "speedup", "speed": 1.1}]}],
+           "lines_failed": [{"line": "L1", "error": "豆包语音拒绝了请求（45000）：Doubao TTS quota",
+                             "error_msg": {"code": "tts.volc.rejected",
+                                           "params": {"code": "45000", "detail": {"t": "vendor", "text": "Doubao TTS quota"}}}}],
+           "detail": "MiniMax volc"}
+    d = Path(root) / "final"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "mix_report.json").write_text(json.dumps(rep, ensure_ascii=False), encoding="utf-8")
+    (d / "E01.mp4").write_bytes(b"x")
+
+
 def main() -> int:
+    global D, E, A
     assert P.find_vendor_words(DOC) == [], "夹具里不应含词表里的词（换了夹具要重新审）"
     app_mod._render_runner.sleep = lambda _s: None
     c = TestClient(app_mod.app)
@@ -111,176 +221,226 @@ def main() -> int:
     novels.update_version_state(alice, nid, cid, "v1", "succeeded", result=copy.deepcopy(DOC))
     R = f"/novels/{nid}/chapters/{cid}/versions/v1/render"
     root = novels.render_dir(alice, nid, cid, "v1")
+    RTP = RT                                      # 路径模板
 
-    # 1-2. 建会话、出一段到完成、再排一段（走完整流程，留下真实形状的尝试）
+    # ---- 准备：会话、出一段、自由节点出一次（真实形状的尝试），再投毒 ----
     s = c.post(R + "/session", headers=H, json={"budget_cny": 100000}).json()
     ids = [x["id"] for x in s["clips"]]
-    assert len(ids) >= 4, ids
-    a, b, d, e = ids[:4]
-    assert c.post(R + f"/clips/{a}/run", headers=H, json={}).status_code == 200
+    assert len(ids) >= 5, ids
+    A, D, E, C1 = ids[0], ids[1], ids[2], ids[3]
+    assert c.post(R + f"/clips/{A}/run", headers=H, json={}).status_code == 200
     drain()
-    assert pick(c.get(R + "/session", headers=H).json(), a)["state"] == "done"
-    assert c.post(R + f"/clips/{b}/run", headers=H, json={}).status_code == 200
-
-    # 3. 投毒：把各种带厂商词的原始数据写进会话文件
-    now = render_session._now()
+    assert c.post(R + "/free", headers=H, json={}).status_code == 200
+    assert c.patch(R + "/free/F01", headers=H, json={"prompt": "空镜：河面"}).status_code == 200
+    assert c.post(R + "/free/F01/run", headers=H, json={}).status_code == 200
+    drain()
+    s0 = render_session.load(root)
+    REAL["clip"] = copy.deepcopy(next(x for x in s0["clips"] if x["id"] == A)["attempts"][0])
+    REAL["free"] = copy.deepcopy(next(x for x in s0["free"] if x["id"] == "F01")["attempts"][0])
+    assert REAL["clip"]["state"] == "succeeded" and REAL["free"]["state"] == "succeeded"
     fake_file = Path(root) / "clips" / "late.mp4"
     fake_file.parent.mkdir(parents=True, exist_ok=True)
     fake_file.write_bytes(b"x")
-    sign = "https://x.volces.com/v.mp4?X-Tos-Signature=zz"
-    with render_session.mutate(root) as s2:
-        byid = {x["id"]: x for x in s2["clips"]}
-        k1 = byid[d]
-        k1.update(state="failed", error="视频服务（MiniMax）账户余额不足，暂时无法出片，请联系管理员",
-                  error_msg={"code": "film.minimax.insufficient_balance", "params": {}}, ended_at=now, ended_as="failed")
-        k2 = byid[e]
-        k2.update(state="failed", error="KeyError: 'video_url' Seedance sk-live-12345 " + sign, error_msg=None,
-                  ended_at=now, ended_as="failed")
-        k3 = byid[a]
-        k3["attempts"].append({
-            "task_id": "cgt-x", "state": "failed", "video_url": sign, "last_frame_url": sign,
-            "usage": {"model": "doubao-seedance-2-0"},
-            "billing": {"provider": "minimax", "model": "minimax-h3", "resolution": "768P", "duration": 5, "estimate_cny": 2.5},
-            "known_cost_cny": 2.5, "cost_cny": 0,
-            "error_msg": {"code": "film.provider.rejected", "params": {"detail": {"t": "vendor", "text": "MiniMax: prompt rejected"}}},
-            "error": "MiniMax: prompt rejected"})
-        k3["attempts"].append({
-            "task_id": "cgt-doubao-seedance-0001", "state": "succeeded", "late": True, "settled_at": now,
-            "file": "clips/late.mp4", "cost_cny": 1.0, "video_url": sign})
-        s2["final"] = {"state": "failed", "started_at": now, "finished_at": now, "step": "配音", "step_msg": None,
-                       "error": "豆包语音拒绝了请求（45000）：Doubao TTS quota",
-                       "error_msg": {"code": "tts.volc.rejected",
-                                     "params": {"code": "45000", "detail": {"t": "vendor", "text": "Doubao TTS quota"}}},
-                       "detail": "ffmpeg … volc"}
+    write_report(root)
+    poison(root)
     raw = (Path(root) / "session.json").read_text(encoding="utf-8")
-    assert "Seedance" in raw and "volces" in raw, "投毒确实写进去了"
-    print("1-3. 会话与投毒 ✓")
+    assert "Seedance" in raw and "volces" in raw and "vendor_note" in raw, "投毒确实写进去了"
+    print("1. 会话与投毒 ✓")
 
-    # 4. 逐个接口检查
-    clean("openapi", c.get("/openapi.json"), route="/openapi.json")
-    clean("healthz", c.get("/healthz"), route="/healthz")
-    clean("me", c.get("/auth/me", headers=H), route="/auth/me")
-    clean("session.get", c.get(R + "/session", headers=H), route=RT + "/session")
-    clean("session.patch", c.patch(R + "/session", headers=H, json={"tier": "a-fast"}), route=RT + "/session")
-    r = clean("session.patch.422", c.patch(R + "/session", headers=H, json={"tier": "nope"}), route=RT + "/session")
-    assert r.status_code == 422
-    # 带厂商字段的请求体被拒（422）；422 会回显请求里的输入，那是用户自己发的词，不算泄露，所以只看状态码
-    assert c.patch(R + "/session", headers=H, json={"provider": "x"}).status_code == 422
-    clean("session.post", c.post(R + "/session", headers=H, json={}), route=RT + "/session")
-    clean("tasks", c.get("/render/tasks", headers=H), route="/render/tasks")
-    # 转换任务（真实流程要调大模型，这里直接放一条已失败的任务进内存表，形状与 _start_version 建的一致）
+    # ---- 出片会话的每个返回出口，各查一次带毒的成功响应（每次调用前重新投毒），再查错误分支 ----
+    def film(label, method, path, route, status=200, **kw):
+        poison(root)
+        resp = c.request(method, path, headers=H, **kw)
+        body = clean(label, resp, status, route=route)
+        if status == 200:
+            film_shape(label, body)
+        return body
+
+    film("session.get", "GET", R + "/session", RTP + "/session")
+    film("session.post", "POST", R + "/session", RTP + "/session", json={})
+    film("session.patch", "PATCH", R + "/session", RTP + "/session", json={"tier": "a-fast"})
+    poison(root)
+    r = c.patch(R + "/session", headers=H, json={"tier": "nope"})
+    clean("session.patch.422", r, 422, route=RTP + "/session")
+    poison(root)
+    sent = {"provider": "minimax"}
+    r = c.patch(R + "/session", headers=H, json=sent)
+    clean("session.patch.vendor-input", r, 422, route=RTP + "/session", sent=sent)
+    # 回显豁免只限 input：若把豁免用在不是请求回显的内容上，守卫自己要能红（自检）
+    assert P.find_vendor_words(r.json()), "反向对照：422 原文里应有被回显的厂商词（豁免确实在起作用）"
+    film("run.single", "POST", R + f"/clips/{C1}/run", RTP + "/clips/{clip_id}/run", json={})
+    film("cancel.queued", "POST", R + f"/clips/{C1}/cancel", RTP + "/clips/{clip_id}/cancel")
+    poison(root)
+    clean("cancel.409", c.post(R + f"/clips/{C1}/cancel", headers=H), 409, route=RTP + "/clips/{clip_id}/cancel")
+    # 批量出剩余各段：先不带金额（409 附重算金额），再带上
+    poison(root)
+    r = c.post(R + "/run", headers=H, json={})
+    b = clean("run.all.409", r, 409, route=RTP + "/run")
+    amount = b["detail"]["expected_cny"] if "expected_cny" in b.get("detail", {}) else None
+    if amount is None:
+        amount = render_session.run_quote(render_session.load(root), None)[1]
+    film("run.all", "POST", R + "/run", RTP + "/run", json={"expected_cny": amount})
+    drain()
+    film("chosen", "PUT", R + f"/clips/{A}/chosen", RTP + "/clips/{clip_id}/chosen", json={"attempt": 0})
+    poison(root)
+    clean("chosen.422", c.put(R + f"/clips/{A}/chosen", headers=H, json={"attempt": 1}), 422, route=RTP + "/clips/{clip_id}/chosen")
+    film("clip.patch", "PATCH", R + f"/clips/{A}", RTP + "/clips/{clip_id}", json={"mute_native": True})
+    film("free.post", "POST", R + "/free", RTP + "/free", json={})
+    film("free.patch", "PATCH", R + "/free/F02", RTP + "/free/{fid}", json={"prompt": "空镜：夜"})
+    film("free.run", "POST", R + "/free/F02/run", RTP + "/free/{fid}/run", json={})
+    film("free.cancel", "POST", R + "/free/F02/cancel", RTP + "/free/{fid}/cancel")
+    poison(root)
+    clean("free.cancel.409", c.post(R + "/free/F02/cancel", headers=H), 409, route=RTP + "/free/{fid}/cancel")
+    film("free.chosen", "PUT", R + "/free/F01/chosen", RTP + "/free/{fid}/chosen", json={"attempt": 0})
+    film("free.delete", "DELETE", R + "/free/F02", RTP + "/free/{fid}")
+    print("2. 出片会话的各个出口（带毒的成功响应与错误分支）✓")
+
+    # ---- 合成：入口桩化执行器（不起线程、不需要 ffmpeg），成功响应也是会话视图 ----
+    app_mod._compose_worker = lambda *a, **k: None
+    render_mix.tools = lambda: ("ffmpeg", "ffprobe")
+    miss = c.get(R + "/voices", headers=H).json()["missing"]
+    assert c.put(R + "/voices", headers=H, json={"voices": {k: "fake-male" for k in miss}}).status_code == 200
+    poison(root)
+    r = c.post(R + "/compose", headers=H, json={"draft": True})
+    if r.status_code == 409:
+        amt = r.json()["detail"]["expected_cny"]
+        clean("compose.409", r, 409, route=RTP + "/compose")
+        film("compose.post", "POST", R + "/compose", RTP + "/compose", json={"draft": True, "expected_cny": amt})
+    else:
+        clean("compose.post", r, 200, route=RTP + "/compose")
+        film_shape("compose.post", r.json())
+    poison(root)
+    write_report(root)
+    cp = clean("compose.get", c.get(R + "/compose", headers=H), 200, route=RTP + "/compose")
+    assert cp["report"] is not None and cp["final"]["error_msg"]["code"] == "tts.vendor.rejected", (cp["report"], cp["final"])
+    assert cp["report"]["lines_failed"][0]["error_msg"]["code"] == "tts.vendor.rejected", cp["report"]
+    rf = c.get(R + "/files/final/mix_report.json", headers=H)
+    rb = clean("files.report", rf, 200, route=RTP + "/files/{path:path}")
+    assert rb["lines_failed"] and "***" in json.dumps(rb, ensure_ascii=False), rb       # 文本打码、结构保留
+    clean("files.404", c.get(R + "/files/session.json", headers=H), 404, route=RTP + "/files/{path:path}")
+    print("3. 合成与报告 ✓")
+
+    # ---- 其余接口 ----
+    clean("openapi", c.get("/openapi.json"), 200, route="/openapi.json")
+    clean("healthz", c.get("/healthz"), 200, route="/healthz")
+    clean("me", c.get("/auth/me", headers=H), 200, route="/auth/me")
+    poison(root)
+    tasks_body = clean("tasks", c.get("/render/tasks", headers=H), 200, route="/render/tasks")
+    clean("voices", c.get(R + "/voices", headers=H), 200, route=RTP + "/voices")
+    clean("voices.put.422", c.put(R + "/voices", headers=H, json={"voices": {"x": "nope"}}), 422, route=RTP + "/voices")
+    clean("voices.put", c.put(R + "/voices", headers=H, json={"voices": {}}), 200, route=RTP + "/voices")
+    clean("bgm.put.422", c.put(R + "/bgm/E01", headers={**H, "content-type": "text/plain"}, content=b"x"), 422, route=RTP + "/bgm/{episode}")
+    clean("bgm.delete", c.delete(R + "/bgm/E01", headers=H), 200, route=RTP + "/bgm/{episode}")
     app_mod._jobs["jvg"] = {"id": "jvg", "user_id": alice, "status": "failed", "log": [], "debug_log": [], "result": None,
                             "quality_report": None, "quality_msg": None, "error": "转换失败", "error_msg": None,
                             "persisted": True, "created_at": "2026-01-01T00:00:00", "work_title": "药", "chapter": "第一章",
                             "chars": 2, "progress": {}, "partial": {"batches_done": 1}, "novel_id": nid,
                             "chapter_id": cid, "version_id": "jvg", "finished_at": "2026-01-01T00:01:00"}
-    clean("jobs", c.get("/jobs", headers=H), route="/jobs")
-    clean("job", c.get("/jobs/jvg", headers=H), route="/jobs/{job_id}")
-    clean("job.partial", c.get("/jobs/jvg/partial", headers=H), route="/jobs/{job_id}/partial", content=True)
-    clean("job.404", c.get("/jobs/nope", headers=H), route="/jobs/{job_id}")
-    clean("novels", c.get("/novels", headers=H), route="/novels", content=True)
-    clean("memory", c.get(f"/novels/{nid}/memory", headers=H), route="/novels/{nid}/memory", content=True)
-    clean("assistant", c.get(f"/novels/{nid}/assistant", headers=H), route="/novels/{nid}/assistant", content=True)
-    clean("keyframes", c.get(f"/novels/{nid}/chapters/{cid}/versions/v1/keyframes", headers=H),
-          route="/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes", content=True)
-    clean("voices", c.get(R + "/voices", headers=H), route=RT + "/voices")
-    clean("voices.put", c.put(R + "/voices", headers=H, json={"voices": {"x": "nope"}}), route=RT + "/voices")
-    clean("compose", c.get(R + "/compose", headers=H), route=RT + "/compose")
-    clean("compose.post", c.post(R + "/compose", headers=H, json={"draft": True}), route=RT + "/compose")
-    sv = c.get(R + "/session", headers=H).json()
-    c1 = sv["clips"][1]["id"]
-    clean("run", c.post(R + f"/clips/{c1}/run", headers=H, json={}), route=RT + "/clips/{clip_id}/run")
-    clean("run.again", c.post(R + f"/clips/{c1}/run", headers=H, json={}), route=RT + "/clips/{clip_id}/run")
-    clean("run.all", c.post(R + "/run", headers=H, json={}), route=RT + "/run")
-    clean("cancel", c.post(R + f"/clips/{c1}/cancel", headers=H), route=RT + "/clips/{clip_id}/cancel")
-    clean("cancel.409", c.post(R + f"/clips/{a}/cancel", headers=H), route=RT + "/clips/{clip_id}/cancel")
-    clean("chosen", c.put(R + f"/clips/{a}/chosen", headers=H, json={"attempt": 0}), route=RT + "/clips/{clip_id}/chosen")
-    clean("chosen.bad", c.put(R + f"/clips/{a}/chosen", headers=H, json={"attempt": 9}), route=RT + "/clips/{clip_id}/chosen")
-    clean("clip.patch", c.patch(R + f"/clips/{a}", headers=H, json={"mute_native": True}), route=RT + "/clips/{clip_id}")
-    r = c.post(R + "/free", headers=H, json={})
-    clean("free.post", r, route=RT + "/free")
-    fid = r.json()["free"][-1]["id"]
-    clean("free.patch", c.patch(R + f"/free/{fid}", headers=H, json={"prompt": "空镜：河面"}), route=RT + "/free/{fid}")
-    clean("free.run", c.post(R + f"/free/{fid}/run", headers=H, json={}), route=RT + "/free/{fid}/run")
-    clean("free.cancel", c.post(R + f"/free/{fid}/cancel", headers=H), route=RT + "/free/{fid}/cancel")
-    clean("free.cancel.409", c.post(R + f"/free/{fid}/cancel", headers=H), route=RT + "/free/{fid}/cancel")
-    clean("free.chosen", c.put(R + f"/free/{fid}/chosen", headers=H, json={"attempt": 0}), route=RT + "/free/{fid}/chosen")
-    clean("free.delete", c.delete(R + f"/free/{fid}", headers=H), route=RT + "/free/{fid}")
-    clean("bgm.delete", c.delete(R + "/bgm/1", headers=H), route=RT + "/bgm/{episode}")
-    plan = clean("plan", c.post("/render/plan", headers=H, json={"result": DOC}), route="/render/plan", content=True, models=tuple(render_plan.TIERS))
-    assert plan.status_code == 200, plan.text[:300]
-    body = plan.json()["plan"]
-    assert not P.find_vendor_words(body["estimate"]) and not P.find_vendor_words(body["tiers"]), "plan 的估价与档位里没有厂商词"
-    clean("summary", c.get(f"/novels/{nid}/summary", headers=H), route="/novels/{nid}/summary")
-    clean("novel", c.get(f"/novels/{nid}", headers=H), route="/novels/{nid}", content=True)
-    clean("chapter", c.get(f"/novels/{nid}/chapters/{cid}", headers=H), route="/novels/{nid}/chapters/{cid}", content=True)
-    clean("version", c.get(f"/novels/{nid}/chapters/{cid}/versions/v1", headers=H),
-          route="/novels/{nid}/chapters/{cid}/versions/{vid}", content=True)
-    print("4. 逐个接口 ✓")
+    clean("jobs", c.get("/jobs", headers=H), 200, route="/jobs")
+    clean("job", c.get("/jobs/jvg", headers=H), 200, route="/jobs/{job_id}")
+    clean("job.partial", c.get("/jobs/jvg/partial", headers=H), 200, route="/jobs/{job_id}/partial")
+    clean("job.404", c.get("/jobs/nope", headers=H), 404, route="/jobs/{job_id}")
+    # 生产包与估价：夹具不含厂商词，整份响应全文扫（含 packs[].markdown）；estimate.model 只放行中性费率档
+    plan = clean("plan", c.post("/render/plan", headers=H, json={"result": DOC}), 200, route="/render/plan",
+                 models_at={"$.plan.estimate.model": tuple(render_plan.TIERS)})
+    assert plan["plan"]["estimate"]["model"] in render_plan.TIERS and plan["packs"], plan["plan"]["estimate"]
+    clean("novels", c.get("/novels", headers=H), 200, route="/novels")
+    clean("summary", c.get(f"/novels/{nid}/summary", headers=H), 200, route="/novels/{nid}/summary")
+    clean("novel", c.get(f"/novels/{nid}", headers=H), 200, route="/novels/{nid}")
+    clean("chapter", c.get(f"/novels/{nid}/chapters/{cid}", headers=H), 200, route="/novels/{nid}/chapters/{cid}")
+    clean("version", c.get(f"/novels/{nid}/chapters/{cid}/versions/v1", headers=H), 200,
+          route="/novels/{nid}/chapters/{cid}/versions/{vid}")
+    clean("memory", c.get(f"/novels/{nid}/memory", headers=H), 200, route="/novels/{nid}/memory")
+    clean("assistant", c.get(f"/novels/{nid}/assistant", headers=H), 200, route="/novels/{nid}/assistant")
+    clean("keyframes", c.get(f"/novels/{nid}/chapters/{cid}/versions/v1/keyframes", headers=H), 200,
+          route="/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes")
+    # R12：用户内容里的「方舟」不打码；系统文案与键名照扫
+    nid2 = novels.create_novel(alice, "方舟纪事")["id"]
+    cid2 = novels.create_chapter(alice, nid2, "方舟之行", text="他登上方舟。")["id"]
+    ex = ("title", "text", "work_title", "chapter", "name")
+    for label, path, route in (("novels.user", "/novels", "/novels"),
+                               ("novel.user", f"/novels/{nid2}", "/novels/{nid}"),
+                               ("chapter.user", f"/novels/{nid2}/chapters/{cid2}", "/novels/{nid}/chapters/{cid}")):
+        resp = c.get(path, headers=H)
+        clean(label, resp, 200, route=route, exclude=ex)
+        assert "方舟" in resp.text and "***" not in resp.text, (label, "用户内容不打码")
+    print("4. 其余接口 ✓")
 
-    # 5. 具体断言
-    sv = c.get(R + "/session", headers=H).json()
-    allowed = set(P.ATTEMPT_KEYS) | {"task_id", "error", "error_msg"}
-    n_att = 0
-    for it in sv["clips"] + sv["free"]:
-        for at in it["attempts"]:
-            n_att += 1
-            assert set(at) <= allowed, (it["id"], sorted(set(at) - allowed))
-    assert n_att >= 3
-    assert pick(sv, d)["error_msg"]["code"] == "film.vendor.balance", pick(sv, d)["error_msg"]
-    assert pick(sv, e)["error_msg"]["code"] == "common.failed_generic", pick(sv, e)["error_msg"]
-    rej = [at for at in pick(sv, a)["attempts"] if (at.get("error_msg") or {}).get("code")]
-    assert [at["error_msg"]["code"] for at in rej] == ["film.vendor.rejected"], rej
+    # ---- 具体断言 ----
+    poison(root)
     tasks = c.get("/render/tasks", headers=H).json()["tasks"]
-    late = [t for t in tasks if t["state"] == "late"]
-    assert len(late) == 1 and late[0]["id"].endswith(P.task_key("cgt-doubao-seedance-0001")), late
+    late = [t for t in tasks if t["state"] == "late" and t["item_id"] == A]
+    assert any(t["id"].endswith(P.task_key("cgt-doubao-seedance-c")) for t in late), late
     comp = [t for t in tasks if t["kind"] == "compose"]
     assert len(comp) == 1 and comp[0]["state"] == "failed" and comp[0]["step"] is None
     assert comp[0]["error"]["code"] == "tts.vendor.rejected", comp[0]["error"]
+    legal = {t for t, _, _ in tiers.TIERS} | {None}
+    assert tasks and all(t["tier"] in legal for t in tasks), [t["tier"] for t in tasks]
     print("5. 具体断言 ✓")
 
-    # 6. 反向对照：管理员接口里有厂商词，普通用户拿不到
+    # ---- 反向对照：管理员接口里有厂商词，普通用户拿不到 ----
     adm = c.get("/admin/service", headers=HA)
     assert adm.status_code == 200 and P.find_vendor_words(adm.json()), "反向对照：/admin/service 里应有厂商词"
     assert all(row.get("vendor_label") for row in adm.json()["film"]["tiers"])
     assert c.get("/admin/service", headers=H).status_code == 403
-    legal = {t for t, _, _ in tiers.TIERS} | {None}
-    assert tasks and all(t["tier"] in legal for t in tasks), [t["tier"] for t in tasks]
     print("6. 反向对照 ✓")
 
-    # 7. 路由清单
-    bin_ = "二进制文件"
+    # ---- 路由清单：(方法, 路径) 逐条登记 ----
     ui = "响应是用户自己的内容或只回显用户的输入，没有服务端生成的错误文字、出片会话、任务"
+    bin_ = "二进制文件"
     EXEMPT = {
-        RT + "/files/{path:path}": bin_,
-        RT + "/export.zip": bin_,
-        "/auth/register": "认证：只回账号字段，错误是登记过的认证消息，不涉及出片",
-        "/auth/login": "同上",
-        "/novels/{nid}/chapters": "新建章节：" + ui,
-        "/novels/{nid}/chapters/{cid}/versions": "新建转换版本：只回任务号；转换任务本身在 /jobs 与 /jobs/{job_id} 里查",
-        "/novels/{nid}/chapters/{cid}/versions/{vid}/adopt": "采纳版本：" + ui,
-        "/novels/{nid}/chapters/{cid}/digest": "章节摘要：调大模型，输出是用户内容",
-        "/novels/{nid}/memory/assets/{kind}/{card_id}": "资产卡增删：" + ui,
-        "/novels/{nid}/memory/lifecycle": "记忆增删改：" + ui,
-        "/novels/{nid}/memory/lifecycle/{lid}": "同上",
-        "/novels/{nid}/memory/plot": "同上",
-        "/novels/{nid}/memory/plot/chapters/{cid}": "同上",
-        "/novels/{nid}/memory/constraints": "同上",
-        "/novels/{nid}/memory/constraints/{kid}": "同上",
-        "/render/keyframes": "关键帧批量生成：按分镜出图，响应是图片清单，不含出片会话与厂商字段",
-        "/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}": "关键帧的上传、下载、删除：二进制或只回清单",
-        "/novels/{nid}/style-image": "风格图的上传、下载、删除：二进制或只回清单",
-        "/novels/{nid}/assistant/messages": "助手：流式输出（SSE），内容是模型对用户说的话",
-        "/novels/{nid}/assistant/resume": "助手：流式输出",
-        "/novels/{nid}/assistant/undo": "助手：撤销，回用户内容",
+        ("GET", RT + "/export.zip"): bin_,
+        ("POST", "/auth/register"): "认证：只回账号字段，错误是登记过的认证消息，不涉及出片",
+        ("POST", "/auth/login"): "同上",
+        ("POST", "/novels"): "新建小说：" + ui,
+        ("PATCH", "/novels/{nid}"): "改小说：" + ui,
+        ("DELETE", "/novels/{nid}"): "删小说：" + ui,
+        ("POST", "/novels/{nid}/chapters"): "新建章节：" + ui,
+        ("PATCH", "/novels/{nid}/chapters/{cid}"): "改章节：" + ui,
+        ("DELETE", "/novels/{nid}/chapters/{cid}"): "删章节：" + ui,
+        ("POST", "/novels/{nid}/chapters/{cid}/versions"): "新建转换版本：只回任务号；转换任务本身在 /jobs 与 /jobs/{job_id} 里查",
+        ("PUT", "/novels/{nid}/chapters/{cid}/versions/{vid}"): "保存用户编辑后的分镜：" + ui,
+        ("DELETE", "/novels/{nid}/chapters/{cid}/versions/{vid}"): "删版本：" + ui,
+        ("POST", "/novels/{nid}/chapters/{cid}/versions/{vid}/adopt"): "采纳版本：" + ui,
+        ("POST", "/novels/{nid}/chapters/{cid}/digest"): "章节摘要：调大模型，输出是用户内容",
+        ("PUT", "/novels/{nid}/memory/assets/{kind}/{card_id}"): "资产卡增改：" + ui,
+        ("DELETE", "/novels/{nid}/memory/assets/{kind}/{card_id}"): "资产卡删除：" + ui,
+        ("POST", "/render/keyframes"): "关键帧批量生成：按分镜出图，响应是图片清单，不含出片会话与厂商字段",
+        ("PUT", "/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}"): "关键帧上传：二进制入，回清单",
+        ("GET", "/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}"): "关键帧下载：" + bin_,
+        ("DELETE", "/novels/{nid}/chapters/{cid}/versions/{vid}/keyframes/{shot_id}"): "关键帧删除：只回清单",
+        ("GET", "/novels/{nid}/style-image"): "风格图下载：" + bin_,
+        ("PUT", "/novels/{nid}/style-image"): "风格图上传：二进制入，回元数据",
+        ("DELETE", "/novels/{nid}/style-image"): "风格图删除：只回元数据",
+        ("POST", "/novels/{nid}/memory/lifecycle"): "记忆增删改：" + ui,
+        ("POST", "/novels/{nid}/memory/lifecycle/{lid}"): "同上",
+        ("DELETE", "/novels/{nid}/memory/lifecycle/{lid}"): "同上",
+        ("PUT", "/novels/{nid}/memory/plot"): "同上",
+        ("PUT", "/novels/{nid}/memory/plot/chapters/{cid}"): "同上",
+        ("POST", "/novels/{nid}/memory/constraints"): "同上",
+        ("PATCH", "/novels/{nid}/memory/constraints/{kid}"): "同上",
+        ("DELETE", "/novels/{nid}/memory/constraints/{kid}"): "同上",
+        ("DELETE", "/novels/{nid}/assistant"): "清空助手对话：" + ui,
+        ("POST", "/novels/{nid}/assistant/messages"): "助手：流式输出（SSE），内容是模型对用户说的话",
+        ("POST", "/novels/{nid}/assistant/resume"): "助手：流式输出",
+        ("POST", "/novels/{nid}/assistant/undo"): "助手：撤销，回用户内容",
     }
-    COVERED = set(SEEN_PATHS)
-    assert not COVERED & set(EXEMPT), COVERED & set(EXEMPT)
+    overlap = SEEN_ROUTES & set(EXEMPT)
+    assert not overlap, ("已调用的接口不应再写豁免", overlap)
+    expected = set()
     for r in app_mod.app.routes:
         path = getattr(r, "path", "")
-        if not path or path.startswith("/admin") or path in ("/docs", "/redoc", "/docs/oauth2-redirect"):
+        if not path or path == "/admin" or path.startswith("/admin/") or path in ("/docs", "/redoc", "/docs/oauth2-redirect"):
             continue
-        assert path in COVERED or path in EXEMPT, f"新接口 {path} 没有登记：加进守卫的调用，或写明豁免理由"
+        for m in sorted((getattr(r, "methods", None) or set()) - {"HEAD", "OPTIONS"}):
+            expected.add((m, path))
+            assert (m, path) in SEEN_ROUTES or (m, path) in EXEMPT, f"新接口 {m} {path} 没有登记：加进守卫的调用，或写明豁免理由"
+    stale = (SEEN_ROUTES | set(EXEMPT)) - expected
+    assert not stale, ("登记了不存在的接口", stale)
+    # 出片会话的返回出口都查过带毒的成功响应
+    need = {"session.get", "session.post", "session.patch", "run.single", "cancel.queued", "run.all", "chosen", "clip.patch",
+            "free.post", "free.patch", "free.run", "free.cancel", "free.chosen", "free.delete", "compose.post"}
+    assert need <= SEEN_FILM, need - SEEN_FILM
     print("7. 路由清单 ✓")
     print("\nALL PASS")
     return 0

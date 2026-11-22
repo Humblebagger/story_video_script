@@ -10,6 +10,7 @@ export default defineConfig(({ isSsrBuild }) => ({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   build: {
+    manifest: !isSsrBuild,     // 构建清单：dist/.vite/manifest.json，给首屏产物守卫（tests/vendor-bundle.check.mjs）解析静态与按需依赖
     // 文件名只含哈希：按需块不带组件名，不在文件名里暴露「后台」（设计 §9.3）；测试用的 SSR 构建不动
     rollupOptions: isSsrBuild ? {} : {
       output: {
