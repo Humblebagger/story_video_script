@@ -315,7 +315,12 @@ for (const f of I18N_FILES) {
   const styleDir = path.join(SRC, 'styles')
   const css = fs.readdirSync(styleDir).filter((f) => f.endsWith('.css')).map((f) => fs.readFileSync(path.join(styleDir, f), 'utf8'))
   const defined = new Set(css.flatMap((s) => [...s.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])))
-  const inline = new Set(['--mood', '--pill'])
+  const inline = new Set([
+    '--mood', '--pill',
+    // Radix 在浮层挂载时写到 style 上的可用高度与变换原点，不在样式表里声明。
+    '--radix-popover-content-available-height',
+    '--radix-popover-content-transform-origin',
+  ])
   const used = new Set(css.flatMap((s) => [...s.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1])))
   const bad = [...used].filter((v) => !defined.has(v) && !inline.has(v))
   must(!bad.length, `样式表用了未定义的变量：${bad.join('、')}`)

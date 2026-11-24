@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Boxes, Check, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectMenu } from '@/components/ui/select'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
@@ -182,11 +183,15 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
       <p className="lib__hint">{t('assets.hint')}</p>
       <div className="lib__bar" data-kind={newKind}>
         <div className="lib__add">
-          {!kind && <select value={newKind} onChange={(e) => setNewKind(e.target.value as AssetKind)}>
-            {(Object.keys(KIND_TITLE) as AssetKind[]).map((k) => (
-              <option key={k} value={k}>{KIND_TITLE[k]}</option>
-            ))}
-          </select>}
+          {!kind && (
+            <SelectMenu
+              className="ui-select"
+              ariaLabel={t('assets.kindAria')}
+              value={newKind}
+              onChange={(v) => setNewKind(v as AssetKind)}
+              options={(Object.keys(KIND_TITLE) as AssetKind[]).map((k) => ({ value: k, label: KIND_TITLE[k] }))}
+            />
+          )}
           <Input
             ref={nameRef}
             value={newName}

@@ -1,5 +1,6 @@
 import { TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { label, UNIT_KIND } from '../labels'
 import type { Index } from '../resolve'
 import { pct } from '../resolve'
@@ -70,8 +71,7 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
           onChange={(e) => setQuery(e.target.value)}
         />
         <label className="src__toggle">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={onlyGaps}
             onChange={(e) => setOnlyGaps(e.target.checked)}
           />

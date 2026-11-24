@@ -283,6 +283,13 @@ const change = async (el: Element, set: () => void) => {
   })
   await settle()
 }
+const pickSelect = async (el: Element, value: string) => {
+  await click(el)
+  const item = [...win.document.querySelectorAll<HTMLElement>('.sel__content[data-state="open"] .sel__item')]
+    .find((x) => x.getAttribute('data-value') === value)
+  if (!item) throw new Error(`✗ 下拉里找不到 ${value}`)
+  await click(item)
+}
 const tab = (name: string) =>
   [...container.querySelectorAll('.tlc__tabs button')].find((b) => b.textContent === name)
 const refresh = () => click(button('刷新合成'))
@@ -309,8 +316,8 @@ must(has('秋夜死寂'), '选曲参考来自分镜 music.curve')
 console.log('5. 合成区预览与缺音色拦截 ✓')
 
 // 6. 给路人选音色 → PUT /voices → 重读后按钮可用、写配音金额
-const sel = container.querySelector('select[aria-label="路人 的音色"]') as unknown as HTMLSelectElement
-await change(sel, () => { sel.value = 'fake-female' })
+const sel = container.querySelector('button[aria-label="路人 的音色"]')!
+await pickSelect(sel, 'fake-female')
 must(calls.includes('PUT /voices {"voices":{"C09":"fake-female"}}'), '选音色写回')
 must(!has('没选音色') && !composeBtn().disabled && (composeBtn().textContent ?? '').includes('配音约 ¥0.18'),
   '选完可以合成，按钮写金额')
@@ -425,7 +432,7 @@ await refresh()
 await click(composeBtn())
 must(has('确认合成（¥0.18）'), '弹确认')
 const draftNow = container.querySelector('.compose__run input[type=checkbox]') as unknown as HTMLInputElement
-const selects = [...container.querySelectorAll('.compose__table select')] as unknown as HTMLSelectElement[]
+const selects = [...container.querySelectorAll<HTMLButtonElement>('.compose__table .sel__trigger')]
 const bgmIn = container.querySelector('input[aria-label="E01 的 BGM"]') as unknown as HTMLInputElement
 must(draftNow.disabled && selects.length === 3 && selects.every((x) => x.disabled) && bgmIn.disabled,
   '确认框开着时锁住会改金额的操作')
@@ -453,7 +460,7 @@ await refresh()
 must(has('配音 40 条') && !!composeBtn() && has('读取音色表失败：音色服务挂了'), '音色表出错不挡预览')
 voicesDown = false
 await refresh()
-must(!has('读取音色表失败') && !!container.querySelector('select[aria-label="路人 的音色"]'), '音色表恢复')
+must(!has('读取音色表失败') && !!container.querySelector('button[aria-label="路人 的音色"]'), '音色表恢复')
 console.log('17. 音色表出错不挡整块 ✓')
 
 // 18. 预览读不出来：写原因并给「重试」；重试成功后显示预览
@@ -483,7 +490,7 @@ console.log('18. 预览读取失败可重试 ✓')
   must(has(zh.srv.rate.tts) && has(zh.srv.voice.narrator), '中文界面：费率说明与旁白名')
   await lang('en')
   must(has(en.srv.rate.tts) && !has(zh.srv.rate.tts), '英文界面：费率说明')
-  must(has(en.srv.voice.narrator) && !!container.querySelector('select[aria-label="Voice for Narrator"]'),
+  must(has(en.srv.voice.narrator) && !!container.querySelector('button[aria-label="Voice for Narrator"]'),
     '英文界面：旁白名与音色选择框的无障碍名')
   must(has('假男声'), '音色名是专有名，不翻译')
   // 未标说话人（空 key）：英文界面显示 (no speaker)

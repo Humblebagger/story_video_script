@@ -1332,7 +1332,15 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
                frame_with_refs: false, audio_modes: ['tts_all', 'silent'], rate_note: '', typical_sec: [180, 420] } }
   const tabOf = (name: string) => [...doc.body.querySelectorAll('.tlc__tabs button')]
     .find((x) => (x.textContent ?? '').trim() === name) as unknown as HTMLElement | undefined
-  const tierOptions = () => [...doc.body.querySelectorAll<HTMLOptionElement>('select[data-testid="film-tier"] option')].map((o) => o.textContent ?? '')
+  const tierOptions = async () => {
+    const trigger = doc.body.querySelector<HTMLElement>('[data-testid="film-tier"]')
+    if (!trigger) return []
+    await click(trigger)
+    const values = [...doc.body.querySelectorAll<HTMLElement>('.sel__content[data-state="open"] .sel__item')]
+      .map((x) => x.textContent ?? '')
+    await click(trigger)
+    return values
+  }
   const openCanvas = async (a: Awaited<ReturnType<typeof boot>>) => {
     filmSession = session
     await act(async () => { await a.router.navigate('/novels/n1/chapters/c1/render/canvas') })
@@ -1345,7 +1353,8 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
   adminSvcCalls = 0
   const u = await boot('/novels/n1/overview', 'alice')
   await openCanvas(u)
-  must(tierOptions().length === 1, `普通用户有档位下拉：${tierOptions().join('|')}`)
+  const plainTiers = await tierOptions()
+  must(plainTiers.length === 1, `普通用户有档位下拉：${plainTiers.join('|')}`)
   await click(u.q('[data-testid="activity-bell"]')!)
   must(adminSvcCalls === 0 && !doc.body.textContent!.includes('ZZ-Vendor'), '普通用户不请求、不显示')
   await u.done()
@@ -1353,13 +1362,14 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
   adminSvcCalls = 0
   const a = await boot('/novels/n1/overview', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
   await openCanvas(a)
-  must(adminSvcCalls === 1 && tierOptions().some((x) => x.endsWith(ZZ)), `管理员看得到：${adminSvcCalls} ${tierOptions().join('|')}`)
+  const hintedTiers = await tierOptions()
+  must(adminSvcCalls === 1 && hintedTiers.some((x) => x.endsWith(ZZ)), `管理员看得到：${adminSvcCalls} ${hintedTiers.join('|')}`)
   // c) 来回切页面、重开面板不再请求
   await act(async () => { await a.router.navigate('/novels/n1/overview') })
   await settle(200)
   await openCanvas(a)
   await click(a.q('[data-testid="activity-bell"]')!)
-  must(adminSvcCalls === 1 && tierOptions().some((x) => x.endsWith(ZZ)), '不重复请求')
+  must(adminSvcCalls === 1 && (await tierOptions()).some((x) => x.endsWith(ZZ)), '不重复请求')
   // d) 退出登录，再以普通用户登录、回到同一个画布：没有新的请求，没有提示字样
   await click(a.container.querySelector('[aria-label="退出"]') as unknown as HTMLElement)
   await settle(200)
@@ -1368,14 +1378,14 @@ console.log('出片任务：铃铛、面板、跳转与通知 ✓')
   await loginAs('alice', 'pw')
   await settle(400)
   await openCanvas(a)
-  must(adminSvcCalls === 1 && tierOptions().length === 1 && !doc.body.textContent!.includes('ZZ-Vendor'), '退出后清空，普通用户不请求')
+  must(adminSvcCalls === 1 && (await tierOptions()).length === 1 && !doc.body.textContent!.includes('ZZ-Vendor'), '退出后清空，普通用户不请求')
   await a.done()
   // e) /admin/service 失败的管理员：界面与普通用户一样，不报错
   svcFail = true
   adminSvcCalls = 0
   const f = await boot('/novels/n1/overview', 'root', { id: 'root', username: 'root', created_at: '', role: 'admin' })
   await openCanvas(f)
-  must(adminSvcCalls >= 1 && tierOptions().length === 1 && !doc.body.textContent!.includes('ZZ-Vendor'), '请求失败：与普通用户一样')
+  must(adminSvcCalls >= 1 && (await tierOptions()).length === 1 && !doc.body.textContent!.includes('ZZ-Vendor'), '请求失败：与普通用户一样')
   svcFail = false
   await f.done()
   console.log('管理员提示：链路 ✓')

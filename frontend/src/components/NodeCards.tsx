@@ -5,6 +5,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { NumberField } from '@/components/ui/number-field'
+import { SelectMenu } from '@/components/ui/select'
 import { StatusPill } from '@/components/common/StatusPill'
 import type { Tone } from '@/components/common/StatusPill'
 import { useI18n } from '@/i18n/core'
@@ -283,7 +286,8 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
         )}
         <label className="ngv__field">{t('graph.free.duration')}
           {n.target ? <span>{t('graph.free.sec', { n: n.duration })}</span> : (
-            <input key={n.duration} type="number" min={1} max={s.options.max_clip_sec} step={0.5}
+            <NumberField key={n.duration} className="ui-number"
+                   min={1} max={s.options.max_clip_sec} step={0.5}
                    defaultValue={n.duration} disabled={lock}
                    onBlur={(e) => {
                      const v = Number(e.target.value)
@@ -291,14 +295,21 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
                    }} />
           )}
         </label>
-        <label className="ngv__field">{t('graph.free.firstFrame')}
-          <select value={n.first_frame ?? ''} disabled={lock}
-                  onChange={(e) => void patchFree(n.id, { first_frame: e.target.value || null })}>
-            <option value="">{t('graph.free.none')}</option>
-            {kfShots.map((id) => <option key={id} value={`keyframe:${id}`}>{t('graph.free.keyframe', { id })}</option>)}
-            {tails.map((id) => <option key={id} value={`tail:${id}`}>{t('graph.free.tail', { id })}</option>)}
-          </select>
-        </label>
+        <div className="ngv__field">
+          <span>{t('graph.free.firstFrame')}</span>
+          <SelectMenu
+            className="ui-select"
+            ariaLabel={t('graph.free.firstFrame')}
+            value={n.first_frame ?? ''}
+            disabled={lock}
+            onChange={(v) => void patchFree(n.id, { first_frame: v || null })}
+            options={[
+              { value: '', label: t('graph.free.none') },
+              ...kfShots.map((id) => ({ value: `keyframe:${id}`, label: t('graph.free.keyframe', { id }) })),
+              ...tails.map((id) => ({ value: `tail:${id}`, label: t('graph.free.tail', { id }) })),
+            ]}
+          />
+        </div>
         <details className="ngv__refs">
           <summary>{t('graph.free.refs', { n: used, max })}</summary>
           {assetOptions.map((o) => {
@@ -306,19 +317,26 @@ export function FreeCard({ node: n, s, film, blocked, hot, fallback, kfShots, as
             const full = !on && slotsNeeded([...n.refs, o.id], n.first_frame, s) > max
             return (
               <label key={o.id} className="check">
-                <input type="checkbox" checked={on} disabled={lock || full} onChange={() => toggleRef(o.id)} />
+                <Checkbox checked={on} disabled={lock || full} onChange={() => toggleRef(o.id)} />
                 {o.name}
               </label>
             )
           })}
         </details>
-        <label className="ngv__field">{t('graph.free.target')}
-          <select value={n.target ?? ''} disabled={lock}
-                  onChange={(e) => void patchFree(n.id, { target: e.target.value || null })}>
-            <option value="">{t('graph.free.noTarget')}</option>
-            {s.clips.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
-          </select>
-        </label>
+        <div className="ngv__field">
+          <span>{t('graph.free.target')}</span>
+          <SelectMenu
+            className="ui-select"
+            ariaLabel={t('graph.free.target')}
+            value={n.target ?? ''}
+            disabled={lock}
+            onChange={(v) => void patchFree(n.id, { target: v || null })}
+            options={[
+              { value: '', label: t('graph.free.noTarget') },
+              ...s.clips.map((c) => ({ value: c.id, label: c.id })),
+            ]}
+          />
+        </div>
       </div>
       {itemError(n, locale) && <p className="ngv__err" title={err}>{err}</p>}
       <div className="ngv__acts" onClick={(e) => e.stopPropagation()}>

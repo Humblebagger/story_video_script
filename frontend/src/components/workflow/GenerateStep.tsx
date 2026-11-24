@@ -2,6 +2,8 @@
  *  生成按钮是右下角主按钮，参数状态在 ChapterWorkflow 里。 */
 import { AudioLines, FileText, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { SelectMenu } from '@/components/ui/select'
 import { useI18n } from '@/i18n/core'
 import { NARRATION_MODE, label } from '@/labels'
 import type { NarrationMode, Novel } from '@/types'
@@ -39,20 +41,30 @@ export function GenerateStep({ novel, chars, mode, strict, converting, onMode, o
             {t('flow.source.edit')}
           </Button>
         </section>
-        <label className="gen__panel gen__panel--mode">
+        <div className="gen__panel gen__panel--mode">
           <span className="gen__panel-eyebrow"><AudioLines aria-hidden />NARRATION</span>
           <span className="gen__panel-label">{t('flow.chapter.narration')}</span>
-          <select value={mode} onChange={(e) => onMode(e.target.value as NarrationMode | '')}>
-            <option value="">{t('flow.chapter.narrationInherit', {
-              mode: label(NARRATION_MODE, novel.params.narration_mode ?? 'selective') })}</option>
-            {Object.entries(NARRATION_MODE).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-          </select>
+          <SelectMenu
+            className="ui-select"
+            ariaLabel={t('flow.chapter.narration')}
+            value={mode}
+            onChange={(v) => onMode(v as NarrationMode | '')}
+            options={[
+              {
+                value: '',
+                label: t('flow.chapter.narrationInherit', {
+                  mode: label(NARRATION_MODE, novel.params.narration_mode ?? 'selective'),
+                }),
+              },
+              ...Object.entries(NARRATION_MODE).map(([v, n]) => ({ value: v, label: n })),
+            ]}
+          />
           <p className="gen__panel-hint">{t('flow.setup.modeHint')}</p>
-        </label>
+        </div>
         <label className={`gen__panel gen__panel--strict${strict ? ' is-on' : ''}`}>
           <span className="gen__panel-eyebrow"><ShieldCheck aria-hidden />QUALITY</span>
           <span className="gen__check">
-            <input type="checkbox" checked={strict} onChange={(e) => onStrict(e.target.checked)} />
+            <Checkbox checked={strict} onChange={(e) => onStrict(e.target.checked)} />
             <span>{t('flow.chapter.strict')}</span>
           </span>
           <p className="gen__panel-hint">{t('flow.setup.strictHint')}</p>

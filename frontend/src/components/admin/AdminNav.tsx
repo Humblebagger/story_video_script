@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SelectMenu } from '@/components/ui/select'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { adminPath } from '../../paths'
@@ -93,20 +94,21 @@ export function AdminTopNav({ page, counts, onBack, tools, onPage }: AdminNavPro
               data-testid="admin-back" onClick={onBack}>
         <ArrowLeft aria-hidden className="size-4" />
       </Button>
-      <h1 className="shrink-0 text-sm font-semibold">{t('admin.title')}</h1>
-      <select className="adm-top__select" aria-label={t('admin.nav.label')} data-testid="admin-nav-select"
-              value={page} onChange={(e) => onPage(e.target.value as AdminPage)}>
-        {NAV_GROUPS.map((g) => (
-          <optgroup key={g.id} label={t(`admin.nav.groups.${g.id}`)}>
-            {g.pages.map((id) => (
-              <option key={id} value={id}>
-                {t(`admin.nav.pages.${id}`)}
-                {counts[id] !== undefined ? t('common.paren', { text: badgeText(counts[id]) }) : ''}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+      <h1 className="adm-top__title text-sm font-semibold">{t('admin.title')}</h1>
+      <SelectMenu
+        className="ui-select adm-top__select"
+        testId="admin-nav-select"
+        ariaLabel={t('admin.nav.label')}
+        value={page}
+        onChange={(v) => onPage(v as AdminPage)}
+        options={NAV_GROUPS.flatMap((g) => g.pages.map((id) => ({
+          value: id,
+          group: t(`admin.nav.groups.${g.id}`),
+          label: `${t(`admin.nav.pages.${id}`)}${counts[id] !== undefined
+            ? t('common.paren', { text: badgeText(counts[id]) })
+            : ''}`,
+        })))}
+      />
       <div className="flex shrink-0 items-center">{tools}</div>
     </header>
   )

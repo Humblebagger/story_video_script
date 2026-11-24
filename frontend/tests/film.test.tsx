@@ -228,6 +228,18 @@ const click = async (el: Element) => {
   })
   await settle()
 }
+const trigger = (testId: string) =>
+  container.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+const openSelect = async (el: HTMLElement) => {
+  await click(el)
+  return [...win.document.querySelectorAll<HTMLElement>('.sel__content[data-state="open"] .sel__item')]
+}
+const pickSelect = async (el: HTMLElement, value: string) => {
+  const items = await openSelect(el)
+  const item = items.find((x) => x.getAttribute('data-value') === value)
+  if (!item) throw new Error(`✗ 下拉里找不到 ${value}`)
+  await click(item)
+}
 const tab = (name: string) =>
   [...container.querySelectorAll('.tlc__tabs button')].find((b) => b.textContent === name)
 const lanes = () => [...container.querySelectorAll('.tlc__labels text')].map((t) => t.textContent)
@@ -492,56 +504,64 @@ console.log('10c. 出错后轮询不断 ✓')
 // 10f. 设置区只有一个档位下拉：选项是中性名字；没有「厂商」下拉；摘要一行带档位名
 {
   const { zh } = await import('../src/i18n/zh')
-  const setV = Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, 'value')!.set!
-  const pick = async (el: HTMLSelectElement, v: string) => {
-    await act(async () => { setV.call(el, v); el.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event) })
-    await settle()
-  }
   // 有段在跑时设置不能改：先把还在跑的段放回待出
   for (const c of film!.clips) if (['queued', 'running', 'downloading'].includes(c.state)) c.state = 'planned'
   film = recount(film!)
   await refresh()
   film = { ...film!, audio_mode: 'all_native' }
   await refresh()
-  const sel = container.querySelector<HTMLSelectElement>('select[data-testid="film-tier"]')!
-  must(!!sel && [...sel.options].map((o) => o.textContent).join('|') === `${zh.srv.tier.demo}|${zh.srv.tier.a_fast}`, '档位下拉的选项')
-  must(container.querySelectorAll('.film__settings select').length === 3, '设置区只有档位、分辨率、声音三个下拉（没有厂商下拉）')
+  const sel = trigger('film-tier')
+  const tierItems = await openSelect(sel)
+  must(tierItems.map((o) => o.textContent).join('|') === `${zh.srv.tier.demo}|${zh.srv.tier.a_fast}`, '档位下拉的选项')
+  must(container.querySelectorAll('.film__settings .sel__trigger').length === 3, '设置区只有档位、分辨率、声音三个下拉（没有厂商下拉）')
   must((container.querySelector('.film__settings summary')?.textContent ?? '').includes(zh.srv.tier.demo), '摘要带档位名')
+  await click(tierItems.find((o) => o.getAttribute('data-value') === 'a-fast')!)
   // 换到引擎 A · 快速：分辨率选项换成那一档的，当前 720p 不在其中 → 草稿取那一档的缺省 768P
-  await pick(sel, 'a-fast')
-  const res = container.querySelector<HTMLSelectElement>('select[data-testid="film-resolution"]')!
-  must([...res.options].map((o) => o.value).join('|') === '768P|480P' && res.value === '768P', '换档带出分辨率')
-  const snd = () => container.querySelectorAll<HTMLSelectElement>('.film__settings select')[2]
-  must([...snd().options].map((o) => o.value).join('|') === 'tts_all|silent' && snd().value === 'tts_all', '原声模式不在新档里 → 声音回落全部配音')
+  const res = trigger('film-resolution')
+  must(res.textContent?.includes('768P'), '换档带出分辨率')
+  const snd = () => container.querySelectorAll<HTMLElement>('.film__settings .sel__trigger')[2]
+  must(snd().textContent?.includes(zh.enums.audioMode.tts_all), '原声模式不在新档里 → 声音回落全部配音')
   // 连续换档：回到演示档，分辨率回缺省 720p；声音 tts_all 两档都支持，保持
-  await pick(sel, 'demo')
-  must(res.value === '720p' && snd().value === 'tts_all', '连续换档：分辨率回缺省、兼容的声音保持')
-  await pick(sel, 'a-fast')
+  await pickSelect(sel, 'demo')
+  must(res.textContent?.includes('720p') && snd().textContent?.includes(zh.enums.audioMode.tts_all),
+       '连续换档：分辨率回缺省、兼容的声音保持')
+  await pickSelect(sel, 'a-fast')
   await click(button('应用设置'))
   const body = lastSettings as Record<string, unknown>
   must(body.tier === 'a-fast' && body.resolution === '768P' && body.audio_mode === 'tts_all' && !('provider' in body) && !('model' in body), '请求体用档位 id、分辨率与回落的声音')
   const sum = () => container.querySelector('.film__settings summary')?.textContent ?? ''
   must(sum().includes(zh.srv.tier.a_fast) && sum().includes('768P') && sum().includes(zh.enums.audioMode.tts_all), '应用后摘要是新档、新分辨率、新声音')
-  const res2 = container.querySelector<HTMLSelectElement>('select[data-testid="film-resolution"]')!
-  must([...res2.options].map((o) => o.textContent).join('|') === `768P${zh.film.panel.resPrice.replace('{price}', '0.4')}|480P${zh.film.panel.resPrice.replace('{price}', '0.26')}`, '应用后分辨率与价格是新档的')
-  must([...snd().options].map((o) => o.value).join('|') === 'tts_all|silent', '应用后声音选项是新档的')
+  const res2Items = await openSelect(trigger('film-resolution'))
+  must(res2Items.map((o) => o.textContent).join('|') === `768P${zh.film.panel.resPrice.replace('{price}', '0.4')}|480P${zh.film.panel.resPrice.replace('{price}', '0.26')}`, '应用后分辨率与价格是新档的')
+  await click(trigger('film-resolution'))
+  const sndItems = await openSelect(snd())
+  must(sndItems.map((o) => o.getAttribute('data-value')).join('|') === 'tts_all|silent', '应用后声音选项是新档的')
+  await click(snd())
   // 10f-2. 原档位已不可用：tier 为 null、非空旧 id、空档位表，下拉都停在占位项，摘要写「原档位已不可用」
-  const tierSel = () => container.querySelector<HTMLSelectElement>('select[data-testid="film-tier"]')!
-  const gone = () => must(sum().includes(zh.film.panel.tierGone) && tierSel().value === '' && tierSel().options[0].disabled, '摘要与下拉占位')
+  const tierSel = () => trigger('film-tier')
+  const gone = async () => {
+    const items = await openSelect(tierSel())
+    must(sum().includes(zh.film.panel.tierGone) && tierSel().textContent?.includes(zh.film.panel.tierGone)
+         && items[0]?.hasAttribute('disabled'), '摘要与下拉占位')
+    await click(tierSel())
+  }
   film = { ...film!, tier: null }
   await refresh()
-  gone()
+  await gone()
   film = { ...film!, tier: 'a-standard' }       // 非空，但不在可选表里
   await refresh()
-  gone()
+  await gone()
   // 占位项是默认值：直接选第一项（演示）也能触发变更，并随应用提交
-  await pick(tierSel(), 'demo')
+  await pickSelect(tierSel(), 'demo')
   await click(button('应用设置'))
   must((lastSettings as Record<string, unknown>).tier === 'demo', '重新选第一项后应用提交该档')
   const saved = film!.options.tiers
   film = { ...film!, tier: 'a-standard', options: { ...film!.options, tiers: [] } }   // 空档位表
   await refresh()
-  must(sum().includes(zh.film.panel.tierGone) && tierSel().value === '' && tierSel().options.length === 1, '空档位表只有占位')
+  const emptyItems = await openSelect(tierSel())
+  must(sum().includes(zh.film.panel.tierGone) && tierSel().textContent?.includes(zh.film.panel.tierGone)
+       && emptyItems.length === 1, '空档位表只有占位')
+  await click(tierSel())
   film = { ...film!, options: { ...film!.options, tiers: saved } }
   film = { ...film!, tier: 'demo' }
   await refresh()
@@ -630,7 +650,8 @@ console.log('10c. 出错后轮询不断 ✓')
   const plain = await renderPanel(null)
   must(!plain.includes('ZZ-Vendor') && !plain.includes('MiniMax'), '没有提示数据：不出现厂商字样')
   const admin = await renderPanel(HINTS)
-  const opts = [...container.querySelectorAll<HTMLOptionElement>('select[data-testid="film-tier"] option')].map((o) => o.textContent)
+  const opts = (await openSelect(trigger('film-tier'))).map((o) => o.textContent)
+  await click(trigger('film-tier'))
   must(opts.join('|') === `${zh.srv.tier.demo}（ZZ-Vendor Demo）|${zh.srv.tier.a_fast}（MiniMax H3 Highspeed）`, 'H1 下拉选项')
   must((container.querySelector('.film__settings summary')?.textContent ?? '').includes(`${zh.srv.tier.demo}（ZZ-Vendor Demo）`), 'H2 摘要')
   must(admin.includes(`${zh.srv.film.vendor.balance}（ZZ-Vendor Demo）`), 'H4 生成服务侧的失败带提示')

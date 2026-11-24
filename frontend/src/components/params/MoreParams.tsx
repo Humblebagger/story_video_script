@@ -21,19 +21,19 @@ export function MoreParams({ value, onChange, prefixRef }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <Field label={t('params.colorTone')}>
-        <SelectOrCustom value={value.color_tone} options={COLOR_TONES}
+        <SelectOrCustom value={value.color_tone} options={COLOR_TONES} ariaLabel={t('params.colorTone')}
                         onChange={(v) => set('color_tone', v)} placeholder={t('params.colorTonePh')} />
       </Field>
       <Field label={t('params.platform')}>
-        <SelectOrCustom value={value.target_platform} options={TARGET_PLATFORMS}
+        <SelectOrCustom value={value.target_platform} options={TARGET_PLATFORMS} ariaLabel={t('params.platform')}
                         onChange={(v) => set('target_platform', v)} />
       </Field>
       <Field label={t('params.artStyle')}>
-        <SelectOrCustom value={value.art_style} options={ART_STYLES}
+        <SelectOrCustom value={value.art_style} options={ART_STYLES} ariaLabel={t('params.artStyle')}
                         onChange={(v) => set('art_style', v)} placeholder={t('params.artStylePh')} />
       </Field>
       <Field label={t('params.voice')}>
-        <SelectOrCustom value={value.tts_voice} options={TTS_VOICES}
+        <SelectOrCustom value={value.tts_voice} options={TTS_VOICES} ariaLabel={t('params.voice')}
                         onChange={(v) => set('tts_voice', v)} placeholder={t('params.voicePh')} />
       </Field>
       <div className="flex flex-col gap-1.5 text-sm">

@@ -7,6 +7,7 @@ import { motion } from 'motion/react'
 import { BellRing, X } from 'lucide-react'
 import { EmptyState } from '@/components/common/EmptyState'
 import { StatusPill } from '@/components/common/StatusPill'
+import { TruncatedText } from '@/components/common/TruncatedText'
 import type { Tone } from '@/components/common/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -90,7 +91,7 @@ export function ActivityPanel({
     : t(`activity.film.state.${tk.state}` as MsgKey))
   /** 定位行：小说 › 章节 › 片段与镜号。窄了截断，悬停看全称 */
   const where = (text: string, strong = false) => (
-    <p className={`truncate text-sm${strong ? ' font-medium' : ''}`} title={text} data-testid="activity-where">{text}</p>
+    <TruncatedText text={text} lines={1} strong={strong} className="text-sm" testId="activity-where" />
   )
   const endedAt = (iso: string | null | undefined) => {
     const text = clockText(iso)

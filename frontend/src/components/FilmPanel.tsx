@@ -3,9 +3,15 @@
  *  花钱的按钮上都写着金额；批量和超过确认线的单段先弹确认（useFilm 决定发不发请求）。
  *  有未保存的改动或完整性检查没过时，所有出片按钮禁用并写明原因。 */
 import { useEffect, useRef, useState } from 'react'
-import { Play } from 'lucide-react'
+import type { RefObject } from 'react'
+import { ArrowLeft, CheckCircle2, Images, Play, RefreshCw, Save, Wallet } from 'lucide-react'
 import { ATTEMPT_STATE, AUDIO_MODE, FILM_STATE, filmStateText, label } from '../labels'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { FormField, FieldHint, InlineAlert } from '@/components/ui/form-field'
+import { NumberField } from '@/components/ui/number-field'
+import { SelectMenu } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { StatusPill } from '@/components/common/StatusPill'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
@@ -38,12 +44,31 @@ interface Props {
   /** 点「播放」（画布弹播放窗口）；点取消（画布弹确认框） */
   onPlay?: (id: string) => void
   onCancel?: (id: string) => void
+  /** 直接修复阻塞项：保存未保存的改动、打开资产、退回分镜页 */
+  onSave?: () => void
+  onOpenAssets?: () => void
+  onBackToBoard?: () => void
 }
 
-export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel }: Props) {
+export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel,
+                            onSave, onOpenAssets, onBackToBoard }: Props) {
   const { t, locale } = useI18n()
+  const settingsRef = useRef<HTMLDetailsElement>(null)
   const s = film.session
-  if (film.status === 'loading') return <p className="tlc__kfnote">{t('film.panel.loading')}</p>
+  if (film.status === 'loading') {
+    return (
+      <div className="film film--loading" aria-busy="true" aria-label={t('film.panel.loading')}>
+        {[0, 1, 2].map((n) => (
+          <section key={n} className="film__card">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-9 w-full" />
+            {n === 0 && <Skeleton className="h-9 w-full" />}
+          </section>
+        ))}
+      </div>
+    )
+  }
   const blocked = dirty ? t('film.panel.blockedDirty')
     : film.gate ? t('film.panel.blockedGate', { gate: formatMsg(film.gate, locale) }) : null
   const clip = s?.clips.find((c) => c.id === selected)
@@ -51,16 +76,20 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
   return (
     <div className="film">
       {film.error && (
-        <p className="tlc__kferr">
+        <InlineAlert
+          tone="error"
+          title={t('film.panel.errorTitle')}
+          action={<Button size="sm" variant="ghost" data-testid="film-error-dismiss" onClick={film.dismissError}>{t('common.close')}</Button>}
+        >
           {formatMsg(film.error, locale)}
-          <button type="button" className="tlc__linkbtn" data-testid="film-error-dismiss" onClick={film.dismissError}>{t('common.close')}</button>
-        </p>
+        </InlineAlert>
       )}
-      {blocked && <p className="tlc__notice">{blocked}</p>}
       {s && <FilmConfirm s={s} film={film} blocked={blocked} />}
       {!s ? (
         <section className="film__card">
-          <p className="tlc__kfnote">{t('film.panel.intro')}</p>
+          <InlineAlert tone="info" title={t('film.panel.createTitle')}>
+            {t('film.panel.intro')}
+          </InlineAlert>
           <Button size="sm" className="self-start" disabled={!!blocked || film.busy} onClick={() => void film.create()}>
             {t('film.panel.create')}
           </Button>
@@ -68,15 +97,22 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
       ) : (
         <>
           <Settings key={[s.tier, s.resolution, s.audio_mode, s.budget_cny, s.confirm_over_cny].join('|')}
-                    s={s} film={film} />
-          <Precheck s={s} gateOk={!film.gate} />
-          <Overview s={s} film={film} selected={selected} blocked={blocked} />
+                    s={s} film={film} panelRef={settingsRef} />
+          <Blockers s={s} film={film} dirty={dirty} blocked={blocked}
+                    onSave={onSave} onOpenAssets={onOpenAssets} onBackToBoard={onBackToBoard} />
+          <CostSummary s={s} film={film} selected={selected} blocked={blocked} />
           {clip
             ? <ClipDetail key={clip.id} c={clip} s={s} film={film} blocked={blocked} onPickShot={onPickShot}
                           onPlay={onPlay} onCancel={onCancel} />
             : freeSel ? <FreeDetail key={freeSel.id} n={freeSel} s={s} film={film} />
             : <p className="tlc__kfnote">{t('film.panel.pickClip')}</p>}
-          <ComposePanel film={film} dirty={dirty} />
+          <ComposePanel film={film} dirty={dirty} onSave={onSave} onBackToBoard={onBackToBoard}
+                        onOpenSettings={() => {
+                          const el = settingsRef.current
+                          if (!el) return
+                          el.open = true
+                          el.scrollIntoView({ block: 'start', behavior: 'smooth' })
+                        }} />
         </>
       )}
     </div>
@@ -84,7 +120,9 @@ export function FilmPanel({ film, selected, onPickShot, dirty, onPlay, onCancel 
 }
 
 /** 设置：首次展开，出过片后折叠。改了才能「应用设置」；有段在跑时不能改 */
-function Settings({ s, film }: { s: FilmSession; film: Film }) {
+function Settings({ s, film, panelRef }: {
+  s: FilmSession; film: Film; panelRef: RefObject<HTMLDetailsElement | null>
+}) {
   const { t, locale } = useI18n()
   const tierHint = useTierHint()
   const withHint = useWithHint()
@@ -105,6 +143,8 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   const resolutions = picked ? picked.resolutions : s.options.resolutions
   const prices = picked ? picked.cny_per_sec : s.options.cny_per_sec
   const audioModes = picked ? picked.audio_modes : s.options.audio_modes
+  const budgetBad = !Number.isFinite(val('budget_cny')) || val('budget_cny') < 1
+  const confirmBad = !Number.isFinite(val('confirm_over_cny')) || val('confirm_over_cny') < 0
   const pickTier = (id: string) => {
     const nt = tiers.find((o) => o.id === id)
     if (!nt) return
@@ -115,47 +155,65 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
     })
   }
   return (
-    <details className="film__settings film__card" open={!tried}>
+    <details ref={panelRef} className="film__settings film__card" open={!tried}>
       <summary>
+        <span className="film__eyebrow">{t('film.panel.sectionSettings')}</span>
         {t('film.panel.settingsSum', { tier: tierName(s.tier), res: s.resolution,
           audio: label(AUDIO_MODE, s.audio_mode), cap: yuan(s.budget_cny) })}
       </summary>
-      <label className="field">
-        <span>{t('film.panel.tier')}</span>
-        <select data-testid="film-tier" value={tierId} onChange={(e) => pickTier(e.target.value)}>
-          {!tierValid ? <option value="" disabled>{t('film.panel.tierGone')}</option> : null}
-          {tiers.map((o) => <option key={o.id} value={o.id}>{withHint(formatMsg(o.label, locale), tierHint(o.id))}</option>)}
-        </select>
-      </label>
-      <label className="field">
-        <span>{t('film.panel.resolution')}</span>
-        <select data-testid="film-resolution" value={val('resolution')} onChange={(e) => setDraft({ ...draft, resolution: e.target.value })}>
-          {resolutions.map((r) => {
+      <FormField label={t('film.panel.tier')}>
+        <SelectMenu
+          className="ui-select"
+          testId="film-tier"
+          ariaLabel={t('film.panel.tier')}
+          value={tierId}
+          options={[
+            ...(!tierValid ? [{ value: '', label: t('film.panel.tierGone'), disabled: true }] : []),
+            ...tiers.map((o) => ({
+              value: o.id,
+              label: withHint(formatMsg(o.label, locale), tierHint(o.id)),
+            })),
+          ]}
+          onChange={pickTier}
+        />
+      </FormField>
+      <FormField label={t('film.panel.resolution')}>
+        <SelectMenu
+          className="ui-select"
+          testId="film-resolution"
+          ariaLabel={t('film.panel.resolution')}
+          value={val('resolution')}
+          options={resolutions.map((r) => {
             const price = prices[r]
-            return <option key={r} value={r}>{`${r}${price !== undefined ? t('film.panel.resPrice', { price }) : ''}`}</option>
+            return {
+              value: r,
+              label: `${r}${price !== undefined ? t('film.panel.resPrice', { price }) : ''}`,
+            }
           })}
-        </select>
-      </label>
-      <label className="field">
-        <span>{t('film.panel.sound')}</span>
-        <select value={val('audio_mode')}
-                onChange={(e) => setDraft({ ...draft, audio_mode: e.target.value as AudioMode })}>
-          {audioModes.map((m) => <option key={m} value={m}>{label(AUDIO_MODE, m)}</option>)}
-        </select>
-      </label>
-      <label className="field">
-        <span>{t('film.panel.budget')}</span>
-        <input type="number" min={1} step={10} value={val('budget_cny')}
-               onChange={(e) => setDraft({ ...draft, budget_cny: Number(e.target.value) })} />
-      </label>
-      <label className="field">
-        <span>{t('film.panel.confirmOver')}</span>
-        <input type="number" min={0} step={5} value={val('confirm_over_cny')}
-               onChange={(e) => setDraft({ ...draft, confirm_over_cny: Number(e.target.value) })} />
-      </label>
-      <p className="tlc__kfnote">{t('film.panel.settingsNote')}</p>
+          onChange={(v) => setDraft({ ...draft, resolution: v })}
+        />
+      </FormField>
+      <FormField label={t('film.panel.sound')}>
+        <SelectMenu
+          className="ui-select"
+          ariaLabel={t('film.panel.sound')}
+          value={val('audio_mode')}
+          options={audioModes.map((m) => ({ value: m, label: label(AUDIO_MODE, m) }))}
+          onChange={(v) => setDraft({ ...draft, audio_mode: v as AudioMode })}
+        />
+      </FormField>
+      <FormField label={t('film.panel.budget')} required error={budgetBad ? t('film.panel.budgetInvalid') : undefined}>
+        <NumberField value={val('budget_cny')}
+                     onChange={(e) => setDraft({ ...draft, budget_cny: e.target.value === '' ? 0 : Number(e.target.value) })} />
+      </FormField>
+      <FormField label={t('film.panel.confirmOver')} hint={t('film.panel.confirmOverHint')}
+                 error={confirmBad ? t('film.panel.confirmInvalid') : undefined}>
+        <NumberField value={val('confirm_over_cny')}
+                     onChange={(e) => setDraft({ ...draft, confirm_over_cny: e.target.value === '' ? 0 : Number(e.target.value) })} />
+      </FormField>
+      <FieldHint>{t('film.panel.settingsNote')}</FieldHint>
       <Button size="sm" variant="outline" className="self-start"
-              disabled={!Object.keys(draft).length || flying || film.busy}
+              disabled={!Object.keys(draft).length || flying || film.busy || budgetBad || confirmBad}
               onClick={() => void film.saveSettings(draft)}>
         {t('film.panel.apply')}
       </Button>
@@ -164,37 +222,93 @@ function Settings({ s, film }: { s: FilmSession; film: Film }) {
   )
 }
 
-/** 前置检查：待核对的段、缺参考图的资产、被裁 / 截断的段 */
-function Precheck({ s, gateOk }: { s: FilmSession; gateOk: boolean }) {
-  const { t } = useI18n()
+/** 阻塞项：每个阻塞原因一张提示卡，并给可直接执行的修复入口。 */
+function Blockers({ s, film, dirty, blocked, onSave, onOpenAssets, onBackToBoard }: {
+  s: FilmSession; film: Film; dirty: boolean; blocked: string | null
+  onSave?: () => void; onOpenAssets?: () => void; onBackToBoard?: () => void
+}) {
+  const { t, locale } = useI18n()
   const sep = t('common.listSep')
   const p = precheck(s)
-  const passed = gateOk ? <p className="tlc__kfnote">{t('film.panel.gateOk')}</p> : null
-  if (!s.uncertain_count && !p.missing.length && !p.trimmed.length && !p.truncated.length) return passed
+  const count = Number(dirty) + Number(!!film.gate) + Number(!!s.uncertain_count) + p.missing.length
+    + p.trimmed.length + p.truncated.length
+  if (!count) {
+    return (
+      <p className="film__passed">
+        <CheckCircle2 aria-hidden />
+        {t('film.panel.gateOk')}
+      </p>
+    )
+  }
   return (
-    <section className="film__check film__card">
-      {passed}
-      {!!s.uncertain_count && (
-        <p className="tlc__kferr">
-          {t('film.panel.uncertain', { n: s.uncertain_count })}
-        </p>
+    <section className="film__check film__card film__blockers">
+      <header className="film__sectionhead">
+        <div>
+          <span className="film__eyebrow">{t('film.panel.sectionBlockers')}</span>
+          <h4>{t('film.panel.blockersTitle')}</h4>
+        </div>
+        <span className="film__badge">{t('film.panel.blockersCount', { n: count })}</span>
+      </header>
+      {dirty && (
+        <InlineAlert tone="warning" title={t('film.panel.dirtyTitle')}
+                     action={onSave && <Button size="sm" variant="outline" onClick={onSave}><Save aria-hidden />{t('film.panel.goSave')}</Button>}>
+          {t('film.panel.blockedDirty')}
+        </InlineAlert>
       )}
-      {!!p.missing.length && <p>{t('film.panel.missingRefs', { list: p.missing.join(sep) })}</p>}
-      {!!p.trimmed.length && <p>{t('film.panel.trimmedClips', { list: p.trimmed.join(sep) })}</p>}
-      {!!p.truncated.length && <p>{t('film.panel.truncatedClips', { list: p.truncated.join(sep) })}</p>}
+      {film.gate && (
+        <InlineAlert tone="error" title={t('film.panel.gateTitle')}
+                     action={(
+                       <span className="film__alertacts">
+                         {onBackToBoard && <Button size="sm" variant="outline" onClick={onBackToBoard}><ArrowLeft aria-hidden />{t('film.panel.goStoryboard')}</Button>}
+                         <Button size="sm" variant="ghost" onClick={() => void film.load()}><RefreshCw aria-hidden />{t('film.panel.recheck')}</Button>
+                       </span>
+                     )}>
+          {formatMsg(film.gate, locale)}
+        </InlineAlert>
+      )}
+      {!!s.uncertain_count && (
+        <InlineAlert tone="warning" title={t('film.panel.uncertainTitle')}
+                     action={<Button size="sm" variant="ghost" onClick={() => void film.load()}><RefreshCw aria-hidden />{t('film.panel.refresh')}</Button>}>
+          {t('film.panel.uncertain', { n: s.uncertain_count })}
+        </InlineAlert>
+      )}
+      {!!p.missing.length && (
+        <InlineAlert tone="warning" title={t('film.panel.missingTitle')}
+                     action={onOpenAssets && <Button size="sm" variant="outline" onClick={onOpenAssets}><Images aria-hidden />{t('film.panel.goAssets')}</Button>}>
+          {t('film.panel.missingRefs', { list: p.missing.join(sep) })}
+        </InlineAlert>
+      )}
+      {!!p.trimmed.length && (
+        <InlineAlert tone="warning" title={t('film.panel.trimmedTitle')}>
+          {t('film.panel.trimmedClips', { list: p.trimmed.join(sep) })}
+        </InlineAlert>
+      )}
+      {!!p.truncated.length && (
+        <InlineAlert tone="warning" title={t('film.panel.truncatedTitle')}>
+          {t('film.panel.truncatedClips', { list: p.truncated.join(sep) })}
+        </InlineAlert>
+      )}
+      {blocked && !dirty && !film.gate && <InlineAlert tone="warning" title={t('film.panel.blockedTitle')}>{blocked}</InlineAlert>}
     </section>
   )
 }
 
-/** 总览：各状态计数、钱（已花 / 在跑预留 / 剩余预估 / 上限）、主按钮 */
-function Overview({ s, film, selected, blocked }: {
+/** 费用预估：常驻摘要（已花 / 在跑预留 / 剩余预估 / 上限）与主按钮 */
+function CostSummary({ s, film, selected, blocked }: {
   s: FilmSession; film: Film; selected: string | null; blocked: string | null
 }) {
   const { t } = useI18n()
   const next = mainAction(s, selected)
   const used = Math.min(100, ((s.spent_cny + s.reserved_cny) / s.budget_cny) * 100)
   return (
-    <section className="film__overview film__card">
+    <section className="film__overview film__card film__cost">
+      <header className="film__sectionhead">
+        <div>
+          <span className="film__eyebrow">{t('film.panel.sectionCost')}</span>
+          <h4>{t('film.panel.costTitle')}</h4>
+        </div>
+        <span className="film__costmark"><Wallet aria-hidden />{yuan(s.remaining_cny)}</span>
+      </header>
       <div className="film__counts">
         <b>{t('film.panel.clips', { n: s.clips.length })}</b>
         {Object.entries(s.counts).map(([k, n]) => (
@@ -208,12 +322,15 @@ function Overview({ s, film, selected, blocked }: {
         </p>
       )}
       <div className="film__money">
-        <span>{t('film.panel.spent', { v: yuan(s.spent_cny) })}</span>
-        {s.reserved_cny > 0 && <span>{t('film.panel.reserved', { v: yuan(s.reserved_cny) })}</span>}
-        <span>{t('film.panel.remaining', { v: yuan(s.remaining_cny) })}</span>
-        <span>{t('film.panel.cap', { v: yuan(s.budget_cny) })}</span>
+        <span data-tone="spent"><small>{t('film.panel.spentLabel')}</small><b>{yuan(s.spent_cny)}</b></span>
+        {s.reserved_cny > 0 && <span data-tone="reserved"><small>{t('film.panel.reservedLabel')}</small><b>{yuan(s.reserved_cny)}</b></span>}
+        <span data-tone="remaining"><small>{t('film.panel.remainingLabel')}</small><b>{yuan(s.remaining_cny)}</b></span>
+        <span data-tone="cap"><small>{t('film.panel.capLabel')}</small><b>{yuan(s.budget_cny)}</b></span>
       </div>
-      <div className="film__bar" title={t('film.panel.barTip')}><i style={{ width: `${used}%` }} /></div>
+      <div className="film__barrow">
+        <div className="film__bar" title={t('film.panel.barTip')}><i style={{ width: `${used}%` }} /></div>
+        <span>{Math.round(used)}%</span>
+      </div>
       {next.kind === 'try' && (
         <Button size="sm" disabled={!!blocked || film.busy} onClick={() => void film.runClip(next.clip)}>
           {t('film.panel.tryOne', { id: next.clip.id, cost: yuan(next.clip.estimate_cny) })}
@@ -333,8 +450,8 @@ function ClipDetail({ c, s, film, blocked, onPickShot, onPlay, onCancel }: {
             : t('film.panel.runBtn', { what: t(redo ? 'film.panel.redo' : 'film.panel.make'), cost: yuan(c.estimate_cny) })}
         </Button>
         <label className="check" title={t('film.panel.muteTip')}>
-          <input type="checkbox" checked={c.mute_native} disabled={film.busy}
-                 onChange={(e) => void film.mute(c.id, e.target.checked)} />
+          <Checkbox checked={c.mute_native} disabled={film.busy}
+                    onChange={(e) => void film.mute(c.id, e.target.checked)} />
           {t('film.panel.mute')}
         </label>
       </div>

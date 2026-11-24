@@ -65,10 +65,13 @@ export function ErrorsTab() {
     }
   }
   const row = (r: ErrorRefRow) => (
-    <tr key={r.ref}>
-      <td>{when(r.at)}</td><td>{r.username ?? r.user_id ?? '—'}</td>
-      <td className="adm__mono">{r.ref}</td><td>{explain(r)}</td><td className="adm__mono">{r.where || '—'}</td>
-      <td><Detail r={r} /></td>
+    <tr key={r.ref} className="adm__row" data-testid={`errors-row-${r.ref}`}>
+      <td data-label={c('time')}>{when(r.at)}</td>
+      <td data-label={c('user')}>{r.username ?? r.user_id ?? '—'}</td>
+      <td className="adm__mono" data-label={c('ref')}>{r.ref}</td>
+      <td data-label={c('what')}>{explain(r)}</td>
+      <td className="adm__mono" data-label={c('where')}>{r.where || '—'}</td>
+      <td className="adm__cell--wide" data-label={c('detail')}><Detail r={r} /></td>
     </tr>
   )
   const head = (
@@ -81,10 +84,11 @@ export function ErrorsTab() {
   else if (!data) body = <TableSkeleton />
   else if (!data.length) body = <Empty tone="clay" icon={<TriangleAlert aria-hidden />}
                                      title={t('admin.errors.empty')} hint={t('admin.errors.emptyHint')} />
-  else body = <table className="adm__table">{head}<tbody>{data.map(row)}</tbody></table>
+  else body = <table className="adm__table adm__table--cards">{head}<tbody>{data.map(row)}</tbody></table>
   return (
     <section className="adm__sec">
-      <PageHead title={t('admin.nav.pages.errors')}>
+      <PageHead title={t('admin.nav.pages.errors')}
+                hint={data ? t('admin.errors.hint', { n: data.length }) : t('admin.errors.hintLoading')}>
         <RefreshButton label={t('admin.errors.refresh')} onClick={reload} />
       </PageHead>
       <form className="adm__bar" onSubmit={(e) => { e.preventDefault(); void lookup() }}>
@@ -99,7 +103,7 @@ export function ErrorsTab() {
           <AdminLink to={adminPath('safety')}>{t('admin.errors.safetyGo')}</AdminLink>
         </p>
       )}
-      {hit && <table className="adm__table">{head}<tbody>{row(hit)}</tbody></table>}
+      {hit && <table className="adm__table adm__table--cards">{head}<tbody>{row(hit)}</tbody></table>}
       {body}
     </section>
   )

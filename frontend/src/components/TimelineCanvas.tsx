@@ -1039,7 +1039,8 @@ export function TimelineCanvas({
         {shown === 'novel' && bench && <NovelPanel bench={bench} />}
         {shown === 'film' && film.enabled && (
           <FilmPanel film={film} selected={clipSel} onPickShot={selectShot} dirty={dirty}
-                     onPlay={(id) => setPlayer({ id })} onCancel={(id) => void cancelItem(id)} />
+                     onPlay={(id) => setPlayer({ id })} onCancel={(id) => void cancelItem(id)}
+                     onSave={onSave} onOpenAssets={() => setPanel('assets')} onBackToBoard={onClose} />
         )}
         {shown === 'tasks' && bench && <TaskPanel bench={bench} dirty={dirty} />}
         {shown === 'shot' && cur && <>

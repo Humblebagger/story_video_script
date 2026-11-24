@@ -8,6 +8,8 @@ export interface SelectOption {
   label: React.ReactNode
   /** 选项的补充说明；触发器只显示 label，避免长描述把控件撑坏 */
   description?: string
+  /** 分组标题，用于后台导航这类长选项表 */
+  group?: string
   disabled?: boolean
 }
 
@@ -17,6 +19,10 @@ interface SelectMenuProps {
   onChange: (value: string) => void
   placeholder?: string
   ariaLabel: string
+  "aria-describedby"?: string
+  "aria-invalid"?: boolean
+  id?: string
+  testId?: string
   title?: string
   className?: string
   disabled?: boolean
@@ -25,10 +31,13 @@ interface SelectMenuProps {
 
 /** 产品内统一的单选下拉。原生 select 的系统弹层无法跟随主题，这里用 listbox。 */
 export function SelectMenu({
-  value, options, onChange, placeholder = "—", ariaLabel, title, className, disabled,
-  menuMinWidth,
+  value, options, onChange, placeholder = "—", ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid,
+  id, testId, title, className,
+  disabled, menuMinWidth,
 }: SelectMenuProps) {
-  const id = React.useId()
+  const generatedId = React.useId()
+  const triggerId = id ?? generatedId
+  const listboxId = `${triggerId}-listbox`
   const [open, setOpen] = React.useState(false)
   const [active, setActive] = React.useState(0)
   const [menuWidth, setMenuWidth] = React.useState(120)
@@ -47,9 +56,9 @@ export function SelectMenu({
   React.useEffect(() => {
     if (!open) return
     listRef.current
-      ?.querySelector<HTMLElement>(`#${CSS.escape(`${id}-option-${active}`)}`)
+      ?.querySelector<HTMLElement>(`#${CSS.escape(`${triggerId}-option-${active}`)}`)
       ?.scrollIntoView?.({ block: "nearest" })
-  }, [active, id, open])
+  }, [active, open, triggerId])
 
   const handleOpenChange = (next: boolean) => {
     if (next) {
@@ -97,12 +106,16 @@ export function SelectMenu({
       <PopoverPrimitive.Trigger asChild>
         <button
           ref={triggerRef}
+          id={triggerId}
+          data-testid={testId}
           type="button"
           className={cn("ed ed--sel sel__trigger", className)}
           aria-label={ariaLabel}
+          aria-describedby={describedBy}
+          aria-invalid={invalid}
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-controls={`${id}-listbox`}
+          aria-controls={listboxId}
           title={selected?.description ?? title}
           disabled={disabled}
           onKeyDown={(event) => {
@@ -129,39 +142,45 @@ export function SelectMenu({
         >
           <div
             ref={listRef}
-            id={`${id}-listbox`}
+            id={listboxId}
             role="listbox"
             tabIndex={-1}
             aria-label={ariaLabel}
-            aria-activedescendant={options[active] ? `${id}-option-${active}` : undefined}
+            aria-describedby={describedBy}
+            aria-activedescendant={options[active] ? `${triggerId}-option-${active}` : undefined}
             className="sel__viewport"
             onKeyDown={onListKeyDown}
           >
             {options.map((option, index) => (
-              <button
-                key={option.value || "__empty__"}
-                id={`${id}-option-${index}`}
-                type="button"
-                role="option"
-                aria-selected={option.value === (value ?? "")}
-                disabled={option.disabled}
-                tabIndex={-1}
-                className={cn("sel__item", index === active && "is-active")}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => pick(option)}
-              >
-                <span className="sel__itemtext">
-                  <span className="sel__itemlabel">{option.label}</span>
-                  {option.description && (
-                    <span className="sel__itemdesc">{option.description}</span>
-                  )}
-                </span>
-                {option.value === (value ?? "") && (
-                  <span className="sel__check">
-                    <Check size={14} aria-hidden />
-                  </span>
+              <React.Fragment key={option.value || "__empty__"}>
+                {option.group && option.group !== options[index - 1]?.group && (
+                  <div className="sel__group" role="presentation">{option.group}</div>
                 )}
-              </button>
+                <button
+                  id={`${triggerId}-option-${index}`}
+                  data-value={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={option.value === (value ?? "")}
+                  disabled={option.disabled}
+                  tabIndex={-1}
+                  className={cn("sel__item", index === active && "is-active")}
+                  onMouseEnter={() => setActive(index)}
+                  onClick={() => pick(option)}
+                >
+                  <span className="sel__itemtext">
+                    <span className="sel__itemlabel">{option.label}</span>
+                    {option.description && (
+                      <span className="sel__itemdesc">{option.description}</span>
+                    )}
+                  </span>
+                  {option.value === (value ?? "") && (
+                    <span className="sel__check">
+                      <Check size={14} aria-hidden />
+                    </span>
+                  )}
+                </button>
+              </React.Fragment>
             ))}
           </div>
         </PopoverPrimitive.Content>

@@ -105,6 +105,8 @@ export const enAdmin: AdminMessages = {
   },
   errors: {
     refresh: 'Refresh', lookup: 'Look up', placeholder: 'Reference reported by the user',
+    hint: 'The latest {n} unexpected failures. Open Details to load the redacted log.',
+    hintLoading: 'Unexpected failures are logged here with a reference so users can report them.',
     empty: 'No error records yet', emptyHint: 'Unexpected failures are logged here with a reference (latest 1,000 kept).', detail: 'Details',
     cols: { time: 'Time', user: 'User', ref: 'Reference', what: 'What', where: 'Where', detail: 'Details' },
     safetyHit: 'This is a blocked-content record: {id}', safetyGo: 'Open it in Blocked content',

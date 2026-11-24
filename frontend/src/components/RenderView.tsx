@@ -1,6 +1,8 @@
 import { ChevronRight, CircleDollarSign, Clapperboard, Images } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { SelectMenu } from '@/components/ui/select'
 import { ApiError, renderPlan } from '../api'
 import type { RenderPack, Storyboard, VerificationReport } from '../types'
 import { VerificationPanel } from './VerificationPanel'
@@ -99,25 +101,38 @@ export function RenderView({ doc, runId }: Props) {
           </p>
         </div>
         <div className="rend__acts">
-          <label className="rend__len">
-            {t('renderPack.maxClip')}
-            <select value={maxClip} disabled={busy}
-                    onChange={(e) => {
-                      const v = Number(e.target.value)
-                      setMaxClip(v)
-                      void build({ maxClipSeconds: v })
-                    }}>
-              {CLIP_LENGTHS.map((s) => <option key={s} value={s}>{t('renderPack.secs', { s })}</option>)}
-            </select>
-          </label>
-          <label className="rend__len">
-            {t('renderPack.tier')}
-            <select value={model} disabled={busy}
-                    onChange={(e) => { setModel(e.target.value); void build({ model: e.target.value }) }}>
-              {(plan?.tiers ?? [{ id: 'standard', label: t('renderPack.tierDefault') }])
-                .map((tier) => <option key={tier.id} value={tier.id}>{tier.label}</option>)}
-            </select>
-          </label>
+          <div className="rend__len">
+            <span>{t('renderPack.maxClip')}</span>
+            <SelectMenu
+              className="ui-select rend__sel"
+              testId="render-maxclip"
+              ariaLabel={t('renderPack.maxClip')}
+              value={String(maxClip)}
+              disabled={busy}
+              options={CLIP_LENGTHS.map((s) => ({
+                value: String(s),
+                label: t('renderPack.secs', { s }),
+              }))}
+              onChange={(v) => {
+                const n = Number(v)
+                setMaxClip(n)
+                void build({ maxClipSeconds: n })
+              }}
+            />
+          </div>
+          <div className="rend__len">
+            <span>{t('renderPack.tier')}</span>
+            <SelectMenu
+              className="ui-select rend__sel"
+              testId="render-tier"
+              ariaLabel={t('renderPack.tier')}
+              value={model}
+              disabled={busy}
+              options={(plan?.tiers ?? [{ id: 'standard', label: t('renderPack.tierDefault') }])
+                .map((tier) => ({ value: tier.id, label: tier.label }))}
+              onChange={(v) => { setModel(v); void build({ model: v }) }}
+            />
+          </div>
           <label className="rend__len" title={t('renderPack.rateTip')}>
             {t('renderPack.rate')}
             <input className="rend__rate" value={rate} placeholder={t('renderPack.ratePh')}
@@ -281,9 +296,9 @@ export function RenderView({ doc, runId }: Props) {
             {plan.clips.map((c) => (
               <li className={`rclip${picked && !picked.has(c.id) ? ' is-off' : ''}`} key={c.id}>
                 <span className="rclip__pick">
-                  <input type="checkbox" checked={!picked || picked.has(c.id)}
-                         title={t('renderPack.pickTip')}
-                         onChange={() => toggle(c.id)} />
+                  <Checkbox checked={!picked || picked.has(c.id)}
+                            title={t('renderPack.pickTip')}
+                            onChange={() => toggle(c.id)} />
                 </span>
                 <button className="rclip__head" onClick={() =>
                   setOpen(open === c.id ? null : c.id)}>

@@ -134,12 +134,9 @@ const wrap = (node: ReactNode) => (
 
 // 3. 筛选：切到「已放行」「全部」；按编号查找
 {
-  const select = byId('safety-status') as unknown as HTMLSelectElement
-  await act(async () => {
-    select.value = 'released'
-    select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-  })
-  await settle()
+  const select = byId('safety-status')!
+  const released = [...select.querySelectorAll('button')].find((b) => b.getAttribute('data-value') === 'released')!
+  await click(released)
   must(calls.includes('GET /admin/safety/blocks?status=released') && !!byId('safety-row-BLOCK001')
        && byId('safety-row-BLOCK001')!.textContent!.includes('已放行'), '已放行列表')
   await type(container.querySelector('input')!, 'block002')

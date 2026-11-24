@@ -465,6 +465,13 @@ const click = async (el: HTMLElement) => {
   await act(async () => { el.click() })
   await settle()
 }
+async function pickSelect(trigger: HTMLElement, value: string) {
+  await click(trigger)
+  const item = [...win.document.querySelectorAll<HTMLElement>('.sel__content[data-state="open"] .sel__item')]
+    .find((x) => x.getAttribute('data-value') === value)
+  if (!item) throw new Error(`✗ 下拉里找不到 ${value}`)
+  await click(item)
+}
 const confirmDialog = () => win.document.body.querySelector('[data-testid="confirm-dialog"]')
 async function answer(ok: boolean) {
   const b = win.document.body.querySelector<HTMLElement>(`[data-testid="${ok ? 'confirm-ok' : 'confirm-cancel'}"]`)
@@ -1212,13 +1219,8 @@ await click(findByText('button', '看提示词'))
 must(has('0.0-5.0秒：远景，推门。'), '展开后应能逐条核对提示词')
 
 // 改 clip 上限要重新组装（切法变了，费用与 clip 数都会变）
-const lenSel = container.querySelector('.rend__len select') as unknown as HTMLSelectElement
-await act(async () => {
-  const setV = Object.getOwnPropertyDescriptor(
-    win.HTMLSelectElement.prototype, 'value')!.set!
-  setV.call(lenSel, '5')
-  lenSel.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-})
+const lenSel = container.querySelector('[data-testid="render-maxclip"]') as unknown as HTMLElement
+await pickSelect(lenSel, '5')
 await settle(150)
 must(renderCalls.length === 2 && renderCalls[1].seconds === 5,
      '改单 clip 上限应重新组装任务包')
@@ -1226,13 +1228,8 @@ must(renderCalls.length === 2 && renderCalls[1].seconds === 5,
 must(has('这是估算，点开看依据与不确定性'), '必须明示费用是估算')
 must(has('分辨率未建模'), '不确定性要如实列出，不能只给一个数')
 
-const tierSel = [...container.querySelectorAll('.rend__len select')][1] as unknown as HTMLSelectElement
-await act(async () => {
-  const setV = Object.getOwnPropertyDescriptor(
-    win.HTMLSelectElement.prototype, 'value')!.set!
-  setV.call(tierSel, 'lite')
-  tierSel.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-})
+const tierSel = container.querySelector('[data-testid="render-tier"]') as unknown as HTMLElement
+await pickSelect(tierSel, 'lite')
 await settle(150)
 must(renderCalls[renderCalls.length - 1].model === 'lite',
      '切换费率档位应重新估算')

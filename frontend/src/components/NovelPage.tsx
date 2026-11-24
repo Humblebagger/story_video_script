@@ -3,8 +3,9 @@ import { BookOpen, ShieldBan, Trash2, UserRoundCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { SelectMenu } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
@@ -272,10 +273,9 @@ export function PlotTab({ novel, busy, run }: TabProps) {
       <p className="lib__hint">{t('novel.plot.hint')}</p>
       <Card className="novel__sec plot__outline gap-3 p-4 sm:p-5">
         <span className="plot__eyebrow" aria-hidden>MAIN ARC</span>
-        <Label className="field field--wide flex-col items-stretch gap-1.5 font-normal">
-          <span>{t('novel.plot.outline')}</span>
+        <Field label={t('novel.plot.outline')} wide>
           <Textarea rows={4} value={outline} onChange={(e) => setOutlineText(e.target.value)} />
-        </Label>
+        </Field>
         <div>
           <Button size="sm" disabled={busy || outline === novel.memory.plot.outline}
                   onClick={() => void run(t('novel.plot.saveOutline'), t('novel.ok.saved'), () => setOutline(novel.id, outline))}>
@@ -352,9 +352,9 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
             {list.map((c) => (
               <li key={c.id} className={`cons__item${c.enabled ? '' : ' is-off'}`}>
                 <label className="check">
-                  <input type="checkbox" checked={c.enabled} disabled={busy}
-                         onChange={(e) => void run(t('novel.cons.whatToggle'), t('novel.ok.updated'), () =>
-                           updateConstraint(novel.id, c.id, { enabled: e.target.checked }))} />
+                  <Checkbox checked={c.enabled} disabled={busy}
+                            onChange={(e) => void run(t('novel.cons.whatToggle'), t('novel.ok.updated'), () =>
+                              updateConstraint(novel.id, c.id, { enabled: e.target.checked }))} />
                   <b>{c.text}</b>
                 </label>
                 {c.negative_prompt && <span className="cons__neg">{t('novel.cons.neg', { v: c.negative_prompt })}</span>}
@@ -503,21 +503,38 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
         <div className="form life__new">
           <div className="form__grid">
             <Field label={t('novel.life.character')}>
-              <select value={who} onChange={(e) => setWho(e.target.value)}>
-                <option value="">{t('novel.life.pickCharacter')}</option>
-                {chars.map((c) => <option key={c.id} value={c.id}>{c.id} {c.name}</option>)}
-              </select>
+              <SelectMenu
+                className="ui-select"
+                ariaLabel={t('novel.life.character')}
+                value={who}
+                options={[
+                  { value: '', label: t('novel.life.pickCharacter') },
+                  ...chars.map((c) => ({ value: c.id, label: `${c.id} ${c.name}` })),
+                ]}
+                onChange={setWho}
+              />
             </Field>
             <Field label={t('novel.life.type')}>
-              <select value={type} onChange={(e) => setType(e.target.value as LifecycleType)}>
-                {Object.entries(LIFECYCLE_TYPE).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-              </select>
+              <SelectMenu
+                className="ui-select"
+                ariaLabel={t('novel.life.type')}
+                value={type}
+                options={(Object.entries(LIFECYCLE_TYPE) as [LifecycleType, string][])
+                  .map(([v, n]) => ({ value: v, label: n }))}
+                onChange={(v) => setType(v as LifecycleType)}
+              />
             </Field>
             <Field label={t('novel.life.since')}>
-              <select value={since} onChange={(e) => setSince(e.target.value)}>
-                <option value="">{t('novel.life.wholeBook')}</option>
-                {novel.chapters.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-              </select>
+              <SelectMenu
+                className="ui-select"
+                ariaLabel={t('novel.life.since')}
+                value={since}
+                options={[
+                  { value: '', label: t('novel.life.wholeBook') },
+                  ...novel.chapters.map((c) => ({ value: c.id, label: c.title })),
+                ]}
+                onChange={setSince}
+              />
             </Field>
             <Field label={t('novel.life.detail')} wide>
               <Input value={detail} placeholder={t('novel.life.detailPh')}

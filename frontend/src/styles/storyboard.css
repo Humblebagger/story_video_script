@@ -221,14 +221,7 @@
     min-width: 44px;
     padding-inline: 0;
   }
-  .stats {
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 16px), transparent 100%);
-  }
-  .stats::-webkit-scrollbar { display: none; }
   .stats .stat {
-    flex: 0 0 92px;
     padding: 8px 10px;
   }
   .stats .stat b { font-size: 17px; }
@@ -650,6 +643,18 @@
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+.sel__group {
+  padding: 7px 10px 3px;
+  color: color-mix(in oklab, var(--content-blue) 42%, var(--ui-muted-foreground));
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.sel__group:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 .sel__item:has(.sel__itemdesc) {
   align-items: flex-start;
@@ -1293,6 +1298,7 @@
 .sheet__cards { display: none; }
 
 @media (max-width: 767px) {
+  .sheet__more { min-height: 44px; padding-inline: 12px; }
   .sheet {
     padding: 0;
     background-image: none;
@@ -1754,7 +1760,7 @@
 }
 
 @media (max-width: 767px) {
-  .sel__item { min-height: 42px; padding: 8px 34px 8px 11px; font-size: 14px; }
+  .sel__item { min-height: 44px; padding: 8px 34px 8px 11px; font-size: 14px; }
   .sel__content { border-radius: 13px; }
   .eps { padding: 12px 12px 22px; gap: 20px; }
   .ep__head { gap: 6px 8px; margin: 0; padding: 6px 4px; }

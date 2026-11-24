@@ -62,18 +62,18 @@ export function StylePicker({ value, onChange, onCustom, compact, className, 'ar
               )}
             </button>
             {!compact && (
-            <span className="absolute bottom-9 right-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+            <span className="absolute bottom-9 right-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100 max-md:static max-md:mt-1 max-md:justify-end max-md:opacity-100">
                 {img && (
                   <button type="button" data-style-reset={a.value} title={t('params.styleImageReset')}
                           aria-label={t('params.styleImageResetOf', { name: a.label })} onClick={() => clearStyleImage(a.value)}
-                          className="grid size-5 place-items-center rounded bg-background/80 text-foreground shadow-sm hover:bg-background">
+                          className="grid size-11 place-items-center rounded bg-background/80 text-foreground shadow-sm hover:bg-background md:size-5">
                     <Undo2 className="size-3" />
                   </button>
                 )}
                 <button type="button" data-style-upload={a.value} title={t('params.styleImageChange')}
                         aria-label={t('params.styleImageChangeOf', { name: a.label })}
                         onClick={() => { target.current = a.value; fileRef.current?.click() }}
-                        className="grid size-5 place-items-center rounded bg-background/80 text-foreground shadow-sm hover:bg-background">
+                        className="grid size-11 place-items-center rounded bg-background/80 text-foreground shadow-sm hover:bg-background md:size-5">
                   <ImagePlus className="size-3" />
                 </button>
               </span>

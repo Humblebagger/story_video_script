@@ -5,6 +5,8 @@
  */
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { SelectMenu } from '@/components/ui/select'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useI18n } from '@/i18n/core'
 import { errValue, formatMsg } from '@/i18n/serverMsg'
@@ -105,16 +107,22 @@ export function TaskPanel({ bench, dirty }: { bench: Workbench; dirty: boolean }
           <p className="tlc__kfnote">{t('canvas.panel.bgNote')}</p>
         ) : (
           <>
-            <label className="field">
+            <div className="field">
               <span>{t('flow.chapter.narration')}</span>
-              <select value={mode} onChange={(e) => setMode(e.target.value as NarrationMode | '')}>
-                <option value="">{t('flow.chapter.narrationInherit', {
-                  mode: label(NARRATION_MODE, novel.params.narration_mode ?? 'selective') })}</option>
-                {Object.entries(NARRATION_MODE).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-              </select>
-            </label>
+              <SelectMenu
+                className="ui-select"
+                ariaLabel={t('flow.chapter.narration')}
+                value={mode}
+                options={[
+                  { value: '', label: t('flow.chapter.narrationInherit', {
+                    mode: label(NARRATION_MODE, novel.params.narration_mode ?? 'selective') }) },
+                  ...Object.entries(NARRATION_MODE).map(([v, n]) => ({ value: v, label: n })),
+                ]}
+                onChange={(v) => setMode(v as NarrationMode | '')}
+              />
+            </div>
             <label className="check" title={t('flow.chapter.strictHint')}>
-              <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
+              <Checkbox checked={strict} onChange={(e) => setStrict(e.target.checked)} />
               {t('flow.chapter.strict')}
             </label>
             <Button size="sm" className="self-start" disabled={bench.disabled || !chapter.text.trim()}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, ShieldCheck } from 'lucide-react'
+import { Activity, CircleX } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
@@ -101,7 +101,7 @@ export function JobsTab({ state, onState }: { state?: JobState | null; onState?:
         <>
           <h3 className="text-base font-semibold">{t('admin.jobs.failed')}</h3>
           {data.failed.length === 0 ? (
-            <Empty tone="rose" icon={<ShieldCheck aria-hidden />}
+            <Empty tone="rose" icon={<CircleX aria-hidden />}
                    title={t('admin.jobs.noFailed')} hint={t('admin.jobs.emptyFailedHint')} />
           ) : (
             <table className="adm__table adm__table--cards" data-testid="jobs-failed">

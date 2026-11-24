@@ -115,7 +115,7 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
                           onClick={() => onOpenChapter(c.id)}>
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">{String(i + 1).padStart(2, '0')}</span>
                 <span className="chtable__titlecell">
-                  <span className="truncate text-sm font-medium">{c.title}</span>
+                  <span className="truncate text-sm font-medium" title={c.title}>{c.title}</span>
                   <span className="chtable__sub" data-stage={stage}>
                     {t(`flow.steps.${stage}` as MsgKey)}
                     {dur && <span className="font-mono tabular-nums">{dur}</span>}

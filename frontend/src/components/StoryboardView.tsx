@@ -219,7 +219,7 @@ export function StoryboardView({
         )}
 
         <div className={cn(
-          'stats flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible md:grid-cols-6',
+          'stats grid grid-cols-3 gap-2 pb-1 md:grid-cols-6',
           editing && 'max-md:hidden',
         )}>
           <Stat n={idx.stats.units} k={t('board.statUnits')} tone="blue" />

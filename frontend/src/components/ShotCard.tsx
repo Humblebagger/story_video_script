@@ -4,6 +4,7 @@ import {
   Scissors, Sparkles, Users, Volume2, X,
 } from 'lucide-react'
 import { SelectMenu } from '@/components/ui/select'
+import { NumberField } from '@/components/ui/number-field'
 import {
   addBeat, attachCard, detachCard, isAttached, removeBeat, setConstraints,
   setReferenceAssets, setVariant, splitList, updateBeat,
@@ -53,14 +54,14 @@ function EnumSelect<T extends string>({ value, map, onChange, allowEmpty, label 
 function compactVariant(name: string): string {
   const text = name.trim()
   if (text.length <= 12) return text
-  const head = text.match(/^([^（(]{1,18})[（(]([^，,；;）)]{1,16})/)
+  const head = text.match(/^([^\uFF08(]{1,18})[\uFF08(]([^\uFF0C,\uFF1B;\uFF09)]{1,16})/)
   if (head) {
-    const label = `${head[1]}（${head[2]}）`
+    const label = `${head[1]}\uFF08${head[2]}\uFF09`
     return label.length <= 26 ? label : `${label.slice(0, 25)}…`
   }
-  const clause = text.split(/[，,；;。]/)[0].trim()
+  const clause = text.split(/[\uFF0C,\uFF1B;\u3002]/)[0].trim()
   if (clause && clause.length <= 18) return `${clause}…`
-  return `${text.slice(0, 17).replace(/[，,；;、\s]+$/, '')}…`
+  return `${text.slice(0, 17).replace(/[\uFF0C,\uFF1B;\u3001\s]+$/, '')}…`
 }
 
 function variantDescription(name: string, label: string): string | undefined {
@@ -68,7 +69,7 @@ function variantDescription(name: string, label: string): string | undefined {
   if (label.endsWith('…')) {
     const prefix = label.slice(0, -1)
     if (name.startsWith(prefix)) {
-      const rest = name.slice(prefix.length).replace(/^[，,；;。\s]+/, '')
+      const rest = name.slice(prefix.length).replace(/^[\uFF0C,\uFF1B;\u3002\s]+/, '')
       if (rest) return rest
     }
   }
@@ -213,10 +214,8 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               <label className="ed__field ed__field--num">
                 <span className="ed__fieldlabel">{t('shot.duration')}</span>
                 <span className="ed__numwrap">
-                  <input
+                  <NumberField
                     className="ed ed--num"
-                    type="number"
-                    inputMode="decimal"
                     min={1}
                     aria-label={t('shot.duration')}
                     value={shot.duration_sec}
@@ -545,8 +544,8 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
           {shot.beats.map((b, i) => (
             <li className="beat beat--ed" key={i}>
               <span className="beat__n">{i + 1}</span>
-              <input
-                className="ed ed--num" type="number" step="0.5" min="0.5"
+              <NumberField
+                className="ed ed--num" step="0.5" min="0.5"
                 title={t('shot.beatSecTip')}
                 value={b.duration_sec}
                 onChange={(e) => onChange(updateBeat(shot, i,

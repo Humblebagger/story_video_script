@@ -234,7 +234,7 @@ export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, on
               <button key={c.id} type="button" className="ovw__row" data-testid="progress-row" data-stage={stage}
                       onClick={() => onOpenChapter(c.id)}>
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">{String(k + 1).padStart(2, '0')}</span>
-                <span className="min-w-0 flex-1 truncate text-left text-sm">{c.title}</span>
+                <span className="min-w-0 flex-1 truncate text-left text-sm" title={c.title}>{c.title}</span>
                 <span className="ovw__cells" aria-hidden>
                   {STEPS.map((s, n) => (
                     <span key={s} data-testid="cell" data-state={n < at ? 'done' : n === at ? 'current' : 'todo'} />

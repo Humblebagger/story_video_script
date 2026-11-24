@@ -148,10 +148,14 @@
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
   background: var(--card); border-bottom: 1px solid var(--border);
 }
+.adm-top__title {
+  min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .adm-top__select {
   flex: 1; min-width: 0; height: 36px; padding: 0 10px; font-size: 14px; color: var(--foreground);
   background: var(--background); border: 1px solid var(--border); border-radius: 8px;
 }
+.adm-top .adm-side__user { display: none; }
 
 /* 每页的标题行：左边页名，右边操作 */
 .adm__pagehead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
@@ -340,6 +344,24 @@
   .adm__userstats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .adm__table { min-width: 660px; }
   .adm__pagehead h2 { font-size: 22px; }
+  .adm-top { gap: 4px; padding: 6px 8px; }
+  .adm-top button { min-height: 44px; }
+  .adm-top button[data-size="icon"],
+  .adm-top [data-slot="button"][data-size="icon"] { min-width: 44px; min-height: 44px; }
+  .adm-top [data-slot="button"],
+  .adm__pagehead [data-slot="button"],
+  .adm__bar [data-slot="button"] { min-height: 44px; }
+  .adm__search { min-height: 44px; }
+  .adm__bar input { min-height: 44px; }
+  .adm__bar [role="group"] button { min-height: 44px; }
+  .adm__acts [data-slot="button"] { min-height: 44px; }
+  .adm__go { min-height: 44px; padding-block: 0; align-items: center; }
+  .adm__pricing input { min-height: 44px; }
+  .adm__pricing [data-slot="button"] { min-height: 44px; }
+  .adm__table--cards td [data-slot="button"] { min-height: 44px; }
+  .adm__table--cards .adm__err-detail summary {
+    display: flex; min-height: 44px; align-items: center;
+  }
   .adm__table--cards {
     display: block; min-width: 0; overflow: visible;
     border: 0; background: none; background-image: none;
@@ -378,6 +400,18 @@
   .adm-skel__row { grid-template-columns: 32px minmax(0, 1fr) 64px; gap: 11px; padding: 11px 12px; }
   .adm-skel__dot { width: 32px; height: 32px; }
   .adm-skel__pill { display: none; }
+}
+
+@media (max-width: 480px) {
+  .adm-top__title { display: none; }
+  .adm-top__select { height: 44px; padding-inline: 8px; font-size: 13px; }
+  .adm { padding-inline: 10px; }
+  .adm__pagehead { align-items: flex-start; }
+  .adm__pagehead h2 { font-size: 21px; }
+  .adm__bar { gap: 8px; }
+  .adm__bar .adm__search,
+  .adm__bar input { width: 100%; }
+  .adm__bar form { min-width: 0; }
 }
 
 /* 价格表：编辑态的输入框收窄，错误提示贴在格内；推断出的厂商弱化 */

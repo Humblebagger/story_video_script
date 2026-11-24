@@ -14,7 +14,7 @@ export function UnsavedBar({ show, saving, onSave, onUndo }: {
   const m = useMotionPresets()
   return (
     // 外层只负责居中（不动画），motion 的 transform 只作用在内层
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 max-md:bottom-24 z-30 flex justify-center">
+    <div className="unsaved-dock pointer-events-none fixed inset-x-0 z-30 flex justify-center">
       <AnimatePresence>
         {show && (
           <motion.div {...m.enter} role="status" data-testid="unsaved-bar"

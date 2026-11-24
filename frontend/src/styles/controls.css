@@ -3,31 +3,198 @@
  * 在 app.css 里排在各页样式之前引入：同一层里后写的赢，各页对这些类的局部改写照常生效。
  * .tabs__btn 只剩测试钩子（页签已换成分段控件，外观写在组件的工具类里），这里不再给样式。 */
 
+/* 没有单独写焦点态的原生按钮、链接与 summary 统一兜底，避免键盘走到时看不见位置 */
+:where(a[href], summary, [role="button"], button:not([data-slot="button"]), [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* ---------- 表单项 ---------- */
 
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field--wide { grid-column: 1 / -1; }
 .field > span { font-size: 12px; color: var(--ui-muted-foreground); }
 
-/* 原生下拉与 Input 同外观 */
-:is(.field, .soc, .lib__add, .life__new) select {
+/* ---------- 统一表单字段与内联提示 ---------- */
+
+.ui-field { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.ui-field__label {
+  display: flex; min-width: 0; align-items: baseline; gap: 7px;
+  font-size: 12px; font-weight: 550; line-height: 1.4; color: var(--foreground);
+}
+.ui-field__label > span { min-width: 0; }
+.ui-field__need, .ui-field__optional {
+  flex: none; font-style: normal; font-size: 10px; font-weight: 500; letter-spacing: .02em;
+  color: var(--ui-muted-foreground);
+}
+.ui-field__need { color: color-mix(in oklab, var(--destructive) 76%, var(--ui-muted-foreground)); }
+.ui-field__hint {
+  margin: 0; font-size: 11px; line-height: 1.55;
+  color: var(--ui-muted-foreground);
+}
+.ui-field__error {
+  display: flex; gap: 5px; align-items: flex-start; margin: 0;
+  font-size: 11.5px; line-height: 1.5; color: var(--destructive);
+}
+.ui-field__error svg { width: 13px; height: 13px; flex: none; margin-top: 2px; }
+.ui-field.is-invalid .ui-select.sel__trigger,
+.ui-field.is-invalid .ui-number,
+.ui-field.is-invalid [data-slot="input"],
+.ui-field.is-invalid textarea {
+  border-color: color-mix(in oklab, var(--destructive) 66%, var(--input));
+}
+.ui-field.is-invalid .ui-select.sel__trigger:focus-visible,
+.ui-field.is-invalid .ui-number:focus-visible,
+.ui-field.is-invalid [data-slot="input"]:focus-visible,
+.ui-field.is-invalid textarea:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 22%, transparent);
+}
+
+.ui-alert {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px 10px;
+  align-items: start; padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--ui-alert-ink) 25%, var(--border));
+  border-radius: calc(var(--ui-radius) - 1px);
+  color: var(--foreground);
+  background:
+    linear-gradient(145deg, color-mix(in oklab, var(--ui-alert-soft) 62%, var(--card)), var(--card) 74%);
+  font-size: 12.5px; line-height: 1.55;
+  --ui-alert-ink: var(--content-blue);
+  --ui-alert-soft: var(--content-blue-soft);
+}
+.ui-alert[data-tone="warning"] { --ui-alert-ink: var(--content-sand); --ui-alert-soft: var(--content-sand-soft); }
+.ui-alert[data-tone="error"] { --ui-alert-ink: var(--destructive); --ui-alert-soft: color-mix(in oklab, var(--destructive) 13%, var(--card)); }
+.ui-alert[data-tone="success"] { --ui-alert-ink: var(--success); --ui-alert-soft: color-mix(in oklab, var(--success) 13%, var(--card)); }
+.ui-alert__icon { width: 16px; height: 16px; margin-top: 1px; color: color-mix(in oklab, var(--ui-alert-ink) 82%, var(--foreground)); }
+.ui-alert__copy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.ui-alert__title {
+  margin: 0; font-size: 12.5px; font-weight: 600; line-height: 1.45;
+  color: color-mix(in oklab, var(--ui-alert-ink) 68%, var(--foreground));
+}
+.ui-alert__body { min-width: 0; overflow-wrap: anywhere; color: var(--ui-muted-foreground); }
+.ui-alert__body > :first-child { margin-top: 0; }
+.ui-alert__body > :last-child { margin-bottom: 0; }
+.ui-alert__list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding-left: 16px; }
+.ui-alert__list li::marker { color: color-mix(in oklab, var(--ui-alert-ink) 58%, var(--ui-muted-foreground)); }
+.ui-alert__action { align-self: center; }
+
+/* 自绘按钮/链接的兜底焦点环：shadcn Button 已有 ring，这里只补没有 data-slot 的控件 */
+:where(button:not([data-slot="button"]), summary, a:not([data-slot="button"])):focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ring) 76%, transparent);
+  outline-offset: 2px;
+}
+
+/* 长文本：默认按行数截断，只有真的溢出才出现「查看全文」 */
+.truncate-text { min-width: 0; }
+.truncate-text__body {
+  display: -webkit-box; overflow: hidden; margin: 0; overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+}
+.truncate-text__body.is-open { display: block; overflow: visible; }
+.truncate-text__toggle {
+  display: inline-flex; align-items: center; min-height: 28px; margin-top: 2px; padding: 0;
+  border: 0; background: none; cursor: pointer;
+  color: color-mix(in oklab, var(--content-blue) 76%, var(--foreground));
+  font: inherit; font-size: 11px; text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* 未保存提示条：桌面悬浮在右下；手机上由窄屏规则抬到固定主按钮之上 */
+.unsaved-dock { bottom: 1.5rem; }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ui-muted-foreground); }
+
+/* 统一复选框：保留原生 input 的语义与事件，只换系统外观 */
+.ui-check {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  place-content: center;
+  border: 1px solid color-mix(in oklab, var(--input) 76%, var(--border));
+  border-radius: 5px;
+  background: var(--card);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.ui-check:hover { border-color: color-mix(in oklab, var(--content-blue) 56%, var(--input)); }
+.ui-check:checked {
+  border-color: var(--content-blue);
+  background-color: var(--content-blue);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.4 4.8 9l5-6' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 12px 12px;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--content-blue) 24%, transparent);
+}
+.dark .ui-check {
+  background: color-mix(in oklab, var(--ui-muted) 42%, var(--card));
+}
+.dark .ui-check:checked {
+  background-color: var(--content-blue);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.4 4.8 9l5-6' fill='none' stroke='%2311162b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.ui-check:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--content-blue) 24%, transparent);
+}
+.ui-check:disabled { opacity: .42; cursor: not-allowed; }
+
+/* 自绘下拉的统一外壳：各页只需要覆盖高度和宽度 */
+.ui-select.sel__trigger {
   height: 36px;
-  width: 100%;
   padding: 0 10px;
   border: 1px solid var(--input);
   border-radius: calc(var(--ui-radius) - 2px);
   background: transparent;
   color: var(--foreground);
   font-size: 14px;
-  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  font-weight: 400;
+  box-shadow: none;
 }
-:is(.field, .soc, .lib__add, .life__new) select:focus-visible {
-  outline: none; border-color: var(--ring);
+.dark .ui-select.sel__trigger {
+  background: color-mix(in oklab, var(--input) 30%, transparent);
+}
+.ui-select.sel__trigger:hover {
+  border-color: var(--ring);
+}
+.ui-select.sel__trigger:focus-visible {
+  outline: none;
+  border-color: var(--ring);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent);
 }
-.dark :is(.field, .soc, .lib__add, .life__new) select { background: color-mix(in oklab, var(--input) 30%, transparent); }
+.ui-select .sel__chevron { color: var(--ui-muted-foreground); }
 
-.check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ui-muted-foreground); }
+/* 数字输入不显示浏览器原生步进箭头，由页面自己的按钮或直接键入控制 */
+.ui-number {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: calc(var(--ui-radius) - 2px);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.dark .ui-number { background: color-mix(in oklab, var(--input) 30%, transparent); }
+.ui-number:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent);
+}
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
 
 /* ---------- 版本条里的版本 ---------- */
 
@@ -148,6 +315,37 @@
 
 /* 窄屏固定主按钮：避开圆角与底部手势条；页面底部留白由 shell.css 按它是否存在补足。 */
 @media (max-width: 767px) {
+  /* 全站触控目标兜底：图标按钮、次级按钮、输入框在手机上都不低于 44px */
+  .app-shell button[data-size="icon"],
+  .app-shell button[data-size="icon-sm"],
+  .app-shell button[data-size="icon-xs"] {
+    min-width: 44px; min-height: 44px;
+  }
+  .app-shell [data-slot="tooltip-trigger"],
+  .app-shell [data-slot="popover-trigger"] { min-width: 44px; min-height: 44px; }
+  .app-shell [data-slot="button"][data-size="sm"],
+  .app-shell [data-slot="button"][data-size="xs"] { min-width: 44px; min-height: 44px; }
+  .app-shell [data-slot="button"][data-size="default"] { min-height: 44px; }
+  .app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  .app-shell textarea { min-height: 44px; }
+  .app-shell .pnav__item { min-height: 44px; }
+  .ui-select.sel__trigger { min-height: 44px; }
+  .ui-number { min-height: 44px; }
+  .check { min-height: 44px; }
+  .vchip { min-width: 44px; min-height: 44px; padding-block: 0; }
+  .film button,
+  .compose button,
+  .film [role="button"],
+  .compose [role="button"] { min-height: 44px; }
+  .film .tlc__linkbtn { min-width: 44px; justify-content: center; }
+  [data-testid="tour-tip"] button { min-height: 44px; }
+  .ui-alert { grid-template-columns: auto minmax(0, 1fr); }
+  .ui-alert__action { grid-column: 2; justify-self: start; }
+  .truncate-text__toggle { min-height: 44px; }
+  .unsaved-dock { bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
+  html:has([data-primary-bar-fixed]) .unsaved-dock {
+    bottom: calc(9.5rem + env(safe-area-inset-bottom));
+  }
   .primary-bar {
     right: max(12px, env(safe-area-inset-right));
     bottom: max(16px, calc(8px + env(safe-area-inset-bottom)));

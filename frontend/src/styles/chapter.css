@@ -32,6 +32,9 @@
 .focus__ep-n { margin-left: auto; font-variant-numeric: tabular-nums; }
 .focus__caret { transition: transform 150ms ease-out; display: inline-block; }
 .focus__ep[aria-expanded="false"] .focus__caret { transform: rotate(-90deg); }
+@media (max-width: 767px) {
+  .focus__ep { min-height: 44px; padding-block: 0; }
+}
 
 .focus__item {
   position: relative; display: flex; align-items: center; gap: 9px; min-height: 60px; padding: 7px 8px;
@@ -294,14 +297,14 @@
 .gen__source-unit { font-size: 11px; color: color-mix(in oklab, var(--gen-ink) 62%, var(--ui-muted-foreground)); }
 .gen__panel-label { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--foreground); }
 .gen__panel-hint { margin: 0; font-size: 12px; line-height: 1.65; color: var(--ui-muted-foreground); }
-.gen__panel--mode select { width: 100%; margin: 2px 0; background: color-mix(in oklab, var(--card) 84%, transparent); }
+.gen__panel--mode .ui-select { width: 100%; margin: 2px 0; background: color-mix(in oklab, var(--card) 84%, transparent); }
 .gen__panel--source .gen__panel-hint { margin-top: auto; }
 .gen__edit { align-self: flex-start; }
 .gen__check {
   display: flex; align-items: center; gap: 9px; margin: 8px 0 2px;
   font-size: 15px; font-weight: 600; color: color-mix(in oklab, var(--gen-ink) 76%, var(--foreground));
 }
-.gen__check input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--content-violet); }
+.gen__check .ui-check { width: 18px; height: 18px; }
 .gen__panel--strict .gen__panel-hint { margin-top: auto; }
 .gen__live {
   display: flex; align-items: center; gap: 10px; padding: 11px 14px;

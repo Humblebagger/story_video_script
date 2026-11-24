@@ -113,6 +113,15 @@ const click = async (el: unknown) => {
   })
   await settle()
 }
+const openSelect = async (el: Element) => {
+  await click(el)
+  return [...win.document.querySelectorAll<HTMLElement>('.sel__content[data-state="open"] .sel__item')]
+}
+const pickSelect = async (el: Element, value: string) => {
+  const item = (await openSelect(el)).find((x) => x.getAttribute('data-value') === value)
+  if (!item) throw new Error(`✗ 下拉里找不到 ${value}`)
+  await click(item)
+}
 const remount = async (node: ReactNode) => {
   await act(async () => { root.unmount() })
   root = createRoot(container as unknown as HTMLElement)
@@ -344,15 +353,13 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   await remount(
     <AdminTopNav page="jobs" counts={counts} onBack={() => { log.push('back') }} tools={<i>工具</i>}
                  onPage={(id) => { log.push(`page ${id}`) }} />)
-  const select = byId('admin-nav-select') as unknown as HTMLSelectElement
-  must(select.value === 'jobs', '下拉选中当前页')
-  must([...select.querySelectorAll('optgroup')].map((o) => o.getAttribute('label')).join() === '总览,用户与用量,运行', '下拉按分组')
-  must([...select.querySelectorAll('option')].map((o) => o.textContent).join() === '运营概览,用户,用量与花费（1）,任务（3）,错误（99+）,内容拦截,审计',
-       `下拉选项带计数，实为 ${[...select.querySelectorAll('option')].map((o) => o.textContent)}`)
-  await act(async () => {
-    select.value = 'audit'
-    select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-  })
+  const select = byId('admin-nav-select')!
+  must(select.textContent?.includes('任务（3）'), '下拉选中当前页')
+  const items = await openSelect(select)
+  must([...win.document.querySelectorAll('.sel__content[data-state="open"] .sel__group')].map((o) => o.textContent).join() === '总览,用户与用量,运行', '下拉按分组')
+  must(items.map((o) => o.textContent).join() === '运营概览,用户,用量与花费（1）,任务（3）,错误（99+）,内容拦截,审计',
+       `下拉选项带计数，实为 ${items.map((o) => o.textContent)}`)
+  await click(items.find((o) => o.getAttribute('data-value') === 'audit')!)
   await click(byId('admin-back')!)
   must(log.join() === 'page audit,back', `下拉换页与返回，实为 ${log}`)
   await remount(<I18nProvider initial="en">{side(false)}</I18nProvider>)
@@ -456,13 +463,9 @@ const { setCurrentLocale } = await import('../src/i18n/core')
   g.matchMedia = win.matchMedia
   await open('/admin/jobs?state=failed')
   must(!byId('admin-sidebar') && !!byId('admin-topnav') && shell().includes('is-narrow') && h2() === '任务', '窄屏：没有侧栏，顶部一条')
-  const select = byId('admin-nav-select') as unknown as HTMLSelectElement
-  must(select.value === 'jobs', '窄屏下拉选中当前页')
-  await act(async () => {
-    select.value = 'errors'
-    select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-  })
-  await settle()
+  const select = byId('admin-nav-select')!
+  must(select.textContent?.includes('任务'), '窄屏下拉选中当前页')
+  await pickSelect(select, 'errors')
   must(here === '/admin/errors' && h2() === '错误', `窄屏下拉换页，实为 ${here}`)
   ;(win as unknown as { matchMedia: unknown }).matchMedia = wide
   g.matchMedia = wide

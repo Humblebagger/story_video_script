@@ -124,7 +124,7 @@
 .lib__bar[data-kind="props"] { --lib-ink: var(--content-sand); --lib-soft: var(--content-sand-soft); }
 .lib__bar[data-kind="creatures"] { --lib-ink: var(--content-violet); --lib-soft: var(--content-violet-soft); }
 .lib__add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.lib__add select { width: auto; }
+.lib__add .ui-select { width: auto; min-width: 128px; max-width: 180px; }
 .lib__add input { width: 160px; }
 .lib__acts { display: flex; gap: 8px; }
 .lib__save { flex: none; }
@@ -505,6 +505,6 @@
   }
   .vbar::-webkit-scrollbar { display: none; }
   .vbar__label, .vbar__note { display: none; }
-  .vbar .vchip { flex: none; min-height: 34px; }
-  .vbar > [data-slot="button"] { flex: none; min-height: 36px; }
+  .vbar .vchip { flex: none; min-height: 44px; min-width: 44px; }
+  .vbar > [data-slot="button"] { flex: none; min-height: 44px; }
 }

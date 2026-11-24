@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberField } from '@/components/ui/number-field'
 import { useI18n } from '@/i18n/core'
 import { notice } from '@/lib/notice'
 import { adminPricing, adminSavePricing } from './api'
@@ -113,7 +114,7 @@ export function PricingEditor({ unpriced = [] }: { unpriced?: string[] }) {
                 </td>
                 {PRICE_KEYS.map((k) => (
                   <td key={k} className="is-num">
-                    <Input type="number" min={0} step="any" value={r[k]} aria-invalid={!!e[k]}
+                    <NumberField className="ui-number" min={0} step="any" value={r[k]} aria-invalid={!!e[k]}
                            aria-label={t(`admin.usage.pricing.${COL[k]}`)}
                            onChange={(ev) => patch(r.id, { [k]: ev.target.value })} />
                     {e[k] && <span className="adm__err">{t('admin.usage.badPrice')}</span>}

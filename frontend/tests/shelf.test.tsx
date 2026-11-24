@@ -71,6 +71,15 @@ const setInput = async (el: HTMLElement, v: string) => {
     el.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event)
   })
 }
+const pickSelect = async (el: HTMLElement, value: string) => {
+  await click(el)
+  await act(async () => { await new Promise((r) => setTimeout(r, 80)) })
+  const item = [...doc.querySelectorAll<HTMLElement>('.sel__content[data-state="open"] .sel__item')]
+    .find((x) => x.getAttribute('data-value') === value || (x.textContent ?? '').includes(value))
+  must(!!item, `下拉里找不到 ${value}`)
+  await click(item!)
+  await act(async () => { await new Promise((r) => setTimeout(r, 180)) })
+}
 
 { // RatioPicker
   const got = await mount(RatioPicker, DEFAULT_PARAMS)
@@ -139,18 +148,9 @@ const setInput = async (el: HTMLElement, v: string) => {
 
 { // MoreParams
   const got = await mount(MoreParams, DEFAULT_PARAMS)
-  const selects = qa('select')
-  const sel0 = selects[0] as unknown as HTMLSelectElement
-  await act(async () => {
-    sel0.value = COLOR_TONES[2].value
-    sel0.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-  })
+  await pickSelect(q('button[aria-label="色调"]')!, COLOR_TONES[2].value)
   must(got.at(-1)!.color_tone === COLOR_TONES[2].value, '色调写回 color_tone')
-  const sel1 = selects[1] as unknown as HTMLSelectElement
-  await act(async () => {
-    sel1.value = '快手'
-    sel1.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event)
-  })
+  await pickSelect(q('button[aria-label="目标平台"]')!, '快手')
   must(got.at(-1)!.target_platform === '快手', '平台写回 target_platform')
   await setInput(q('[data-more="prefix"]')!, '新前缀')
   must(got.at(-1)!.style_prefix === '新前缀', '风格前缀输入写回')
@@ -165,6 +165,12 @@ const setInput = async (el: HTMLElement, v: string) => {
   must(qa('[data-narr-mode]').length === 4, '旁白细项应有 4 种')
   await click(q('[data-narr-mode="original_text"]'))
   must(got3.at(-1)!.narration_mode === 'original_text', '旁白细项可选原文照念')
+  const got4 = await mount(MoreParams, DEFAULT_PARAMS, { key: 'custom-pick' })
+  await pickSelect(q('button[aria-label="色调"]')!, '__custom__')
+  const customInput = q('input[placeholder="描述整体色彩倾向"]')
+  must(!!customInput && doc.activeElement === (customInput as unknown), '选自定后出现输入框并聚焦')
+  await setInput(customInput!, '冷调')
+  must(got4.at(-1)!.color_tone === '冷调', '自定义色调写回')
 }
 
 { // ParamChip

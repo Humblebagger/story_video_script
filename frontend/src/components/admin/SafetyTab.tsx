@@ -8,7 +8,7 @@ import type { MsgLike } from '@/i18n/serverMsg'
 import type { SafetyBlockRow } from '../../types'
 import { adminSafetyBlocks, adminSafetyRelease } from './api'
 import { when } from './format'
-import { Empty, ErrorBar, TableSkeleton } from './LoadState'
+import { Empty, ErrorBar, Segmented, TableSkeleton } from './LoadState'
 import { PageHead, RefreshButton } from './PageHead'
 import { useLoad } from './useLoad'
 
@@ -44,17 +44,17 @@ export function SafetyTab() {
     return <Button size="sm" variant="outline" type="button" onClick={() => setArming(r.id)}>{t('admin.safety.release')}</Button>
   }
   const row = (r: SafetyBlockRow) => (
-    <tr key={r.id} data-testid={`safety-row-${r.id}`}>
-      <td>{when(r.last_at)}</td>
-      <td>{r.username ?? r.user_id ?? '—'}</td>
-      <td>{r.novel_title ?? t('admin.deleted')} / {r.chapter_title ?? t('admin.deleted')}{r.clip_id ? ` · ${r.clip_id}` : ''}</td>
-      <td>{t(`admin.safety.stage.${r.stage}` as 'admin.safety.stage.convert')}</td>
-      <td>{code(`safety.category.${r.category}`)}</td>
-      <td>{r.reason_code ? code(r.reason_code) : r.reason || t('admin.safety.cleared')}</td>
-      <td className="adm__json">{r.excerpt || t('admin.safety.cleared')}</td>
-      <td>{r.hits}</td>
-      <td className="adm__mono">{r.id}</td>
-      <td>{action(r)}</td>
+    <tr key={r.id} className="adm__row" data-testid={`safety-row-${r.id}`}>
+      <td data-label={c('time')}>{when(r.last_at)}</td>
+      <td data-label={c('user')}>{r.username ?? r.user_id ?? '—'}</td>
+      <td data-label={c('where')}>{r.novel_title ?? t('admin.deleted')} / {r.chapter_title ?? t('admin.deleted')}{r.clip_id ? ` · ${r.clip_id}` : ''}</td>
+      <td data-label={c('stage')}>{t(`admin.safety.stage.${r.stage}` as 'admin.safety.stage.convert')}</td>
+      <td data-label={c('category')}>{code(`safety.category.${r.category}`)}</td>
+      <td data-label={c('reason')}>{r.reason_code ? code(r.reason_code) : r.reason || t('admin.safety.cleared')}</td>
+      <td className="adm__json adm__cell--wide" data-label={c('excerpt')}>{r.excerpt || t('admin.safety.cleared')}</td>
+      <td className="is-num" data-label={c('hits')}>{r.hits}</td>
+      <td className="adm__mono" data-label={c('ref')}>{r.id}</td>
+      <td data-label={c('action')}>{action(r)}</td>
     </tr>
   )
   let body
@@ -63,7 +63,7 @@ export function SafetyTab() {
   else if (!data.length) body = <Empty tone="blue" icon={<ShieldCheck aria-hidden />}
                                      title={t('admin.safety.empty')} hint={t('admin.safety.emptyHint')} />
   else body = (
-    <table className="adm__table">
+    <table className="adm__table adm__table--cards">
       <thead>
         <tr>
           <th>{c('time')}</th><th>{c('user')}</th><th>{c('where')}</th><th>{c('stage')}</th><th>{c('category')}</th>
@@ -79,12 +79,13 @@ export function SafetyTab() {
         <RefreshButton label={t('admin.safety.refresh')} onClick={reload} />
       </PageHead>
       <form className="adm__bar" onSubmit={(e) => { e.preventDefault(); setRef(q.trim()) }}>
-        <select className="adm-top__select" aria-label={t('admin.safety.filter.label')} data-testid="safety-status"
-                value={status} onChange={(e) => { setRef(''); setQ(''); setStatus(e.target.value as Status) }}>
-          <option value="blocked">{t('admin.safety.filter.blocked')}</option>
-          <option value="released">{t('admin.safety.filter.released')}</option>
-          <option value="all">{t('admin.safety.filter.all')}</option>
-        </select>
+        <Segmented label={t('admin.safety.filter.label')} value={status} testId="safety-status"
+                   onChange={(v) => { setRef(''); setQ(''); setStatus(v as Status) }}
+                   items={[
+                     ['blocked', t('admin.safety.filter.blocked')],
+                     ['released', t('admin.safety.filter.released')],
+                     ['all', t('admin.safety.filter.all')],
+                   ]} />
         <Input className="adm__search h-9 w-64" value={q} onChange={(e) => setQ(e.target.value)}
                placeholder={t('admin.safety.placeholder')} aria-label={t('admin.safety.lookup')} />
         <Button size="sm" type="submit"><Search aria-hidden />{t('admin.safety.lookup')}</Button>

@@ -51,15 +51,16 @@ export function Empty({ title, hint, tone = 'blue', icon }: {
 }
 
 /** 分段控件：和分镜视图的页签同一套写法（is-on 是测试钩子）。 */
-export function Segmented<T extends string | number>({ items, value, onChange, label }: {
-  items: [T, string][]; value: T; onChange: (v: T) => void; label?: string
+export function Segmented<T extends string | number>({ items, value, onChange, label, testId }: {
+  items: [T, string][]; value: T; onChange: (v: T) => void; label?: string; testId?: string
 }) {
   return (
-    <div className="inline-flex shrink-0 rounded-lg bg-muted p-1" role="group" aria-label={label}>
+    <div className="inline-flex shrink-0 rounded-lg bg-muted p-1" role="group" aria-label={label} data-testid={testId}>
       {items.map(([id, name]) => (
         <button
           key={id}
           type="button"
+          data-value={id}
           aria-pressed={value === id}
           className={cn(
             'rounded-md border-0 px-3 py-1.5 text-sm text-muted-foreground',

@@ -100,7 +100,7 @@
     box-shadow: 0 -18px 40px -36px rgb(0 0 0 / .5);
   }
   .tlc__tabs { top: -12px; margin: -12px -14px 2px; padding: 10px 14px 8px; }
-  .tlc__tabs button { min-height: 38px; }
+  .tlc__tabs button { min-height: 44px; }
   .tlc__bottom { left: 8px; right: 8px; bottom: 8px; gap: 6px; }
   .tlc__bar { justify-content: flex-start; }
   /* 出片页是表单与金额的主场：给右侧面板多留高度，时间轴保留一条可拖动的预览带。 */
@@ -116,6 +116,29 @@
   .tlc[data-panel="assets"] .tlc__panel,
   .tlc[data-panel="novel"] .tlc__panel,
   .tlc[data-panel="tasks"] .tlc__panel { flex-basis: 54%; }
+}
+
+@media (max-width: 420px) {
+  .tlc[data-panel="film"] .tlc__main { flex-basis: 24%; }
+  .tlc[data-panel="film"] .tlc__panel {
+    flex-basis: 76%; padding: 10px 12px 16px;
+  }
+  .tlc__panel { padding-inline: 12px; }
+  .tlc__tabs { margin-inline: -12px; padding-inline: 12px; }
+  .tlc__tabs button { min-width: 0; padding-inline: 4px; font-size: 12px; }
+  .film { gap: 9px; }
+  .film__card { gap: 7px; padding: 10px; }
+  .film .ui-field { gap: 4px; }
+  .film__settings summary { font-size: 12px; }
+  .film__money { gap: 5px; }
+  .film__money > span { padding: 6px 8px; }
+  .film__money b { font-size: 13px; }
+  .compose { gap: 8px; }
+  .compose__box, .compose__run { padding: 9px 10px; }
+  .compose__table { width: 100%; table-layout: fixed; }
+  .compose__table td { padding-right: 6px; }
+  .compose__table td:last-child { width: 54%; }
+  .compose__table .ui-select { width: 100%; }
 }
 
 /* ---------- 泳道、刻度、泳道名 ---------- */

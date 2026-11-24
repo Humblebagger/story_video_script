@@ -1,4 +1,4 @@
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/ui/form-field'
 import type { NovelParams } from '../types'
 
 /** 默认值与 backend/pipeline/convert.py 的 ConvertParams 逐字对齐 */
@@ -16,9 +16,8 @@ export function Field({ label, wide, children }: {
   label: string; wide?: boolean; children: React.ReactNode
 }) {
   return (
-    <Label className={`field${wide ? ' field--wide' : ''} flex-col items-stretch gap-1.5 font-normal`}>
-      <span>{label}</span>
+    <FormField label={label} asLabel className={wide ? 'field field--wide' : 'field'}>
       {children}
-    </Label>
+    </FormField>
   )
 }

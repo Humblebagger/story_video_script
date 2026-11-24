@@ -104,6 +104,8 @@ export const zhAdmin = {
   },
   errors: {
     refresh: '刷新', lookup: '查找', placeholder: '输入用户报来的参考编号',
+    hint: '最近 {n} 条意外失败记录；点开详情才读取脱敏日志。',
+    hintLoading: '意外失败会带参考编号记在这里，方便用户报错时定位。',
     empty: '还没有错误记录', emptyHint: '意外失败会带参考编号记在这里（保留最近 1000 条）。', detail: '详情',
     cols: { time: '时间', user: '用户', ref: '参考编号', what: '说明', where: '位置', detail: '详情' },
     safetyHit: '这是内容拦截记录：{id}', safetyGo: '去内容拦截页查看',

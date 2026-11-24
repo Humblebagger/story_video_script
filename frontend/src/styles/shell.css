@@ -21,6 +21,7 @@
   min-height: var(--shell-topbar-height); align-items: center; gap: 8px 12px; padding: 8px 24px;
 }
 .app-shell__main { container-type: inline-size; padding: 28px clamp(16px, 2.5vw, 40px); }
+.chapter-workflow { padding-bottom: 7rem; }
 .app-shell__body {
   background:
     radial-gradient(46% 28% at 88% 0%, color-mix(in oklab, var(--ambient-rose) 42%, transparent), transparent 76%),
@@ -52,6 +53,16 @@
   .app-shell:has(.primary-bar) .app-shell__main {
     padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
+  .chapter-workflow { padding-bottom: calc(7rem + env(safe-area-inset-bottom)); }
+  html:has([data-primary-bar-fixed]) .chapter-workflow {
+    padding-bottom: calc(9.5rem + env(safe-area-inset-bottom));
+  }
+  .chapter-workflow:has([data-testid="unsaved-bar"]) {
+    padding-bottom: calc(13rem + env(safe-area-inset-bottom));
+  }
+  html:has([data-primary-bar-fixed]) .chapter-workflow:has([data-testid="unsaved-bar"]) {
+    padding-bottom: calc(13rem + env(safe-area-inset-bottom));
+  }
   .app-shell__menu { display: inline-flex !important; flex: none; }
   .app-shell__scrim {
     display: block; position: fixed; inset: 0; z-index: 55; border: 0; padding: 0;
@@ -60,6 +71,18 @@
   }
   .app-shell__action-optional { display: none !important; }
   .app-shell__actions { gap: 0; }
+  .app-shell__actions > * { flex: none; }
+  /* Radix TooltipTrigger 会把 data-slot 改成 tooltip-trigger，不能只按 data-slot 命中 */
+  .app-shell__topbar button[data-size="icon"],
+  .app-shell__topbar button[data-size="icon-sm"],
+  .app-shell__topbar [data-slot="button"][data-size="icon"],
+  .app-shell__topbar [data-slot="button"][data-size="icon-sm"],
+  .app-shell__topbar .app-shell__menu {
+    min-width: 44px; min-height: 44px;
+  }
+  .app-shell__topbar button[data-size="sm"],
+  .app-shell__topbar [data-slot="button"][data-size="sm"] { min-height: 44px; }
+  .project-switcher { min-height: 44px; }
 }
 @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {

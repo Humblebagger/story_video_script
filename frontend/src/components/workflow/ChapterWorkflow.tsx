@@ -334,7 +334,7 @@ export function ChapterWorkflow({
   return (
     <ChapterHeadContext.Provider value={<ChapterHeader compact {...headProps} />}>
     <StepPrimaryContext.Provider value={{ primary, busy, run, fix, claim }}>
-    <div className="flex flex-col gap-4 pb-28">
+    <div className="chapter-workflow flex flex-col gap-4">
       {slot && createPortal(stepper, slot)}
       <ChapterHeader {...headProps} />
       {(!slot || view !== 'import') && (

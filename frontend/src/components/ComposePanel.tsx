@@ -5,7 +5,13 @@
  *  不能合成时按钮禁用，原因逐条写出（composeBlockers）。确认框开着时，会改金额的操作（没出好的段先用图片代替、音色、BGM）
  *  一律锁住，免得确认的金额与实际不符。 */
 import { useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
+import { ArrowLeft, RefreshCw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { FieldHint, InlineAlert } from '@/components/ui/form-field'
+import { SelectMenu } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { MoneyConfirm } from '@/components/common/MoneyConfirm'
 import { useI18n } from '@/i18n/core'
 import { formatMsg } from '@/i18n/serverMsg'
@@ -24,23 +30,38 @@ const yuan = (n: number) => `¥${n.toFixed(2)}`
 /** 忙着，或确认框开着（改了会让确认的金额对不上） */
 const locked = (c: Compose) => c.busy || !!c.confirm
 
-export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
+export function ComposePanel({ film, dirty, onSave, onBackToBoard, onOpenSettings }: {
+  film: Film; dirty: boolean; onSave?: () => void; onBackToBoard?: () => void; onOpenSettings?: () => void
+}) {
   const { t, locale } = useI18n()
   const c = useCompose(film, dirty)
   const s = film.session!
   const p = c.preview
+  const voicesRef = useRef<HTMLDetailsElement>(null)
+  const openVoices = () => {
+    const el = voicesRef.current
+    if (!el) return
+    el.open = true
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
   if (!p) {
     return (
       <section className="compose">
         <h4>{t('compose.panel.title')}</h4>
         {c.error
           ? (
-            <>
-              <p className="tlc__kferr">{formatMsg(c.error, locale)}</p>
-              <Button size="sm" variant="outline" className="self-start" onClick={() => void c.load()}>{t('common.retry')}</Button>
-            </>
+            <InlineAlert tone="warning" title={t('compose.panel.loadTitle')}
+                         action={<Button size="sm" variant="outline" onClick={() => void c.load()}><RefreshCw aria-hidden />{t('common.retry')}</Button>}>
+              {formatMsg(c.error, locale)}
+            </InlineAlert>
           )
-          : <p className="tlc__kfnote">{t('compose.panel.loading')}</p>}
+          : (
+            <div className="flex flex-col gap-2" aria-busy="true" aria-label={t('compose.panel.loading')}>
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-4/5" />
+            </div>
+          )}
       </section>
     )
   }
@@ -48,12 +69,24 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
   return (
     <section className="compose">
       <div className="compose__head">
-        <h4>{t('compose.panel.title')}</h4>
-        <button className="tlc__linkbtn" onClick={() => void c.load()}>{t('compose.panel.refresh')}</button>
+        <div>
+          <span className="film__eyebrow">{t('compose.panel.eyebrow')}</span>
+          <h4>{t('compose.panel.title')}</h4>
+        </div>
+        <Button size="sm" variant="ghost" onClick={() => void c.load()}><RefreshCw aria-hidden />{t('compose.panel.refresh')}</Button>
       </div>
-      {c.error && <p className="tlc__kferr">{formatMsg(c.error, locale)}</p>}
-      {c.finalError && <p className="tlc__kferr">{t('compose.readFinalFailed', { error: formatMsg(c.finalError, locale) })}</p>}
-      <Voices c={c} />
+      {c.error && (
+        <InlineAlert tone="warning" title={t('compose.panel.actionFailed')}
+                     action={<Button size="sm" variant="ghost" onClick={() => void c.load()}>{t('common.retry')}</Button>}>
+          {formatMsg(c.error, locale)}
+        </InlineAlert>
+      )}
+      {c.finalError && (
+        <InlineAlert tone="warning" title={t('compose.panel.finalReadFailed')}>
+          {t('compose.readFinalFailed', { error: formatMsg(c.finalError, locale) })}
+        </InlineAlert>
+      )}
+      <Voices c={c} panelRef={voicesRef} />
       <Music c={c} />
       <ComposeConfirm s={s} c={c} blockers={blockers} />
       <div className="compose__run">
@@ -63,10 +96,35 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
           {p.no_video.length ? t('compose.panel.noVideo', { n: p.no_video.length }) : ''}
         </p>
         <label className="check">
-          <input type="checkbox" checked={c.draft} disabled={locked(c)} onChange={(e) => c.setDraft(e.target.checked)} />
+          <Checkbox checked={c.draft} disabled={locked(c)} onChange={(e) => c.setDraft(e.target.checked)} />
           {t('compose.panel.draft')}
         </label>
-        {blockers.map((b) => <p key={b} className="tlc__notice">{b}</p>)}
+        {!!blockers.length && (
+          <InlineAlert tone="warning" title={t('compose.panel.blockersTitle', { n: blockers.length })}
+                       testId="compose-blockers"
+                       action={(
+                         <span className="film__alertacts">
+                           {dirty && onSave && <Button size="sm" variant="outline" onClick={onSave}><Save aria-hidden />{t('compose.panel.goSave')}</Button>}
+                           {!dirty && film.gate && onBackToBoard && (
+                             <Button size="sm" variant="outline" onClick={onBackToBoard}><ArrowLeft aria-hidden />{t('compose.panel.goStoryboard')}</Button>
+                           )}
+                           {!dirty && !film.gate && p.missing_voices.length > 0 && (
+                             <Button size="sm" variant="outline" onClick={openVoices}>{t('compose.panel.goVoices')}</Button>
+                           )}
+                           {!dirty && !film.gate && !p.missing_voices.length && !c.draft && p.no_video.length > 0 && (
+                             <Button size="sm" variant="outline" onClick={() => c.setDraft(true)}>{t('compose.panel.useDraft')}</Button>
+                           )}
+                           {!dirty && !film.gate && !p.missing_voices.length && c.draft && p.tts_cny + s.spent_cny > s.budget_cny && onOpenSettings && (
+                             <Button size="sm" variant="outline" onClick={onOpenSettings}>{t('compose.panel.goSettings')}</Button>
+                           )}
+                           <Button size="sm" variant="ghost" onClick={() => void c.load()}><RefreshCw aria-hidden />{t('compose.panel.refresh')}</Button>
+                         </span>
+                       )}>
+            <ul className="ui-alert__list">
+              {blockers.map((b) => <li key={b}>{b}</li>)}
+            </ul>
+          </InlineAlert>
+        )}
         <Button size="sm" className="self-start" disabled={!!blockers.length || c.busy} onClick={c.start}>
           {composeLabel(p)}
         </Button>
@@ -77,7 +135,7 @@ export function ComposePanel({ film, dirty }: { film: Film; dirty: boolean }) {
 }
 
 /** 各说话人的音色：缺音色的展开并标红；选「按提示默认」恢复默认 */
-function Voices({ c }: { c: Compose }) {
+function Voices({ c, panelRef }: { c: Compose; panelRef: RefObject<HTMLDetailsElement | null> }) {
   const { t, locale } = useI18n()
   const ttsHint = useTtsHint()
   const withHint = useWithHint()
@@ -85,35 +143,52 @@ function Voices({ c }: { c: Compose }) {
   if (!c.preview!.lines) return <p className="tlc__kfnote">{t('compose.panel.noLines')}</p>
   if (!v) {
     return c.voicesError
-      ? <p className="tlc__kferr">{t('compose.panel.voicesFailed', { error: formatMsg(c.voicesError, locale) })}</p>
+      ? (
+        <InlineAlert tone="warning" title={t('compose.panel.voicesErrorTitle')}
+                     action={<Button size="sm" variant="outline" onClick={() => void c.load()}><RefreshCw aria-hidden />{t('common.retry')}</Button>}>
+          {t('compose.panel.voicesFailed', { error: formatMsg(c.voicesError, locale) })}
+        </InlineAlert>
+      )
       : <p className="tlc__kfnote">{t('compose.panel.voicesLoading')}</p>
   }
   const name = (id: string | null) => v.voices.find((x) => x.id === id)?.name ?? id ?? ''
   return (
-    <details className="compose__box" open={v.missing.length > 0}>
+    <details ref={panelRef} className="compose__box" open={v.missing.length > 0}>
       <summary>{withHint(t('compose.panel.voicesSum'), ttsHint)}{v.missing.length ? t('compose.panel.voicesMissing', { n: v.missing.length }) : ''}</summary>
-      <table className="compose__table">
+      <table className="compose__table" aria-label={t('compose.panel.voicesSum')}>
         <tbody>
           {v.speakers.map((sp) => (
             <tr key={sp.key} className={sp.voice ? '' : 'is-missing'}>
               <td>{formatMsg(sp.name, locale)}{sp.hint && <span className="film__dim">{t('common.paren', { text: sp.hint })}</span>}</td>
               <td>
-                <select aria-label={t('compose.panel.voiceAria', { name: formatMsg(sp.name, locale) })} value={sp.chosen ?? ''} disabled={locked(c)}
-                        onChange={(e) => void c.setVoice(sp.key, e.target.value)}>
-                  <option value="">
-                    {sp.chosen ? t('compose.panel.hintDefault')
-                      : sp.voice ? t('compose.panel.defaultVoice', { name: name(sp.voice) }) : t('compose.panel.pickVoice')}
-                  </option>
-                  {v.voices.map((x) => (
-                    <option key={x.id} value={x.id}>{t('compose.panel.voiceOpt', { name: x.name, gender: t(x.gender === 'male' ? 'compose.panel.male' : 'compose.panel.female') })}</option>
-                  ))}
-                </select>
+                <SelectMenu
+                  className="ui-select"
+                  ariaLabel={t('compose.panel.voiceAria', { name: formatMsg(sp.name, locale) })}
+                  value={sp.chosen ?? ''}
+                  disabled={locked(c)}
+                  options={[
+                    {
+                      value: '',
+                      label: sp.chosen ? t('compose.panel.hintDefault')
+                        : sp.voice ? t('compose.panel.defaultVoice', { name: name(sp.voice) })
+                          : t('compose.panel.pickVoice'),
+                    },
+                    ...v.voices.map((x) => ({
+                      value: x.id,
+                      label: t('compose.panel.voiceOpt', {
+                        name: x.name,
+                        gender: t(x.gender === 'male' ? 'compose.panel.male' : 'compose.panel.female'),
+                      }),
+                    })),
+                  ]}
+                  onChange={(v) => void c.setVoice(sp.key, v)}
+                />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="tlc__kfnote">{t('compose.panel.voicesNote', { note: formatMsg(v.rate_note, locale) || t('money.rateUnknown') })}</p>
+      <FieldHint>{t('compose.panel.voicesNote', { note: formatMsg(v.rate_note, locale) || t('money.rateUnknown') })}</FieldHint>
     </details>
   )
 }
