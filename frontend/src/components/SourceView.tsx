@@ -47,6 +47,13 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
   const shown = units.filter((u) =>
     (!onlyGaps || unmapped.has(u.id)) &&
     (!q || u.text.toLowerCase().includes(q) || u.id.includes(q)))
+  const groups: { key: string; para?: number; units: typeof shown }[] = []
+  for (const u of shown) {
+    const key = u.para === undefined ? 'raw' : `p:${u.para}`
+    const last = groups[groups.length - 1]
+    if (last?.key === key) last.units.push(u)
+    else groups.push({ key, para: u.para, units: [u] })
+  }
 
   return (
     <div className="src">
@@ -72,41 +79,56 @@ export function SourceView({ doc, idx, focusUnit, onPickShot }: Props) {
         </label>
       </div>
 
-      <ol className="src__list">
-        {shown.map((u) => {
-          const refs = idx.shotsByUnit.get(u.id) ?? []
-          const isFocus = u.id === focusUnit
+      <div className="src__groups">
+        {groups.map((g) => {
+          const mapped = g.units.filter((u) => (idx.shotsByUnit.get(u.id)?.length ?? 0) > 0).length
+          const ratio = g.units.length ? mapped / g.units.length : 0
           return (
-            <li
-              key={u.id}
-              ref={isFocus ? rowRef : null}
-              className={[
-                'unit',
-                isFocus ? 'unit--focus' : '',
-                unmapped.has(u.id) ? 'unit--gap' : refs.length ? 'unit--ref' : '',
-              ].filter(Boolean).join(' ')}
-            >
-              <div className="unit__meta">
-                <span className="unit__id">{u.id}</span>
-                {u.kind && <span className="chip">{label(UNIT_KIND, u.kind)}</span>}
-                {u.para !== undefined && <span className="unit__para">§{u.para}</span>}
-                {idx.narratedUnits.has(u.id) && <span className="chip chip--nar">{t('source.narration')}</span>}
-              </div>
-              <p className="unit__text">{highlight(u.text, q)}</p>
-              <div className="unit__refs">
-                {refs.length === 0
-                  ? <span className="unit__gap"><TriangleAlert size={12} aria-hidden />{t('source.noRef')}</span>
-                  : refs.map((r) => onPickShot
-                    ? (
-                      <button className="uref" key={r.shot.id} title={t('source.pickShot')}
-                              onClick={() => onPickShot(r.shot.id)}>{r.shot.id}</button>
-                    )
-                    : <span className="uref uref--static" key={r.shot.id}>{r.shot.id}</span>)}
-              </div>
-            </li>
+            <section className="src__group" key={g.key}>
+              <header className="src__ghead">
+                <span className="src__gid">{g.para === undefined ? t('source.groupRaw') : t('source.group', { n: g.para })}</span>
+                <span className="src__gstat">{t('source.groupStat', { a: mapped, b: g.units.length })}</span>
+                <span className="src__gbar" aria-hidden><span style={{ width: `${Math.round(ratio * 100)}%` }} /></span>
+              </header>
+              <ol className="src__list">
+                {g.units.map((u) => {
+                  const refs = idx.shotsByUnit.get(u.id) ?? []
+                  const isFocus = u.id === focusUnit
+                  return (
+                    <li
+                      key={u.id}
+                      ref={isFocus ? rowRef : null}
+                      className={[
+                        'unit',
+                        isFocus ? 'unit--focus' : '',
+                        unmapped.has(u.id) ? 'unit--gap' : refs.length ? 'unit--ref' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      <div className="unit__meta">
+                        <span className="unit__id">{u.id}</span>
+                        {u.kind && <span className="chip">{label(UNIT_KIND, u.kind)}</span>}
+                        {u.para !== undefined && <span className="unit__para">§{u.para}</span>}
+                        {idx.narratedUnits.has(u.id) && <span className="chip chip--nar">{t('source.narration')}</span>}
+                      </div>
+                      <p className="unit__text">{highlight(u.text, q)}</p>
+                      <div className="unit__refs">
+                        {refs.length === 0
+                          ? <span className="unit__gap"><TriangleAlert size={12} aria-hidden />{t('source.noRef')}</span>
+                          : refs.map((r) => onPickShot
+                            ? (
+                              <button className="uref" key={r.shot.id} title={t('source.pickShot')}
+                                      onClick={() => onPickShot(r.shot.id)}>{r.shot.id}</button>
+                            )
+                            : <span className="uref uref--static" key={r.shot.id}>{r.shot.id}</span>)}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </section>
           )
         })}
-      </ol>
+      </div>
       {!shown.length && <p className="empty">{t('source.empty')}</p>}
     </div>
   )

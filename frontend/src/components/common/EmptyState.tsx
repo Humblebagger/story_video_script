@@ -2,18 +2,22 @@
 import type { ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { useMotionPresets } from '@/motion'
+import { cn } from '@/lib/utils'
 
-export function EmptyState({ icon, title, hint, action }: {
-  icon?: ReactNode; title: string; hint?: string; action?: ReactNode
+export function EmptyState({ icon, title, hint, action, compact = false }: {
+  icon?: ReactNode; title: string; hint?: string; action?: ReactNode; compact?: boolean
 }) {
   const m = useMotionPresets()
   return (
     <motion.div {...m.enter} data-testid="empty-state"
-                className="mx-auto flex max-w-sm flex-col items-center gap-3 py-16 text-center">
-      {icon && <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">{icon}</div>}
-      <p className="text-base font-medium">{title}</p>
-      {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
-      {action}
+                role="status"
+                className={cn('empty-state', compact && 'is-compact')}>
+      {icon && <div className="empty-state__icon" aria-hidden>{icon}</div>}
+      <div className="empty-state__copy">
+        <p className="empty-state__title">{title}</p>
+        {hint && <p className="empty-state__hint">{hint}</p>}
+      </div>
+      {action && <div className="empty-state__action">{action}</div>}
     </motion.div>
   )
 }

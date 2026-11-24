@@ -1,5 +1,6 @@
 import { Lock, MapPin, Package, PawPrint, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SelectMenu } from '@/components/ui/select'
 import { splitAliases } from '../edit'
 import { appearanceFields, LOCATION_ANGLE, voiceFields } from '../labels'
 import { tr, useI18n } from '@/i18n/core'
@@ -111,24 +112,31 @@ function RefImages({ list, variants, tagKey, onChange }: {
 }) {
   const { t } = useI18n()
   const items = list ?? []
+  const viewOptions = [
+    { value: '', label: t('assetView.viewPh') },
+    ...Object.entries(viewLabel()).map(([v, n]) => ({ value: v, label: n })),
+  ]
+  const variantOptions = variants.map((v) => ({ value: v.id, label: v.id }))
   const set = (i: number, patch: Partial<ReferenceImage>) =>
     onChange(items.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   return (
     <div className="aimgs">
       {items.map((img, i) => (
         <div className="asub" key={i}>
-          <select className="ed ed--sel" value={img.view ?? ''}
-                  onChange={(e) => set(i, { view: (e.target.value || undefined) as ReferenceImage['view'] })}>
-            <option value="">{t('assetView.viewPh')}</option>
-            {Object.entries(viewLabel()).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-          </select>
+          <SelectMenu
+            value={img.view ?? ''}
+            ariaLabel={t('assetView.viewPh')}
+            options={viewOptions}
+            onChange={(v) => set(i, { view: (v || undefined) as ReferenceImage['view'] })}
+          />
           {!!variants.length && (
-            <select className="ed ed--sel" value={img[tagKey] ?? ''}
-                    title={tagKey === 'outfit' ? t('assetView.outfitTip') : t('assetView.stateTip')}
-                    onChange={(e) => set(i, { [tagKey]: e.target.value || undefined })}>
-              <option value="">{t('assetView.baseLook')}</option>
-              {variants.map((v) => <option key={v.id} value={v.id}>{v.id}</option>)}
-            </select>
+            <SelectMenu
+              value={img[tagKey] ?? ''}
+              title={tagKey === 'outfit' ? t('assetView.outfitTip') : t('assetView.stateTip')}
+              ariaLabel={tagKey === 'outfit' ? t('assetView.outfitTip') : t('assetView.stateTip')}
+              options={[{ value: '', label: t('assetView.baseLook') }, ...variantOptions]}
+              onChange={(v) => set(i, { [tagKey]: v || undefined })}
+            />
           )}
           <Text value={img.uri} placeholder={t('assetView.uriPh')}
                 onChange={(v) => set(i, { uri: v })} />
@@ -165,24 +173,42 @@ function CharacterCard({ c, editing, patch }: {
 }) {
   const { t } = useI18n()
   if (!editing) {
+    const shownAppearance = appearanceFields().filter(([k]) => c.appearance?.[k])
+    const shownVoice = voiceFields().filter(([k]) => c.voice?.[k])
     return (
       <>
-        {appearanceFields().filter(([k]) => c.appearance?.[k]).map(([k, label]) => (
-          <p className="acard__row" key={k}><span>{label}</span>{c.appearance![k]}</p>
-        ))}
+        {!!shownAppearance.length && (
+          <section className="acard__group">
+            <h4 className="acard__ghead">{t('assetView.appearance')}</h4>
+            {shownAppearance.map(([k, label]) => (
+              <p className="acard__row" key={k}><span>{label}</span>{c.appearance![k]}</p>
+            ))}
+          </section>
+        )}
         {!!c.outfits?.length && (
-          <div className="acard__row"><span>{t('assetView.outfits')}</span>
+          <section className="acard__group">
+            <h4 className="acard__ghead">{t('assetView.outfits')}</h4>
             <div className="chips">
               {c.outfits.map((o) => (
                 <span className="chip chip--var" key={o.id}><b>{o.id}</b>{o.description}</span>
               ))}
             </div>
-          </div>
+          </section>
         )}
-        {voiceFields().filter(([k]) => c.voice?.[k]).map(([k, label]) => (
-          <p className="acard__row" key={k}><span>{label}</span>{c.voice![k]}</p>
-        ))}
-        {c.persona_notes && <p className="acard__row"><span>{t('assetView.persona')}</span>{c.persona_notes}</p>}
+        {!!shownVoice.length && (
+          <section className="acard__group">
+            <h4 className="acard__ghead">{t('assetView.voice')}</h4>
+            {shownVoice.map(([k, label]) => (
+              <p className="acard__row" key={k}><span>{label}</span>{c.voice![k]}</p>
+            ))}
+          </section>
+        )}
+        {c.persona_notes && (
+          <section className="acard__group">
+            <h4 className="acard__ghead">{t('assetView.persona')}</h4>
+            <p className="acard__prose">{c.persona_notes}</p>
+          </section>
+        )}
       </>
     )
   }
@@ -235,9 +261,18 @@ function LocationCard({ l, editing, patch }: {
   l: LocationAsset; editing: boolean; patch: (p: Record<string, unknown>) => void
 }) {
   const { t } = useI18n()
+  const ieOptions = [
+    { value: '', label: '—' },
+    ...Object.entries(ieLabel()).map(([v, n]) => ({ value: v, label: n })),
+  ]
+  const angleOptions = [
+    { value: '', label: '—' },
+    ...Object.entries(ANGLE_LABEL).map(([v, n]) => ({ value: v, label: n })),
+  ]
   if (!editing) {
     return (
-      <>
+      <section className="acard__group">
+        <h4 className="acard__ghead">{t('assetView.groupScene')}</h4>
         {l.era && <p className="acard__row"><span>{t('assetView.era')}</span>{l.era}</p>}
         {l.interior_exterior && (
           <p className="acard__row"><span>{t('assetView.ieLabel')}</span>{ieLabel()[l.interior_exterior]}</p>
@@ -249,21 +284,19 @@ function LocationCard({ l, editing, patch }: {
         {l.lighting_defaults && (
           <p className="acard__row"><span>{t('assetView.defLight')}</span>{l.lighting_defaults}</p>
         )}
-      </>
+      </section>
     )
   }
   return (
     <>
       <Row label={t('assetView.era')}><Text value={l.era} onChange={(v) => patch({ era: v })} /></Row>
       <Row label={t('assetView.ieLabel')}>
-        <select
-          className="ed ed--sel"
+        <SelectMenu
           value={l.interior_exterior ?? ''}
-          onChange={(e) => patch({ interior_exterior: e.target.value || undefined })}
-        >
-          <option value="">—</option>
-          {Object.entries(ieLabel()).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-        </select>
+          ariaLabel={t('assetView.ieLabel')}
+          options={ieOptions}
+          onChange={(v) => patch({ interior_exterior: v || undefined })}
+        />
       </Row>
       <Row label={t('assetView.defLight')}>
         <Text value={l.lighting_defaults} onChange={(v) => patch({ lighting_defaults: v })} />
@@ -276,15 +309,13 @@ function LocationCard({ l, editing, patch }: {
         <Row label={t('assetView.angles')}>
           {l.angles.map((a, i) => (
             <div className="asub" key={i}>
-              <select
-                className="ed ed--sel"
+              <SelectMenu
                 value={a.angle ?? ''}
-                onChange={(e) => patch({ angles: l.angles!.map((x, j) =>
-                  (j === i ? { ...x, angle: (e.target.value || undefined) as LocationAngle } : x)) })}
-              >
-                <option value="">—</option>
-                {Object.entries(ANGLE_LABEL).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-              </select>
+                ariaLabel={t('assetView.angles')}
+                options={angleOptions}
+                onChange={(v) => patch({ angles: l.angles!.map((x, j) =>
+                  (j === i ? { ...x, angle: (v || undefined) as LocationAngle } : x)) })}
+              />
               <Text value={a.uri} placeholder={t('assetView.angleUriPh')}
                     onChange={(v) => patch({ angles: l.angles!.map(
                       (x, j) => (j === i ? { ...x, uri: v } : x)) })} />
@@ -302,13 +333,14 @@ function PropCard({ p, editing, patch }: {
   const { t } = useI18n()
   if (!editing) {
     return p.states?.length ? (
-      <div className="acard__row"><span>{t('assetView.states')}</span>
+      <section className="acard__group">
+        <h4 className="acard__ghead">{t('assetView.states')}</h4>
         <div className="chips">
           {p.states.map((s) => (
             <span className="chip chip--var" key={s.id}><b>{s.id}</b>{s.description}</span>
           ))}
         </div>
-      </div>
+      </section>
     ) : null
   }
   return (
@@ -346,10 +378,11 @@ function CreatureCard({ c, editing, patch }: {
   const { t } = useI18n()
   if (!editing) {
     return (
-      <>
+      <section className="acard__group">
+        <h4 className="acard__ghead">{t('assetView.groupBasics')}</h4>
         {c.species && <p className="acard__row"><span>{t('assetView.species')}</span>{c.species}</p>}
         {c.notes && <p className="acard__row"><span>{t('assetView.notes')}</span>{c.notes}</p>}
-      </>
+      </section>
     )
   }
   return (
@@ -390,7 +423,7 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
         </p>
       )}
       {kinds.map((kind) => (
-        <section key={kind}>
+        <section key={kind} data-kind={kind}>
           <h3 className="assets__title">
             {KIND_TITLE[kind]} <span className="assets__n">{(assets[kind] ?? []).length}</span>
           </h3>
@@ -400,7 +433,7 @@ export function AssetsView({ assets, editing, onChange, onDelete, hideEditNote }
               const patch = (p: Record<string, unknown>) => onChange(kind, card.id, p)
               const Icon = KIND_ICON[kind]
               return (
-                <article className={`acard${editing ? ' acard--ed' : ''}`} key={card.id}>
+                <article className={`acard${editing ? ' acard--ed' : ''}`} key={card.id} data-kind={kind}>
                   <header>
                     <Icon className="acard__icon" size={16} aria-hidden />
                     {editing

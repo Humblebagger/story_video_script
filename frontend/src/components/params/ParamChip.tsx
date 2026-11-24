@@ -21,7 +21,7 @@ export function ParamChip({ icon, label, value, children, testId, open, onOpenCh
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button type="button" data-testid={testId}
-                className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-background/60 px-3 text-sm outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:border-ring">
+                className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm outline-none transition-colors hover:border-ring hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:border-ring">
           <span className="text-muted-foreground [&_svg]:size-3.5" aria-hidden>{icon}</span>
           <span className="text-xs text-muted-foreground">{label}</span>
           <span className="font-semibold">{value}</span>

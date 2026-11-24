@@ -31,11 +31,11 @@ export function ProjectSwitcher({ novels, currentId, meta, onOpen, onNew, onAll 
   return (
     <DropdownMenu onOpenChange={(o) => { if (!o) setQ('') }}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-auto min-w-0 max-w-64 gap-2 px-2 py-1" aria-label={t('shell.switcher.label')}
-                data-testid="project-switcher">
+        <Button variant="ghost" className="project-switcher h-auto min-w-0 max-w-64 gap-2 px-2 py-1"
+                aria-label={t('shell.switcher.label')} data-testid="project-switcher">
           <span className="flex min-w-0 flex-col items-start text-left leading-tight">
             <span className="max-w-full truncate text-sm font-medium">{cur?.title ?? t('brand.name')}</span>
-            {meta && <span className="max-w-full truncate font-mono text-[11px] font-normal text-muted-foreground">{meta}</span>}
+            {meta && <span className="project-switcher__meta max-w-full truncate font-mono text-[11px] font-normal text-muted-foreground">{meta}</span>}
           </span>
           <ChevronDown className="size-3.5 shrink-0 opacity-60" />
         </Button>
@@ -70,7 +70,7 @@ export function ChapterCrumb({ chapters, currentId, onOpen }: {
   const { t } = useI18n()
   const cur = chapters.find((c) => c.id === currentId)
   return (
-    <>
+    <span className="app-shell__chapter-crumb contents">
       <span aria-hidden className="text-muted-foreground opacity-50">/</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -88,6 +88,6 @@ export function ChapterCrumb({ chapters, currentId, onOpen }: {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-    </>
+    </span>
   )
 }

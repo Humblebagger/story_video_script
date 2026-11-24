@@ -58,7 +58,7 @@ await act(async () => { (editBtn as unknown as HTMLElement).click() })
 must(container.querySelectorAll('.ed__at textarea').length === shots.length,
      '编辑态下每个镜头的画面描述都应挂着 @ 选卡容器')
 must(container.querySelectorAll('.ed__attach').length === shots.length,
-     '每个镜头都应有「＋ 挂卡 / 垫图」入口')
+     '每个镜头都应有「关联资产 / 参考图」入口')
 
 /** 变体下拉只该出现在「卡上确有变体集」的引用旁——多一个少一个都会诱人填出非法值 */
 const idx = buildIndex(doc)

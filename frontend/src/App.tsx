@@ -94,6 +94,8 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const { loc, fix } = parseLocation(location.pathname, location.search)
+  // 换页 / 换章节 / 换步骤都从顶部开始；同一页里切页签保留当前阅读位置。
+  useEffect(() => { window.scrollTo(0, 0) }, [location.pathname])
   const navState = (location.state ?? null) as NavState | null
   /** 最新地址与 state：异步回调里读，不进依赖 */
   const hereRef = useRef('')

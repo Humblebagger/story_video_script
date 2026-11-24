@@ -1,31 +1,111 @@
 /* 出片画布「节点图」视图（NodeGraph.tsx）：盖在时间轴上（z-index 1，底部工具条 .tlc__bar 是 2，仍在上面），
  * 三列卡片 + 连线。卡片尺寸由 nodeGraph.ts 的常量决定，这里只管样子。 */
-.ngv { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--background); cursor: grab; touch-action: none; }
-.ngv__tools { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 6px; }
+.ngv {
+  position: absolute; inset: 0; z-index: 1; overflow: hidden; cursor: grab; touch-action: none;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(70% 50% at 82% 0%, color-mix(in oklab, var(--ambient-blue) 52%, transparent), transparent 64%),
+    radial-gradient(46% 42% at 2% 14%, color-mix(in oklab, var(--ambient-violet) 26%, transparent), transparent 68%),
+    linear-gradient(to right, color-mix(in oklab, var(--foreground) 3.5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 3.5%, transparent) 1px, transparent 1px);
+  background-size: auto, auto, 32px 32px, 32px 32px;
+}
+.ngv__tools {
+  position: absolute; top: 14px; right: 14px; z-index: 2; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 4px; max-width: min(560px, calc(100vw - 28px)); padding: 4px;
+  border: 1px solid color-mix(in oklab, var(--content-blue) 14%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  box-shadow: 0 12px 32px -24px color-mix(in oklab, var(--foreground) 46%, transparent);
+  backdrop-filter: blur(14px);
+}
+.ngv__tools .ngv__err {
+  flex-basis: 100%; max-height: none; padding: 6px 8px; border-radius: 8px;
+  background: color-mix(in oklab, var(--destructive) 8%, transparent);
+}
 .ngv__world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .ngv__edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.ngv__edge { fill: none; stroke: var(--ui-muted-foreground); stroke-width: 1.5; opacity: .35; transition: opacity .15s ease-out; }
-.ngv__edge--dropped { stroke-dasharray: 6 4; }
-.ngv__edge--missing { stroke-dasharray: 2 4; }
-.ngv__edge--frame { stroke: var(--primary); }
-.ngv__edge--target { stroke: var(--warning); stroke-width: 2.5; stroke-dasharray: 8 5; }
-.ngv__edge.is-lit { opacity: 1; }
+.ngv__edge {
+  fill: none; stroke: color-mix(in oklab, var(--content-blue) 58%, var(--ui-muted-foreground));
+  stroke-width: 1.1; opacity: .06; transition: opacity .15s ease-out, stroke-width .15s ease-out;
+}
+.ngv__edge--dropped { stroke: var(--ui-muted-foreground); stroke-dasharray: 6 5; opacity: 0; }
+.ngv__edge--missing { stroke: var(--warning); stroke-dasharray: 2 4; opacity: 0; }
+.ngv__edge--frame { stroke: var(--content-violet); }
+.ngv__edge--target { stroke: var(--content-clay); stroke-width: 2; stroke-dasharray: 8 5; }
+.ngv__edge.is-lit { opacity: .92; stroke-width: 1.7; }
 .ngv__edge.is-dim { opacity: .08; }
 .ngv__node {
   position: absolute; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 8px;
-  min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 12px;
-  cursor: default; transition: opacity .15s ease-out, box-shadow .15s ease-out;
+  min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: 11px; background: var(--card); font-size: 12px;
+  cursor: default; transition: opacity .15s ease-out, box-shadow .15s ease-out, border-color .15s ease-out;
 }
 .ngv__node > * { min-width: 0; max-width: 100%; }
 .ngv__node--episode { overflow: hidden; }
-.ngv__node--asset { flex-direction: row; align-items: center; overflow: hidden; }
-.ngv__node--episode { border: 0; background: none; padding: 4px 0; font-weight: 600; color: var(--ui-muted-foreground); }
-.ngv__node.is-on { box-shadow: 0 0 0 2px var(--primary); }
+.ngv__node--asset {
+  --ngv-accent: var(--content-blue);
+  --ngv-soft: var(--content-blue-soft);
+  flex-direction: row; align-items: center; overflow: hidden;
+  padding-left: 10px; border-left: 3px solid var(--ngv-accent);
+  background-image: linear-gradient(112deg, color-mix(in oklab, var(--ngv-accent) 12%, var(--card)) 0%, var(--card) 72%);
+}
+.ngv__node--asset[data-role="character"] { --ngv-accent: var(--content-rose); --ngv-soft: var(--content-rose-soft); }
+.ngv__node--asset[data-role="creature"] { --ngv-accent: var(--content-violet); --ngv-soft: var(--content-violet-soft); }
+.ngv__node--asset[data-role="location"] { --ngv-accent: var(--content-sand); --ngv-soft: var(--content-sand-soft); }
+.ngv__node--asset[data-role="prop"] { --ngv-accent: var(--content-clay); --ngv-soft: var(--content-clay-soft); }
+/* 同一角色页里往往有很多「角色」节点：按顺序换内容色，避免整条左栏一片玫瑰色 */
+.ngv__node--asset[data-tone="rose"] { --ngv-accent: var(--content-rose); --ngv-soft: var(--content-rose-soft); }
+.ngv__node--asset[data-tone="violet"] { --ngv-accent: var(--content-violet); --ngv-soft: var(--content-violet-soft); }
+.ngv__node--asset[data-tone="blue"] { --ngv-accent: var(--content-blue); --ngv-soft: var(--content-blue-soft); }
+.ngv__node--asset[data-tone="sand"] { --ngv-accent: var(--content-sand); --ngv-soft: var(--content-sand-soft); }
+.ngv__node--asset[data-tone="clay"] { --ngv-accent: var(--content-clay); --ngv-soft: var(--content-clay-soft); }
+.ngv__node--asset[data-tone="slate"] { --ngv-accent: var(--content-slate); --ngv-soft: var(--content-slate-soft); }
+.ngv__node--episode {
+  display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 2px 0 2px 12px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .08em;
+  color: color-mix(in oklab, var(--content-blue) 68%, var(--ui-muted-foreground));
+}
+.ngv__node--episode::before {
+  content: ""; width: 18px; height: 2px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--content-blue), color-mix(in oklab, var(--content-blue) 12%, transparent));
+}
+.ngv__node--clip, .ngv__node--free {
+  --ngv-state: var(--content-slate);
+  background-image: linear-gradient(180deg, color-mix(in oklab, var(--ngv-state) 5%, var(--card)), var(--card) 92px);
+}
+.ngv__node--clip[data-state="done"], .ngv__node--free[data-state="done"] { --ngv-state: var(--success); }
+.ngv__node--clip[data-state="queued"], .ngv__node--clip[data-state="running"], .ngv__node--clip[data-state="downloading"],
+.ngv__node--free[data-state="queued"], .ngv__node--free[data-state="running"], .ngv__node--free[data-state="downloading"] {
+  --ngv-state: var(--content-sand);
+}
+.ngv__node--clip[data-state="failed"], .ngv__node--free[data-state="failed"] { --ngv-state: var(--destructive); }
+.ngv__node--clip[data-state="stale"], .ngv__node--free[data-state="stale"] { --ngv-state: var(--warning); }
+.ngv__node--clip::before, .ngv__node--free::before {
+  content: ""; position: absolute; top: 0; left: 12px; right: 12px; height: 2px; border-radius: 0 0 3px 3px;
+  background: var(--ngv-state); opacity: .9;
+}
+.ngv__node--clip:hover, .ngv__node--free:hover, .ngv__node--asset:hover {
+  border-color: color-mix(in oklab, var(--ngv-state, var(--ngv-accent)) 38%, var(--border));
+  box-shadow: 0 12px 28px -25px color-mix(in oklab, var(--foreground) 52%, transparent);
+}
+.ngv__node.is-on {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--ngv-state, var(--ngv-accent)) 68%, var(--card)),
+    0 18px 40px -28px color-mix(in oklab, var(--foreground) 60%, transparent);
+}
 .ngv__node.is-dim { opacity: .35; }
 .ngv__head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .ngv__head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
-.ngv__media { flex: none; width: 100%; height: 72px; border-radius: 6px; object-fit: cover; background: var(--ui-muted); }
-.ngv__media--empty, .ngv__thumb--empty { display: grid; place-items: center; color: var(--ui-muted-foreground); }
+.ngv__media {
+  flex: none; width: 100%; height: 72px; border-radius: 7px; object-fit: cover;
+  border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
+  background: var(--ui-muted);
+}
+.ngv__media--empty, .ngv__thumb--empty {
+  display: grid; place-items: center; color: color-mix(in oklab, var(--ui-muted-foreground) 78%, transparent);
+  background-image:
+    linear-gradient(135deg, color-mix(in oklab, var(--ngv-accent, var(--content-blue)) 14%, var(--ui-muted)), var(--ui-muted));
+}
 /* 有结果的封面：正中一个「播放」按钮（点开带声音与控制条的播放窗口） */
 .ngv__stage { position: relative; flex: none; }
 .ngv__stage .ngv__media { display: block; }
@@ -38,10 +118,15 @@
 .ngv__play svg { width: 14px; height: 14px; }
 /* 在跑的那一行：已等多久 · 通常多久 + 取消 */
 .ngv__wait { display: flex; flex: none; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; margin: 0; font-variant-numeric: tabular-nums; }
-.ngv__thumb { flex: none; width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--ui-muted); }
-.ngv__meta { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; gap: 4px; padding-left: 10px; overflow: hidden; }
+.ngv__thumb {
+  flex: none; width: 42px; height: 42px; border-radius: 8px; object-fit: cover;
+  border: 1px solid color-mix(in oklab, var(--ngv-accent) 18%, var(--border));
+  background: var(--ui-muted);
+}
+.ngv__meta { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; gap: 1px; padding-left: 9px; overflow: hidden; }
 .ngv__meta b, .ngv__meta .ngv__dim { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ngv__open { align-self: flex-start; flex: none; white-space: nowrap; }
+.ngv__meta .ngv__dim { font-size: 11px; }
+.ngv__open { align-self: flex-start; flex: none; white-space: nowrap; font-size: 11px; color: color-mix(in oklab, var(--ngv-accent) 74%, var(--foreground)); }
 .ngv__prompt, .ngv__dim, .ngv__err, .ngv__warn { min-width: 0; overflow-wrap: anywhere; }
 .ngv__prompt { display: -webkit-box; margin: 0; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ngv__dim { margin: 0; color: var(--ui-muted-foreground); }
@@ -60,7 +145,10 @@
 .ngv__nav { display: inline-flex; min-width: 0; align-items: center; gap: 2px; }
 .ngv__nav > span { white-space: nowrap; }
 .ngv__ask { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; overflow-wrap: anywhere; }
-.ngv__empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 8px; }
+.ngv__empty {
+  display: grid; height: 100%; place-items: center; align-content: center; gap: 10px;
+  background: radial-gradient(48% 38% at 50% 46%, color-mix(in oklab, var(--ambient-blue) 52%, transparent), transparent 72%);
+}
 
 /* 片段卡的镜头小标签：每个标签独占一行、超长省略，最多 3 行；有折叠时 +N 在第 3 行末尾；全部写在整块的 title 里 */
 .ngv__shots { display: flex; flex: none; flex-direction: column; gap: 3px; margin: 0; }
@@ -68,6 +156,8 @@
 .ngv__shot--more { flex: none; }
 .ngv__shot {
   min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 0 6px; border-radius: 999px; background: var(--ui-muted); color: var(--ui-muted-foreground);
+  padding: 0 6px; border-radius: 999px;
+  background: color-mix(in oklab, var(--content-blue) 9%, var(--ui-muted));
+  color: color-mix(in oklab, var(--content-blue) 52%, var(--ui-muted-foreground));
   font-size: 11px; line-height: 18px;
 }

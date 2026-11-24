@@ -153,7 +153,8 @@ const novels: NS[] = [
   const center = q('#topbar-center')
   must(!!center, '顶栏中间有 #topbar-center')
   must(!!center!.querySelector('[data-testid="in-topbar"]'), 'portal 的内容出现在顶栏中间')
-  must(q('[data-testid="topbar"]')!.className.includes('grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)]'), '三段式')
+  must(q('[data-testid="topbar"]')!.classList.contains('app-shell__topbar'), '顶栏使用响应式布局类')
+  must(q('[data-testid="topbar"]')!.children.length === 3 && !!q('.app-shell__steps') && !!q('.app-shell__actions'), '三段式保留项目、步骤与操作区')
   must(q('[data-testid="topbar"] > div')!.className.includes('overflow-hidden'), '左栏放不下时截断，不压到中间的步骤条')
   must(!q('[data-testid="activity-count"]'), '0 个任务不显示徽标')
   must((q('[data-testid="topbar"]')!.textContent ?? '').includes('服务未连通'), '连不上时显示红色状态')
@@ -417,6 +418,8 @@ const novels: NS[] = [
   await render(panel([rj('1'), rj('2', { progress: null })], [dn('3', 'succeeded'), dn('4', 'completed_with_warnings'), dn('5', 'failed')]))
   const runs = qa('[data-testid="activity-running"]')
   must(runs.length === 2, '在跑 2 项')
+  must(qa('.activity__count').map((x) => x.textContent).join() === '2,3', '分区标题显示数量')
+  must(runs.every((item) => item.getAttribute('data-state') === 'running'), '在跑条目有状态标记')
   const r0 = runs[0].textContent ?? ''
   must(r0.includes('雾港 › 第1章') && r0.includes('第 2 批校验中') && r0.includes('3 分'), '在跑项内容：' + r0)
   must(!!runs[0].querySelector('[role="progressbar"]'), '进度条')

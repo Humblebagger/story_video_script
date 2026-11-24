@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/core'
 import { notice } from '@/lib/notice'
+import { cn } from '@/lib/utils'
 import { useMotionPresets } from '@/motion'
 import { splitChapters } from '../chapters'
 import { ART_STYLES, TTS_VOICES } from '../presets'
@@ -32,6 +33,7 @@ export interface ComposerHandle {
 }
 
 interface Props {
+  className?: string
   disabled: boolean
   onSubmit: (n: NewNovel) => void
   /** 受控参数（不传则组件自管） */
@@ -43,7 +45,7 @@ const COLLAPSE_AT = 4
 
 /** 新建小说主卡片：无边框标题、旁白/剧情二选一、原文框（可拖入 .txt）、章节标签、底部参数胶囊与创建按钮 */
 export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNovelComposer(
-  { disabled, onSubmit, params: paramsProp, onParamsChange }, ref,
+  { disabled, onSubmit, params: paramsProp, onParamsChange, className }, ref,
 ) {
   const { t } = useI18n()
   const m = useMotionPresets()
@@ -112,8 +114,8 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
   const voiceLabel = TTS_VOICES.find((v) => v.value === params.tts_voice)?.label ?? params.tts_voice
 
   return (
-    <motion.section className="mx-auto w-full max-w-[760px]" {...m.enter}>
-      <form className="composer relative rounded-2xl border bg-card shadow-sm" data-drop={dropping ? 'on' : undefined}
+    <motion.section className={cn('mx-auto w-full max-w-[760px]', className)} {...m.enter}>
+      <form className="composer relative overflow-hidden rounded-2xl bg-card" data-drop={dropping ? 'on' : undefined}
             onSubmit={(e) => { e.preventDefault(); submit() }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); submit() }
@@ -138,7 +140,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
             {t('composer.dropHint')}
           </div>
         )}
-        <div className="flex flex-col gap-3 p-4 pb-3">
+        <div className="flex flex-col gap-3 p-4 pb-3 sm:p-6 sm:pb-4">
           <input ref={titleRef} value={title} placeholder={t('composer.titlePh')} aria-label={t('composer.titleAria')}
                  onChange={(e) => setTitle(e.target.value)}
                  className="w-full border-0 bg-transparent text-[18px] font-semibold outline-none placeholder:text-muted-foreground/70" />
@@ -170,7 +172,7 @@ export const NewNovelComposer = forwardRef<ComposerHandle, Props>(function NewNo
             </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 sm:border-t sm:border-border/70 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
             <ParamChip testId="chip-ratio" icon={<RectangleVertical />} label={t('composer.chipRatio')} value={params.aspect_ratio}>
               <RatioPicker aria-label={t('composer.chipRatio')} value={params} onChange={setParams} />

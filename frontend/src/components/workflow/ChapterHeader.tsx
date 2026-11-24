@@ -35,13 +35,13 @@ export function ChapterHeader({ num, title, shots, seconds, step, live, film, co
     )
   }
   const dur = fmtDuration(seconds)
-  const cells: [string, string][] = [
-    [t('flow.head.estimate'), film ? cny(film.clips.reduce((a, c) => a + c.estimate_cny, 0)) : '—'],
-    [t('flow.head.spent'), film ? cny(film.spent_cny) : '—'],
-    [t('flow.head.cap'), film ? cny(film.budget_cny) : '—'],
+  const cells: [string, string, string][] = [
+    ['estimate', t('flow.head.estimate'), film ? cny(film.clips.reduce((a, c) => a + c.estimate_cny, 0)) : '—'],
+    ['spent', t('flow.head.spent'), film ? cny(film.spent_cny) : '—'],
+    ['cap', t('flow.head.cap'), film ? cny(film.budget_cny) : '—'],
   ]
   return (
-    <section className="chead" data-testid="chapter-head">
+    <section className="chead" data-testid="chapter-head" data-chapter-header>
       <div className="chead__main">
         <span className="chead__num">{epNo(num)}</span>
         <div className="chead__text">
@@ -55,11 +55,18 @@ export function ChapterHeader({ num, title, shots, seconds, step, live, film, co
       </div>
       <div className="chead__cost">
         <div className="chead__cells">
-          {cells.map(([label, value]) => (
-            <div key={label} className="chead__cell" data-testid="cost-tile">
+          {cells.map(([kind, label, value]) => (
+            <div key={kind} className="chead__cell" data-testid="cost-tile" data-cost-kind={film ? kind : undefined}>
               <span className="chead__label">{label}</span>
               <span className="chead__value">{value}</span>
             </div>
+          ))}
+        </div>
+        <div className="chead__moneyline">
+          {cells.map(([kind, label, value]) => (
+            <span key={kind} data-cost-kind={film ? kind : undefined}>
+              <i>{label}</i>{value}
+            </span>
           ))}
         </div>
         {!film && <span className="chead__label">{t('flow.head.noFilm')}</span>}

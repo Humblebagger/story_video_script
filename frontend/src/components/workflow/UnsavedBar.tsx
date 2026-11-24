@@ -18,7 +18,7 @@ export function UnsavedBar({ show, saving, onSave, onUndo }: {
       <AnimatePresence>
         {show && (
           <motion.div {...m.enter} role="status" data-testid="unsaved-bar"
-                      className="pointer-events-auto flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm shadow-xl">
+                      className="pointer-events-auto flex items-center gap-3 rounded-lg border bg-card px-4 py-2 text-sm shadow-xl">
             <span className="size-2 rounded-full bg-warning" aria-hidden />
             {t('flow.unsaved')}
             <Button size="sm" disabled={saving} onClick={onSave}>{t('flow.unsavedSave')}</Button>

@@ -5,12 +5,38 @@
 /* ---------- 资产卡 ---------- */
 
 .assets { padding: 20px; display: flex; flex-direction: column; gap: 28px; }
+.assets > section {
+  --section-ink: var(--content-rose);
+  --section-soft: var(--content-rose-soft);
+}
+.assets > section[data-kind="locations"] {
+  --section-ink: var(--content-blue);
+  --section-soft: var(--content-blue-soft);
+}
+.assets > section[data-kind="props"] {
+  --section-ink: var(--content-sand);
+  --section-soft: var(--content-sand-soft);
+}
+.assets > section[data-kind="creatures"] {
+  --section-ink: var(--content-violet);
+  --section-soft: var(--content-violet-soft);
+}
 .assets__title {
   display: flex; align-items: center; gap: 8px;
-  font-size: 15px; font-weight: 600; line-height: 1.4;
+  font-family: var(--font-display); font-size: 21px; font-weight: 600;
+  letter-spacing: -.025em; line-height: 1.25;
+}
+.assets__title::before {
+  content: ""; flex: none; width: 3px; height: 18px; border-radius: 999px;
+  background: linear-gradient(180deg, var(--section-ink), color-mix(in oklab, var(--section-ink) 46%, transparent));
 }
 .assets__n {
-  font-size: 12px; font-weight: 400; color: var(--ui-muted-foreground);
+  display: inline-flex; min-width: 22px; height: 20px; align-items: center; justify-content: center;
+  padding: 0 6px; border: 1px solid color-mix(in oklab, var(--section-ink) 18%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--section-soft) 52%, var(--card));
+  font-family: var(--font-mono); font-size: 10px; font-weight: 400;
+  color: color-mix(in oklab, var(--section-ink) 72%, var(--ui-muted-foreground));
   font-variant-numeric: tabular-nums;
 }
 .assets__hint { font-size: 12px; color: var(--ui-muted-foreground); margin-top: 4px; }
@@ -35,39 +61,62 @@
 }
 
 .acard {
+  --acard-ink: var(--content-clay);
+  --acard-soft: var(--content-clay-soft);
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   padding: 14px;
-  background: var(--card);
+  background:
+    linear-gradient(155deg, color-mix(in oklab, var(--acard-soft) 24%, var(--card)) 0%, var(--card) 42%);
   color: var(--card-foreground);
-  border: 1px solid var(--border);
-  border-radius: calc(var(--ui-radius) + 2px);
-  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  border: 1px solid color-mix(in oklab, var(--acard-ink) 15%, var(--border));
+  border-top: 2px solid color-mix(in oklab, var(--acard-ink) 68%, var(--border));
+  border-radius: calc(var(--ui-radius) + 4px);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
 }
+.acard[data-kind="locations"] { --acard-ink: var(--content-blue); --acard-soft: var(--content-blue-soft); }
+.acard[data-kind="props"] { --acard-ink: var(--content-sand); --acard-soft: var(--content-sand-soft); }
+.acard[data-kind="creatures"] { --acard-ink: var(--content-violet); --acard-soft: var(--content-violet-soft); }
 .acard:hover {
-  border-color: color-mix(in oklab, var(--foreground) 18%, var(--border));
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  border-color: color-mix(in oklab, var(--acard-ink) 32%, var(--border));
+  box-shadow: 0 14px 34px -28px color-mix(in oklab, var(--acard-ink) 48%, transparent);
 }
 .acard header { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
-.acard__icon { flex: none; color: var(--ui-muted-foreground); }
-.acard__name { font-size: 14px; font-weight: 600; }
+.acard__icon { flex: none; color: var(--acard-ink); }
+.acard__name { font-family: var(--font-display); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
 .acard__id {
   display: inline-flex; align-items: center; gap: 4px;
-  font-family: var(--font-mono); font-size: 12px; color: var(--ui-muted-foreground);
+  padding: 2px 6px; border-radius: 4px; background: color-mix(in oklab, var(--acard-soft) 52%, transparent);
+  font-family: var(--font-mono); font-size: 11px; color: color-mix(in oklab, var(--acard-ink) 66%, var(--ui-muted-foreground));
 }
 .acard__alias { font-size: 12px; color: var(--ui-muted-foreground); }
+.acard__group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.acard__group + .acard__group {
+  margin-top: 1px; padding-top: 10px;
+  border-top: 1px dashed color-mix(in oklab, var(--acard-ink) 18%, var(--border));
+}
+.acard__ghead {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  color: color-mix(in oklab, var(--acard-ink) 72%, var(--ui-muted-foreground));
+  font-size: 11px; font-weight: 600; letter-spacing: .08em; line-height: 1.4;
+}
+.acard__ghead::after {
+  content: ""; height: 1px; flex: 1;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--acard-ink) 20%, transparent), transparent);
+}
 .acard__row { display: flex; gap: 10px; font-size: 14px; line-height: 1.6; margin: 0; }
 .acard__row > span {
   flex: none; min-width: 48px; padding-top: 1px;
   font-size: 12px; color: var(--ui-muted-foreground);
 }
 .acard__row .chips { gap: 4px; }
+.acard__prose { margin: 0; font-size: 14px; line-height: 1.65; }
 .acard__prompt {
   margin: 4px 0 0;
   padding-top: 10px;
-  border-top: 1px dashed var(--border);
+  border-top: 1px dashed color-mix(in oklab, var(--acard-ink) 24%, var(--border));
   font-size: 12px;
   color: var(--ui-muted-foreground);
   line-height: 1.7;
@@ -118,17 +167,23 @@
 .aimgs .asub { display: flex; flex-direction: row; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; }
 .aimgs .asub .ed { flex: 1 1 160px; }
 .aimgs .ed--sel { flex: none; }
+.aimgs .sel__trigger { width: auto; min-width: 104px; }
 
 /* ---------- 原文溯源 ---------- */
 
-.src { padding: 20px; }
+.src {
+  padding: 18px 20px 22px;
+  background-image: radial-gradient(54% 38% at 96% 0%, color-mix(in oklab, var(--ambient-blue) 36%, transparent), transparent 70%);
+}
 .src__bar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px 16px; flex-wrap: wrap;
-  padding-bottom: 12px;
+  padding: 10px 12px;
   font-size: 12px;
   color: var(--ui-muted-foreground);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid color-mix(in oklab, var(--content-blue) 12%, var(--border));
+  border-radius: 11px;
+  background-image: linear-gradient(110deg, color-mix(in oklab, var(--content-blue-soft) 38%, var(--card)), var(--card) 68%);
 }
 .src__bar b { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
 .src__toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -146,27 +201,59 @@
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 45%, transparent);
 }
 
+.src__groups { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.src__group {
+  overflow: hidden; border: 1px solid var(--border); border-radius: 12px;
+  background-color: var(--card);
+  background-image: linear-gradient(180deg, color-mix(in oklab, var(--ambient-sand) 14%, transparent), transparent 140px);
+}
+.src__ghead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background-image: linear-gradient(90deg, color-mix(in oklab, var(--content-blue) 8%, transparent), transparent 56%);
+}
+.src__gid { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .03em; color: color-mix(in oklab, var(--content-blue) 76%, var(--foreground)); }
+.src__gstat { margin-left: auto; font-size: 11px; color: var(--ui-muted-foreground); font-variant-numeric: tabular-nums; }
+.src__gbar {
+  width: 86px; height: 4px; flex: none; overflow: hidden; border-radius: 999px;
+  background: color-mix(in oklab, var(--content-blue) 11%, var(--ui-muted));
+}
+.src__gbar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--content-blue), var(--content-violet)); }
 .src__list { list-style: none; margin: 0; padding: 0; }
 .unit {
   display: grid;
-  grid-template-columns: 110px 1fr 150px;
+  grid-template-columns: 132px 1fr 150px;
   gap: 14px;
-  padding: 10px 12px;
-  border-left: 2px solid transparent;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--border);
-  transition: background-color 240ms ease-out, border-color 240ms ease-out;
+  transition: background-color 180ms ease-out, box-shadow 180ms ease-out;
 }
-.unit--ref { border-left-color: var(--tone-explicit); }
-.unit--gap { border-left-color: var(--warning); }
+.unit:last-child { border-bottom: 0; }
+.unit:hover { background: color-mix(in oklab, var(--content-blue) 5%, transparent); }
+.unit--ref .unit__id::before,
+.unit--gap .unit__id::before {
+  content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 6px;
+  border-radius: 999px; vertical-align: 1px; background: var(--content-blue);
+}
+.unit--gap .unit__id::before { background: var(--warning); }
 .unit--focus {
   background: color-mix(in oklab, var(--brand-to) 10%, transparent);
-  border-left-color: var(--brand-to);
+  box-shadow: inset 2px 0 0 var(--brand-to);
 }
 .unit__meta { display: flex; gap: 6px; flex-wrap: wrap; align-content: start; align-items: center; }
 .unit__id { font-family: var(--font-mono); font-size: 12px; color: var(--ui-muted-foreground); }
 .unit__para { font-size: 12px; color: var(--ui-muted-foreground); }
 .unit__text { margin: 0; font-size: 14px; line-height: 1.8; }
 .unit__refs { display: flex; gap: 4px; flex-wrap: wrap; align-content: start; justify-content: flex-end; }
+.src .uref {
+  display: inline-flex; height: 20px; align-items: center; padding: 0 7px;
+  border: 1px solid color-mix(in oklab, var(--content-blue) 18%, var(--border));
+  border-radius: 999px; background: color-mix(in oklab, var(--content-blue-soft) 42%, var(--card));
+  color: color-mix(in oklab, var(--content-blue) 76%, var(--foreground));
+  font-size: 11px; line-height: 1; text-decoration: none;
+}
+.src .uref:hover { border-color: color-mix(in oklab, var(--content-blue) 42%, var(--border)); background: color-mix(in oklab, var(--content-blue-soft) 72%, var(--card)); }
+.src .uref--static { color: color-mix(in oklab, var(--content-blue) 62%, var(--ui-muted-foreground)); }
 .unit__gap {
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
   color: color-mix(in oklab, var(--warning) 78%, var(--foreground));
@@ -176,13 +263,31 @@
   color: inherit; border-radius: 2px;
 }
 
+@media (max-width: 767px) {
+  .assets { padding: 14px 12px 26px; gap: 22px; }
+  .assets__title { font-size: 19px; }
+  .assets__hint { font-size: 11.5px; line-height: 1.6; }
+  .assets__grid { margin-top: 9px; gap: 10px; }
+  .assets__editnote { padding: 9px 10px; font-size: 11.5px; line-height: 1.65; }
+  .acard { gap: 9px; padding: 13px 12px 14px; border-radius: 14px; }
+  .acard__name { font-size: 15.5px; }
+  .acard__group { gap: 6px; }
+  .acard__group + .acard__group { padding-top: 8px; }
+  .acard__row { gap: 8px; font-size: 13px; line-height: 1.62; }
+  .acard__row > span { min-width: 42px; font-size: 11px; }
+  .acard__prose { font-size: 13px; line-height: 1.65; }
+  .acard__prompt { margin-top: 2px; padding-top: 8px; font-size: 11.5px; line-height: 1.65; }
+}
+
 @media (max-width: 720px) {
   .unit { grid-template-columns: 1fr; gap: 6px; }
   .unit__refs { justify-content: flex-start; }
+  .src__gbar { display: none; }
 }
 
 /* 画布侧栏复用原文 / 资产页：本来按整页宽排，放进侧栏收窄（后写、同权重，压过上面的整页排法） */
 .tlc__panel .src, .tlc__panel .assets { padding: 0; }
+.tlc__panel .src__groups { gap: 8px; }
 .tlc__panel .src__bar { flex-wrap: wrap; gap: 6px; }
 .tlc__panel .unit { grid-template-columns: 1fr; gap: 3px; }
 .tlc__panel .unit__refs { justify-content: flex-start; }
@@ -230,14 +335,132 @@
 /* 费用卡 */
 .rend__cost {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;
-  padding: 16px; background: var(--card);
+  padding: 16px;
+  background:
+    radial-gradient(60% 120% at 0% 0%, color-mix(in oklab, var(--ambient-blue) 46%, transparent), transparent 62%),
+    radial-gradient(52% 120% at 100% 0%, color-mix(in oklab, var(--ambient-rose) 34%, transparent), transparent 62%),
+    var(--card);
   border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px);
 }
-.rend__num { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.rend__num b { font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.rend__num {
+  --num-ink: var(--content-blue);
+  position: relative; display: flex; flex-direction: column; gap: 4px;
+  min-width: 0; padding-left: 12px;
+}
+.rend__num::before {
+  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 2px; border-radius: 999px;
+  background: var(--num-ink); opacity: .72;
+}
+.rend__num--clips { --num-ink: var(--content-blue); }
+.rend__num--secs { --num-ink: var(--content-violet); }
+.rend__num--imgs { --num-ink: var(--content-sand); }
+.rend__num--cost { --num-ink: var(--content-clay); }
+.rend__num b {
+  color: color-mix(in oklab, var(--num-ink) 86%, var(--foreground));
+  font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+}
 .rend__num span { font-size: 12px; color: var(--ui-muted-foreground); line-height: 1.5; }
 .rend__num--warn b { color: color-mix(in oklab, var(--warning) 78%, var(--foreground)); }
 .rend__note { font-size: 12px; color: var(--ui-muted-foreground); line-height: 1.7; margin: 0; }
+
+/* 空态：把任务包会产出什么画成一条流水线，避免整块面版只剩一句灰字 */
+.rend__blank {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 22px;
+  padding: 36px 24px 34px;
+  border: 1px dashed color-mix(in oklab, var(--content-blue) 28%, var(--border));
+  border-radius: calc(var(--ui-radius) + 4px);
+  background:
+    radial-gradient(72% 96% at 16% 0%, color-mix(in oklab, var(--ambient-blue) 68%, transparent), transparent 64%),
+    radial-gradient(60% 84% at 92% 8%, color-mix(in oklab, var(--ambient-rose) 40%, transparent), transparent 62%),
+    color-mix(in oklab, var(--card) 76%, transparent);
+}
+.rend__blank::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .55;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(78% 80% at 50% 40%, #000 20%, transparent 82%);
+}
+.rend__blank-rail { position: relative; z-index: 1; display: flex; align-items: center; gap: 0; }
+.rend__blank-node {
+  --blank-ink: var(--content-blue);
+  --blank-soft: var(--content-blue-soft);
+  display: flex; min-width: 134px; flex-direction: column; align-items: center; gap: 3px;
+  padding: 13px 16px 12px;
+  border: 1px solid color-mix(in oklab, var(--blank-ink) 24%, var(--border));
+  border-radius: 13px;
+  background:
+    linear-gradient(155deg, color-mix(in oklab, var(--blank-soft) 58%, var(--card)) 0%, var(--card) 76%);
+  box-shadow: 0 16px 34px -30px color-mix(in oklab, var(--blank-ink) 62%, transparent);
+}
+.rend__blank-node[data-tone="sand"] { --blank-ink: var(--content-sand); --blank-soft: var(--content-sand-soft); }
+.rend__blank-node[data-tone="rose"] { --blank-ink: var(--content-rose); --blank-soft: var(--content-rose-soft); }
+.rend__blank-node svg { width: 21px; height: 21px; margin-bottom: 2px; color: var(--blank-ink); stroke-width: 1.7; }
+.rend__blank-node b {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: .16em;
+  color: color-mix(in oklab, var(--blank-ink) 74%, var(--ui-muted-foreground));
+}
+.rend__blank-node em {
+  font-style: normal; font-size: 12px; line-height: 1.4; white-space: nowrap;
+  color: color-mix(in oklab, var(--foreground) 88%, var(--ui-muted-foreground));
+}
+.rend__blank-link {
+  width: clamp(18px, 3vw, 46px); height: 1px; flex: none;
+  background-image: linear-gradient(90deg, color-mix(in oklab, var(--content-blue) 46%, transparent) 55%, transparent 0);
+  background-size: 6px 1px;
+}
+.rend__blank-copy {
+  position: relative; z-index: 1; max-width: 52ch; margin: 0;
+  text-align: center; font-size: 13px; line-height: 1.75; color: var(--ui-muted-foreground);
+}
+@media (max-width: 640px) {
+  .rend { padding: 14px 12px 28px; gap: 12px; }
+  .rend__head { gap: 10px; }
+  .rend__head h3 { font-size: 18px; letter-spacing: -.02em; }
+  .rend__hint { margin-top: 2px; font-size: 11.5px; line-height: 1.65; }
+  .rend__acts {
+    display: grid; width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px; padding: 10px;
+    border: 1px solid color-mix(in oklab, var(--content-violet) 14%, var(--border));
+    border-radius: 14px;
+    background:
+      linear-gradient(145deg,
+        color-mix(in oklab, var(--content-violet-soft) 30%, var(--card)),
+        color-mix(in oklab, var(--content-blue-soft) 20%, var(--card)) 72%);
+  }
+  .rend__len {
+    min-width: 0; flex-direction: column; align-items: stretch; gap: 4px;
+    font-size: 11px;
+  }
+  .rend__len:nth-of-type(3) { grid-column: 1 / -1; }
+  .rend__len select, .rend__rate { width: 100%; height: 38px; font-size: 13px; }
+  .rend__acts > [data-slot="button"] {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .rend__cost { gap: 12px; padding: 13px; }
+  .rend__num b { font-size: 21px; }
+  .rend__blank { gap: 14px; padding: 22px 10px 20px; }
+  .rend__blank-rail { width: 100%; flex-direction: row; }
+  .rend__blank-node {
+    min-width: 0; flex: 1 1 0;
+    padding: 9px 4px 8px; border-radius: 11px;
+  }
+  .rend__blank-node svg { width: 18px; height: 18px; }
+  .rend__blank-node em {
+    font-size: 10.5px; line-height: 1.35; text-align: center; white-space: normal;
+  }
+  .rend__blank-link {
+    width: 10px; height: 1px;
+    background-image: linear-gradient(90deg, color-mix(in oklab, var(--content-blue) 46%, transparent) 55%, transparent 0);
+    background-size: 5px 1px;
+  }
+  .rend__blank-copy { font-size: 12px; line-height: 1.65; }
+}
 
 /* 费用怎么算：标题行可点，ChevronRight 展开时转 90° */
 .rend__basis {

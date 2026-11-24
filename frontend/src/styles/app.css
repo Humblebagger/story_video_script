@@ -1,6 +1,6 @@
 /* Inkreel 设计变量：深浅两套。Tailwind 主题映射到这些变量，shadcn 组件直接用。
  * muted / accent / radius 带 ui- 前缀（当初为避开旧样式表的同名变量，沿用至今）。
- * 品牌：墨色底 + 琥珀到品红的一道渐变；每屏最多一种强调。 */
+ * 品牌：暖纸工作台 + 墨色动作，玫瑰 / 雾蓝 / 沙金 / 灰紫只做分区和内容识别。 */
 /* 层序：Tailwind 重置与元素基础规则在 base，各页样式在 components，工具类最后。
  * controls.css（多处共用的控件）排在各页样式之前：同层后写的赢，各页的局部改写照常生效。 */
 @layer theme, base, components, utilities;
@@ -9,11 +9,13 @@
 @import "./controls.css" layer(components);
 @import "./storyboard.css" layer(components);
 @import "./views.css" layer(components);
+@import "./auth.css" layer(components);
 @import "./canvas.css" layer(components);
 @import "./film.css" layer(components);
 @import "./nodegraph.css" layer(components);
 @import "./novel.css" layer(components);
 @import "./shell.css" layer(components);
+@import "./landing.css" layer(components);
 @import "./shelf.css" layer(components);
 @import "./workspace.css" layer(components);
 @import "./chapter.css" layer(components);
@@ -22,77 +24,114 @@
 
 :root {
   color-scheme: light;
-  --ui-radius: 0.75rem;
-  --background: oklch(0.985 0.003 80);
-  --foreground: oklch(0.2 0.012 270);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.012 270);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.012 270);
-  --primary: oklch(0.24 0.02 270);
-  --primary-foreground: oklch(0.985 0.003 80);
-  --secondary: oklch(0.955 0.006 80);
-  --secondary-foreground: oklch(0.24 0.02 270);
-  --ui-muted: oklch(0.955 0.006 80);
-  --ui-muted-foreground: oklch(0.5 0.012 270);
-  --ui-accent: oklch(0.95 0.02 60);
-  --ui-accent-foreground: oklch(0.3 0.06 50);
+  --ui-radius: 0.5rem;
+  --font-display: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "Noto Serif CJK SC", "SimSun", Georgia, serif;
+  --background: #f7f1e7;
+  --foreground: #17130f;
+  --card: #fffbf3;
+  --card-foreground: #17130f;
+  --popover: #fffbf3;
+  --popover-foreground: #17130f;
+  --primary: #191512;
+  --primary-foreground: #fffaf1;
+  --secondary: #eee3d4;
+  --secondary-foreground: #3b3129;
+  --ui-muted: #f1e7d8;
+  --ui-muted-foreground: #655a4c;
+  --ui-accent: #fbe1d5;
+  --ui-accent-foreground: #8a3418;
   --destructive: oklch(0.58 0.2 27);
-  --success: oklch(0.6 0.13 155);
+  --success: #2d6a8a;
+  --content-clay: #a63f1d;
+  --content-clay-soft: #fbe1d6;
+  --content-blue: #245ea8;
+  --content-blue-soft: #e1ecfb;
+  --content-sand: #8a5c0b;
+  --content-sand-soft: #f8ebc8;
+  --content-violet: #6740a5;
+  --content-violet-soft: #eee6fb;
+  --content-rose: #b02d58;
+  --content-rose-soft: #fbe0e9;
+  --content-slate: #4a5665;
+  --content-slate-soft: #e7ebf0;
   --warning: oklch(0.72 0.15 75);
-  --border: oklch(0.91 0.006 80);
-  --input: oklch(0.91 0.006 80);
-  --ring: oklch(0.7 0.14 55);
-  --brand-from: oklch(0.78 0.16 70);
-  --brand-to: oklch(0.62 0.24 340);
+  --border: #e6d7c4;
+  --input: #b09e88;
+  --ring: #b23a18;
+  --brand-from: #191512;
+  --brand-to: #b23a18;
+  --ambient-rose: #f9dce5;
+  --ambient-blue: #dfeaf9;
+  --ambient-sand: #f8e8c5;
+  --ambient-violet: #eee3fb;
+  /* 审阅页当前镜头的取景框底色：组件按镜头内联覆盖，这里给样式表一个默认值 */
+  --frame-hue: #dfeaf9;
   /* 分镜语义色：原文出处 / 系统补充 / 转场 */
-  --tone-explicit: oklch(0.58 0.11 155);
-  --tone-inferred: oklch(0.68 0.13 75);
-  --tone-transition: oklch(0.58 0.12 280);
-  --sidebar: oklch(0.975 0.004 80);
-  --sidebar-foreground: oklch(0.24 0.02 270);
-  --sidebar-border: oklch(0.91 0.006 80);
-  --sidebar-accent: oklch(0.94 0.008 80);
-  --sidebar-accent-foreground: oklch(0.2 0.012 270);
+  --tone-explicit: #245ea8;
+  --tone-inferred: oklch(0.7 0.16 70);
+  --tone-transition: oklch(0.58 0.16 300);
+  --sidebar: #14110e;
+  --sidebar-foreground: #f2e8da;
+  --sidebar-border: #3c322a;
+  --sidebar-accent: #33251f;
+  --sidebar-accent-foreground: #fff0e3;
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.155 0.012 275);
-  --foreground: oklch(0.95 0.006 80);
-  --card: oklch(0.195 0.014 275);
-  --card-foreground: oklch(0.95 0.006 80);
-  --popover: oklch(0.21 0.014 275);
-  --popover-foreground: oklch(0.95 0.006 80);
-  --primary: oklch(0.95 0.006 80);
-  --primary-foreground: oklch(0.18 0.014 275);
-  --secondary: oklch(0.25 0.014 275);
-  --secondary-foreground: oklch(0.95 0.006 80);
-  --ui-muted: oklch(0.24 0.012 275);
-  --ui-muted-foreground: oklch(0.7 0.012 275);
-  --ui-accent: oklch(0.3 0.04 40);
-  --ui-accent-foreground: oklch(0.92 0.06 70);
-  --destructive: oklch(0.66 0.19 25);
-  --success: oklch(0.72 0.13 155);
-  --warning: oklch(0.8 0.14 80);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.75 0.15 60);
-  --brand-from: oklch(0.82 0.15 72);
-  --brand-to: oklch(0.68 0.23 345);
+  --background: #0f1220;
+  --foreground: #f8f8ff;
+  --card: #181c2b;
+  --card-foreground: #f8f8ff;
+  --popover: #202538;
+  --popover-foreground: #f8f8ff;
+  --primary: #8ba5ff;
+  --primary-foreground: #11162b;
+  --secondary: #252a3d;
+  --secondary-foreground: #eef1ff;
+  --ui-muted: #24293a;
+  --ui-muted-foreground: #b1bcd4;
+  --ui-accent: #30264c;
+  --ui-accent-foreground: #eee8ff;
+  --destructive: oklch(0.7 0.2 20);
+  --success: #83c8ff;
+  --content-clay: #ff9a7a;
+  --content-clay-soft: #3d231f;
+  --content-blue: #7fb2ff;
+  --content-blue-soft: #192c49;
+  --content-sand: #ffd166;
+  --content-sand-soft: #3b2d18;
+  --content-violet: #c2a4ff;
+  --content-violet-soft: #2c2347;
+  --content-rose: #ff8fb5;
+  --content-rose-soft: #3b2030;
+  --content-slate: #c5cfe3;
+  --content-slate-soft: #29303f;
+  --warning: oklch(0.82 0.16 80);
+  --border: #30364a;
+  --input: #6e7894;
+  --ring: #9a87ff;
+  --brand-from: #8c7bff;
+  --brand-to: #ff8a6b;
+  --ambient-rose: #3b1f34;
+  --ambient-blue: #172a46;
+  --ambient-sand: #3a2b15;
+  --ambient-violet: #2c2248;
+  --frame-hue: #192c49;
   /* 分镜语义色：原文出处 / 系统补充 / 转场 */
-  --tone-explicit: oklch(0.74 0.12 155);
-  --tone-inferred: oklch(0.8 0.13 80);
-  --tone-transition: oklch(0.74 0.11 280);
-  --sidebar: oklch(0.175 0.013 275);
-  --sidebar-foreground: oklch(0.92 0.006 80);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-accent: oklch(0.24 0.014 275);
-  --sidebar-accent-foreground: oklch(0.95 0.006 80);
+  --tone-explicit: #7fb2ff;
+  --tone-inferred: oklch(0.84 0.16 82);
+  --tone-transition: oklch(0.78 0.16 300);
+  --sidebar: #0b0d16;
+  --sidebar-foreground: #f1f4ff;
+  --sidebar-border: #2a3043;
+  --sidebar-accent: #232a3e;
+  --sidebar-accent-foreground: #ffffff;
 }
 
 @theme inline {
   --font-sans: "Inter Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "Noto Serif CJK SC", "SimSun", Georgia, serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --radius-sm: calc(var(--ui-radius) - 4px);
   --radius-md: calc(var(--ui-radius) - 2px);
@@ -133,7 +172,7 @@
 @layer base {
   * { @apply border-border outline-ring/50; }
   /* 字体：Inter，中文回落系统字体（见 --font-sans） */
-  body { @apply bg-background text-foreground font-sans antialiased; font-size: 15px; line-height: 1.65; }
+  body { @apply bg-background text-foreground font-sans antialiased; font-size: 15px; line-height: 1.55; }
   h1, h2, h3 { font-weight: 650; }
   /* Tailwind 重置把标题都变成正文粗细，这里补回 */
   h4, h5, h6 { font-weight: 600; }
@@ -151,13 +190,10 @@
 
 /* 品牌渐变：文字与细线用，克制 */
 @utility text-brand {
-  background-image: linear-gradient(100deg, var(--brand-from), var(--brand-to));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--brand-to);
 }
 @utility bg-brand {
-  background-image: linear-gradient(100deg, var(--brand-from), var(--brand-to));
+  background: var(--brand-from);
 }
 @layer components {
   .fix-flash {

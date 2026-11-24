@@ -49,8 +49,8 @@ export function filterShots(rows: ShotRow[], query: string) {
     .some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))
 }
 
-/** 景别色块的色相：越远越冷、越近越暖 */
+/** 景别色块的色相：越远越冷、越近越暖；避开绿色区间，整体落在雾蓝 / 灰紫 / 玫瑰 / 陶土。 */
 export const SIZE_HUE: Record<ShotSize, number> = {
-  extreme_wide: 210, wide: 200, full: 185, medium: 160,
-  medium_close: 45, close_up: 25, extreme_close_up: 10, insert: 280,
+  extreme_wide: 214, wide: 205, full: 232, medium: 266,
+  medium_close: 32, close_up: 20, extreme_close_up: 350, insert: 286,
 }

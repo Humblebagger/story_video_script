@@ -1,7 +1,6 @@
-/** 首页（没登录时）：顶栏（滚动后磨砂）、首屏（标题、按钮、慢速光斑背景、画布示意图）、功能 6 卡、流程 4 步、
+/** 首页（没登录时）：顶栏（滚动后磨砂）、非对称首屏（大标题、按钮、画布示意图）、功能索引、流程 4 步、
  *  常见问题、结尾号召、页脚。右上角与按钮打开登录 / 注册对话框（由 App 管）。文字全部走语言包。 */
 import { useEffect, useState } from 'react'
-import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowRight, BookOpenText, Clapperboard, Film, Layers, Mic, ShieldCheck, Sparkles,
 } from 'lucide-react'
@@ -13,9 +12,7 @@ import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { cn } from '@/lib/utils'
-import { DUR, EASE_OUT } from '@/motion'
 import { CanvasMock } from './CanvasMock'
-import { canObserve } from './observe'
 import { Reveal } from './Reveal'
 
 const FEATURES = [
@@ -26,22 +23,21 @@ const STEPS = ['import', 'storyboard', 'edit', 'film'] as const
 const FAQ = ['cost', 'models', 'privacy', 'edit', 'export'] as const
 
 export function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () => void }) {
-  const { t } = useI18n()
-  const reduced = !!useReducedMotion()
+  const { t, locale } = useI18n()
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 8)
     window.addEventListener('scroll', on, { passive: true })
     return () => window.removeEventListener('scroll', on)
   }, [])
-  const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' })
+  const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   const k = (s: string) => s as MsgKey
 
   return (
-    <div className="min-h-screen bg-background text-foreground" data-testid="landing">
+    <div className="landing-page min-h-screen" data-testid="landing" data-locale={locale}>
       <header className={cn('fixed inset-x-0 top-0 z-40 transition-colors duration-200',
                             scrolled ? 'border-b bg-background/70 backdrop-blur-xl' : 'bg-transparent')}>
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
+        <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-6 px-6">
           <Logo className="text-base" />
           <nav className="hidden flex-1 items-center justify-center gap-7 text-sm text-muted-foreground md:flex">
             {(['features', 'workflow', 'faq'] as const).map((id) => (
@@ -59,114 +55,118 @@ export function Landing({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp
         </div>
       </header>
 
-      <section className="relative overflow-hidden pb-24 pt-36">
-        <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
-          <motion.div className="absolute -top-32 left-1/2 h-[520px] w-[820px] rounded-full bg-brand opacity-20 blur-3xl"
-                      style={{ x: '-50%' }}
-                      animate={reduced ? undefined : { x: ['-52%', '-48%', '-52%'], y: [0, 24, 0] }}
-                      transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }} />
-          <div className="absolute inset-0 opacity-[0.035] [background-image:radial-gradient(currentColor_1px,transparent_1px)] [background-size:3px_3px]" />
-        </div>
-        <div className="relative mx-auto max-w-6xl px-6 text-center">
-          <Reveal>
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border bg-card/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
+      <section className="landing-hero relative overflow-hidden">
+        <div aria-hidden className="landing-hero__wash" />
+        <div className="landing-hero__grid relative mx-auto max-w-[1240px] px-6">
+          <div className="landing-hero__copy">
+            <Reveal>
+              <p className="landing-kicker">
+                <span className="landing-kicker__dot" />
+                {t('landing.eyebrow')}
+              </p>
+            </Reveal>
+            <Reveal delay={0.05}>
+              <h1 className="landing-title">{t('landing.title')}</h1>
+            </Reveal>
+            <Reveal delay={0.1}>
+              <p className="landing-subtitle">{t('landing.subtitle')}</p>
+            </Reveal>
+            <Reveal delay={0.15} className="landing-hero__actions">
+              <Button size="lg" onClick={onSignUp} className="gap-2">{t('landing.start')}<ArrowRight className="size-4" /></Button>
+              <Button size="lg" variant="outline" onClick={() => go('workflow')}>{t('landing.seeFlow')}</Button>
+            </Reveal>
+            <Reveal delay={0.2} className="landing-hero__meta">
+              {[t('landing.mock.shots'), t('landing.mock.speech'), t('landing.mock.film')].map((label, i) => (
+                <span key={label} className="landing-hero__meta-item">
+                  <span className="landing-hero__meta-no">0{i + 1}</span>{label}
+                </span>
+              ))}
+            </Reveal>
+          </div>
+          <Reveal delay={0.18} className="landing-hero__visual">
+            <div className="landing-hero__visual-caption">
+              <span>STORYBOARD / 01</span>
+              <span className="landing-hero__visual-rule" />
+            </div>
+            <CanvasMock />
+            <p className="landing-hero__visual-note">
               <Film className="size-3.5" />{t('landing.eyebrow')}
             </p>
           </Reveal>
-          <Reveal delay={0.05}>
-            <h1 className="mx-auto max-w-3xl pb-1 text-5xl leading-tight font-semibold tracking-tight md:text-7xl">
-              <span className="text-brand">{t('landing.title')}</span>
-            </h1>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">{t('landing.subtitle')}</p>
-          </Reveal>
-          <Reveal delay={0.15} className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <Button size="lg" onClick={onSignUp} className="gap-2">{t('landing.start')}<ArrowRight className="size-4" /></Button>
-            <Button size="lg" variant="outline" onClick={() => go('workflow')}>{t('landing.seeFlow')}</Button>
-          </Reveal>
-          <Reveal delay={0.25} className="mt-16"><CanvasMock /></Reveal>
         </div>
       </section>
 
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-20 px-6 py-24">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t('landing.featuresTitle')}</h2>
-          <p className="mt-4 text-muted-foreground">{t('landing.featuresSub')}</p>
+      <section id="features" className="mx-auto max-w-[1240px] scroll-mt-24 px-6 py-24 lg:py-32">
+        <Reveal className="landing-section__head">
+          <p className="landing-kicker"><span className="landing-kicker__no">01</span>{t('landing.nav.features')}</p>
+          <h2 className="landing-display">{t('landing.featuresTitle')}</h2>
+          <p className="landing-section__sub">{t('landing.featuresSub')}</p>
         </Reveal>
-        <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="landing-index">
           {FEATURES.map(({ id, icon: Icon }, i) => (
-            <Reveal key={id} delay={i * 0.05}>
-              <div className="group h-full rounded-2xl border bg-card p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-to/40 hover:shadow-lg">
-                <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-muted text-foreground transition-colors group-hover:bg-brand group-hover:text-white">
-                  <Icon className="size-5" />
-                </div>
-                <h3 className="font-semibold">{t(k(`landing.features.${id}.title`))}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t(k(`landing.features.${id}.desc`))}</p>
+            <Reveal key={id} delay={i * 0.04} className="landing-index__item">
+              <span className="landing-index__no">{String(i + 1).padStart(2, '0')}</span>
+              <span className="landing-index__icon"><Icon className="size-5" /></span>
+              <div className="landing-index__body">
+                <h3>{t(k(`landing.features.${id}.title`))}</h3>
+                <p>{t(k(`landing.features.${id}.desc`))}</p>
               </div>
             </Reveal>
           ))}
         </div>
       </section>
 
-      <section id="workflow" className="scroll-mt-20 border-y bg-muted/30 py-24">
-        <div className="mx-auto max-w-6xl px-6">
-          <Reveal className="text-center">
-            <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t('landing.workflowTitle')}</h2>
-          </Reveal>
-          <div className="relative mt-14">
-            <div aria-hidden className="absolute left-0 right-0 top-5 hidden h-px bg-border md:block">
-              {canObserve() ? (
-                <motion.div className="h-full origin-left bg-brand"
-                            initial={{ scaleX: reduced ? 1 : 0 }} whileInView={{ scaleX: 1 }}
-                            viewport={{ once: true }} transition={{ duration: DUR.slow, ease: EASE_OUT }} />
-              ) : <div className="h-full bg-brand" />}
+      <section id="workflow" className="landing-flow scroll-mt-24 border-y py-24 lg:py-32">
+        <div className="mx-auto max-w-[1240px] px-6">
+          <Reveal className="landing-section__head landing-section__head--row">
+            <div>
+              <p className="landing-kicker"><span className="landing-kicker__no">02</span>{t('landing.nav.workflow')}</p>
+              <h2 className="landing-display">{t('landing.workflowTitle')}</h2>
             </div>
-            <ol className="grid gap-8 md:grid-cols-4">
+          </Reveal>
+            <ol className="landing-steps">
             {STEPS.map((id, i) => (
-              <Reveal key={id} as="li" delay={i * 0.1} className="relative list-none">
-                <div className="relative">
-                  <span className="relative z-10 flex size-10 items-center justify-center rounded-full border bg-background font-mono text-sm font-semibold">
-                    {i + 1}
-                  </span>
-                  <h3 className="mt-4 font-semibold">{t(k(`landing.steps.${id}.title`))}</h3>
-                  <p className="mt-1.5 text-sm text-muted-foreground">{t(k(`landing.steps.${id}.desc`))}</p>
-                </div>
+              <Reveal key={id} as="li" delay={i * 0.08} className="landing-step">
+                <span className="landing-step__no">{String(i + 1).padStart(2, '0')}</span>
+                <h3>{t(k(`landing.steps.${id}.title`))}</h3>
+                <p>{t(k(`landing.steps.${id}.desc`))}</p>
               </Reveal>
             ))}
             </ol>
-          </div>
         </div>
       </section>
 
-      <section id="faq" className="mx-auto max-w-3xl scroll-mt-20 px-6 py-24">
-        <Reveal className="text-center">
-          <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t('landing.faqTitle')}</h2>
-        </Reveal>
-        <Reveal className="mt-10">
-          <Accordion type="single" collapsible className="w-full">
-            {FAQ.map((id) => (
-              <AccordionItem key={id} value={id}>
-                <AccordionTrigger className="text-left">{t(k(`landing.faq.${id}.q`))}</AccordionTrigger>
-                <AccordionContent className="text-muted-foreground">{t(k(`landing.faq.${id}.a`))}</AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </Reveal>
+      <section id="faq" className="landing-faq mx-auto max-w-[1240px] scroll-mt-24 px-6 py-24 lg:py-32">
+        <div className="landing-faq__grid">
+          <Reveal className="landing-faq__head">
+            <p className="landing-kicker"><span className="landing-kicker__no">03</span>{t('landing.nav.faq')}</p>
+            <h2 className="landing-display">{t('landing.faqTitle')}</h2>
+          </Reveal>
+          <Reveal>
+            <Accordion type="single" collapsible className="w-full">
+              {FAQ.map((id) => (
+                <AccordionItem key={id} value={id}>
+                  <AccordionTrigger className="text-left">{t(k(`landing.faq.${id}.q`))}</AccordionTrigger>
+                  <AccordionContent className="text-muted-foreground">{t(k(`landing.faq.${id}.a`))}</AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </Reveal>
+        </div>
       </section>
 
-      <section className="px-6 pb-24">
-        <Reveal className="relative mx-auto max-w-5xl overflow-hidden rounded-3xl border bg-card px-8 py-16 text-center">
-          <div aria-hidden className="absolute inset-x-0 -top-24 mx-auto h-48 w-2/3 rounded-full bg-brand opacity-20 blur-3xl" />
-          <h2 className="relative text-3xl font-semibold tracking-tight md:text-4xl">{t('landing.ctaTitle')}</h2>
-          <p className="relative mt-4 text-muted-foreground">{t('landing.ctaSub')}</p>
-          <Button size="lg" className="relative mt-8 gap-2" onClick={onSignUp}>
+      <section className="landing-cta-band">
+        <Reveal className="landing-cta mx-auto max-w-[1240px] px-6 py-24 lg:py-32">
+          <p className="landing-kicker landing-kicker--inverse"><span className="landing-kicker__dot" />INKREEL</p>
+          <h2 className="landing-cta__title">{t('landing.ctaTitle')}</h2>
+          <p className="landing-cta__sub">{t('landing.ctaSub')}</p>
+          <Button size="lg" className="landing-cta__button gap-2" onClick={onSignUp}>
             {t('landing.signUp')}<ArrowRight className="size-4" />
           </Button>
         </Reveal>
       </section>
 
-      <footer className="border-t">
+      <footer className="landing-footer border-t">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground">
           <Logo />
           <span>{t('landing.footer')}</span>

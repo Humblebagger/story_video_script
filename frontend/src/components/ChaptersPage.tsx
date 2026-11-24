@@ -1,8 +1,7 @@
 import { useRef } from 'react'
-import { FileUp } from 'lucide-react'
+import { BookOpen, Clapperboard, FileUp, Type } from 'lucide-react'
 import { motion } from 'motion/react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { useI18n } from '@/i18n/core'
 import type { MsgKey } from '@/i18n/core'
 import { fmtDuration } from '@/lib/fmt'
@@ -29,6 +28,35 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
   const fileRef = useRef<HTMLInputElement>(null)
   const sums = new Map((summary?.chapters ?? []).map((c) => [c.id, c]))
   const chapters = [...novel.chapters].sort((a, b) => a.order - b.order)
+  const rows = chapters.map((c) => ({
+    chapter: c,
+    stage: chapterStage(c, sums.get(c.id), false),
+  }))
+  const finished = rows.filter((r) => r.stage === 'download').length
+  const totalChars = chapters.reduce((n, c) => n + c.chars, 0)
+  const stats = [
+    {
+      key: 'chapters',
+      tone: 'blue',
+      icon: BookOpen,
+      label: t('overview.stat.chapters'),
+      value: String(chapters.length),
+    },
+    {
+      key: 'chars',
+      tone: 'sand',
+      icon: Type,
+      label: t('chaptersPage.col.chars'),
+      value: totalChars.toLocaleString(),
+    },
+    {
+      key: 'finished',
+      tone: 'rose',
+      icon: Clapperboard,
+      label: t('overview.stat.finished'),
+      value: `${finished}/${chapters.length}`,
+    },
+  ]
 
   const pickFile = (f: File | undefined) => {
     if (!f) return
@@ -40,8 +68,24 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="chapters mx-auto flex w-full max-w-[1080px] flex-col gap-5">
+      <div className="chapters__stats" aria-label={t('nav.chapters')}>
+        {stats.map((s, i) => {
+          const Icon = s.icon
+          return (
+            <article key={s.key} className="chapters__stat" data-tone={s.tone}>
+              <span className="chapters__stat-top">
+                <span className="chapters__stat-icon" aria-hidden><Icon /></span>
+                <span className="chapters__stat-label">{s.label}</span>
+                <span className="chapters__stat-index" aria-hidden>{String(i + 1).padStart(2, '0')}</span>
+              </span>
+              <b className="chapters__stat-value">{s.value}</b>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="chapters__bar">
         <Button size="sm" data-testid="new-chapter" onClick={onNewChapter}>{t('novel.newChapter')}</Button>
         <Button size="sm" variant="outline" data-tour="import" data-testid="import-txt" disabled={importing}
                 onClick={() => fileRef.current?.click()}>
@@ -54,7 +98,7 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
       {chapters.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('novel.empty')}</p>
       ) : (
-        <Card className="gap-0 p-0">
+        <div className="chtable">
           <div className="chtable__head" role="row">
             <span>{t('chaptersPage.col.no')}</span>
             <span>{t('chaptersPage.col.title')}</span>
@@ -63,19 +107,26 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
             <span>{t('chaptersPage.col.step')}</span>
             <span />
           </div>
-          {chapters.map((c, i) => {
-            const stage = chapterStage(c, sums.get(c.id), false)
+          {rows.map(({ chapter: c, stage }, i) => {
             const dur = fmtDuration(sums.get(c.id)?.duration_s)
             return (
-              <motion.div key={c.id} className="chtable__row" data-testid="chapter-row" role="row" {...m.item(i)}
+              <motion.div key={c.id} className="chtable__row" data-testid="chapter-row" role="row"
+                          data-stage={stage} data-empty={!c.chars || undefined} {...m.item(i)}
                           onClick={() => onOpenChapter(c.id)}>
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">{String(i + 1).padStart(2, '0')}</span>
-                <span className="min-w-0 truncate text-sm font-medium">{c.title}</span>
+                <span className="chtable__titlecell">
+                  <span className="truncate text-sm font-medium">{c.title}</span>
+                  <span className="chtable__sub" data-stage={stage}>
+                    {t(`flow.steps.${stage}` as MsgKey)}
+                    {dur && <span className="font-mono tabular-nums">{dur}</span>}
+                  </span>
+                </span>
                 <span className="text-right font-mono text-xs tabular-nums">{c.chars}</span>
                 <span className="text-right font-mono text-xs tabular-nums">{c.versions.length}</span>
-                <span className="text-xs">
-                  {t(`flow.steps.${stage}` as MsgKey)}
-                  {dur && <span className="ml-2 font-mono text-muted-foreground tabular-nums">{dur}</span>}
+                <span className="chtable__stage" data-stage={stage}>
+                  <span className="chtable__stage-dot" aria-hidden />
+                  <span>{t(`flow.steps.${stage}` as MsgKey)}</span>
+                  {dur && <span className="chtable__dur font-mono tabular-nums">{dur}</span>}
                 </span>
                 <span className="text-right">
                   <Button size="sm" variant="ghost" data-testid="chapter-open"
@@ -86,7 +137,7 @@ export function ChaptersPage({ novel, summary, onOpenChapter, onNewChapter, onIm
               </motion.div>
             )
           })}
-        </Card>
+        </div>
       )}
     </div>
   )

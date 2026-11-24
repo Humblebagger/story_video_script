@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Activity, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
@@ -69,9 +70,10 @@ export function JobsTab({ state, onState }: { state?: JobState | null; onState?:
         <>
           <h3 className="text-base font-semibold">{t('admin.jobs.running')}</h3>
           {data.running.length === 0 ? (
-            <Empty title={t('admin.jobs.noRunning')} />
+            <Empty tone="violet" icon={<Activity aria-hidden />}
+                   title={t('admin.jobs.noRunning')} hint={t('admin.jobs.emptyRunningHint')} />
           ) : (
-            <table className="adm__table" data-testid="jobs-running">
+            <table className="adm__table adm__table--cards" data-testid="jobs-running">
               <thead>
                 <tr>
                   <th>{rc('user')}</th><th>{rc('novelChapter')}</th><th>{rc('status')}</th>
@@ -81,11 +83,13 @@ export function JobsTab({ state, onState }: { state?: JobState | null; onState?:
               <tbody>
                 {data.running.map((j) => (
                   <tr key={j.id}>
-                    <td>{j.username ?? '—'}</td><td>{j.work_title ?? '—'} / {j.chapter ?? '—'}</td>
-                    <td><Badge variant="secondary">{j.status}</Badge></td>
-                    <td>{when(j.created_at)}</td><td className="is-num">{clock(j.elapsed_sec)}</td>
-                    <td className="is-num">{int(j.chars)}</td>
-                    <td>{debugBtn(j)}{debugBody(j.id)}</td>
+                    <td data-label={rc('user')}>{j.username ?? '—'}</td>
+                    <td data-label={rc('novelChapter')}>{j.work_title ?? '—'} / {j.chapter ?? '—'}</td>
+                    <td data-label={rc('status')}><Badge variant="secondary">{j.status}</Badge></td>
+                    <td data-label={rc('start')}>{when(j.created_at)}</td>
+                    <td className="is-num" data-label={rc('elapsed')}>{clock(j.elapsed_sec)}</td>
+                    <td className="is-num" data-label={rc('chars')}>{int(j.chars)}</td>
+                    <td className="adm__cell--wide" data-label={t('admin.jobs.debug')}>{debugBtn(j)}{debugBody(j.id)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -97,9 +101,10 @@ export function JobsTab({ state, onState }: { state?: JobState | null; onState?:
         <>
           <h3 className="text-base font-semibold">{t('admin.jobs.failed')}</h3>
           {data.failed.length === 0 ? (
-            <Empty title={t('admin.jobs.noFailed')} />
+            <Empty tone="rose" icon={<ShieldCheck aria-hidden />}
+                   title={t('admin.jobs.noFailed')} hint={t('admin.jobs.emptyFailedHint')} />
           ) : (
-            <table className="adm__table" data-testid="jobs-failed">
+            <table className="adm__table adm__table--cards" data-testid="jobs-failed">
               <thead>
                 <tr>
                   <th>{fc('user')}</th><th>{fc('novelChapter')}</th><th>{fc('start')}</th>
@@ -112,11 +117,12 @@ export function JobsTab({ state, onState }: { state?: JobState | null; onState?:
                   const text = itemError(j, locale)
                   return (
                     <tr key={j.id}>
-                      <td>{j.username ?? '—'}</td>
-                      <td>{j.novel_title ?? t('admin.deleted')} / {j.chapter_title ?? '—'}</td>
-                      <td>{when(j.created_at)}</td><td className="is-num">{int(j.chars)}</td>
-                      <td className="is-num">{j.attempts}</td>
-                      <td>
+                      <td data-label={fc('user')}>{j.username ?? '—'}</td>
+                      <td data-label={fc('novelChapter')}>{j.novel_title ?? t('admin.deleted')} / {j.chapter_title ?? '—'}</td>
+                      <td data-label={fc('start')}>{when(j.created_at)}</td>
+                      <td className="is-num" data-label={fc('chars')}>{int(j.chars)}</td>
+                      <td className="is-num" data-label={fc('attempts')}>{j.attempts}</td>
+                      <td className="adm__cell--wide" data-label={fc('error')}>
                         <details className="adm__err-detail">
                           <summary>{reason.slice(0, 40)}{reason.length > 40 ? '…' : ''}</summary>
                           <pre>{text}</pre>

@@ -21,8 +21,8 @@ export function RatioPicker({ value, onChange, 'aria-label': ariaLabel }: Props)
           <button key={r} type="button" data-ratio={r} aria-pressed={on}
                   onClick={() => onChange({ ...value, aspect_ratio: r })}
                   className={cn(
-                    'flex w-16 flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-2 text-xs outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50',
-                    on ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground')}>
+                    'flex w-16 flex-col items-center gap-1.5 rounded-md border px-2 py-2 text-xs outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50',
+                    on ? 'border-primary bg-accent text-foreground' : 'border-transparent text-muted-foreground')}>
             <span className="flex h-7 items-center">
               <span className={cn('block rounded-[3px] border-2', on ? 'border-primary' : 'border-current')} style={box(r)} />
             </span>

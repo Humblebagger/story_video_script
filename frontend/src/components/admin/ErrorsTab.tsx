@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
@@ -79,7 +79,8 @@ export function ErrorsTab() {
   let body
   if (error) body = <ErrorBar error={error} onRetry={reload} />
   else if (!data) body = <TableSkeleton />
-  else if (!data.length) body = <Empty title={t('admin.errors.empty')} hint={t('admin.errors.emptyHint')} />
+  else if (!data.length) body = <Empty tone="clay" icon={<TriangleAlert aria-hidden />}
+                                     title={t('admin.errors.empty')} hint={t('admin.errors.emptyHint')} />
   else body = <table className="adm__table">{head}<tbody>{data.map(row)}</tbody></table>
   return (
     <section className="adm__sec">

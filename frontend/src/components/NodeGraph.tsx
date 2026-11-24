@@ -112,6 +112,12 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
     ? [{ id: n.assetId, name: n.role === 'style' ? t('graph.style') : n.name }] : []))
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
   const dimmed = lit.size > 0
+  const assetTone = new Map<string, string>()
+  const tones = ['rose', 'violet', 'blue', 'sand', 'clay', 'slate']
+  let toneAt = 0
+  for (const n of graph.nodes) {
+    if (n.kind === 'asset') assetTone.set(n.id, tones[toneAt++ % tones.length])
+  }
 
   return (
     <div className="ngv" ref={box} role="region" aria-label={t('graph.viewAria')} data-testid="node-graph" onPointerDown={down} onPointerMove={move}
@@ -153,6 +159,9 @@ export function NodeGraph({ film, doc, styleUrl, kfUrls, selected, blocked, onSe
           const hot = hover === n.id || focus === n.id
           return (
             <div key={n.id} className={cls} style={style} data-node={n.id} tabIndex={0}
+                 data-role={n.kind === 'asset' ? n.role : undefined}
+                 data-tone={assetTone.get(n.id)}
+                 data-state={n.kind === 'clip' ? n.clip.state : n.kind === 'free' ? n.node.state : undefined}
                  onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) pick() }}
                  onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)}>
               {n.kind === 'asset' && (

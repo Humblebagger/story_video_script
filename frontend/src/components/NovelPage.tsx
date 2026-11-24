@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { BookOpen, ShieldBan, Trash2, UserRoundCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -15,7 +15,8 @@ import {
   addConstraint, addLifecycle, deleteConstraint, deleteLifecycle, setOutline,
   setSynopsis, updateConstraint, updateLifecycle, updateNovel,
 } from '../api'
-import { LIFECYCLE_STATUS, LIFECYCLE_TYPE, label } from '../labels'
+import { LIFECYCLE_STATUS, LIFECYCLE_TYPE, NARRATION_MODE, label } from '../labels'
+import { ART_STYLES, TTS_VOICES } from '../presets'
 import type { LifecycleType, Novel, NovelParams, NovelSummaryData } from '../types'
 import type { AssetKind } from '../edit'
 import type { Section } from '../section'
@@ -50,6 +51,18 @@ interface Props {
 
 const ASSET_SECTIONS: Section[] = ['characters', 'locations', 'props', 'creatures']
 
+const SECTION_EYEBROW: Record<Section, string> = {
+  overview: 'OVERVIEW',
+  chapters: 'CHAPTERS',
+  characters: 'CHARACTERS',
+  locations: 'LOCATIONS',
+  props: 'PROPS',
+  creatures: 'CREATURES',
+  memory: 'MEMORY',
+  constraints: 'RULES',
+  settings: 'SETTINGS',
+}
+
 const noop = () => {}
 
 const err = errText
@@ -62,6 +75,9 @@ export function NovelPage({
   const { t } = useI18n()
   const [addCard, setAddCard] = useState(0)
   const [busy, setBusy] = useState(false)
+  const sectionCount = section === 'chapters' ? novel.chapters.length
+    : ASSET_SECTIONS.includes(section) ? (novel.memory.assets[section as AssetKind] ?? []).length
+      : null
 
   const run = async (what: string, done: string, fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -77,10 +93,21 @@ export function NovelPage({
   }
 
   return (
-    <section className="novel">
+    <section className="novel" data-section={section}>
       <div className="novel__body" data-section={section}>
-        {section !== 'overview' && <div className="sechead">
-          <h3>{t(`nav.${section}` as MsgKey)}</h3>
+        {section !== 'overview' && <div className="sechead" data-section={section}>
+          <div className="sechead__lead">
+            <span className="sechead__eyebrow">{SECTION_EYEBROW[section]}</span>
+            <div className="sechead__titlerow">
+              <h3>{t(`nav.${section}` as MsgKey)}</h3>
+              {sectionCount != null && (
+                <span className="sechead__count">
+                  <b>{sectionCount}</b>
+                  {section === 'chapters' ? t('overview.stat.chapters') : t('overview.stat.assets')}
+                </span>
+              )}
+            </div>
+          </div>
           {ASSET_SECTIONS.includes(section) && (
             <Button size="sm" data-testid="new-card" onClick={() => setAddCard((n) => n + 1)}>{t('nav.newCard')}</Button>
           )}
@@ -100,13 +127,25 @@ export function NovelPage({
                        kind={section as AssetKind} focusAdd={addCard} />
         )}
         {section === 'memory' && (
-          <div className="flex flex-col gap-8">
-            <section aria-label={t('nav.memoryPlot')}>
-              <h4 className="mb-3 text-sm font-medium">{t('nav.memoryPlot')}</h4>
+          <div className="memory">
+            <section className="memory__group" data-tone="blue" aria-label={t('nav.memoryPlot')}>
+              <header className="memory__group-head">
+                <span className="memory__group-icon" aria-hidden><BookOpen /></span>
+                <div className="memory__group-text">
+                  <span className="memory__group-index">01 / PLOT</span>
+                  <h4>{t('nav.memoryPlot')}</h4>
+                </div>
+              </header>
               <PlotTab novel={novel} busy={busy} run={run} />
             </section>
-            <section aria-label={t('nav.memoryLife')}>
-              <h4 className="mb-3 text-sm font-medium">{t('nav.memoryLife')}</h4>
+            <section className="memory__group" data-tone="violet" aria-label={t('nav.memoryLife')}>
+              <header className="memory__group-head">
+                <span className="memory__group-icon" aria-hidden><UserRoundCheck /></span>
+                <div className="memory__group-text">
+                  <span className="memory__group-index">02 / STATE</span>
+                  <h4>{t('nav.memoryLife')}</h4>
+                </div>
+              </header>
               <LifecycleTab novel={novel} busy={busy} run={run} onOpenChapter={onOpenChapter} />
             </section>
           </div>
@@ -128,7 +167,7 @@ function SetRow({ label, desc, children, testId }: {
   const id = useId()
   return (
     <section data-testid={testId} role="group" aria-labelledby={id}
-             className="flex flex-col gap-3 border-b py-5 first:pt-0 last:border-b-0 sm:flex-row sm:gap-6">
+             className="setrow flex flex-col gap-3 border-b py-5 first:pt-0 last:border-b-0 sm:flex-row sm:gap-6">
       <div className="shrink-0 sm:w-60">
         <h3 id={id} className="text-sm font-medium">{label}</h3>
         {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
@@ -145,6 +184,8 @@ function ParamsTab({ novel, busy, run, onChanged }: TabProps & { onChanged: () =
   const [params, setParams] = useState<NovelParams>({ ...DEFAULT_PARAMS, ...novel.params })
   const prefixRef = useRef<HTMLInputElement>(null)
   const saved = { ...DEFAULT_PARAMS, ...novel.params }
+  const styleLabel = ART_STYLES.find((a) => a.value === params.art_style)?.label ?? params.art_style
+  const voiceLabel = TTS_VOICES.find((v) => v.value === params.tts_voice)?.label ?? params.tts_voice
   const dirty = title.trim() !== novel.title
     || (Object.keys(params) as (keyof NovelParams)[]).some((k) => params[k] !== saved[k])
   // 只在换了小说、或服务端内容真的变了且本地没有未保存改动时才重置表单
@@ -160,7 +201,24 @@ function ParamsTab({ novel, busy, run, onChanged }: TabProps & { onChanged: () =
     setParams({ ...DEFAULT_PARAMS, ...JSON.parse(paramsKey) })
   }, [novel.id, novel.title, paramsKey])
   return (
-    <Card className="novel__sec max-w-[720px] gap-0 p-5">
+    <Card className="novel__sec params__card max-w-[760px] gap-0 p-5 sm:p-6">
+      <div className="params__summary">
+        <span className="params__summary-eyebrow" aria-hidden>PROJECT / SETTINGS</span>
+        <div className="params__chips">
+          <span className="params__chip" data-tone="blue">
+            <small>{t('novel.set.ratio')}</small><b>{params.aspect_ratio}</b>
+          </span>
+          <span className="params__chip" data-tone="clay">
+            <small>{t('novel.set.style')}</small><b>{styleLabel}</b>
+          </span>
+          <span className="params__chip" data-tone="violet">
+            <small>{t('novel.set.narration')}</small><b>{label(NARRATION_MODE, params.narration_mode)}</b>
+          </span>
+          <span className="params__chip" data-tone="sand">
+            <small>{t('novel.set.voice')}</small><b>{voiceLabel}</b>
+          </span>
+        </div>
+      </div>
       <p className="lib__hint mb-4">{t('novel.params.hint')}</p>
       <SetRow testId="set-title" label={t('novel.titleLabel')} desc={t('novel.set.titleDesc')}>
         <Input aria-label={t('novel.titleLabel')} value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -212,7 +270,8 @@ export function PlotTab({ novel, busy, run }: TabProps) {
   return (
     <div className="plot">
       <p className="lib__hint">{t('novel.plot.hint')}</p>
-      <Card className="novel__sec gap-3 p-4">
+      <Card className="novel__sec plot__outline gap-3 p-4 sm:p-5">
+        <span className="plot__eyebrow" aria-hidden>MAIN ARC</span>
         <Label className="field field--wide flex-col items-stretch gap-1.5 font-normal">
           <span>{t('novel.plot.outline')}</span>
           <Textarea rows={4} value={outline} onChange={(e) => setOutlineText(e.target.value)} />
@@ -224,16 +283,20 @@ export function PlotTab({ novel, busy, run }: TabProps) {
           </Button>
         </div>
       </Card>
-      <Card className="novel__sec gap-3 p-4">
-        <h3 className="plot__h mt-0">{t('novel.plot.perChapter')}</h3>
+      <Card className="novel__sec plot__chapters gap-3 p-4 sm:p-5">
+        <div className="plot__chapter-head">
+          <h3 className="plot__h mt-0">{t('novel.plot.perChapter')}</h3>
+          <span className="plot__chapter-count">{novel.chapters.length}</span>
+        </div>
         {!novel.chapters.length && <p className="empty">{t('novel.plot.noChapters')}</p>}
         <ol className="plot__list">
-          {novel.chapters.map((c) => {
+          {novel.chapters.map((c, i) => {
             const s = synopsis[c.id]
             const value = drafts[c.id] ?? s?.synopsis ?? ''
             return (
-              <li key={c.id} className="plot__item">
+              <li key={c.id} className="plot__item" data-state={s ? 'ready' : 'todo'}>
                 <div className="plot__title">
+                  <span className="plot__num" aria-hidden>{String(i + 1).padStart(2, '0')}</span>
                   <b>{c.title}</b>
                   {s && <Badge variant="secondary">{s.origin === 'user' ? t('novel.plot.byUser') : t('novel.plot.byAuto')}</Badge>}
                   {!s && !c.adopted_version && <Badge variant="outline">{t('novel.plot.notAdopted')}</Badge>}
@@ -279,52 +342,72 @@ export function ConstraintsTab({ novel, busy, run }: TabProps) {
     <div className="cons">
       {confirmUi}
       <p className="lib__hint">{t('novel.cons.hint')}</p>
-      <ul className="cons__list">
-        {list.map((c) => (
-          <li key={c.id} className={`cons__item${c.enabled ? '' : ' is-off'}`}>
-            <label className="check">
-              <input type="checkbox" checked={c.enabled} disabled={busy}
-                     onChange={(e) => void run(t('novel.cons.whatToggle'), t('novel.ok.updated'), () =>
-                       updateConstraint(novel.id, c.id, { enabled: e.target.checked }))} />
-              <b>{c.text}</b>
-            </label>
-            {c.negative_prompt && <span className="cons__neg">{t('novel.cons.neg', { v: c.negative_prompt })}</span>}
-            {!!c.keywords.length && <span className="cons__kw">{t('novel.cons.kw', { v: c.keywords.join(t('common.listSep')) })}</span>}
-            <Button variant="ghost" size="icon-xs" className="hrun__del text-muted-foreground hover:text-destructive"
-                    title={t('novel.cons.delTip')} aria-label={t('novel.cons.delTip')}
-                    onClick={async () => {
-                      if (await ask({ title: t('confirm.constraint.title'), action: t('confirm.delete'), danger: true })) {
-                        void run(t('novel.cons.whatDelete'), t('novel.ok.deleted'), () => deleteConstraint(novel.id, c.id))
-                      }
-                    }}>
-              <Trash2 aria-hidden />
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {!list.length && <p className="empty">{t('novel.cons.empty')}</p>}
-      <Card className="novel__sec gap-3 p-4">
-        <div className="form cons__new">
-          <Field label={t('novel.cons.rule')} wide>
-            <Input value={text} placeholder={t('novel.cons.rulePh')}
-                   onChange={(e) => setText(e.target.value)} />
-          </Field>
-          <div className="form__grid">
-            <Field label={t('novel.cons.negField')}>
-              <Input value={neg} placeholder={t('novel.cons.negPh')} onChange={(e) => setNeg(e.target.value)} />
-            </Field>
-            <Field label={t('novel.cons.kwField')}>
-              <Input value={keywords} placeholder={t('novel.cons.kwPh')} onChange={(e) => setKeywords(e.target.value)} />
-            </Field>
+      <div className="cons__cols">
+        <section className="cons__main">
+          <div className="cons__main-head">
+            <h3>{t('novel.cons.listTitle')}</h3>
+            <span className="cons__count">{list.length}</span>
           </div>
-          <div className="form__foot">
-            <span />
-            <Button size="sm" disabled={busy || !text.trim()} onClick={() => void add()}>
-              {t('novel.cons.add')}
-            </Button>
+          <ul className="cons__list">
+            {list.map((c) => (
+              <li key={c.id} className={`cons__item${c.enabled ? '' : ' is-off'}`}>
+                <label className="check">
+                  <input type="checkbox" checked={c.enabled} disabled={busy}
+                         onChange={(e) => void run(t('novel.cons.whatToggle'), t('novel.ok.updated'), () =>
+                           updateConstraint(novel.id, c.id, { enabled: e.target.checked }))} />
+                  <b>{c.text}</b>
+                </label>
+                {c.negative_prompt && <span className="cons__neg">{t('novel.cons.neg', { v: c.negative_prompt })}</span>}
+                {!!c.keywords.length && <span className="cons__kw">{t('novel.cons.kw', { v: c.keywords.join(t('common.listSep')) })}</span>}
+                <Button variant="ghost" size="icon-xs" className="hrun__del text-muted-foreground hover:text-destructive"
+                        title={t('novel.cons.delTip')} aria-label={t('novel.cons.delTip')}
+                        onClick={async () => {
+                          if (await ask({ title: t('confirm.constraint.title'), action: t('confirm.delete'), danger: true })) {
+                            void run(t('novel.cons.whatDelete'), t('novel.ok.deleted'), () => deleteConstraint(novel.id, c.id))
+                          }
+                        }}>
+                  <Trash2 aria-hidden />
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {!list.length && (
+            <div className="cons__empty">
+              <span className="cons__empty-halo" aria-hidden />
+              <span className="cons__empty-icon" aria-hidden><ShieldBan /></span>
+              <span className="cons__empty-tag" aria-hidden>RULEBOOK / 0</span>
+              <p>{t('novel.cons.empty')}</p>
+              <span className="cons__empty-hint">{t('novel.cons.emptyHint')}</span>
+            </div>
+          )}
+        </section>
+        <Card className="novel__sec cons__compose gap-4 p-4 sm:p-5">
+          <div className="cons__compose-head">
+            <span className="cons__compose-eyebrow" aria-hidden>NEW RULE</span>
+            <h3>{t('novel.cons.compose')}</h3>
           </div>
-        </div>
-      </Card>
+          <div className="form cons__new">
+            <Field label={t('novel.cons.rule')} wide>
+              <Input value={text} placeholder={t('novel.cons.rulePh')}
+                     onChange={(e) => setText(e.target.value)} />
+            </Field>
+            <div className="form__grid">
+              <Field label={t('novel.cons.negField')}>
+                <Input value={neg} placeholder={t('novel.cons.negPh')} onChange={(e) => setNeg(e.target.value)} />
+              </Field>
+              <Field label={t('novel.cons.kwField')}>
+                <Input value={keywords} placeholder={t('novel.cons.kwPh')} onChange={(e) => setKeywords(e.target.value)} />
+              </Field>
+            </div>
+            <div className="form__foot">
+              <span />
+              <Button size="sm" disabled={busy || !text.trim()} onClick={() => void add()}>
+                {t('novel.cons.add')}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
     </div>
   )
 }
@@ -350,58 +433,73 @@ function LifecycleTab({ novel, busy, run, onOpenChapter }: TabProps & {
       <p className="lib__hint">
         {t('novel.life.hintA')}<b>{t('novel.life.hintB')}</b>{t('novel.life.hintC')}
       </p>
-      <ul className="life__list">
-        {list.map((e) => (
-          <li key={e.id} className={`life__item life__item--${e.status}`}>
-            <div className="life__top">
-              <b>{e.character_id} {names[e.character_id] ?? ''}</b>
-              <Badge variant="secondary">{label(LIFECYCLE_TYPE, e.type)}</Badge>
-              <Badge variant={e.status === 'proposed' ? 'destructive' : 'outline'}>
-                {label(LIFECYCLE_STATUS, e.status)}
-              </Badge>
-              <Badge variant="outline" className="border-dashed">
-                {e.origin === 'model' ? t('novel.life.byModel') : t('novel.life.byUser')}
-              </Badge>
-              {e.since.chapter_id && (
-                <button className="linkbtn" onClick={() => onOpenChapter(e.since.chapter_id!)}>
-                  {titles[e.since.chapter_id] ?? e.since.chapter_id}
-                  {e.since.unit_ref ? ` · ${e.since.unit_ref}` : ''}
-                </button>
-              )}
-            </div>
-            {e.detail && <p className="life__detail">{e.detail}</p>}
-            {e.evidence_quote && <blockquote className="life__quote">{t('common.quote', { text: e.evidence_quote })}</blockquote>}
-            <div className="life__acts">
-              {e.status !== 'confirmed' && (
-                <Button size="sm" disabled={busy}
-                        onClick={() => void run(t('novel.life.confirm'), t('novel.ok.confirmed'), () =>
-                          updateLifecycle(novel.id, e.id, { status: 'confirmed' }))}>
-                  {t('novel.life.confirm')}
+      <section className="life__main">
+        <div className="life__main-head">
+          <h3>{t('novel.life.listTitle')}</h3>
+          <span className="life__count">{list.length}</span>
+        </div>
+        <ul className="life__list">
+          {list.map((e) => (
+            <li key={e.id} className={`life__item life__item--${e.status}`}>
+              <div className="life__top">
+                <b>{e.character_id} {names[e.character_id] ?? ''}</b>
+                <Badge variant="secondary">{label(LIFECYCLE_TYPE, e.type)}</Badge>
+                <Badge variant={e.status === 'proposed' ? 'destructive' : 'outline'}>
+                  {label(LIFECYCLE_STATUS, e.status)}
+                </Badge>
+                <Badge variant="outline" className="border-dashed">
+                  {e.origin === 'model' ? t('novel.life.byModel') : t('novel.life.byUser')}
+                </Badge>
+                {e.since.chapter_id && (
+                  <button className="linkbtn" onClick={() => onOpenChapter(e.since.chapter_id!)}>
+                    {titles[e.since.chapter_id] ?? e.since.chapter_id}
+                    {e.since.unit_ref ? ` · ${e.since.unit_ref}` : ''}
+                  </button>
+                )}
+              </div>
+              {e.detail && <p className="life__detail">{e.detail}</p>}
+              {e.evidence_quote && <blockquote className="life__quote">{t('common.quote', { text: e.evidence_quote })}</blockquote>}
+              <div className="life__acts">
+                {e.status !== 'confirmed' && (
+                  <Button size="sm" disabled={busy}
+                          onClick={() => void run(t('novel.life.confirm'), t('novel.ok.confirmed'), () =>
+                            updateLifecycle(novel.id, e.id, { status: 'confirmed' }))}>
+                    {t('novel.life.confirm')}
+                  </Button>
+                )}
+                {e.status !== 'rejected' && (
+                  <Button size="sm" variant="outline" disabled={busy}
+                          onClick={() => void run(t('novel.life.reject'), t('novel.ok.rejected'), () =>
+                            updateLifecycle(novel.id, e.id, { status: 'rejected' }))}>
+                    {t('novel.life.reject')}
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon-xs" disabled={busy}
+                        className="ml-auto text-muted-foreground hover:text-destructive"
+                        aria-label={t('novel.life.delete')} title={t('novel.life.delete')}
+                        onClick={async () => {
+                          if (await ask({ title: t('confirm.record.title'), action: t('confirm.delete'), danger: true })) {
+                            void run(t('novel.life.delete'), t('novel.ok.deleted'), () => deleteLifecycle(novel.id, e.id))
+                          }
+                        }}>
+                  <Trash2 aria-hidden />
                 </Button>
-              )}
-              {e.status !== 'rejected' && (
-                <Button size="sm" variant="outline" disabled={busy}
-                        onClick={() => void run(t('novel.life.reject'), t('novel.ok.rejected'), () =>
-                          updateLifecycle(novel.id, e.id, { status: 'rejected' }))}>
-                  {t('novel.life.reject')}
-                </Button>
-              )}
-              <Button variant="ghost" size="icon-xs" disabled={busy}
-                      className="ml-auto text-muted-foreground hover:text-destructive"
-                      aria-label={t('novel.life.delete')} title={t('novel.life.delete')}
-                      onClick={async () => {
-                        if (await ask({ title: t('confirm.record.title'), action: t('confirm.delete'), danger: true })) {
-                          void run(t('novel.life.delete'), t('novel.ok.deleted'), () => deleteLifecycle(novel.id, e.id))
-                        }
-                      }}>
-                <Trash2 aria-hidden />
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {!list.length && <p className="empty">{t('novel.life.empty')}</p>}
-      <Card className="novel__sec gap-3 p-4">
+              </div>
+            </li>
+          ))}
+        </ul>
+        {!list.length && (
+          <div className="life__empty">
+            <span className="life__empty-icon" aria-hidden><UserRoundCheck /></span>
+            <p>{t('novel.life.empty')}</p>
+          </div>
+        )}
+      </section>
+      <Card className="novel__sec life__compose gap-4 p-4 sm:p-5">
+        <div className="life__compose-head">
+          <span className="life__compose-eyebrow" aria-hidden>NEW RECORD</span>
+          <h3>{t('novel.life.compose')}</h3>
+        </div>
         <div className="form life__new">
           <div className="form__grid">
             <Field label={t('novel.life.character')}>

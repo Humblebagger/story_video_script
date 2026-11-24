@@ -10,6 +10,7 @@ import { adminPatchUser, adminResetPassword, adminUser, adminUsers } from './api
 import type { User } from '../../auth'
 import type { AdminUserRow } from '../../types'
 import { day, errText, int, PURPOSE, usd, when } from './format'
+import { userStats } from './derive'
 import { LineChart } from './LineChart'
 import { ErrorBar, TableSkeleton } from './LoadState'
 import { PageHead, RefreshButton } from './PageHead'
@@ -45,6 +46,8 @@ export function Users({ me }: { me: User }) {
   const rows = data
     .filter((u) => u.username.toLowerCase().includes(needle))
     .sort((a, b) => (desc ? -1 : 1) * compare(a, b, sort))
+  const summary = userStats(data, Date.now())
+  const spend = data.reduce((sum, u) => sum + (u.month_cost_usd ?? 0), 0)
 
   const head = (k: Key, label: string, num = false) => {
     const Icon = sort === k ? (desc ? ArrowDown : ArrowUp) : ArrowUpDown
@@ -65,12 +68,21 @@ export function Users({ me }: { me: User }) {
   return (
     <section className="adm__sec">
       {pageHead}
-      <div className="relative max-w-[260px]">
-        <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input className="adm__search h-9 pl-8" placeholder={t('admin.users.search')} value={q}
-               onChange={(e) => setQ(e.target.value)} />
+      <div className="adm__userstats">
+        <div data-tone="blue"><span>{t('admin.overview.users')}</span><b>{int(summary.total)}</b></div>
+        <div data-tone="violet"><span>{t('admin.users.roleAdmin')}</span><b>{int(summary.admins)}</b></div>
+        <div data-tone="rose"><span>{t('admin.users.disabled')}</span><b>{int(summary.disabled)}</b></div>
+        <div data-tone="sand"><span>{t('admin.users.cols.monthCost')}</span><b>{usd(spend)}</b></div>
       </div>
-      <table className="adm__table">
+      <div className="adm__toolbar">
+        <div className="relative max-w-[260px] flex-1">
+          <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input className="adm__search h-9 pl-8" placeholder={t('admin.users.search')} value={q}
+                 onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <span className="adm__note">{rows.length} / {data.length}</span>
+      </div>
+      <table className="adm__table adm__table--cards">
         <thead>
           <tr>
             {head('username', c('username'))}<th>{c('role')}</th><th>{c('status')}</th>
@@ -84,27 +96,27 @@ export function Users({ me }: { me: User }) {
             <Fragment key={u.id}>
               <tr className={`adm__row${open === u.id ? ' is-open' : ''}`}
                   onClick={() => setOpen(open === u.id ? null : u.id)}>
-                <td>{u.username}</td>
-                <td>
+                <td data-label={c('username')}>{u.username}</td>
+                <td data-label={c('role')}>
                   <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
                     {u.role === 'admin' ? t('admin.users.roleAdmin') : t('admin.users.roleUser')}
                   </Badge>
                 </td>
-                <td>
+                <td data-label={c('status')}>
                   {u.disabled
                     ? <Badge variant="destructive" className="adm__bad">{t('admin.users.disabled')}</Badge>
                     : <span className="text-muted-foreground">{t('admin.users.normal')}</span>}
                 </td>
-                <td>{day(u.created_at)}</td>
-                <td>{when(u.last_seen_at)}</td>
-                <td className="is-num">{int(u.novels)}</td>
-                <td className="is-num">{int(u.chapters)}</td>
-                <td className="is-num">{usd(u.month_cost_usd)}</td>
-                <td className="is-num">{u.monthly_cap_usd == null ? t('admin.users.unlimited') : usd(u.monthly_cap_usd)}</td>
+                <td data-label={c('created')}>{day(u.created_at)}</td>
+                <td data-label={c('lastSeen')}>{when(u.last_seen_at)}</td>
+                <td className="is-num" data-label={c('novels')}>{int(u.novels)}</td>
+                <td className="is-num" data-label={c('chapters')}>{int(u.chapters)}</td>
+                <td className="is-num" data-label={c('monthCost')}>{usd(u.month_cost_usd)}</td>
+                <td className="is-num" data-label={c('cap')}>{u.monthly_cap_usd == null ? t('admin.users.unlimited') : usd(u.monthly_cap_usd)}</td>
               </tr>
               {open === u.id && (
                 <tr className="adm__detail-row">
-                  <td colSpan={9}><UserDetail id={u.id} me={me} onChanged={reload} /></td>
+                  <td className="adm__detailcell" colSpan={9}><UserDetail id={u.id} me={me} onChanged={reload} /></td>
                 </tr>
               )}
             </Fragment>

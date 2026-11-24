@@ -100,55 +100,81 @@ export function AuthDialog({ open, mode, firstRun, notice, onMode, onClose, onDo
           <motion.form ref={formRef} {...m.pop} onSubmit={submit} role="dialog" aria-modal="true"
                        aria-label={registering ? t('auth.registerTitle') : t('auth.loginTitle')}
                        data-testid="auth-dialog"
-                       className="login__box relative w-full max-w-sm space-y-4 rounded-2xl border bg-card p-6 shadow-2xl">
-            <button type="button" aria-label={t('common.close')} onClick={onClose} disabled={busy}
-                    className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:text-foreground">
-              <X className="size-4" />
-            </button>
-            <div className="flex flex-col items-center gap-2 pt-2 text-center">
-              <LogoMark size={36} />
-              <h2 className="text-xl font-semibold tracking-tight">
-                {registering ? t('auth.registerTitle') : t('auth.loginTitle')}
-              </h2>
+                       className="login__box relative grid w-full max-w-3xl overflow-hidden rounded-[24px] border bg-card shadow-2xl md:grid-cols-[1.05fr_0.95fr]">
+            <div className="login__visual" aria-hidden="true">
+              <div className="login__vis-brand">
+                <LogoMark size={31} />
+                <span>{t('brand.name')}</span>
+              </div>
+              <div className="login__vis-main">
+                <p className="login__kicker">{t('auth.sideKicker')}</p>
+                <h2>{t('auth.sideTitle')}</h2>
+                <p>{t('auth.sideBody')}</p>
+              </div>
+              <div className="login__stack">
+                {[
+                  ['blue', '01', t('auth.flowSource'), '78%'],
+                  ['sand', '02', t('auth.flowShots'), '62%'],
+                  ['violet', '03', t('auth.flowFilm'), '46%'],
+                ].map(([tone, n, label, width]) => (
+                  <div className="login__stackrow" data-tone={tone} key={n}>
+                    <span>{n}</span><b>{label}</b><i style={{ width }} />
+                  </div>
+                ))}
+              </div>
+              <div className="login__vis-foot">{t('brand.tagline')}</div>
             </div>
-            {notice && <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm">{notice}</p>}
-            <div role="tablist" className="login__tabs grid grid-cols-2 rounded-lg bg-muted p-1">
-              {(['login', 'register'] as const).map((k) => (
-                <button type="button" key={k} role="tab" aria-selected={mode === k} onClick={() => onMode(k)}
-                        className={cn('login__tab rounded-md py-1.5 text-sm transition-colors',
-                                      mode === k ? 'is-on bg-background font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-                  {k === 'login' ? t('auth.tabLogin') : t('auth.tabRegister')}
-                </button>
-              ))}
-            </div>
-            {firstRun && registering && <p className="text-sm text-muted-foreground">{t('auth.firstRun')}</p>}
-            <label className="login__field block space-y-1.5">
-              <span className="text-sm font-medium">{t('auth.username')}</span>
-              <Input value={username} autoFocus autoComplete="username" placeholder={t('auth.usernameHint')}
-                     onChange={(e) => setUsername(e.target.value)} />
-            </label>
-            <label className="login__field block space-y-1.5">
-              <span className="text-sm font-medium">{t('auth.password')}</span>
-              <Input type="password" value={password}
-                     autoComplete={registering ? 'new-password' : 'current-password'}
-                     placeholder={registering ? t('auth.passwordHint') : ''}
-                     onChange={(e) => setPassword(e.target.value)} />
-            </label>
-            {registering && (
+            <div className="login__formpanel relative flex min-w-0 flex-col gap-4 p-6 sm:p-8">
+              <button type="button" aria-label={t('common.close')} onClick={onClose} disabled={busy}
+                      className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:text-foreground">
+                <X className="size-4" />
+              </button>
+              <div className="login__formhead">
+                <span className="login__mobilemark"><LogoMark size={30} /></span>
+                <div>
+                  <p className="login__kicker">{t('brand.tagline')}</p>
+                  <h2>{registering ? t('auth.registerTitle') : t('auth.loginTitle')}</h2>
+                </div>
+              </div>
+              {notice && <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm">{notice}</p>}
+              <div role="tablist" className="login__tabs grid grid-cols-2 rounded-lg bg-muted p-1">
+                {(['login', 'register'] as const).map((k) => (
+                  <button type="button" key={k} role="tab" aria-selected={mode === k} onClick={() => onMode(k)}
+                          className={cn('login__tab rounded-md py-1.5 text-sm transition-colors',
+                                        mode === k ? 'is-on font-medium' : 'text-muted-foreground hover:text-foreground')}>
+                    {k === 'login' ? t('auth.tabLogin') : t('auth.tabRegister')}
+                  </button>
+                ))}
+              </div>
+              {firstRun && registering && <p className="text-sm text-muted-foreground">{t('auth.firstRun')}</p>}
               <label className="login__field block space-y-1.5">
-                <span className="text-sm font-medium">{t('auth.confirm')}</span>
-                <Input type="password" value={confirm} autoComplete="new-password"
-                       placeholder={t('auth.confirmHint')} aria-invalid={mismatch}
-                       aria-describedby={mismatch ? 'auth-mismatch' : undefined}
-                       onChange={(e) => setConfirm(e.target.value)} />
-                {mismatch && <em id="auth-mismatch" role="alert" className="block text-xs not-italic text-destructive">{t('auth.mismatch')}</em>}
+                <span className="text-sm font-medium">{t('auth.username')}</span>
+                <Input value={username} autoFocus autoComplete="username" placeholder={t('auth.usernameHint')}
+                       onChange={(e) => setUsername(e.target.value)} />
               </label>
-            )}
-            {error && <p role="alert" className="text-sm text-destructive">{formatMsg(error, locale)}</p>}
-            <Button type="submit" className="w-full" disabled={busy || !ready}>
-              {busy ? t('auth.wait') : registering ? t('auth.submitRegister') : t('auth.submitLogin')}
-            </Button>
-            <p className="text-center text-xs text-muted-foreground">{t('auth.tip')}</p>
+              <label className="login__field block space-y-1.5">
+                <span className="text-sm font-medium">{t('auth.password')}</span>
+                <Input type="password" value={password}
+                       autoComplete={registering ? 'new-password' : 'current-password'}
+                       placeholder={registering ? t('auth.passwordHint') : ''}
+                       onChange={(e) => setPassword(e.target.value)} />
+              </label>
+              {registering && (
+                <label className="login__field block space-y-1.5">
+                  <span className="text-sm font-medium">{t('auth.confirm')}</span>
+                  <Input type="password" value={confirm} autoComplete="new-password"
+                         placeholder={t('auth.confirmHint')} aria-invalid={mismatch}
+                         aria-describedby={mismatch ? 'auth-mismatch' : undefined}
+                         onChange={(e) => setConfirm(e.target.value)} />
+                  {mismatch && <em id="auth-mismatch" role="alert" className="block text-xs not-italic text-destructive">{t('auth.mismatch')}</em>}
+                </label>
+              )}
+              {error && <p role="alert" className="text-sm text-destructive">{formatMsg(error, locale)}</p>}
+              <Button type="submit" className="w-full" disabled={busy || !ready}>
+                {busy ? t('auth.wait') : registering ? t('auth.submitRegister') : t('auth.submitLogin')}
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">{t('auth.tip')}</p>
+            </div>
           </motion.form>
         </motion.div>
       )}

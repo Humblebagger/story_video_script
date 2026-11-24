@@ -4,6 +4,7 @@ import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } fro
 import { useI18n } from '@/i18n/core'
 
 const SHOTS = [12, 18, 10, 22, 14, 16]
+const FRAME_TONES = ['rose', 'blue', 'sand', 'violet'] as const
 
 export function CanvasMock() {
   const { t } = useI18n()
@@ -23,43 +24,51 @@ export function CanvasMock() {
          }}
          onMouseLeave={() => { mx.set(0); my.set(0) }}>
       <motion.div style={reduced ? undefined : { rotateX: rx, rotateY: ry }}
-                  className="relative overflow-hidden rounded-2xl border bg-card/80 p-4 shadow-2xl backdrop-blur">
+                  className="landing-mock-card relative overflow-hidden rounded-2xl border p-4 shadow-2xl backdrop-blur">
         <div className="mb-3 flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-destructive/70" />
-          <span className="size-2.5 rounded-full bg-warning/70" />
-          <span className="size-2.5 rounded-full bg-success/70" />
+          <span className="landing-mock__dot size-2.5 rounded-full" data-tone="rose" />
+          <span className="landing-mock__dot size-2.5 rounded-full" data-tone="sand" />
+          <span className="landing-mock__dot size-2.5 rounded-full" data-tone="blue" />
+          <span className="landing-mock__mode">STORYBOARD</span>
         </div>
-        <div className="relative grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 text-xs">
+        <div className="landing-mock__preview">
+          <span className="landing-mock__play" />
+          <span className="landing-mock__preview-id">EP·01 / SH003</span>
+          <span className="landing-mock__preview-time">4.2s</span>
+        </div>
+        <div className="landing-mock__grid relative">
           <span className="self-center text-muted-foreground">{t('landing.mock.shots')}</span>
-          <div className="flex gap-1">
+          <div className="landing-mock__lane">
             {SHOTS.map((w, i) => (
               <div key={i} style={{ flexGrow: w }}
-                   className={`h-7 rounded-md border ${i === 2 ? 'border-transparent bg-brand text-white' : 'bg-secondary'} px-1.5 py-1 font-mono text-[10px]`}>
+                   className="landing-mock__shot h-7 rounded-md border px-1.5 py-1 font-mono text-[10px]"
+                   data-active={i === 2 || undefined}>
                 SH{String(i + 1).padStart(3, '0')}
               </div>
             ))}
           </div>
           <span className="self-center text-muted-foreground">{t('landing.mock.frames')}</span>
-          <div className="flex gap-1">
+          <div className="landing-mock__lane">
             {SHOTS.map((w, i) => (
-              <div key={i} style={{ flexGrow: w, opacity: 0.55 + (i % 3) * 0.15 }}
-                   className="h-12 rounded-md bg-gradient-to-br from-brand-from/40 to-brand-to/30" />
+              <div key={i} style={{ flexGrow: w }}
+                   className="landing-mock__frame h-12 rounded-md"
+                   data-tone={FRAME_TONES[i % FRAME_TONES.length]} />
             ))}
           </div>
           <span className="self-center text-muted-foreground">{t('landing.mock.speech')}</span>
-          <div className="flex gap-1">
-            <div style={{ flexGrow: SHOTS[0] + SHOTS[1] }} className="truncate rounded-md bg-muted px-2 py-1 text-[11px]">{t('landing.mock.line1')}</div>
-            <div style={{ flexGrow: total - SHOTS[0] - SHOTS[1] }} className="truncate rounded-md bg-muted px-2 py-1 text-[11px]">{t('landing.mock.line2')}</div>
+          <div className="landing-mock__lane">
+            <div style={{ flexGrow: SHOTS[0] + SHOTS[1] }} className="landing-mock__speech truncate rounded-md px-2 py-1 text-[11px]" data-tone="blue">{t('landing.mock.line1')}</div>
+            <div style={{ flexGrow: total - SHOTS[0] - SHOTS[1] }} className="landing-mock__speech truncate rounded-md px-2 py-1 text-[11px]" data-tone="rose">{t('landing.mock.line2')}</div>
           </div>
           <span className="self-center text-muted-foreground">{t('landing.mock.film')}</span>
-          <div className="flex gap-1">
+          <div className="landing-mock__lane">
             <div style={{ flexGrow: SHOTS[0] + SHOTS[1] + SHOTS[2] }}
-                 className="h-6 rounded-md bg-success/25 px-2 py-1 text-[10px] text-success">✓ {t('landing.mock.rendered')}</div>
+                 className="landing-mock__film h-6 rounded-md px-2 py-1 text-[10px]" data-state="done">✓ {t('landing.mock.rendered')}</div>
             <div style={{ flexGrow: total - SHOTS[0] - SHOTS[1] - SHOTS[2] }}
-                 className="h-6 rounded-md border border-dashed px-2 py-1 text-[10px] text-muted-foreground">{t('landing.mock.rendering')}…</div>
+                 className="landing-mock__film h-6 rounded-md border border-dashed px-2 py-1 text-[10px] text-muted-foreground" data-state="pending">{t('landing.mock.rendering')}…</div>
           </div>
-          <div className="pointer-events-none absolute -bottom-1 -top-1 w-px bg-brand-to"
-               style={{ left: 'calc(100px + (100% - 100px) * 0.43)' }} />
+          <div className="landing-mock__playhead pointer-events-none absolute -bottom-1 -top-1 w-px"
+               style={{ left: 'calc(var(--lane-offset, 100px) + (100% - var(--lane-offset, 100px)) * 0.43)' }} />
         </div>
       </motion.div>
     </div>

@@ -7,34 +7,60 @@
 .adm__note, .adm__empty { font-size: 12px; color: var(--ui-muted-foreground); margin: 0; }
 .adm__warn {
   font-size: 12px; margin: 0; padding: 8px 12px; background: var(--ui-muted);
-  border-left: 3px solid var(--warning); border-radius: 4px;
+  border-left: 3px solid var(--content-sand); border-radius: 6px;
+  background-image: linear-gradient(100deg, color-mix(in oklab, var(--content-sand-soft) 64%, transparent), transparent 70%);
 }
 .adm__err { color: var(--destructive); font-size: 13px; }
 .adm__kpi { font-size: 14px; margin: 0; }
 
 .adm__chart {
-  width: 100%; height: auto; background: var(--card);
+  width: 100%; height: auto;
+  background-image: linear-gradient(180deg, color-mix(in oklab, var(--ambient-blue) 34%, transparent), transparent 72%);
   border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px);
 }
 .adm__axis { stroke: var(--border); }
-.adm__line { stroke: var(--primary); stroke-width: 1.5; }
-.adm__dot { fill: var(--primary); }
+.adm__grid { stroke: color-mix(in oklab, var(--border) 64%, transparent); stroke-dasharray: 3 5; }
+.adm__line { stroke: var(--content-blue); stroke-width: 2; }
+.adm__dot { fill: var(--content-blue); stroke: var(--card); stroke-width: 1.3; }
 .adm__tick { font-size: 10.5px; fill: var(--ui-muted-foreground); }
 
 .adm__table {
   width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; background: var(--card);
-  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--content-blue) 14%, var(--border));
+  border-radius: calc(var(--ui-radius) + 2px); overflow: hidden;
+  background-image:
+    linear-gradient(180deg, color-mix(in oklab, var(--content-blue-soft) 20%, transparent), transparent 150px),
+    linear-gradient(110deg, color-mix(in oklab, var(--ambient-sand) 18%, transparent), transparent 48%);
+  box-shadow:
+    0 24px 50px -48px color-mix(in oklab, var(--content-blue) 72%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 4%, transparent);
 }
 .adm__table th, .adm__table td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; }
 .adm__table tbody tr:last-child > td { border-bottom: none; }
 .adm__table th {
-  font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--ui-muted-foreground); background: var(--ui-muted);
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap;
+  color: color-mix(in oklab, var(--content-blue) 52%, var(--ui-muted-foreground));
+  border-bottom-color: color-mix(in oklab, var(--content-blue) 18%, var(--border));
+  background-color: color-mix(in oklab, var(--content-blue-soft) 18%, var(--ui-muted));
+  background-image: linear-gradient(180deg, color-mix(in oklab, var(--content-blue-soft) 28%, transparent), transparent);
 }
 .adm__table .is-num { text-align: right; font-variant-numeric: tabular-nums; }
+.adm__table th.is-num { color: color-mix(in oklab, var(--content-sand) 54%, var(--ui-muted-foreground)); }
+.adm__table td.is-num { color: color-mix(in oklab, var(--content-blue) 68%, var(--foreground)); font-weight: 550; }
 .adm__table--sm { font-size: 12px; }
 .adm__row { cursor: pointer; transition: background-color 150ms ease-out; }
-.adm__row:hover, .adm__row.is-open { background: var(--ui-muted); }
+.adm__row { transition: background-color 150ms ease-out; }
+.adm__row:nth-child(even) { background: color-mix(in oklab, var(--ambient-blue) 8%, transparent); }
+.adm__row:hover, .adm__row.is-open { background: color-mix(in oklab, var(--content-blue) 7%, var(--ui-muted)); }
 .adm__row.is-open > td:first-child { box-shadow: inset 2px 0 0 var(--primary); }
+.adm__table tbody tr:not(.adm__detail-row) { transition: background-color 150ms ease-out, box-shadow 150ms ease-out; }
+.adm__table tbody tr:not(.adm__detail-row):hover {
+  background-color: color-mix(in oklab, var(--content-blue) 7%, var(--card));
+  background-image: linear-gradient(90deg, color-mix(in oklab, var(--content-blue-soft) 38%, transparent), transparent 68%);
+}
+.adm__table tbody tr:not(.adm__detail-row):hover > td:first-child {
+  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--content-blue) 76%, var(--primary));
+}
 .adm__detail-row > td { background: var(--card); }
 .adm__sort {
   display: inline-flex; align-items: center; gap: 4px; border: none; background: none; padding: 0;
@@ -57,17 +83,32 @@
 /* ---------- 运营后台改版：外框、导航、标题行、数字卡片、分布卡片 ---------- */
 
 /* 外框：左侧分组导航（窄屏为顶部一条）+ 右侧内容 */
-.adm-shell { display: flex; min-height: 100vh; background: var(--background); color: var(--foreground); }
+.adm-shell {
+  display: flex; min-height: 100vh; color: var(--foreground); background-color: var(--background);
+  background-image:
+    radial-gradient(60% 40% at 88% 0%, color-mix(in oklab, var(--ambient-blue) 55%, transparent), transparent 66%),
+    radial-gradient(44% 34% at 0% 6%, color-mix(in oklab, var(--ambient-sand) 36%, transparent), transparent 72%);
+}
 .adm-shell.is-narrow { flex-direction: column; }
 .adm-shell.is-narrow .adm { padding: 16px 14px 40px; overflow-x: auto; }
 .adm-side {
   position: sticky; top: 0; display: flex; flex: none; flex-direction: column; gap: 6px;
   width: 232px; height: 100vh; padding: 12px 10px; overflow-y: auto;
-  background: var(--card); border-right: 1px solid var(--border); transition: width 200ms ease-out;
+  border-right: 1px solid var(--border); transition: width 200ms ease-out;
+  background-color: var(--card);
+  background-image:
+    radial-gradient(80% 32% at 12% 0%, color-mix(in oklab, var(--ambient-blue) 42%, transparent), transparent 100%),
+    linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, var(--ambient-sand)), var(--card) 54%);
 }
 .adm-shell.is-collapsed .adm-side { width: 60px; align-items: center; }
 .adm-side__head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding-left: 8px;
+}
+.adm-side__head h1 { display: flex; align-items: center; letter-spacing: .02em; }
+.adm-side__head h1::before {
+  content: ""; width: 9px; height: 9px; margin-right: 8px; border-radius: 3px;
+  background: linear-gradient(145deg, var(--content-clay), var(--content-sand));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--content-sand-soft) 58%, transparent);
 }
 .adm-shell.is-collapsed .adm-side__head { padding-left: 0; }
 .adm-side__foot {
@@ -79,15 +120,21 @@
 .adm-nav__group { display: flex; flex-direction: column; gap: 2px; }
 .adm-nav__title {
   margin: 0; padding: 0 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
-  color: var(--ui-muted-foreground);
+  color: color-mix(in oklab, var(--content-slate) 74%, var(--ui-muted-foreground));
 }
+.adm-nav__group:nth-child(2) .adm-nav__title { color: color-mix(in oklab, var(--content-blue) 66%, var(--ui-muted-foreground)); }
+.adm-nav__group:nth-child(3) .adm-nav__title { color: color-mix(in oklab, var(--content-clay) 66%, var(--ui-muted-foreground)); }
 .adm-nav__item {
   position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px;
   font-size: 14px; color: var(--ui-muted-foreground); text-decoration: none;
   transition: background-color 150ms ease-out, color 150ms ease-out;
 }
 .adm-nav__item:hover { background: var(--ui-muted); color: var(--foreground); }
-.adm-nav__item.is-on { background: var(--ui-muted); color: var(--foreground); font-weight: 600; }
+.adm-nav__item.is-on {
+  background: color-mix(in oklab, var(--content-blue) 11%, var(--card));
+  color: color-mix(in oklab, var(--content-blue) 72%, var(--foreground));
+  font-weight: 600; box-shadow: inset 2px 0 0 var(--content-blue);
+}
 .adm-nav__item:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .adm-nav__badge {
   min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px;
@@ -108,12 +155,15 @@
 
 /* 每页的标题行：左边页名，右边操作 */
 .adm__pagehead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
+.adm__pagehead h2 {
+  font-family: var(--font-display); font-size: 24px; line-height: 1.2; letter-spacing: -0.025em;
+}
 
 /* 数字卡片的副标题与行动链接 */
 .adm__sub { font-size: 12px; color: var(--ui-muted-foreground); }
 .adm__go {
   display: inline-flex; align-items: center; align-self: flex-start; gap: 4px; margin-top: auto; padding-top: 6px;
-  font-size: 12px; font-weight: 500; color: var(--primary); text-decoration: none;
+  font-size: 12px; font-weight: 500; color: var(--adm-ink, var(--content-blue)); text-decoration: none;
 }
 .adm__go:hover { text-decoration: underline; }
 .adm__warn--link {
@@ -123,17 +173,211 @@
 .adm__chartcard .adm__chart { border: none; border-radius: 0; background: none; }
 
 /* 分布卡片：标签、数字、占比条 */
-.adm__dist { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; font-size: 13px; }
-.adm__dist-track { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 999px; background: var(--ui-muted); }
-.adm__dist-fill { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+.adm__dist {
+  --adm-dist: var(--content-blue);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; font-size: 13px;
+}
+.adm__dist-track {
+  grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 999px;
+  background: color-mix(in oklab, var(--adm-dist) 12%, var(--ui-muted));
+}
+.adm__dist-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--adm-dist), color-mix(in oklab, var(--adm-dist) 68%, var(--card)));
+}
+.adm__dist > span:nth-child(2) { color: color-mix(in oklab, var(--adm-dist) 70%, var(--foreground)); font-weight: 600; }
 
 /* 空状态与错误条：和表格一样的卡片底 */
 .adm__emptycard, .adm__errbar {
   background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px);
 }
+.adm__emptycard {
+  --adm-empty-ink: var(--content-blue);
+  --adm-empty-soft: var(--content-blue-soft);
+  position: relative; isolation: isolate; overflow: hidden; min-height: 164px;
+  border-color: color-mix(in oklab, var(--adm-empty-ink) 19%, var(--border));
+  background-color: var(--card);
+  background-image:
+    radial-gradient(72% 150% at 86% -24%, color-mix(in oklab, var(--adm-empty-soft) 76%, transparent), transparent 66%),
+    radial-gradient(60% 130% at 8% 114%, color-mix(in oklab, var(--content-violet-soft) 24%, transparent), transparent 70%),
+    linear-gradient(112deg, color-mix(in oklab, var(--card) 88%, var(--adm-empty-soft)), var(--card) 58%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #fff 4%, transparent),
+    0 24px 44px -46px color-mix(in oklab, var(--adm-empty-ink) 68%, transparent);
+}
+.adm__emptycard[data-tone="violet"] { --adm-empty-ink: var(--content-violet); --adm-empty-soft: var(--content-violet-soft); }
+.adm__emptycard[data-tone="rose"] { --adm-empty-ink: var(--content-rose); --adm-empty-soft: var(--content-rose-soft); }
+.adm__emptycard[data-tone="sand"] { --adm-empty-ink: var(--content-sand); --adm-empty-soft: var(--content-sand-soft); }
+.adm__emptycard[data-tone="clay"] { --adm-empty-ink: var(--content-clay); --adm-empty-soft: var(--content-clay-soft); }
+.adm__emptycard::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: .42;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--adm-empty-ink) 9%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--adm-empty-ink) 9%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(90deg, transparent 2%, #000 40%, #000 100%);
+}
+.adm__emptycard::after {
+  content: ""; position: absolute; top: 15px; right: 17px; width: 36px; height: 36px;
+  border-top: 1px solid color-mix(in oklab, var(--adm-empty-ink) 32%, transparent);
+  border-right: 1px solid color-mix(in oklab, var(--adm-empty-ink) 32%, transparent);
+  border-radius: 0 9px 0 0; pointer-events: none;
+}
+.adm__emptycard > .empty-state { position: relative; z-index: 1; max-width: 500px; padding: 30px 18px 32px; }
+.adm__emptycard .empty-state::before {
+  opacity: .82;
+  background:
+    radial-gradient(ellipse at center, color-mix(in oklab, var(--adm-empty-soft) 82%, transparent), transparent 68%),
+    radial-gradient(ellipse at 76% 22%, color-mix(in oklab, var(--content-violet-soft) 42%, transparent), transparent 54%);
+}
+.adm__emptycard .empty-state__icon {
+  color: color-mix(in oklab, var(--adm-empty-ink) 82%, var(--foreground));
+  border-color: color-mix(in oklab, var(--adm-empty-ink) 30%, var(--border));
+  background: linear-gradient(145deg, color-mix(in oklab, var(--adm-empty-soft) 84%, var(--card)), var(--card) 78%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #fff 12%, transparent),
+    0 18px 36px -27px color-mix(in oklab, var(--adm-empty-ink) 72%, transparent);
+}
+.adm__emptycard .empty-state__icon::after { border-color: color-mix(in oklab, var(--adm-empty-ink) 32%, transparent); }
+.adm__emptycard .empty-state__title { color: color-mix(in oklab, var(--foreground) 94%, var(--adm-empty-ink)); }
+.adm__emptycard .empty-state__hint { max-width: 44ch; }
+.adm__emptycard .empty-state.is-compact { gap: 9px; padding: 24px 18px 26px; }
+
+@media (max-width: 767px) {
+  .adm__emptycard { min-height: 148px; }
+  .adm__emptycard::after { top: 11px; right: 12px; width: 27px; height: 27px; }
+  .adm__emptycard > .empty-state { padding: 24px 16px 26px; }
+}
+
+/* 表格骨架：头像 / 两行文字 / 数值 / 状态，和真实表格同一节奏 */
+.adm-skel { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.adm-skel__row {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) 96px 76px;
+  align-items: center; gap: 14px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 11px;
+  background: color-mix(in oklab, var(--card) 92%, var(--ambient-sand));
+}
+.adm-skel__row:nth-child(even) {
+  background: color-mix(in oklab, var(--card) 94%, var(--ambient-blue));
+}
+.adm-skel__dot { width: 34px; height: 34px; border-radius: 10px; }
+.adm-skel__lines { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
+.adm-skel__bar { height: 9px; width: min(62%, 230px); border-radius: 999px; }
+.adm-skel__bar.is-short { height: 7px; width: min(38%, 150px); opacity: .72; }
+.adm-skel__value { height: 10px; border-radius: 999px; }
+.adm-skel__pill { height: 22px; border-radius: 999px; }
+.adm-skel [data-slot="skeleton"] {
+  background: color-mix(in oklab, var(--ui-muted) 72%, var(--content-sand-soft));
+}
+
+/* ---------- 运营后台改版：卡片色相、统计带、工具行 ---------- */
+
+.adm__card[data-card] {
+  --adm-ink: var(--content-blue);
+  --adm-soft: var(--content-blue-soft);
+  border-color: color-mix(in oklab, var(--adm-ink) 17%, var(--border));
+  background-image: linear-gradient(148deg, color-mix(in oklab, var(--adm-soft) 54%, var(--card)) 0%, var(--card) 64%);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 4%, transparent),
+              0 18px 40px -38px color-mix(in oklab, var(--adm-ink) 58%, transparent);
+}
+.adm__card[data-card="users"] { --adm-ink: var(--content-blue); --adm-soft: var(--content-blue-soft); }
+.adm__card[data-card="active"] { --adm-ink: var(--content-clay); --adm-soft: var(--content-clay-soft); }
+.adm__card[data-card="cost"] { --adm-ink: var(--content-sand); --adm-soft: var(--content-sand-soft); }
+.adm__card[data-card="failed"] { --adm-ink: var(--content-rose); --adm-soft: var(--content-rose-soft); }
+.adm__card[data-card="running"] { --adm-ink: var(--content-violet); --adm-soft: var(--content-violet-soft); }
+.adm__card[data-card="tokens"] { --adm-ink: var(--content-slate); --adm-soft: var(--content-slate-soft); }
+.adm__card[data-card="jobs"] { --adm-ink: var(--content-blue); --adm-soft: var(--content-blue-soft); }
+.adm__card[data-card="models"] { --adm-ink: var(--content-sand); --adm-soft: var(--content-sand-soft); }
+.adm__card[data-card="routes"] { --adm-ink: var(--content-slate); --adm-soft: var(--content-slate-soft); }
+.adm__card[data-card] .adm__go { color: color-mix(in oklab, var(--adm-ink) 78%, var(--foreground)); }
+.adm__card[data-card] b { color: color-mix(in oklab, var(--adm-ink) 82%, var(--foreground)); }
+.adm__card[data-card="failed"] b.text-destructive { color: var(--destructive); }
+
+.adm-kpi__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.adm-kpi__icon {
+  display: grid; width: 27px; height: 27px; place-items: center; flex: none;
+  border: 1px solid color-mix(in oklab, var(--adm-ink) 16%, transparent); border-radius: 8px;
+  color: color-mix(in oklab, var(--adm-ink) 82%, var(--foreground));
+  background: color-mix(in oklab, var(--adm-soft) 72%, transparent);
+}
+
+.adm-cardtitle { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600; }
+.adm-cardtitle::before {
+  content: ""; width: 3px; height: 13px; flex: none; border-radius: 999px;
+  background: var(--adm-ink, var(--content-blue));
+}
+
+.adm__userstats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.adm__userstats > div {
+  --adm-ink: var(--content-blue);
+  --adm-soft: var(--content-blue-soft);
+  display: flex; min-width: 0; flex-direction: column; gap: 2px; padding: 11px 13px;
+  border: 1px solid color-mix(in oklab, var(--adm-ink) 16%, var(--border)); border-radius: 11px;
+  background-image: linear-gradient(140deg, color-mix(in oklab, var(--adm-soft) 58%, var(--card)), var(--card) 72%);
+}
+.adm__userstats > div[data-tone="violet"] { --adm-ink: var(--content-violet); --adm-soft: var(--content-violet-soft); }
+.adm__userstats > div[data-tone="rose"] { --adm-ink: var(--content-rose); --adm-soft: var(--content-rose-soft); }
+.adm__userstats > div[data-tone="sand"] { --adm-ink: var(--content-sand); --adm-soft: var(--content-sand-soft); }
+.adm__userstats span { font-size: 11px; color: color-mix(in oklab, var(--adm-ink) 54%, var(--ui-muted-foreground)); }
+.adm__userstats b { font-family: var(--font-mono); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--adm-ink) 82%, var(--foreground)); }
+
+.adm__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.adm__sec > h3 { display: flex; align-items: center; gap: 8px; }
+.adm__sec > h3::before {
+  content: ""; width: 3px; height: 16px; flex: none; border-radius: 999px;
+  background: linear-gradient(180deg, var(--content-blue), var(--content-violet));
+}
+
+.adm__chartcard {
+  border-color: color-mix(in oklab, var(--adm-ink, var(--content-sand)) 17%, var(--border));
+}
 
 @media (prefers-reduced-motion: reduce) {
   .adm__card, .adm__row, .adm-side, .adm-nav__item { transition: none; }
+}
+
+@media (max-width: 767px) {
+  .adm__userstats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adm__table { min-width: 660px; }
+  .adm__pagehead h2 { font-size: 22px; }
+  .adm__table--cards {
+    display: block; min-width: 0; overflow: visible;
+    border: 0; background: none; background-image: none;
+  }
+  .adm__table--cards thead { display: none; }
+  .adm__table--cards tbody { display: flex; flex-direction: column; gap: 10px; }
+  .adm__table--cards tr,
+  .adm__table--cards .adm__row {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px;
+    padding: 12px; border: 1px solid color-mix(in oklab, var(--content-blue) 11%, var(--border));
+    border-radius: 12px;
+    background-color: var(--card);
+    background-image: linear-gradient(145deg, color-mix(in oklab, var(--ambient-blue) 9%, transparent), transparent 72%);
+  }
+  .adm__table--cards td {
+    display: flex; min-width: 0; flex-direction: column; gap: 1px;
+    position: static; padding: 0; border: 0; box-shadow: none;
+    text-align: left; vertical-align: initial;
+  }
+  .adm__table--cards .adm__row > td:first-child { position: static; box-shadow: none; }
+  .adm__table--cards td::before {
+    content: attr(data-label); font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    color: var(--ui-muted-foreground);
+  }
+  .adm__table--cards td:not([data-label])::before { content: none; }
+  .adm__table--cards .is-num { text-align: left; }
+  .adm__table--cards .adm__cell--wide { grid-column: 1 / -1; }
+  .adm__table--cards .adm__row.is-open { box-shadow: inset 2px 0 0 var(--content-blue); }
+  .adm__table--cards .adm__detail-row {
+    display: block; padding: 0; border: 0; background: none; background-image: none;
+  }
+  .adm__table--cards .adm__detail-row > td {
+    display: block; padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--card);
+  }
+  .adm-skel__row { grid-template-columns: 32px minmax(0, 1fr) 64px; gap: 11px; padding: 11px 12px; }
+  .adm-skel__dot { width: 32px; height: 32px; }
+  .adm-skel__pill { display: none; }
 }
 
 /* 价格表：编辑态的输入框收窄，错误提示贴在格内；推断出的厂商弱化 */

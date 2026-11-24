@@ -1,6 +1,6 @@
 /** 右侧面板：两个页签：任务、助手。任务页是本人的任务队列（任意小说）：进行中的与已结束的，
  *  转换、出片片段、成片合成都在这里；助手页签只在进了小说后出现。
- *  宽屏时挤压主区，窄屏（< 1100px）盖在主区上方（样式见 workspace.css）。Esc 或「关闭」收起。 */
+ *  宽屏时挤压主区，窄屏（< 1400px）盖在主区上方（样式见 workspace.css）。Esc 或「关闭」收起。 */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'motion/react'
@@ -144,13 +144,13 @@ export function ActivityPanel({
         )}
         {(!!running.length || !!filmLive.length) && (
           <section data-testid="queue-running">
-            <h3 className="activity__title">{t('activity.running')}</h3>
+            <h3 className="activity__title"><span>{t('activity.running')}</span><span className="activity__count">{running.length + filmLive.length}</span></h3>
             <ul className="space-y-2">
               {running.map((j) => {
                 const p = j.progress
                 const pct = p ? Math.min(100, Math.round((p.done_chars / (p.total_chars || 1)) * 100)) : 0
                 return (
-                  <li key={j.id} data-testid="activity-running" className="activity__item">
+                  <li key={j.id} data-testid="activity-running" data-state="running" className="activity__item">
                     {where(jobWhere(j), true)}
                     <Progress value={pct} className="h-1" />
                     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -164,7 +164,7 @@ export function ActivityPanel({
                 )
               })}
               {filmLive.map((tk) => (
-                <li key={tk.id} data-testid="activity-film-running" className="activity__item">
+                <li key={tk.id} data-testid="activity-film-running" data-state="running" className="activity__item">
                   {where(taskWhere(tk), true)}
                   <div className="flex items-center justify-between gap-2">
                     <StatusPill tone={FILM_TONE[tk.state]}>{filmState(tk)}</StatusPill>
@@ -186,7 +186,7 @@ export function ActivityPanel({
         )}
         {!!ended.length && (
           <section data-testid="queue-ended">
-            <h3 className="activity__title">{t('activity.done')}</h3>
+            <h3 className="activity__title"><span>{t('activity.done')}</span><span className="activity__count">{ended.length}</span></h3>
             <ul className="space-y-2">
               {ended.map((it) => {
                 if (it.job) {

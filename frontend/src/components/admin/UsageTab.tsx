@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Download } from 'lucide-react'
+import { ChartColumn, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/core'
 import { notice } from '@/lib/notice'
@@ -82,7 +82,7 @@ export function UsageTab(p: {
             </p>
           )}
           {data.rows.length === 0 ? (
-            <Empty title={t('admin.usage.empty')} />
+            <Empty tone="sand" icon={<ChartColumn aria-hidden />} title={t('admin.usage.empty')} />
           ) : (
             <table className="adm__table">
               <thead>

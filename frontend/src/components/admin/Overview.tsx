@@ -111,8 +111,8 @@ function OverviewBody({ data, error, reload }: Loaded<AdminOverview>) {
         <StatCard id="tokens" label={t('admin.overview.tokens30d')} value={int(data.tokens_30d)}
                   sub={ms ? t('admin.overview.calls30d', { n: int(ms.calls) }) : null}
                   to={adminPath('usage')} action={t('admin.overview.goUsage')} />
-        <Card className="adm__card adm__chartcard col-span-2 gap-2 px-4 py-3" data-testid="trend">
-          <h3 className="text-sm font-semibold">{t('admin.overview.trend')}</h3>
+        <Card className="adm__card adm__chartcard col-span-2 gap-2 px-4 py-3" data-testid="trend" data-card="cost">
+          <h3 className="adm-cardtitle">{t('admin.overview.trend')}</h3>
           <LineChart height={120} label={t('admin.overview.trend')}
                      points={data.daily.slice(-14).map((d) => ({ label: d.day.slice(5), value: d.cost_usd }))} />
         </Card>
@@ -136,8 +136,8 @@ function OverviewBody({ data, error, reload }: Loaded<AdminOverview>) {
         </div>
       )}
       {film && (
-        <Card className="adm__card gap-2 px-4 py-3" data-testid="film-routes">
-          <h3 className="text-sm font-semibold">{t('admin.overview.filmRoutes.title')}</h3>
+        <Card className="adm__card gap-2 px-4 py-3" data-testid="film-routes" data-card="routes">
+          <h3 className="adm-cardtitle">{t('admin.overview.filmRoutes.title')}</h3>
           <table className="adm__table">
             <thead>
               <tr>

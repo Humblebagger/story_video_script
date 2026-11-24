@@ -22,8 +22,8 @@ export function NarrationPick({ value, onChange }: Props) {
       {cards.map((c) => (
         <button key={c.key} type="button" role="radio" aria-checked={c.on} data-narration={c.key}
                 onClick={() => onChange({ ...value, narration_mode: c.next })}
-                className={cn('flex flex-col gap-1 rounded-xl border-2 p-3 text-left outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50',
-                              c.on ? 'border-primary' : 'border-border')}>
+                className={cn('flex flex-col gap-1 rounded-lg border p-3 text-left outline-none transition-colors hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/50',
+                              c.on ? 'border-primary bg-accent/70' : 'border-border/70 bg-background/50')}>
           <span className="flex items-center gap-1.5 text-sm font-semibold">
             {c.icon}{t(`params.narr.${c.key}` as 'params.narr.narrated')}
             {c.key === 'narrated' && c.on && sub && (

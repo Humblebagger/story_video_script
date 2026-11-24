@@ -109,6 +109,11 @@ const row = (id: string) => {
   if (!el) throw new Error(`✗ 拉片表里找不到 ${id}`)
   return el as unknown as HTMLElement
 }
+const card = (id: string) => {
+  const el = container.querySelector(`article[data-card-shot="${id}"]`)
+  if (!el) throw new Error(`✗ 手机拉片卡里找不到 ${id}`)
+  return el as unknown as HTMLElement
+}
 /** 这一行第 i 个单元格的文字（0 镜号、1 关键帧、2 景别、3 运镜、4 画面、5 台词、6 提示词） */
 const cell = (id: string, i: number) => row(id).querySelectorAll('td')[i]?.textContent ?? ''
 const promptCell = (id: string) => row(id).querySelector('td.sheet__promptcell') as unknown as HTMLElement | null
@@ -183,7 +188,35 @@ await click(promptCell('E01-SH001')!)
 must(jumps.length === 0, '点提示词格与展开按钮都不跳转')
 console.log('5. 展开与收起 ✓')
 
-// 6. 点行跳转：点单元格、点镜号按钮都只报一次这一镜
+// 6. 手机卡片：每镜一张、按集分组；提示词跟随段合并，展开与桌面共用状态
+must(qa('article[data-card-shot]').length === 6, `手机卡片每镜一张：${qa('article[data-card-shot]').length}`)
+must(qa('.sheet__mep').length === 2 && qa('.sheet__mep')[0].textContent?.includes('4 镜'), '手机卡片按集分组')
+must(card('E01-SH001').textContent?.includes('乌蓝的天色下') && card('E01-SH001').textContent?.includes('万籁俱寂'),
+     '手机卡片有画面与氛围')
+must(card('E01-SH001').textContent?.includes('秋天的后半夜') && card('E01-SH002').textContent?.includes('华大妈'),
+     '手机卡片有旁白与台词')
+must(qa('.sheet__mclipblock').length === 4, '手机卡片的提示词按段合并')
+must(!card('E01-SH002').querySelector('.sheet__mclipblock'), '同段后续镜头不重复提示词')
+must((card('E01-SH001').querySelector('.sheet__mclipid')?.textContent ?? '').includes('E01-C01 · 8.5s'),
+     '手机卡片有片段号与时长')
+must(card('E01-SH001').querySelector('img.sheet__mthumb'), '手机卡片有关键帧')
+must(qa('.sheet__mthumb--empty').length === 5, '手机卡片其余镜头显示无图占位')
+{
+  const open = card('E01-SH001').querySelector('button.sheet__mopen') as unknown as HTMLButtonElement
+  must(open.getAttribute('aria-label') === '在镜头视图中打开' && open.tabIndex === 0, '手机卡片有可键盘聚焦的打开按钮')
+}
+const mobileMore = () => card('E01-SH001').querySelector('.sheet__mmore') as unknown as HTMLButtonElement
+await click(mobileMore())
+must(card('E01-SH001').querySelector('.sheet__mprompt')!.classList.contains('is-open')
+     && promptCell('E01-SH001')!.querySelector('.sheet__prompt')!.classList.contains('is-open'),
+     '手机展开后桌面提示词也同步展开')
+await click(mobileMore())
+must(!card('E01-SH001').querySelector('.sheet__mprompt')!.classList.contains('is-open'), '手机再点收起')
+await click(card('E01-SH004').querySelector('.sheet__mclipblock')!)
+must(jumps.length === 0, '点手机卡片提示词区不跳转')
+console.log('6. 手机卡片 ✓')
+
+// 7. 点行跳转：点单元格、点镜号按钮都只报一次这一镜
 await click(row('E01-SH003').querySelectorAll('td')[4])
 must(jumps.join() === 'E01-SH003', `点行跳到这一镜：${jumps.join()}`)
 await click(row('E01-SH002').querySelector('button.sheet__id')!)
@@ -194,18 +227,21 @@ must(jumps.join() === 'E01-SH003,E01-SH002', `点镜号按钮只报一次：${ju
   btn.focus()
   must(win.document.activeElement === (btn as unknown), '镜号按钮可聚焦')
 }
-console.log('6. 点行跳转 ✓')
+await click(card('E01-SH004').querySelector('button.sheet__mopen')!)
+must(jumps.join() === 'E01-SH003,E01-SH002,E01-SH004', '手机卡片的打开按钮只报一次这一镜')
+console.log('7. 点行跳转 ✓')
 
-// 7. 没有出片会话、没有版本：每集一格未规划，全部无图
+// 8. 没有出片会话、没有版本：每集一格未规划，全部无图
 await act(async () => { root.render(sheet(null, null)) })
 await settle()
 must(qa('td.sheet__promptcell').length === 2 && qa('td.sheet__promptcell').every((x) => x.textContent === '未规划'),
      '没有会话时每集一格未规划')
 must(promptCell('E01-SH001')?.getAttribute('rowspan') === '4', '整集合并')
 must(qa('img.sheet__thumb').length === 0 && qa('.sheet__thumb--empty').length === 6, '没有版本时全部无图')
-console.log('7. 没有会话与版本 ✓')
+must(qa('.sheet__mclipblock').length === 2 && qa('.sheet__mnone').length === 2, '手机卡片每集一块未规划')
+console.log('8. 没有会话与版本 ✓')
 
-// 8. 英文：表头、枚举、占位都是英文；镜头正文原样
+// 9. 英文：表头、枚举、占位都是英文；镜头正文原样
 await act(async () => { root.render(<I18nProvider initial="en">{sheet(film, null)}</I18nProvider>) })
 await settle()
 must(qa('thead th').map((x) => x.textContent).join('|')
@@ -220,7 +256,7 @@ must(!/[一-鿿]/.test(container.querySelector('thead')?.textContent ?? ''), '�
 must(cell('E01-SH001', 4).includes('乌蓝的天色下'), '镜头正文原样')
 await act(async () => { root.render(sheet(film, null)) })
 setCurrentLocale('zh')
-console.log('8. 英文 ✓')
+console.log('9. 英文 ✓')
 
 must(requests.length === 2, `全程没有多余请求：${requests.join('|')}`)
 await act(async () => { root.unmount() })
@@ -234,7 +270,7 @@ await act(async () => { root.unmount() })
   const tabOn = () => q('.tabs__btn').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
   const base = { doc, canSave: false, dirty: false, saving: false, film, version, onChange: () => {}, onSave: () => {} }
 
-  // 9. 非受控：页签顺序；点「拉片表」显示表；点行回到镜头视图并选中这一镜
+  // 10. 非受控：页签顺序；点「拉片表」显示表；点行回到镜头视图并选中这一镜
   const root1 = createRoot(box as unknown as HTMLElement)
   await act(async () => { root1.render(<StoryboardView {...base} />) })
   await settle()
@@ -250,17 +286,17 @@ await act(async () => { root.unmount() })
   must(box.querySelector('.focus__item[aria-selected="true"]')?.getAttribute('data-shot') === 'E01-SH003',
        '镜头视图选中这一镜')
   await act(async () => { root1.unmount() })
-  console.log('9. 页签与跳转（非受控） ✓')
+  console.log('10. 页签与跳转（非受控） ✓')
 
-  // 10. defaultTab=sheet 一开始就是拉片表；分批预览时也能看
+  // 11. defaultTab=sheet 一开始就是拉片表；分批预览时也能看
   const root2 = createRoot(box as unknown as HTMLElement)
   await act(async () => { root2.render(<StoryboardView {...base} defaultTab="sheet" preview={{ done: 1, total: 2 }} />) })
   await settle()
   must(tabOn() === '拉片表' && q('tr[data-shot]').length === 6, '预览时拉片表照常显示')
   await act(async () => { root2.unmount() })
-  console.log('10. defaultTab 与预览 ✓')
+  console.log('11. defaultTab 与预览 ✓')
 
-  // 11. 受控：页签由上层给；点行只调用 onJumpShot，页签不自己变
+  // 12. 受控：页签由上层给；点行只调用 onJumpShot，页签不自己变
   const tabs: string[] = []
   let jumped = 0
   const root3 = createRoot(box as unknown as HTMLElement)
@@ -272,7 +308,7 @@ await act(async () => { root.unmount() })
   await click(box.querySelector('tr[data-shot="E01-SH002"]')!)
   must(jumped === 1 && tabs.length === 0 && tabOn() === '拉片表', `受控时只调用 onJumpShot：${jumped} / ${tabs.join()}`)
   await act(async () => { root3.unmount() })
-  console.log('11. 跳转（受控） ✓')
+  console.log('12. 跳转（受控） ✓')
 }
 
 console.log('\nALL PASS')

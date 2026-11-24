@@ -7,11 +7,24 @@
 
 .tlc {
   position: fixed; inset: 0; z-index: 50; display: flex; overflow: hidden;
-  background: var(--background); color: var(--foreground);
+  background:
+    radial-gradient(58% 52% at 10% 0%, color-mix(in oklab, var(--ambient-blue) 42%, transparent), transparent 68%),
+    radial-gradient(46% 50% at 92% 100%, color-mix(in oklab, var(--ambient-violet) 30%, transparent), transparent 70%),
+    var(--background);
+  color: var(--foreground);
   user-select: none; touch-action: none;
 }
 /* 画布区与右侧栏并排：侧栏不再浮在泳道上 */
 .tlc__main { position: relative; flex: 1; min-width: 0; height: 100%; overflow: hidden; }
+/* 下半部空画布：一层只在底部显出的细网格，避免大面积死黑 */
+.tlc__main::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--foreground) 3.4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 3.4%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, transparent 56%, #000 78%);
+}
 .tlc__svg { display: block; width: 100%; height: 100%; cursor: grab; }
 .tlc__svg:active { cursor: grabbing; }
 /* 成片泳道的字色在 film.css（同样的优先级，film.css 在后面，赢） */
@@ -26,10 +39,14 @@
   display: flex; align-items: center; gap: 12px; min-width: 0; pointer-events: none;
 }
 .tlc__bottom > * { pointer-events: auto; }
+.tlc__bottom.is-graph .tlc__chead,
+.tlc__bottom.is-graph .tlc__kfstyle,
+.tlc__bottom.is-graph .tlc__kfcount { display: none; }
 .tlc__bar {
   flex: 0 1 auto; min-width: 0; margin-inline: auto;
-  display: flex; gap: 4px; align-items: center;
+  display: flex; gap: 3px; align-items: center;
   white-space: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
 .tlc__bar::-webkit-scrollbar { display: none; }
 /* 编辑按钮组与播放组之间 1px 竖分隔线 */
@@ -66,6 +83,40 @@
 .tlc__help:hover { color: var(--foreground); }
 .tlc__hint { font-size: 12px; color: var(--ui-muted-foreground); }
 @media (max-width: 1100px) { .tlc__hint { display: none; } }
+@media (max-width: 1320px) {
+  .tlc__bottom .tlc__chead { max-width: 22%; }
+  .tlc__bar .tlc__kfstyle,
+  .tlc__bar .tlc__kfcount { display: none; }
+}
+@media (max-width: 767px) {
+  .tlc { flex-direction: column; }
+  .tlc__main { flex: 1 1 58%; height: auto; min-height: 0; }
+  .tlc__panel,
+  .tlc__panel--edit,
+  .tlc__panel--wide {
+    flex: 0 0 42%; width: auto; height: auto; min-height: 0;
+    border-top: 1px solid var(--border); border-left: 0; border-radius: 14px 14px 0 0;
+    padding: 12px 14px 18px;
+    box-shadow: 0 -18px 40px -36px rgb(0 0 0 / .5);
+  }
+  .tlc__tabs { top: -12px; margin: -12px -14px 2px; padding: 10px 14px 8px; }
+  .tlc__tabs button { min-height: 38px; }
+  .tlc__bottom { left: 8px; right: 8px; bottom: 8px; gap: 6px; }
+  .tlc__bar { justify-content: flex-start; }
+  /* 出片页是表单与金额的主场：给右侧面板多留高度，时间轴保留一条可拖动的预览带。 */
+  .tlc[data-panel="film"] .tlc__main { flex-basis: 30%; }
+  .tlc[data-panel="film"] .tlc__panel { flex-basis: 70%; }
+  .tlc[data-panel="shot"] .tlc__main,
+  .tlc[data-panel="source"] .tlc__main,
+  .tlc[data-panel="assets"] .tlc__main,
+  .tlc[data-panel="novel"] .tlc__main,
+  .tlc[data-panel="tasks"] .tlc__main { flex-basis: 46%; }
+  .tlc[data-panel="shot"] .tlc__panel,
+  .tlc[data-panel="source"] .tlc__panel,
+  .tlc[data-panel="assets"] .tlc__panel,
+  .tlc[data-panel="novel"] .tlc__panel,
+  .tlc[data-panel="tasks"] .tlc__panel { flex-basis: 54%; }
+}
 
 /* ---------- 泳道、刻度、泳道名 ---------- */
 
@@ -266,7 +317,13 @@
 .tlc__kfhead b { font-size: 15px; font-weight: 600; }
 .tlc__kfacts { display: flex; gap: 6px; flex-wrap: wrap; }
 .tlc__kfnote { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ui-muted-foreground); }
-.tlc__kferr { margin: 0; font-size: 12px; color: var(--destructive); }
+.tlc__kferr {
+  margin: 0; padding: 7px 9px; font-size: 12px; line-height: 1.65;
+  color: color-mix(in oklab, var(--destructive) 78%, var(--foreground));
+  border-left: 2px solid color-mix(in oklab, var(--destructive) 72%, transparent);
+  border-radius: 0 calc(var(--ui-radius) - 4px) calc(var(--ui-radius) - 4px) 0;
+  background: color-mix(in oklab, var(--destructive) 8%, var(--card));
+}
 .tlc__prompt {
   width: 100%; box-sizing: border-box; margin: 0; padding: 8px 10px; min-height: 120px; resize: vertical;
   font: inherit; font-size: 12px; line-height: 1.7; color: var(--foreground);

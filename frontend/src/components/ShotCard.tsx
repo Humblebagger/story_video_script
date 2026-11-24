@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Clock, Cloud, Lock, MapPin, Mic, Sparkles, Volume2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import {
+  ArrowRight, Ban, Clock, Cloud, Images, Lock, MapPin, Mic, Package, Plus,
+  Scissors, Sparkles, Users, Volume2, X,
+} from 'lucide-react'
+import { SelectMenu } from '@/components/ui/select'
 import {
   addBeat, attachCard, detachCard, isAttached, removeBeat, setConstraints,
   setReferenceAssets, setVariant, splitList, updateBeat,
@@ -25,24 +28,51 @@ interface Props {
 }
 
 /** 枚举下拉：值域来自 schema，标签取中文表 */
-function EnumSelect<T extends string>({ value, map, onChange, allowEmpty }: {
+function EnumSelect<T extends string>({ value, map, onChange, allowEmpty, label }: {
   value: T | undefined
   map: Record<T, string>
   onChange: (v: T | undefined) => void
   allowEmpty?: boolean
+  label?: string
 }) {
+  const options: { value: string; label: string }[] =
+    (Object.entries(map) as [T, string][]).map(([v, n]) => ({ value: v, label: n }))
+  if (allowEmpty || value === undefined) options.unshift({ value: '', label: '—' })
   return (
-    <select
-      className="ed ed--sel"
-      value={value ?? ''}
-      onChange={(e) => onChange((e.target.value || undefined) as T | undefined)}
-    >
-      {(allowEmpty || value === undefined) && <option value="">—</option>}
-      {(Object.entries(map) as [T, string][]).map(([v, n]) => (
-        <option key={v} value={v}>{n}</option>
-      ))}
-    </select>
+    <SelectMenu
+      value={value}
+      options={options}
+      ariaLabel={label ?? ''}
+      onChange={(v) => onChange((v || undefined) as T | undefined)}
+    />
   )
+}
+
+/** 变体描述常是一整段服装或形态说明，控件里只留一个能读的短标签；
+ *  完整描述放进选项副行和悬停提示，避免把 447px 宽的镜头卡撑坏。 */
+function compactVariant(name: string): string {
+  const text = name.trim()
+  if (text.length <= 12) return text
+  const head = text.match(/^([^（(]{1,18})[（(]([^，,；;）)]{1,16})/)
+  if (head) {
+    const label = `${head[1]}（${head[2]}）`
+    return label.length <= 26 ? label : `${label.slice(0, 25)}…`
+  }
+  const clause = text.split(/[，,；;。]/)[0].trim()
+  if (clause && clause.length <= 18) return `${clause}…`
+  return `${text.slice(0, 17).replace(/[，,；;、\s]+$/, '')}…`
+}
+
+function variantDescription(name: string, label: string): string | undefined {
+  if (name === label) return undefined
+  if (label.endsWith('…')) {
+    const prefix = label.slice(0, -1)
+    if (name.startsWith(prefix)) {
+      const rest = name.slice(prefix.length).replace(/^[，,；;。\s]+/, '')
+      if (rest) return rest
+    }
+  }
+  return name
 }
 
 /** 变体下拉：角色的服装 / 道具的形态。
@@ -56,21 +86,21 @@ function VariantSelect({ card, value, shot, onChange }: {
 }) {
   const { t } = useI18n()
   if (!card?.variants.length) return null
+  const fallback = card.kind === 'props' ? t('shot.defaultForm') : t('shot.defaultOutfit')
+  const options = card.variants.map((v) => {
+    const name = v.name && v.name !== v.id ? v.name : v.id === 'default' ? fallback : v.id
+    const label = compactVariant(name)
+    return { value: v.id, label, description: variantDescription(name, label) }
+  })
   return (
-    <select
-      className="ed ed--sel ed--var"
+    <SelectMenu
+      className="ed--var"
+      menuMinWidth={260}
       value={value ?? ''}
-      title={card.kind === 'props' ? t('shot.propState') : t('shot.outfit')}
-      onChange={(e) => onChange(setVariant(shot, card, e.target.value))}
-    >
-      {card.variants.map((v) => (
-        <option key={v.id} value={v.id}>
-          {v.name && v.name !== v.id
-            ? `${v.id} · ${v.name.length > 14 ? v.name.slice(0, 14) + '…' : v.name}`
-            : v.id}
-        </option>
-      ))}
-    </select>
+      ariaLabel={card.kind === 'props' ? t('shot.propState') : t('shot.outfit')}
+      options={options}
+      onChange={(v) => onChange(setVariant(shot, card, v))}
+    />
   )
 }
 
@@ -82,8 +112,12 @@ function DetachButton({ card, shot, onChange }: {
   const { t } = useI18n()
   if (!card) return null
   return (
-    <button type="button" className="ed__x" title={t('shot.detach', { name: card.name })}
-            onClick={() => onChange(detachCard(shot, card))}>×</button>
+    <button type="button" className="cast__remove" title={t('shot.detach', { name: card.name })}
+            aria-label={t('shot.detach', { name: card.name })}
+            onClick={() => onChange(detachCard(shot, card))}>
+      <X size={13} aria-hidden />
+      <span>{t('shot.remove')}</span>
+    </button>
   )
 }
 
@@ -175,26 +209,51 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
         <span className="shot__id">{shot.id}</span>
         {editing ? (
           <>
-            <input
-              className="ed ed--num"
-              type="number"
-              min={1}
-              value={shot.duration_sec}
-              onChange={(e) => onChange({ duration_sec: Number(e.target.value) || 1 })}
-            />
-            <span className="ed__unit">{t('shot.sec')}</span>
-            <EnumSelect<ShotSize>
-              value={shot.shot_size} map={SHOT_SIZE}
-              onChange={(v) => v && onChange({ shot_size: v })} />
-            <EnumSelect<CameraMovement>
-              value={cam?.movement} map={CAMERA_MOVEMENT} allowEmpty
-              onChange={(v) => setCam('movement', v)} />
-            <EnumSelect<CameraAngle>
-              value={cam?.angle} map={CAMERA_ANGLE} allowEmpty
-              onChange={(v) => setCam('angle', v)} />
-            <EnumSelect<Transition>
-              value={shot.transition_out} map={TRANSITION} allowEmpty
-              onChange={(v) => onChange({ transition_out: v })} />
+            <div className="shot__params">
+              <label className="ed__field ed__field--num">
+                <span className="ed__fieldlabel">{t('shot.duration')}</span>
+                <span className="ed__numwrap">
+                  <input
+                    className="ed ed--num"
+                    type="number"
+                    inputMode="decimal"
+                    min={1}
+                    aria-label={t('shot.duration')}
+                    value={shot.duration_sec}
+                    onChange={(e) => onChange({ duration_sec: Number(e.target.value) || 1 })}
+                  />
+                  <span className="ed__unit">{t('shot.sec')}</span>
+                </span>
+              </label>
+              <div className="ed__field">
+                <span className="ed__fieldlabel">{t('shot.size')}</span>
+                <EnumSelect<ShotSize>
+                  value={shot.shot_size} map={SHOT_SIZE}
+                  label={t('shot.size')}
+                  onChange={(v) => v && onChange({ shot_size: v })} />
+              </div>
+              <div className="ed__field">
+                <span className="ed__fieldlabel">{t('shot.movement')}</span>
+                <EnumSelect<CameraMovement>
+                  value={cam?.movement} map={CAMERA_MOVEMENT} allowEmpty
+                  label={t('shot.movement')}
+                  onChange={(v) => setCam('movement', v)} />
+              </div>
+              <div className="ed__field">
+                <span className="ed__fieldlabel">{t('shot.angle')}</span>
+                <EnumSelect<CameraAngle>
+                  value={cam?.angle} map={CAMERA_ANGLE} allowEmpty
+                  label={t('shot.angle')}
+                  onChange={(v) => setCam('angle', v)} />
+              </div>
+              <div className="ed__field">
+                <span className="ed__fieldlabel">{t('shot.transitionLabel')}</span>
+                <EnumSelect<Transition>
+                  value={shot.transition_out} map={TRANSITION} allowEmpty
+                  label={t('shot.transitionLabel')}
+                  onChange={(v) => onChange({ transition_out: v })} />
+              </div>
+            </div>
           </>
         ) : (
           <>
@@ -211,28 +270,42 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
 
       {editing ? (
         <div className="shot__place shot__place--ed">
-          <select
-            className="ed ed--sel"
-            value={shot.location_ref ?? ''}
-            onChange={(e) => onChange({ location_ref: e.target.value || undefined })}
-          >
-            <option value="">{t('shot.noPlace')}</option>
-            {idx.locationOptions.map((l) => (
-              <option key={l.id} value={l.id}>{l.id} {l.name}</option>
-            ))}
-          </select>
-          <EnumSelect<LocationAngle>
-            value={shot.location_angle} map={LOCATION_ANGLE} allowEmpty
-            onChange={(v) => onChange({ location_angle: v })} />
-          <EnumSelect<TimeOfDay>
-            value={shot.time_of_day} map={TIME_OF_DAY} allowEmpty
-            onChange={(v) => onChange({ time_of_day: v })} />
-          <input
-            className="ed"
-            placeholder={t('shot.weather')}
-            value={shot.weather ?? ''}
-            onChange={(e) => onChange({ weather: e.target.value || undefined })}
-          />
+          <div className="ed__field ed__field--wide">
+            <span className="ed__fieldlabel">{t('shot.scene')}</span>
+            <SelectMenu
+              value={shot.location_ref ?? ''}
+              ariaLabel={t('shot.scene')}
+              options={[
+                { value: '', label: t('shot.noPlace') },
+                ...idx.locationOptions.map((l) => ({ value: l.id, label: `${l.id} ${l.name}` })),
+              ]}
+              onChange={(v) => onChange({ location_ref: v || undefined })}
+            />
+          </div>
+          <div className="ed__field">
+            <span className="ed__fieldlabel">{t('shot.locationAngle')}</span>
+            <EnumSelect<LocationAngle>
+              value={shot.location_angle} map={LOCATION_ANGLE} allowEmpty
+              label={t('shot.locationAngle')}
+              onChange={(v) => onChange({ location_angle: v })} />
+          </div>
+          <div className="ed__field">
+            <span className="ed__fieldlabel">{t('shot.time')}</span>
+            <EnumSelect<TimeOfDay>
+              value={shot.time_of_day} map={TIME_OF_DAY} allowEmpty
+              label={t('shot.time')}
+              onChange={(v) => onChange({ time_of_day: v })} />
+          </div>
+          <label className="ed__field">
+            <span className="ed__fieldlabel">{t('shot.weather')}</span>
+            <input
+              className="ed"
+              placeholder={t('shot.weather')}
+              aria-label={t('shot.weather')}
+              value={shot.weather ?? ''}
+              onChange={(e) => onChange({ weather: e.target.value || undefined })}
+            />
+          </label>
         </div>
       ) : (
         (place || shot.time_of_day || shot.weather) && (
@@ -246,37 +319,45 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
 
       {editing ? (
         <>
-          <div className="ed__at">
-            <textarea
-              ref={areaRef}
-              className="ed ed--area"
-              value={shot.action}
-              rows={3}
-              placeholder={t('shot.actionPh')}
-              onKeyDown={(e) => { if (pick?.mode === 'at') pickKeys(e) }}
-              onChange={(e) => {
-                const caret = e.target.selectionStart ?? e.target.value.length
-                const tok = atToken(e.target.value, caret)
-                setPick(tok ? { mode: 'at', ...tok, caret } : null)
-                setActive(0)
-                onChange({ action: e.target.value })
-              }}
-              onBlur={() => { if (pick?.mode === 'at') closePick() }}
-            />
-            {pick?.mode === 'at' && (
-              <CardPicker
-                options={options} active={active} onActive={setActive}
-                onPick={pickCard} onClose={closePick} isAttached={attached}
-                hint={t('shot.atHint')}
+          <div className="ed__field ed__field--stack">
+            <span className="ed__fieldlabel">{t('shot.actionLabel')}</span>
+            <div className="ed__at">
+              <textarea
+                ref={areaRef}
+                className="ed ed--area"
+                value={shot.action}
+                rows={3}
+                placeholder={t('shot.actionPh')}
+                aria-label={t('shot.actionLabel')}
+                onKeyDown={(e) => { if (pick?.mode === 'at') pickKeys(e) }}
+                onChange={(e) => {
+                  const caret = e.target.selectionStart ?? e.target.value.length
+                  const tok = atToken(e.target.value, caret)
+                  setPick(tok ? { mode: 'at', ...tok, caret } : null)
+                  setActive(0)
+                  onChange({ action: e.target.value })
+                }}
+                onBlur={() => { if (pick?.mode === 'at') closePick() }}
               />
-            )}
+              {pick?.mode === 'at' && (
+                <CardPicker
+                  options={options} active={active} onActive={setActive}
+                  onPick={pickCard} onClose={closePick} isAttached={attached}
+                  hint={t('shot.atHint')}
+                />
+              )}
+            </div>
           </div>
-          <input
-            className="ed"
-            placeholder={t('shot.atmosphere')}
-            value={shot.atmosphere ?? ''}
-            onChange={(e) => onChange({ atmosphere: e.target.value || undefined })}
-          />
+          <label className="ed__field ed__field--stack">
+            <span className="ed__fieldlabel">{t('shot.atmosphere')}</span>
+            <input
+              className="ed"
+              placeholder={t('shot.atmospherePh')}
+              aria-label={t('shot.atmosphere')}
+              value={shot.atmosphere ?? ''}
+              onChange={(e) => onChange({ atmosphere: e.target.value || undefined })}
+            />
+          </label>
         </>
       ) : (
         <>
@@ -300,48 +381,134 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       )}
 
       {!!shot.characters?.length && (
-        <div className={editing ? 'ed__rows' : 'chips'}>
-          {shot.characters.map((c, i) => (editing ? (
-            <div className="ed__row" key={`${c.ref}-${i}`}>
-              <b className="ed__label">{idx.assetName(c.ref)}</b>
-              <VariantSelect card={idx.card(c.ref)} value={c.outfit} shot={shot}
-                             onChange={onChange} />
-              {(['expression', 'action', 'position'] as const).map((k) => (
-                <input
-                  key={k}
-                  className="ed"
-                  placeholder={t(`shot.${k}`)}
-                  value={c[k] ?? ''}
-                  onChange={(e) => onChange({
-                    characters: shot.characters!.map((x, j) =>
-                      j === i ? { ...x, [k]: e.target.value || undefined } : x),
-                  })}
-                />
-              ))}
-              <DetachButton card={idx.card(c.ref)} shot={shot} onChange={onChange} />
-            </div>
+        <div className={editing ? 'casting' : 'chips'}>
+          {editing ? (
+            <section className="casting__group">
+              <header className="casting__head">
+                <span className="casting__icon" aria-hidden><Users size={13} /></span>
+                <div className="casting__heading">
+                  <div className="casting__titleline">
+                    <h4 className="casting__title">{t('shot.castHeading')}</h4>
+                    <span className="casting__count">{shot.characters.length}</span>
+                  </div>
+                  <p className="casting__hint">{t('shot.castHint')}</p>
+                </div>
+              </header>
+              <div className="casting__list">
+                {shot.characters.map((c, i) => {
+                  const card = idx.card(c.ref)
+                  return (
+                    <div className="cast" key={`${c.ref}-${i}`}>
+                      <div className="cast__head">
+                        <span className="cast__avatar" aria-hidden>
+                          {idx.assetName(c.ref).slice(0, 1)}
+                        </span>
+                        <span className="cast__name">{idx.assetName(c.ref)}</span>
+                        <span className="cast__ref">{c.ref}</span>
+                        <DetachButton card={card} shot={shot} onChange={onChange} />
+                      </div>
+                      <div className="cast__fields">
+                        <label className="ed__field cast__field cast__field--action">
+                          <span className="ed__fieldlabel">{t('shot.action')}</span>
+                          <input
+                            className="ed"
+                            placeholder={t('shot.castActionPh')}
+                            aria-label={t('shot.action')}
+                            value={c.action ?? ''}
+                            onChange={(e) => onChange({
+                              characters: shot.characters!.map((x, j) =>
+                                j === i ? { ...x, action: e.target.value || undefined } : x),
+                            })}
+                          />
+                        </label>
+                        {!!card?.variants.length && (
+                          <div className="ed__field cast__field cast__field--variant">
+                            <span className="ed__fieldlabel">{t('shot.outfitShort')}</span>
+                            <VariantSelect card={card} value={c.outfit} shot={shot}
+                                           onChange={onChange} />
+                          </div>
+                        )}
+                        <label className="ed__field cast__field">
+                          <span className="ed__fieldlabel">{t('shot.expression')}</span>
+                          <input
+                            className="ed"
+                            placeholder={t('shot.expressionPh')}
+                            aria-label={t('shot.expression')}
+                            value={c.expression ?? ''}
+                            onChange={(e) => onChange({
+                              characters: shot.characters!.map((x, j) =>
+                                j === i ? { ...x, expression: e.target.value || undefined } : x),
+                            })}
+                          />
+                        </label>
+                        <label className="ed__field cast__field">
+                          <span className="ed__fieldlabel">{t('shot.position')}</span>
+                          <input
+                            className="ed"
+                            placeholder={t('shot.positionPh')}
+                            aria-label={t('shot.position')}
+                            value={c.position ?? ''}
+                            onChange={(e) => onChange({
+                              characters: shot.characters!.map((x, j) =>
+                                j === i ? { ...x, position: e.target.value || undefined } : x),
+                            })}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
           ) : (
-            <span className="chip chip--char" key={`${c.ref}-${i}`}>
-              <b>{idx.assetName(c.ref)}</b>
-              {c.outfit && c.outfit !== 'default' && <em>{c.outfit}</em>}
-              {c.expression && <em>{c.expression}</em>}
-              {c.action && <span className="chip__note">{c.action}</span>}
-            </span>
-          )))}
+            shot.characters.map((c, i) => (
+              <span className="chip chip--char" key={`${c.ref}-${i}`}>
+                <b>{idx.assetName(c.ref)}</b>
+                {c.outfit && c.outfit !== 'default' && <em>{c.outfit}</em>}
+                {c.expression && <em>{c.expression}</em>}
+                {c.action && <span className="chip__note">{c.action}</span>}
+              </span>
+            ))
+          )}
         </div>
       )}
 
       {editing && !!shot.prop_refs?.length && (
-        <div className="ed__rows">
-          {shot.prop_refs.map((p, i) => (
-            <div className="ed__row" key={`${p.ref}-${i}`}>
-              <b className="ed__label">{idx.assetName(p.ref)}</b>
-              <VariantSelect card={idx.card(p.ref)} value={p.state} shot={shot}
-                             onChange={onChange} />
-              <DetachButton card={idx.card(p.ref)} shot={shot} onChange={onChange} />
+        <section className="casting__group casting__group--props">
+          <header className="casting__head">
+            <span className="casting__icon" aria-hidden><Package size={13} /></span>
+            <div className="casting__heading">
+              <div className="casting__titleline">
+                <h4 className="casting__title">{t('shot.propHeading')}</h4>
+                <span className="casting__count">{shot.prop_refs.length}</span>
+              </div>
+              <p className="casting__hint">{t('shot.propHint')}</p>
             </div>
-          ))}
-        </div>
+          </header>
+          <div className="casting__list">
+            {shot.prop_refs.map((p, i) => {
+              const card = idx.card(p.ref)
+              return (
+                <div className="proprow" key={`${p.ref}-${i}`}>
+                  <div className="proprow__identity">
+                    <span className="proprow__icon" aria-hidden><Package size={12} /></span>
+                    <span className="proprow__name">{idx.assetName(p.ref)}</span>
+                    <span className="proprow__ref">{p.ref}</span>
+                  </div>
+                  {card?.variants.length ? (
+                    <div className="proprow__field">
+                      <span className="proprow__label">{t('shot.propStateShort')}</span>
+                      <VariantSelect card={card} value={p.state} shot={shot} onChange={onChange} />
+                    </div>
+                  ) : (
+                    <span className="proprow__static">{t('shot.fixedForm')}</span>
+                  )}
+                  <DetachButton card={card} shot={shot} onChange={onChange} />
+                </div>
+              )
+            })}
+          </div>
+        </section>
       )}
 
       {!editing && !!shot.prop_refs?.length && (
@@ -387,26 +554,30 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
               />
               <span className="ed__unit">{t('shot.sec')}</span>
               <input
-                className="ed" placeholder={t('shot.beatAction')} value={b.action}
+                className="ed" placeholder={t('shot.beatAction')} aria-label={t('shot.beatAction')} value={b.action}
                 onChange={(e) => onChange(updateBeat(shot, i, { action: e.target.value }))}
               />
               <input
                 className="ed" placeholder={t('shot.beatExprPh')} value={b.expression ?? ''}
+                aria-label={t('shot.beatExprPh')}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { expression: e.target.value || undefined }))}
               />
               <input
                 className="ed" placeholder={t('shot.beatLightPh')}
+                aria-label={t('shot.beatLightPh')}
                 value={b.lighting ?? ''}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { lighting: e.target.value || undefined }))}
               />
               <input
                 className="ed" placeholder={t('shot.beatCamPh')} value={b.camera_note ?? ''}
+                aria-label={t('shot.beatCamPh')}
                 onChange={(e) => onChange(updateBeat(shot, i,
                   { camera_note: e.target.value || undefined }))}
               />
               <button type="button" className="ed__x" title={t('shot.beatDel')}
+                      aria-label={t('shot.beatDel')}
                       onClick={() => onChange(removeBeat(shot, i))}>×</button>
             </li>
           ))}
@@ -423,10 +594,11 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       {editing && (
         <div className="ed__attach">
           <span className="ed__attachbox">
-            <Button type="button" size="sm" variant="outline"
+            <button type="button" className="edtool edtool--attach"
                     onClick={() => setPick(pick?.mode === 'attach' ? null : { mode: 'attach' })}>
+              <Plus size={14} aria-hidden />
               {t('shot.attach')}
-            </Button>
+            </button>
             {pick?.mode === 'attach' && (
               <span className="cpick__wrap">
                 <input
@@ -445,18 +617,20 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
             )}
           </span>
 
-          <Button type="button" size="sm" variant="outline"
+          <button type="button" className="edtool edtool--split"
                   title={t('shot.splitTip')}
                   onClick={() => onChange(addBeat(shot))}>
+            <Scissors size={13} aria-hidden />
             {shot.beats?.length ? t('shot.addBeat') : t('shot.splitBeats')}
-          </Button>
+          </button>
 
           <span className="ed__attachbox">
-            <Button type="button" size="sm" variant="outline"
+            <button type="button" className="edtool edtool--refs"
                     title={t('shot.refsTip')}
                     onClick={() => setPick(pick?.mode === 'refs' ? null : { mode: 'refs' })}>
+              <Images size={14} aria-hidden />
               {t('shot.refs', { n: shot.prompts?.reference_assets?.length || 0 })}
-            </Button>
+            </button>
             {pick?.mode === 'refs' && (
               <CardPicker
                 options={options} active={active} onActive={setActive}
@@ -468,10 +642,14 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
           </span>
 
           <span className="ed__cons">
-            <span className="ed__conslabel" title={t('shot.consLabelTip')}>{t('shot.consTag')}</span>
+            <span className="ed__conslabel" title={t('shot.consLabelTip')}>
+              <Ban size={12} aria-hidden />
+              {t('shot.consLabel')}
+            </span>
             <input
               className="ed"
               placeholder={t('shot.consPh')}
+              aria-label={t('shot.consLabel')}
               value={(shot.constraints ?? []).join(' / ')}
               onChange={(e) => onChange(setConstraints(splitList(e.target.value)))}
             />
@@ -493,15 +671,19 @@ export function ShotCard({ shot, idx, editing, onPickUnit, onChange }: Props) {
       )}
 
       {editing && (
-        <input
-          className="ed"
-          placeholder={t('shot.sfxPh')}
-          value={(shot.sfx ?? []).join(' / ')}
-          onChange={(e) => {
-            const list = splitList(e.target.value)
-            onChange({ sfx: list.length ? list : undefined })
-          }}
-        />
+        <label className="ed__field ed__field--stack">
+          <span className="ed__fieldlabel">{t('shot.sfxLabel')}</span>
+          <input
+            className="ed"
+            placeholder={t('shot.sfxPh')}
+            aria-label={t('shot.sfxLabel')}
+            value={(shot.sfx ?? []).join(' / ')}
+            onChange={(e) => {
+              const list = splitList(e.target.value)
+              onChange({ sfx: list.length ? list : undefined })
+            }}
+          />
+        </label>
       )}
 
       {(!!shot.dialogue?.length || !!shot.narration?.text) && (

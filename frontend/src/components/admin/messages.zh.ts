@@ -90,6 +90,8 @@ export const zhAdmin = {
     running: '运行中', failed: '近 7 天失败', refresh: '刷新',
     filter: { label: '按状态筛选', all: '全部', running: '运行中', failed: '失败' },
     noRunning: '没有在跑的任务', noFailed: '没有失败的任务',
+    emptyRunningHint: '新任务开始后会出现在这里，可随时刷新查看。',
+    emptyFailedHint: '最近 7 天没有失败任务，说明运行状态正常。',
     debug: '调试日志', debugEmpty: '（没有调试日志）',
     runningCols: { user: '用户', novelChapter: '小说 / 章节', status: '状态', start: '开始', elapsed: '已运行', chars: '字数' },
     failedCols: { user: '用户', novelChapter: '小说 / 章节', start: '开始', chars: '字数', attempts: '尝试', error: '报错' },

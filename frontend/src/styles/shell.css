@@ -2,6 +2,93 @@
 
 .app { min-height: 100vh; }
 
+.app-shell { --shell-topbar-height: 56px; }
+.app-shell__sidebar {
+  position: sticky; height: 100dvh;
+  transition: width 200ms ease-out, transform 240ms cubic-bezier(.22, .61, .36, 1);
+  will-change: width, transform;
+  --foreground: var(--sidebar-foreground);
+  --ui-muted: var(--sidebar-accent);
+  --ui-muted-foreground: color-mix(in oklab, var(--sidebar-foreground) 72%, var(--sidebar));
+  --ui-accent: var(--sidebar-accent);
+  --ui-accent-foreground: var(--sidebar-accent-foreground);
+  --border: var(--sidebar-border);
+  --input: var(--sidebar-border);
+  --ring: var(--sidebar-foreground);
+}
+.app-shell__topbar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  min-height: var(--shell-topbar-height); align-items: center; gap: 8px 12px; padding: 8px 24px;
+}
+.app-shell__main { container-type: inline-size; padding: 28px clamp(16px, 2.5vw, 40px); }
+.app-shell__body {
+  background:
+    radial-gradient(46% 28% at 88% 0%, color-mix(in oklab, var(--ambient-rose) 42%, transparent), transparent 76%),
+    radial-gradient(38% 34% at 4% 96%, color-mix(in oklab, var(--ambient-blue) 34%, transparent), transparent 78%),
+    var(--background);
+}
+.app-shell__steps { display: flex; justify-content: center; }
+.app-shell__actions { justify-content: flex-end; }
+.app-shell__chip-optional { display: contents; }
+.app-shell__steps:empty { display: none; }
+.app-shell__topbar:not(:has(.app-shell__steps > *)) { grid-template-columns: minmax(0, 1fr) auto; }
+.app-shell__menu { display: none !important; }
+.app-shell__scrim { display: none; }
+@media (max-width: 1199px) {
+  .app-shell:has(.app-shell__steps > *) { --shell-topbar-height: 104px; }
+  .app-shell__topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .app-shell__steps { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+  .app-shell__actions { grid-column: 2; grid-row: 1; }
+}
+@media (max-width: 767px) {
+  .app-shell__sidebar {
+    position: fixed; left: 0; z-index: 60; height: 100dvh;
+    transform: translateX(-104%);
+    box-shadow: 22px 0 60px -42px rgb(0 0 0 / .75);
+  }
+  .app-shell__sidebar.is-mobile-open { transform: translateX(0); }
+  .app-shell__body { margin-left: 0; }
+  .app-shell__main { padding: 16px 12px calc(24px + env(safe-area-inset-bottom)); }
+  .app-shell:has(.primary-bar) .app-shell__main {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+  .app-shell__menu { display: inline-flex !important; flex: none; }
+  .app-shell__scrim {
+    display: block; position: fixed; inset: 0; z-index: 55; border: 0; padding: 0;
+    background: rgb(5 7 16 / .58); backdrop-filter: blur(3px); cursor: pointer;
+    animation: scrim-in 180ms ease-out both;
+  }
+  .app-shell__action-optional { display: none !important; }
+  .app-shell__actions { gap: 0; }
+}
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell__sidebar { transition: none; }
+  .app-shell__scrim { animation: none; }
+}
+@media (max-width: 639px) {
+  .app-shell { --shell-topbar-height: 56px; }
+  .app-shell:has(.app-shell__steps > *) { --shell-topbar-height: 88px; }
+  .app-shell__topbar, .app-shell__topbar:not(:has(.app-shell__steps > *)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 6px 10px 6px 12px; gap: 4px 6px;
+  }
+  .app-shell__lead { grid-column: 1; grid-row: 1; }
+  .app-shell__actions {
+    grid-column: 2; grid-row: 1; justify-content: flex-end; flex-wrap: nowrap;
+    min-width: 0; gap: 0; overflow: visible;
+  }
+  .app-shell__steps {
+    grid-column: 1 / -1; grid-row: 2; justify-content: flex-start;
+    min-width: 0; overflow-x: auto; padding-left: 2px;
+    scrollbar-width: none;
+  }
+  .app-shell__steps::-webkit-scrollbar { display: none; }
+  .app-shell__chip-optional { display: none !important; }
+  .app-shell__chapter-crumb, .project-switcher__meta { display: none !important; }
+  .project-switcher { max-width: calc(100vw - 180px); }
+}
+
 .main {
   min-width: 0; max-width: 1080px; margin: 0 auto; padding: 0;
   display: flex; flex-direction: column; gap: 20px;

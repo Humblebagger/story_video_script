@@ -32,7 +32,7 @@ export const MOOD: Record<Mood, string> = localized<Mood>(zh.enums.mood as Recor
 /** 情绪 → 色相，用于 BGM 曲线条与情绪标签的着色 */
 export const MOOD_HUE: Record<Mood, number> = {
   calm: 200, warm: 32, playful: 48, tense: 8, ominous: 280,
-  eerie: 160, sorrow: 220, melancholy: 250, triumph: 42, epic: 12,
+  eerie: 270, sorrow: 220, melancholy: 250, triumph: 42, epic: 12,
 }
 
 export const FIDELITY_MODE: Record<FidelityMode, string> = localized<FidelityMode>(zh.enums.fidelityMode as Record<FidelityMode, string>, en.enums.fidelityMode as Record<FidelityMode, string>)

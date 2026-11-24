@@ -34,11 +34,24 @@
 .film p { margin: 0; }
 .film section { display: flex; flex-direction: column; gap: 8px; }
 .film__card {
+  --film-ink: var(--content-blue);
+  --film-soft: var(--content-blue-soft);
   display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 12px;
-  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card);
+  border: 1px solid color-mix(in oklab, var(--film-ink) 22%, var(--border));
+  border-radius: calc(var(--ui-radius) + 2px);
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--film-soft) 48%, var(--card)) 0%, var(--card) 58%);
+  box-shadow: inset 3px 0 0 color-mix(in oklab, var(--film-ink) 48%, transparent);
 }
+.film__settings { --film-ink: var(--content-blue); --film-soft: var(--content-blue-soft); }
+.film__check { --film-ink: var(--content-sand); --film-soft: var(--content-sand-soft); }
+.film__overview { --film-ink: var(--content-rose); --film-soft: var(--content-rose-soft); }
+.film__clip { --film-ink: var(--content-violet); --film-soft: var(--content-violet-soft); }
 .film__card p, .film__card td, .film__card th { min-width: 0; overflow-wrap: anywhere; }
-.film__settings summary { cursor: pointer; font-weight: 500; color: var(--foreground); }
+.film__settings summary {
+  cursor: pointer; font-weight: 550;
+  color: color-mix(in oklab, var(--film-ink) 58%, var(--foreground));
+}
 .film__settings[open] summary { margin-bottom: 4px; }
 .film__settings > .field { margin-top: 8px; }
 /* 设置表单控件：同 shadcn 的输入框外观 */
@@ -98,11 +111,21 @@
 
 /* ---------- 配音与合成 ---------- */
 
-.compose { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
+.compose {
+  display: flex; flex-direction: column; gap: 10px; padding-top: 13px;
+  border-top: 1px solid color-mix(in oklab, var(--content-clay) 24%, var(--border));
+}
 .compose__head { display: flex; align-items: baseline; justify-content: space-between; }
-.compose h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.compose h4 {
+  margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 600; letter-spacing: -.02em;
+  color: color-mix(in oklab, var(--content-clay) 64%, var(--foreground));
+}
 .compose__box {
-  border: 1px solid var(--border); border-radius: calc(var(--ui-radius) + 2px); background: var(--card); padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--content-sand) 16%, var(--border));
+  border-radius: calc(var(--ui-radius) + 2px);
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--ambient-sand) 44%, var(--card)) 0%, var(--card) 56%);
+  padding: 10px 12px;
 }
 .compose__box summary { cursor: pointer; font-weight: 500; color: var(--foreground); }
 .compose__table { border-collapse: collapse; font-size: 12px; margin-top: 6px; }
@@ -112,6 +135,11 @@
 .compose__eprow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .compose__curve { margin: 0; padding-left: 16px; font-size: 12px; color: var(--ui-muted-foreground); }
 .compose__run, .compose__final, .compose__play { display: flex; flex-direction: column; gap: 8px; }
+.compose__run {
+  padding: 10px 12px; border: 1px solid color-mix(in oklab, var(--content-clay) 16%, var(--border));
+  border-radius: calc(var(--ui-radius) + 2px);
+  background: color-mix(in oklab, var(--ambient-rose) 40%, var(--card));
+}
 /* BGM 上传：label 套隐藏 input，外观同 Button outline / sm */
 .compose__upload, .compose__dl {
   display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 12px;

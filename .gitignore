@@ -23,3 +23,9 @@ dist/
 # 本地工具/IDE 配置
 .claude/
 .idea/
+
+# 本地 UI 预览截图
+.ui-preview/
+
+# SSR 测试构建产物
+frontend/.ssr*/

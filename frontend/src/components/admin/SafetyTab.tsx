@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/core'
@@ -60,7 +60,8 @@ export function SafetyTab() {
   let body
   if (error) body = <ErrorBar error={error} onRetry={reload} />
   else if (!data) body = <TableSkeleton />
-  else if (!data.length) body = <Empty title={t('admin.safety.empty')} hint={t('admin.safety.emptyHint')} />
+  else if (!data.length) body = <Empty tone="blue" icon={<ShieldCheck aria-hidden />}
+                                     title={t('admin.safety.empty')} hint={t('admin.safety.emptyHint')} />
   else body = (
     <table className="adm__table">
       <thead>

@@ -1160,17 +1160,17 @@ must(areaNow.value === '推门，康大叔', `正文里应落卡名而非 @token
 must(!container.querySelector('.cpick'), '选完应收起浮层')
 must(has('玄色外褂') || has('青布短打'), '有多套服装的角色挂上后应出现服装下拉')
 
-// ＋挂卡：生物与无状态道具
-await click(findByText('button', '＋ 挂卡'))
+// 关联资产：生物与无状态道具
+await click(findByText('button', '关联资产'))
 const attachInput = container.querySelector('.cpick__wrap input') as unknown as HTMLElement
 await type(attachInput, '乌鸦', false)
 await mouseDown(findByText('button', '乌鸦'))
-await click(findByText('button', '＋ 挂卡'))
+await click(findByText('button', '关联资产'))
 await type(container.querySelector('.cpick__wrap input') as unknown as HTMLElement, '洋钱', false)
 await mouseDown(findByText('button', '一包洋钱'))
 
-// 垫图列表
-await click(findByText('button', '垫图'))
+// 参考图列表
+await click(findByText('button', '参考图'))
 await mouseDown(findByText('button', '康大叔'))
 must(has('已挂'), '垫图浮层应标出已勾选的卡')
 // 分镜视图自己的「保存修改」按钮（#storyboard-save，主按钮的「去修复」也定位到它）

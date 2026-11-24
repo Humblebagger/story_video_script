@@ -36,11 +36,13 @@ interface Props {
 
 const err = errText
 const OUTLINE_LINES = 4
+const STAT_TONES = ['rose', 'blue', 'violet', 'clay', 'slate', 'sand'] as const
+const AVATAR_TONES = ['rose', 'blue', 'sand', 'violet'] as const
 
-function Avatar({ c }: { c: CharacterAsset }) {
+function Avatar({ c, tone }: { c: CharacterAsset; tone: (typeof AVATAR_TONES)[number] }) {
   const uri = assetThumb(c)
   return (
-    <span className="ovw__avatar" data-testid="avatar" aria-hidden>
+    <span className="ovw__avatar" data-testid="avatar" data-tone={tone} aria-hidden>
       {uri ? <img src={uri} alt="" /> : (c.name || c.id).slice(0, 1)}
     </span>
   )
@@ -109,30 +111,34 @@ export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, on
       {confirmUi}
       <motion.header className="flex flex-wrap items-start gap-3" {...m.item(i++)}>
         <div className="min-w-0 flex-1">
-          <h2 className="text-2xl font-semibold" data-testid="ovw-title">{novel.title}</h2>
+          <h2 className="ovw__title" data-testid="ovw-title">{novel.title}</h2>
           <p className="mt-1 text-sm text-muted-foreground" data-testid="ovw-meta">{meta}</p>
         </div>
-        {chapters.length === 0 ? (
-          <Button data-testid="ovw-continue" onClick={() => onSection('chapters')}>{t('overview.import')}</Button>
-        ) : (
-          <Button data-testid="ovw-continue" disabled={allDone}
-                  onClick={() => next && onOpenChapter(next.id)}>
-            {allDone ? t('overview.allDone')
-              : t('overview.continue', { chapter: next!.title, step: t(`flow.steps.${stageOf(next!.id)}` as MsgKey) })}
-          </Button>
-        )}
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t('novel.more')}>
-              <MoreHorizontal aria-hidden />
+        <div className="ovw__head-actions">
+          {chapters.length === 0 ? (
+            <Button data-testid="ovw-continue" onClick={() => onSection('chapters')}>{t('overview.import')}</Button>
+          ) : (
+            <Button data-testid="ovw-continue" disabled={allDone}
+                    onClick={() => next && onOpenChapter(next.id)}>
+              <span className="ovw__continue-label">
+                {allDone ? t('overview.allDone')
+                  : t('overview.continue', { chapter: next!.title, step: t(`flow.steps.${stageOf(next!.id)}` as MsgKey) })}
+              </span>
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem variant="destructive" onSelect={() => { setTimeout(() => void remove(), 0) }}>
-              <Trash2 aria-hidden />{t('novel.deleteNovel')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label={t('novel.more')}>
+                <MoreHorizontal aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem variant="destructive" onSelect={() => { setTimeout(() => void remove(), 0) }}>
+                <Trash2 aria-hidden />{t('novel.deleteNovel')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </motion.header>
 
       {(pending > 0 || stale.length > 0) && (
@@ -157,16 +163,29 @@ export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, on
       )}
 
       <motion.div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" {...m.item(i++)}>
-        {stats.map(([k, v]) => (
-          <Card key={k} data-testid="stat" className="gap-1 p-4">
-            <span className="text-xs text-muted-foreground">{k}</span>
-            <span className="font-mono text-[22px] font-semibold tabular-nums leading-tight">{v}</span>
-          </Card>
-        ))}
+        {stats.map(([k, v], n) => {
+          const [costMain, costAlt] = v.split(' · ')
+          const splitCost = n === 5 && !!costAlt
+          return (
+            <Card key={k} data-testid="stat" data-tone={STAT_TONES[n]} className="ovw__stat gap-1 p-4">
+              <span className="ovw__stat-label text-xs text-muted-foreground">{k}</span>
+              <span className={cn('ovw__stat-value font-mono text-[22px] font-semibold tabular-nums leading-tight',
+                                  splitCost && 'ovw__stat-value--cost')}>
+                {splitCost ? (
+                  <>
+                    <span>{costMain}</span>
+                    <span className="sr-only"> · </span>
+                    <span className="ovw__stat-sub">{costAlt}</span>
+                  </>
+                ) : v}
+              </span>
+            </Card>
+          )
+        })}
       </motion.div>
 
       <motion.div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]" {...m.item(i++)}>
-        <Card className="gap-3 p-5" data-testid="ovw-outline">
+        <Card className="ovw__panel gap-3 p-5" data-tone="blue" data-testid="ovw-outline">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-medium">{t('overview.outline')}</h3>
             {novel.style_image && (
@@ -181,19 +200,20 @@ export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, on
               {outline.map((l, k) => <p key={k} data-testid="outline-line">{l}</p>)}
             </div>
           ) : (
-            <div className="flex flex-col items-start gap-2">
+            <div className="ovw__outline-empty">
+              <span className="ovw__outline-mark" aria-hidden>STORY / OUTLINE</span>
               <p className="text-sm text-muted-foreground">{t('overview.noOutline')}</p>
               <Button size="sm" variant="outline" onClick={() => onSection('memory')}>{t('overview.fillIn')}</Button>
             </div>
           )}
         </Card>
-        <Card className="gap-3 p-5" data-testid="ovw-mains">
+        <Card className="ovw__panel gap-3 p-5" data-tone="rose" data-testid="ovw-mains">
           <h3 className="text-sm font-medium">{t('overview.mains')}</h3>
           {mains.length === 0 && <p className="text-sm text-muted-foreground">{t('overview.noMains')}</p>}
           <ul className="flex flex-col gap-2">
-            {mains.map((c) => (
+            {mains.map((c, n) => (
               <li key={c.id} data-testid="main-char" className="flex items-center gap-3">
-                <Avatar c={c} />
+                <Avatar c={c} tone={AVATAR_TONES[n % AVATAR_TONES.length]} />
                 <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">{c.id}</span>
               </li>
@@ -203,7 +223,7 @@ export function NovelOverview({ novel, summary, lastChapterId, onOpenChapter, on
       </motion.div>
 
       <motion.div {...m.item(i++)}>
-        <Card className="gap-1 p-5" data-testid="ovw-progress">
+        <Card className="ovw__panel gap-1 p-5" data-tone="sand" data-testid="ovw-progress">
           <h3 className="mb-2 text-sm font-medium">{t('overview.progress')}</h3>
           {chapters.length === 0 && <p className="text-sm text-muted-foreground">{t('novel.empty')}</p>}
           {chapters.map((c, k) => {

@@ -3,10 +3,10 @@
  *  文字全部走语言包。
  *  测试依赖的按钮文字：「管理」「返回书架」「退出」「新建小说」，以及用户名可见（展开时）；收起时只剩图标，aria-label 与提示同文字。
  *  窄屏（< 768px）默认收起。 */
-import { useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Bell, FileJson, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Shield, Sparkles } from 'lucide-react'
+import { Bell, FileJson, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Plus, Shield, Sparkles } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
 import { LangToggle } from '@/components/common/LangToggle'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
@@ -18,6 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
+import { useMedia } from '@/lib/useMedia'
 import { useMotionPresets } from '@/motion'
 import { SidebarCollapsedContext, TopbarSlotContext } from './topbarSlot'
 
@@ -75,19 +76,64 @@ export function AppShell(p: AppShellProps) {
   const { t } = useI18n()
   const m = useMotionPresets()
   const [collapsed, setCollapsed] = useState(narrow)
+  const [drawer, setDrawer] = useState(false)
+  const isNarrow = useMedia('(max-width: 767px)')
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   const toggleLabel = collapsed ? t('shell.expand') : t('shell.collapse')
   const adminLabel = p.adminOpen ? t('shell.backToShelf') : t('shell.admin')
+  useEffect(() => {
+    if (!isNarrow) setDrawer(false)
+  }, [isNarrow])
+  const toggleSidebar = () => {
+    if (isNarrow) {
+      const next = !drawer
+      setDrawer(next)
+      setCollapsed(!next)
+      return
+    }
+    setCollapsed((v) => !v)
+  }
+  const openDrawer = () => {
+    setDrawer(true)
+    setCollapsed(false)
+  }
+  const closeDrawer = () => {
+    setDrawer(false)
+    setCollapsed(true)
+  }
+  /** 手机抽屉里点分区 / 章节后自动收起，省一次手动关；不拦按钮自己的跳转 */
+  const onSidebarClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!isNarrow || !drawer) return
+    if ((e.target as HTMLElement).closest('.pnav__item, .pnav__add, .pcard, .hrun, .hchap__item')) {
+      window.setTimeout(closeDrawer, 80)
+    }
+  }
+  useEffect(() => {
+    if (!drawer) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeDrawer()
+    }
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [drawer])
   return (
     <TooltipProvider delayDuration={200}>
-    <div className="flex min-h-screen bg-background text-foreground" data-testid="app-shell">
-      <aside className={cn('sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out',
-                           collapsed ? 'w-16' : 'w-72')}>
+    <div className="app-shell flex min-h-screen bg-background text-foreground" data-testid="app-shell">
+      {drawer && <button type="button" className="app-shell__scrim" aria-label={t('shell.navClose')}
+                            onClick={closeDrawer} />}
+      <aside data-shell-sidebar aria-hidden={isNarrow && !drawer ? true : undefined}
+             className={cn('app-shell__sidebar top-0 flex shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
+                           collapsed ? 'w-16' : 'w-64', drawer && 'is-mobile-open')}>
         <div className={cn('flex px-3', collapsed ? 'flex-col items-center gap-2 py-3' : 'h-14 items-center justify-between')}>
           <Logo compact={collapsed} />
           <Tip on={collapsed} label={toggleLabel}>
             <Button variant="ghost" size="icon" aria-label={toggleLabel} aria-expanded={!collapsed}
-                    onClick={() => setCollapsed((v) => !v)}>
+                    onClick={toggleSidebar}>
               {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
             </Button>
           </Tip>
@@ -95,12 +141,14 @@ export function AppShell(p: AppShellProps) {
         <div className={cn('pb-2', collapsed ? 'flex justify-center px-0' : 'px-3')}>
           <Tip on={collapsed} label={t('shell.newNovel')}>
             <Button className={collapsed ? '' : 'w-full justify-start gap-2'} size={collapsed ? 'icon' : 'default'}
-                    data-tour="new-novel" aria-label={collapsed ? t('shell.newNovel') : undefined} onClick={p.onNewNovel}>
+                    data-tour="new-novel" aria-label={collapsed ? t('shell.newNovel') : undefined}
+                    onClick={() => { p.onNewNovel(); if (isNarrow) closeDrawer() }}>
               <Plus className="size-4" />{!collapsed && t('shell.newNovel')}
             </Button>
           </Tip>
         </div>
-        <div className={cn('min-h-0 flex-1 overflow-y-auto px-2', collapsed && !p.sidebarHandlesCollapse && 'invisible')}>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto px-2', collapsed && !p.sidebarHandlesCollapse && 'invisible')}
+             onClick={onSidebarClick}>
           <SidebarCollapsedContext.Provider value={collapsed}>{p.sidebar}</SidebarCollapsedContext.Provider>
         </div>
         <div className={cn('space-y-1 border-t border-sidebar-border', collapsed ? 'flex flex-col items-center py-3' : 'p-3')}>
@@ -114,7 +162,7 @@ export function AppShell(p: AppShellProps) {
           )}
           {collapsed ? (
             <>
-              <span className="flex size-7 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white"
+              <span className="flex size-7 items-center justify-center rounded-full bg-brand text-xs font-semibold text-background"
                     title={t('shell.signedInAs', { name: p.username })}>
                 {p.username.slice(0, 1).toUpperCase()}
               </span>
@@ -126,7 +174,7 @@ export function AppShell(p: AppShellProps) {
             </>
           ) : (
             <div className="flex items-center gap-2 rounded-lg px-2 py-1.5" title={t('shell.signedInAs', { name: p.username })}>
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-semibold text-background">
                 {p.username.slice(0, 1).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">{p.username}</span>
@@ -138,10 +186,14 @@ export function AppShell(p: AppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 grid h-14 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-3 border-b bg-background/80 px-5 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      <div className="app-shell__body flex min-w-0 flex-1 flex-col">
+        <header className="app-shell__topbar sticky top-0 z-20 border-b border-border/70 bg-background/95 max-md:bg-background"
                 data-testid="topbar">
-          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+          <div className="app-shell__lead flex min-w-0 items-center gap-1 overflow-hidden">
+            <Button variant="ghost" size="icon" className="app-shell__menu" aria-label={t('shell.navOpen')}
+                    aria-expanded={drawer} onClick={openDrawer}>
+              <Menu className="size-4" />
+            </Button>
             {p.projectSwitcher ? (
               <>{p.projectSwitcher}{p.chapterCrumb}</>
             ) : (
@@ -159,10 +211,14 @@ export function AppShell(p: AppShellProps) {
               </nav>
             )}
           </div>
-          <div id="topbar-center" ref={setSlot} className="flex min-w-0 justify-center" />
-          <div className="flex items-center justify-end gap-1">
-            {p.costMeter}
-            {p.service.down && <StatusPill tone="err">{t('shell.serviceDown')}</StatusPill>}
+          <div id="topbar-center" ref={setSlot} className="app-shell__steps min-w-0" />
+          <div className="app-shell__actions flex items-center gap-1">
+            <span className="app-shell__chip-optional contents">{p.costMeter}</span>
+            {p.service.down && (
+              <span className="app-shell__chip-optional contents">
+                <StatusPill tone="err">{t('shell.serviceDown')}</StatusPill>
+              </span>
+            )}
             {p.onOpenAssistant && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -195,50 +251,53 @@ export function AppShell(p: AppShellProps) {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label={t('shell.openLocal')} onClick={p.onOpenLocal}>
+                <Button variant="ghost" size="icon" className="app-shell__action-optional"
+                        aria-label={t('shell.openLocal')} onClick={p.onOpenLocal}>
                   <FileJson className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('shell.openLocal')}</TooltipContent>
             </Tooltip>
-            <LangToggle />
+            <span className="app-shell__action-optional contents"><LangToggle /></span>
             <ThemeToggle />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label={t('shell.account')} data-testid="account-menu">
-                  <span className="flex size-7 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white">
-                    {p.username.slice(0, 1).toUpperCase()}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>{t('shell.signedInAs', { name: p.username })}</DropdownMenuLabel>
-                {p.service.model !== undefined && (
-                  <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
-                    <span className="text-muted-foreground">{t('shell.model')}</span>
-                    <span className="min-w-0 truncate font-mono text-xs">
-                      {p.service.model}{p.service.noKey && <span className="ml-1 text-destructive">· {t('shell.noKey')}</span>}
+            <span className="app-shell__action-optional contents">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label={t('shell.account')} data-testid="account-menu">
+                    <span className="flex size-7 items-center justify-center rounded-full bg-brand text-xs font-semibold text-background">
+                      {p.username.slice(0, 1).toUpperCase()}
                     </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>{t('shell.signedInAs', { name: p.username })}</DropdownMenuLabel>
+                  {p.service.model !== undefined && (
+                    <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+                      <span className="text-muted-foreground">{t('shell.model')}</span>
+                      <span className="min-w-0 truncate font-mono text-xs">
+                        {p.service.model}{p.service.noKey && <span className="ml-1 text-destructive">· {t('shell.noKey')}</span>}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+                    <span className="text-muted-foreground">{t('shell.service')}</span>
+                    <StatusPill tone={p.service.down ? 'err' : 'ok'}>
+                      {p.service.down ? t('shell.serviceDown') : t('shell.serviceOk')}
+                    </StatusPill>
                   </div>
-                )}
-                <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
-                  <span className="text-muted-foreground">{t('shell.service')}</span>
-                  <StatusPill tone={p.service.down ? 'err' : 'ok'}>
-                    {p.service.down ? t('shell.serviceDown') : t('shell.serviceOk')}
-                  </StatusPill>
-                </div>
-                <DropdownMenuSeparator />
-                {p.isAdmin && (
-                  <DropdownMenuItem onSelect={p.onToggleAdmin}><Shield className="size-4" />{adminLabel}</DropdownMenuItem>
-                )}
-                <DropdownMenuItem onSelect={p.onLogout}><LogOut className="size-4" />{t('shell.logout')}</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <DropdownMenuSeparator />
+                  {p.isAdmin && (
+                    <DropdownMenuItem onSelect={p.onToggleAdmin}><Shield className="size-4" />{adminLabel}</DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onSelect={p.onLogout}><LogOut className="size-4" />{t('shell.logout')}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
           </div>
         </header>
         <div className="flex min-h-0 min-w-0 flex-1">
           <TopbarSlotContext.Provider value={slot}>
-            <motion.main key={p.viewKey} {...m.enter} className="min-w-0 flex-1 px-6 py-6">
+            <motion.main key={p.viewKey} {...m.enter} className="app-shell__main min-w-0 flex-1">
               {p.children}
             </motion.main>
           </TopbarSlotContext.Provider>

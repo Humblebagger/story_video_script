@@ -1,5 +1,6 @@
 /** 后台各页共用的加载骨架、错误条与空状态。 */
 import { Inbox } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,8 +11,18 @@ import { cn } from '@/lib/utils'
 
 export function TableSkeleton() {
   return (
-    <div className="flex flex-col gap-2 py-4" aria-busy="true">
-      {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+    <div className="adm-skel" aria-busy="true">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="adm-skel__row">
+          <Skeleton className="adm-skel__dot" />
+          <div className="adm-skel__lines">
+            <Skeleton className="adm-skel__bar" />
+            <Skeleton className="adm-skel__bar is-short" />
+          </div>
+          <Skeleton className="adm-skel__value" />
+          <Skeleton className="adm-skel__pill" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -26,11 +37,15 @@ export function ErrorBar({ error, onRetry }: { error: MsgLike; onRetry: () => vo
   )
 }
 
-/** 空状态：各页统一用这一个（收件箱图标 + 一句话 + 可选的说明），带卡片底。 */
-export function Empty({ title, hint }: { title: string; hint?: string }) {
+export type EmptyTone = 'blue' | 'violet' | 'rose' | 'sand' | 'clay'
+
+/** 空状态：各页统一用这一个（图标 + 一句话 + 可选的说明），带分色卡片底。 */
+export function Empty({ title, hint, tone = 'blue', icon }: {
+  title: string; hint?: string; tone?: EmptyTone; icon?: ReactNode
+}) {
   return (
-    <div className="adm__emptycard">
-      <EmptyState icon={<Inbox aria-hidden />} title={title} hint={hint} />
+    <div className="adm__emptycard" data-tone={tone}>
+      <EmptyState icon={icon ?? <Inbox aria-hidden />} title={title} hint={hint} compact />
     </div>
   )
 }

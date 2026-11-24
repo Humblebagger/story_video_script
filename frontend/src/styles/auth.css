@@ -1,0 +1,82 @@
+/* 登录 / 注册：左侧品牌工作台，右侧表单；窄屏只保留表单。 */
+.login__box {
+  border-color: color-mix(in oklab, var(--content-blue) 18%, var(--border));
+  box-shadow:
+    0 48px 110px -48px rgb(0 0 0 / .42),
+    0 0 0 1px color-mix(in oklab, var(--card) 70%, transparent);
+}
+.login__visual {
+  position: relative; display: flex; min-height: 520px; flex-direction: column; gap: 28px;
+  overflow: hidden; padding: 26px; color: #fff8ee;
+  background-color: #0b0e1a;
+  background-image:
+    radial-gradient(52% 46% at 92% 4%, color-mix(in oklab, var(--content-violet) 42%, transparent), transparent 70%),
+    radial-gradient(48% 42% at 2% 90%, color-mix(in oklab, var(--content-blue) 40%, transparent), transparent 72%),
+    radial-gradient(34% 32% at 82% 92%, color-mix(in oklab, var(--content-rose) 22%, transparent), transparent 70%),
+    linear-gradient(145deg, #090c16 0%, #131a2d 58%, #201b38 100%);
+}
+.login__visual::before {
+  content: ""; position: absolute; inset: 0; opacity: .18; pointer-events: none;
+  background-image:
+    linear-gradient(to right, #fff 1px, transparent 1px),
+    linear-gradient(to bottom, #fff 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(160deg, #000, transparent 72%);
+}
+.login__visual::after {
+  content: ""; position: absolute; right: -72px; bottom: -88px; width: 250px; height: 250px;
+  border: 1px solid rgb(255 255 255 / .12); border-radius: 50%;
+  box-shadow:
+    0 0 0 34px rgb(255 255 255 / .035),
+    0 0 0 82px rgb(255 255 255 / .022);
+}
+.login__vis-brand, .login__vis-main, .login__stack, .login__vis-foot { position: relative; z-index: 1; }
+.login__vis-brand { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; letter-spacing: .03em; }
+.login__vis-main { margin-top: auto; }
+.login__kicker {
+  margin: 0 0 8px; font-size: 10px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: color-mix(in oklab, var(--content-sand) 72%, #fff8ee);
+}
+.login__vis-main h2 {
+  max-width: 9em; margin: 0; font-family: var(--font-display); font-size: 34px;
+  line-height: 1.24; letter-spacing: -.035em; font-weight: 600;
+}
+.login__vis-main > p:last-child { max-width: 25em; margin: 14px 0 0; font-size: 13px; line-height: 1.75; color: rgb(255 248 238 / .62); }
+.login__stack { display: flex; flex-direction: column; gap: 7px; margin-top: 4px; }
+.login__stackrow {
+  --row-ink: var(--content-blue);
+  display: grid; grid-template-columns: 28px 1fr 88px; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid rgb(255 255 255 / .11); border-radius: 10px;
+  background: rgb(255 255 255 / .055); backdrop-filter: blur(8px);
+}
+.login__stackrow[data-tone="sand"] { --row-ink: var(--content-sand); }
+.login__stackrow[data-tone="violet"] { --row-ink: var(--content-violet); }
+.login__stackrow > span { font-family: var(--font-mono); font-size: 10px; color: rgb(255 248 238 / .46); }
+.login__stackrow > b { font-size: 12px; font-weight: 500; }
+.login__stackrow > i { justify-self: end; height: 3px; border-radius: 999px; background: var(--row-ink); opacity: .8; }
+.login__vis-foot { margin-top: auto; font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; color: rgb(255 248 238 / .3); }
+
+.login__formpanel { justify-content: center; }
+.login__formhead { display: flex; align-items: center; gap: 12px; padding-top: 6px; }
+.login__formhead .login__kicker { margin-bottom: 2px; color: color-mix(in oklab, var(--content-clay) 72%, var(--ui-muted-foreground)); }
+.dark .login__formhead .login__kicker { color: color-mix(in oklab, var(--content-blue) 70%, var(--ui-muted-foreground)); }
+.login__formhead h2 { margin: 0; font-family: var(--font-display); font-size: 26px; line-height: 1.2; letter-spacing: -.03em; }
+.login__mobilemark { display: none; }
+.login__tabs { background-image: linear-gradient(100deg, color-mix(in oklab, var(--ambient-blue) 54%, var(--ui-muted)), var(--ui-muted)); }
+.login__tab.is-on {
+  background: var(--background); color: var(--foreground);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+.dark .login__tab.is-on {
+  background: color-mix(in oklab, var(--content-blue) 14%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--content-blue) 26%, transparent);
+}
+.login__field > span { font-size: 12px; color: color-mix(in oklab, var(--foreground) 86%, var(--ui-muted-foreground)); }
+.login__formpanel > .text-xs:last-child { line-height: 1.7; }
+
+@media (max-width: 767px) {
+  .login__box { max-width: 26rem; }
+  .login__visual { display: none; }
+  .login__formpanel { padding: 24px; }
+  .login__mobilemark { display: inline-flex; }
+}

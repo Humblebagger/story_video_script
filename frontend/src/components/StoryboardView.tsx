@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Clapperboard, Download, Lock, Palette, PencilLine } from 'lucide-react'
+import {
+  BookOpenText, Braces, Check, Clapperboard, Download, LayoutGrid, Lock, Palette,
+  PencilLine, Play, Table2, UsersRound,
+} from 'lucide-react'
 import { stampVersion, updateAsset, updateShot } from '../edit'
 import type { AssetKind } from '../edit'
 import { FIDELITY_MODE, label, NARRATION_MODE } from '../labels'
@@ -21,6 +24,15 @@ import { useI18n } from '@/i18n/core'
 export type Tab = 'focus' | 'cards' | 'sheet' | 'assets' | 'source' | 'render' | 'json'
 
 const TABS: Tab[] = ['focus', 'cards', 'sheet', 'assets', 'source', 'render', 'json']
+const TAB_ICONS = {
+  focus: Clapperboard,
+  cards: LayoutGrid,
+  sheet: Table2,
+  assets: UsersRound,
+  source: BookOpenText,
+  render: Play,
+  json: Braces,
+} satisfies Record<Tab, typeof Clapperboard>
 
 function download(doc: Storyboard) {
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
@@ -141,7 +153,7 @@ export function StoryboardView({
     onChange(updateAsset(doc, kind, id, patch))
 
   return (
-    <div className="sb">
+    <div className={cn('sb', editing && 'sb--editing')}>
       <header className="sb__head">
         <div className="sb__title">
           <h2>{meta?.title ?? t('board.untitled')}</h2>
@@ -165,20 +177,28 @@ export function StoryboardView({
               <Button
                 size="sm"
                 id="storyboard-save"
+                className={cn('sb__save', !dirty && !saving && 'is-saved')}
                 disabled={!dirty || saving}
+                title={!dirty && !saving ? t('board.saved') : undefined}
                 onClick={onSave}
               >
-                {saving ? t('board.saving') : dirty ? t('board.save') : t('board.saved')}
+                {saving ? t('board.saving') : dirty ? t('board.save') : (
+                  <>
+                    <Check aria-hidden />
+                    <span className="max-sm:sr-only">{t('board.saved')}</span>
+                  </>
+                )}
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={openCanvas}
-                    title={t('board.canvasTip')}>
+            <Button size="sm" variant="ghost" className="sb__canvas" onClick={openCanvas}
+                    title={t('board.canvasTip')} aria-label={t('board.canvas')}>
               <Clapperboard />
-              {t('board.canvas')}
+              <span className="max-sm:sr-only">{t('board.canvas')}</span>
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => download(doc)}>
+            <Button size="sm" variant="ghost" className="sb__download" onClick={() => download(doc)}
+                    aria-label={t('board.download')}>
               <Download />
-              {t('board.download')}
+              <span className="max-sm:sr-only">{t('board.download')}</span>
             </Button>
           </div>
         </div>
@@ -198,14 +218,17 @@ export function StoryboardView({
           </p>
         )}
 
-        <div className="stats grid grid-cols-3 gap-2 md:grid-cols-6">
-          <Stat n={idx.stats.units} k={t('board.statUnits')} />
-          <Stat n={idx.stats.episodes} k={t('board.statEpisodes')} />
-          <Stat n={idx.stats.shots} k={t('board.statShots')} />
+        <div className={cn(
+          'stats flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible md:grid-cols-6',
+          editing && 'max-md:hidden',
+        )}>
+          <Stat n={idx.stats.units} k={t('board.statUnits')} tone="blue" />
+          <Stat n={idx.stats.episodes} k={t('board.statEpisodes')} tone="violet" />
+          <Stat n={idx.stats.shots} k={t('board.statShots')} tone="clay" />
           <Stat n={pct(idx.stats.coveredRatio)} k={t('board.statCoverage')}
-                warn={idx.stats.coveredRatio < 1} />
-          <Stat n={pct(idx.stats.narratedRatio)} k={t('board.statNarrated')} />
-          <Stat n={pct(idx.stats.inferredRatio)} k={t('board.statInferred')} />
+                tone="sand" warn={idx.stats.coveredRatio < 1} />
+          <Stat n={pct(idx.stats.narratedRatio)} k={t('board.statNarrated')} tone="rose" />
+          <Stat n={pct(idx.stats.inferredRatio)} k={t('board.statInferred')} tone="slate" />
         </div>
 
         {meta?.style?.style_prefix && (
@@ -214,22 +237,26 @@ export function StoryboardView({
       </header>
 
       <div className="sb__bar">
-        <nav className="inline-flex shrink-0 rounded-lg bg-muted p-1" aria-label={t('board.viewsAria')}>
-          {TABS.filter((id) => !preview || id !== 'render').map((id) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={tab === id}
-              className={cn(
-                'tabs__btn rounded-md border-0 px-3 py-1.5 text-sm text-muted-foreground',
-                'transition-[color,background-color,box-shadow] duration-150 ease-out hover:text-foreground',
-                tab === id && 'is-on bg-background font-medium text-foreground shadow-sm dark:bg-foreground/10',
-              )}
-              onClick={() => { setTab(id); setFocusShot(null) }}
-            >
-              {t(`board.tabs.${id}`)}
-            </button>
-          ))}
+        <nav className="shrink-0 rounded-lg bg-muted p-1" aria-label={t('board.viewsAria')}>
+          {TABS.filter((id) => !preview || id !== 'render').map((id) => {
+            const Icon = TAB_ICONS[id]
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={tab === id}
+                className={cn(
+                  'tabs__btn rounded-md border-0',
+                  'transition-[color,background-color,box-shadow] duration-150 ease-out',
+                  tab === id && 'is-on font-medium',
+                )}
+                onClick={() => { setTab(id); setFocusShot(null) }}
+              >
+                <Icon size={14} aria-hidden />
+                {t(`board.tabs.${id}`)}
+              </button>
+            )
+          })}
         </nav>
       </div>
 
@@ -281,9 +308,11 @@ export function StoryboardView({
   )
 }
 
-function Stat({ n, k, warn }: { n: number | string; k: string; warn?: boolean }) {
+function Stat({ n, k, warn, tone }: {
+  n: number | string; k: string; warn?: boolean; tone: 'blue' | 'violet' | 'clay' | 'sand' | 'rose' | 'slate'
+}) {
   return (
-    <div className={`stat${warn ? ' stat--warn' : ''}`}>
+    <div className={`stat${warn ? ' stat--warn' : ''}`} data-tone={tone}>
       <b>{n}</b>
       <span>{k}</span>
     </div>

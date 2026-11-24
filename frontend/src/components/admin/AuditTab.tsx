@@ -1,3 +1,4 @@
+import { ScrollText } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/i18n/core'
 import { adminAudit } from './api'
@@ -16,7 +17,8 @@ export function AuditTab() {
   let body
   if (error) body = <ErrorBar error={error} onRetry={reload} />
   else if (!data) body = <TableSkeleton />
-  else if (!data.length) body = <Empty title={t('admin.audit.empty')} hint={t('admin.audit.emptyHint')} />
+  else if (!data.length) body = <Empty tone="violet" icon={<ScrollText aria-hidden />}
+                                     title={t('admin.audit.empty')} hint={t('admin.audit.emptyHint')} />
   else body = (
     <table className="adm__table">
       <thead>

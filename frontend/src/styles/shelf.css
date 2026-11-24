@@ -11,14 +11,97 @@
 }
 
 /* 新建主卡片 */
-.composer { transition: border-color 0.15s, box-shadow 0.15s; }
-.dark .composer { box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 12%, transparent), 0 8px 32px -12px color-mix(in oklab, var(--primary) 30%, transparent); }
+.composer {
+  border: 1px solid color-mix(in oklab, var(--content-rose) 16%, var(--border));
+  background:
+    linear-gradient(180deg,
+      color-mix(in oklab, var(--ambient-rose) 58%, var(--card)) 0%,
+      var(--card) 54%);
+  box-shadow: 0 18px 50px -36px color-mix(in oklab, var(--content-rose) 34%, transparent);
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.composer:focus-within { border-color: color-mix(in oklab, var(--primary) 48%, var(--border)); box-shadow: 0 20px 56px -38px color-mix(in oklab, var(--primary) 32%, transparent); }
 .composer[data-drop="on"] { border-color: var(--primary); }
 .composer__drop { background: color-mix(in oklab, var(--card) 80%, transparent); color: var(--primary); backdrop-filter: blur(2px); }
 .composer .form__text textarea[data-slot] { min-height: 160px; max-height: 360px; line-height: 1.85; }
 
 /* 书架首页 */
-.shelf-card { transition: border-color 0.15s, transform 0.15s; }
-.shelf-card:hover { border-color: var(--ring); transform: translateY(-1px); }
+.shelf-card { border: 1px solid var(--border); transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s; }
+.shelf-card:hover { border-color: color-mix(in oklab, var(--primary) 42%, var(--border)); box-shadow: 0 14px 32px -26px color-mix(in oklab, var(--foreground) 34%, transparent); transform: translateY(-2px); }
 @media (prefers-reduced-motion: reduce) { .shelf-card:hover { transform: none; } }
-.shelf-card__cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 70%); }
+.shelf-card__cover {
+  --cover-ink: var(--content-blue);
+  --cover-soft: var(--content-blue-soft);
+  background:
+    linear-gradient(to right, color-mix(in oklab, var(--cover-ink) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--cover-ink) 6%, transparent) 1px, transparent 1px),
+    radial-gradient(72% 94% at 82% 0%, color-mix(in oklab, var(--cover-ink) 24%, transparent), transparent 64%),
+    radial-gradient(52% 70% at 4% 100%, color-mix(in oklab, var(--cover-soft) 72%, transparent), transparent 66%),
+    linear-gradient(150deg, color-mix(in oklab, var(--cover-soft) 78%, var(--card)) 0%, var(--card) 74%);
+  background-size: 22px 22px, 22px 22px, auto, auto, auto;
+  color: color-mix(in oklab, var(--cover-ink) 88%, var(--foreground));
+}
+.shelf-card__cover[data-cover-tone="clay"] { --cover-ink: var(--content-clay); --cover-soft: var(--content-clay-soft); }
+.shelf-card__cover[data-cover-tone="sand"] { --cover-ink: var(--content-sand); --cover-soft: var(--content-sand-soft); }
+.shelf-card__cover[data-cover-tone="violet"] { --cover-ink: var(--content-violet); --cover-soft: var(--content-violet-soft); }
+.shelf-card__cover[data-cover-tone="blue"] { --cover-ink: var(--content-blue); --cover-soft: var(--content-blue-soft); }
+.dark .shelf-card__cover {
+  background:
+    linear-gradient(to right, color-mix(in oklab, var(--cover-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--cover-ink) 7%, transparent) 1px, transparent 1px),
+    radial-gradient(68% 92% at 82% 0%, color-mix(in oklab, var(--cover-ink) 30%, transparent), transparent 62%),
+    radial-gradient(54% 72% at 2% 100%, color-mix(in oklab, var(--cover-ink) 12%, transparent), transparent 66%),
+    var(--card);
+  background-size: 22px 22px, 22px 22px, auto, auto, auto;
+}
+.shelf-card__monogram {
+  color: color-mix(in oklab, var(--cover-ink) 88%, var(--foreground));
+  text-shadow: 0 0 44px color-mix(in oklab, var(--cover-ink) 42%, transparent);
+}
+.dark .shelf-card__monogram { text-shadow: 0 0 48px color-mix(in oklab, var(--cover-ink) 56%, transparent); }
+.style-preview { background-image: url('/images/style-contact-sheet.png'); background-size: 300% 300%; background-repeat: no-repeat; }
+
+.shelf-home { container-type: inline-size; }
+.shelf-home__title {
+  font-family: var(--font-display);
+  font-size: clamp(2.3rem, 3.6vw, 3.35rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+.shelf-home > header { padding-bottom: 4px; }
+.shelf-home__styles [data-style-picker] {
+  overflow-x: auto;
+  padding: 4px 4px 12px;
+  margin: -4px;
+  scroll-padding-inline: 4px;
+  scrollbar-width: thin;
+}
+.shelf-home__styles {
+  padding: 14px 16px 10px;
+  border: 1px solid color-mix(in oklab, var(--content-blue) 15%, var(--border));
+  border-radius: 14px;
+  background:
+    linear-gradient(112deg,
+      color-mix(in oklab, var(--ambient-blue) 58%, var(--card)) 0%,
+      color-mix(in oklab, var(--ambient-sand) 24%, var(--card)) 100%);
+}
+.shelf-home__styles h2 { color: color-mix(in oklab, var(--content-blue) 70%, var(--ui-muted-foreground)); }
+.shelf-home__styles [data-style-picker] > div { flex: 0 0 148px; }
+.shelf-home__projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+}
+@container (max-width: 480px) {
+  .shelf-home .composer > div:last-child { flex-direction: column; align-items: stretch; }
+  .shelf-home .composer > div:last-child > div:last-child { margin-left: 0; flex-wrap: wrap; }
+  .shelf-home .composer > div:last-child > div:last-child > span { flex-basis: 100%; }
+  .shelf-home [data-testid="composer-submit"] { margin-left: auto; }
+}
+
+@media (max-width: 640px) {
+  .shelf-home { gap: 2rem; }
+  .shelf-home__styles [data-style-picker] > div { flex-basis: 124px; }
+  .composer .form__text textarea[data-slot] { min-height: 120px; }
+}

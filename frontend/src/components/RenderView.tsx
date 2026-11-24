@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, CircleDollarSign, Clapperboard, Images } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ApiError, renderPlan } from '../api'
@@ -135,16 +135,31 @@ export function RenderView({ doc, runId }: Props) {
       {blocked && <VerificationPanel report={blocked} doc={doc} origin="render" />}
 
       {!plan && !busy && !err && (
-        <p className="empty">{t('renderPack.empty')}</p>
+        <div className="rend__blank">
+          <div className="rend__blank-rail" aria-hidden>
+            <span className="rend__blank-node" data-tone="blue">
+              <Clapperboard /><b>CLIP</b><em>{t('renderPack.blankClip')}</em>
+            </span>
+            <span className="rend__blank-link" />
+            <span className="rend__blank-node" data-tone="sand">
+              <Images /><b>IMAGE</b><em>{t('renderPack.blankImage')}</em>
+            </span>
+            <span className="rend__blank-link" />
+            <span className="rend__blank-node" data-tone="rose">
+              <CircleDollarSign /><b>COST</b><em>{t('renderPack.blankCost')}</em>
+            </span>
+          </div>
+          <p className="rend__blank-copy">{t('renderPack.empty')}</p>
+        </div>
       )}
 
       {plan && (
         <>
           <div className="rend__cost">
-            <div className="rend__num">
+            <div className="rend__num rend__num--clips">
               <b>{plan.estimate.clips}</b><span>{t('renderPack.clips')}</span>
             </div>
-            <div className="rend__num">
+            <div className="rend__num rend__num--secs">
               <b>{Math.round(plan.estimate.playable_seconds)}</b>
               <span>
                 {t('renderPack.playable')}
@@ -155,7 +170,7 @@ export function RenderView({ doc, runId }: Props) {
                   })}
               </span>
             </div>
-            <div className="rend__num rend__num--warn">
+            <div className="rend__num rend__num--imgs rend__num--warn">
               <b>{plan.estimate.asset_images_missing}</b>
               <span>{t('renderPack.imgsMissing', { total: plan.estimate.asset_images_total })}</span>
             </div>

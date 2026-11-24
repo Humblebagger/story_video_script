@@ -140,6 +140,8 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   const heads = qa('.focus__ep')
   must(heads.length === 2 && heads[0].textContent!.includes('E01') && heads[1].textContent!.includes('E02'), '两个集标题')
   must(selected() === 'SH001', '默认选中第一镜')
+  must(q('[role="option"] .focus__item-summary')?.textContent === 'SH001 的画面', '列表项显示画面摘要')
+  must(q('[role="option"]')?.getAttribute('title') === 'SH001 的画面', '悬停可看完整画面描述')
   must(opts()[1].getAttribute('data-issue') === 'hard' && opts()[2].getAttribute('data-issue') === 'soft', '红黄点')
   must(!opts()[0].hasAttribute('data-issue'), '无问题不标')
 
@@ -300,10 +302,12 @@ if (!gCss?.escape) g.CSS = { escape: (x: string) => x }
   must(txt().includes('45 镜') && txt().includes('4:45') && txt().includes('检查修改'), '状态行')
   const tiles = () => Array.from(box.querySelectorAll('[data-testid="cost-tile"]'))
   must(tiles().length === 3 && tiles().every((x) => x.textContent?.includes('—')), '没有出片会话：三格都是破折号')
+  must(tiles().every((tile) => !tile.hasAttribute('data-cost-kind')), '无费用数据时保持中性底色')
   must(txt().includes('出片时才会花钱'), '说明出片时才花钱')
   const film = { budget_cny: 20, spent_cny: 3.66, clips: [{ estimate_cny: 2.5 }, { estimate_cny: 2.94 }] } as unknown as FilmSession
   await show(h(ChapterHeader, { ...base, film }))
   must(tiles().map((x) => x.querySelector('.chead__value')?.textContent).join() === '¥5.44,¥3.66,¥20.00', '三格金额')
+  must(tiles().map((tile) => tile.getAttribute('data-cost-kind')).join() === 'estimate,spent,cap', '费用类别拥有稳定的语义色标记')
   must(!txt().includes('出片时才会花钱'), '有会话时不再说明')
   await show(h(ChapterHeader, { ...base, film, compact: true }))
   const c = box.querySelector('[data-testid="chapter-head-compact"]')

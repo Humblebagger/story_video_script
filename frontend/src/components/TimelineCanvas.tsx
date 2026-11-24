@@ -579,10 +579,10 @@ export function TimelineCanvas({
   const mid = (i: number) => (tl.shots[i].start + tl.shots[i].end) / 2
 
   return (
-    <div className="tlc">
+    <div className="tlc" data-panel={shown}>
       <div className="tlc__main" ref={box}>
       {/* 章节信息与工具条同一行：工具条变宽时把章节信息挤窄，而不是叠在上面 */}
-      <div className="tlc__bottom">
+      <div className={`tlc__bottom${view === 'graph' ? ' is-graph' : ''}`}>
       {head && <div className="tlc__chead" onPointerDown={(e) => e.stopPropagation()}>{head}</div>}
       <div className="tlc__bar rounded-full border bg-card/80 px-2 py-1.5 shadow-xl backdrop-blur-md"
            onPointerDown={(e) => e.stopPropagation()}>

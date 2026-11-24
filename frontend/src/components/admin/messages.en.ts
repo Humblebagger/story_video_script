@@ -91,6 +91,8 @@ export const enAdmin: AdminMessages = {
     running: 'Running', failed: 'Failed in the last 7 days', refresh: 'Refresh',
     filter: { label: 'Filter by status', all: 'All', running: 'Running', failed: 'Failed' },
     noRunning: 'No jobs running', noFailed: 'No failed jobs',
+    emptyRunningHint: 'New jobs will appear here as soon as they start. Refresh at any time.',
+    emptyFailedHint: 'No failures in the last 7 days — everything is running cleanly.',
     runningCols: { user: 'User', novelChapter: 'Novel / chapter', status: 'Status', start: 'Started', elapsed: 'Elapsed', chars: 'Chars' },
     debug: 'Debug log', debugEmpty: '(no debug log)',
     failedCols: { user: 'User', novelChapter: 'Novel / chapter', start: 'Started', chars: 'Chars', attempts: 'Attempts', error: 'Error' },

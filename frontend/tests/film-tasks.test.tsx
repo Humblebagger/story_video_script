@@ -201,8 +201,8 @@ const {
   const text = container.textContent ?? ''
   must(!text.includes('没有在跑的任务'), '有任务就不是空状态')
   const zone = (id: string) => container.querySelector(`[data-testid="${id}"]`)!
-  must((zone('queue-running').querySelector('h3')?.textContent ?? '') === '进行中'
-       && (zone('queue-ended').querySelector('h3')?.textContent ?? '') === '已结束', '两个区')
+  must((zone('queue-running').querySelector('h3 > span')?.textContent ?? '') === '进行中'
+       && (zone('queue-ended').querySelector('h3 > span')?.textContent ?? '') === '已结束', '两个区')
   must(zone('queue-running').querySelectorAll('li').length === 4 && zone('queue-ended').querySelectorAll('li').length === 7,
        '进行中 4 条（1 转换 + 3 出片与合成），已结束 7 条（1 转换 + 6 出片与合成）')
   must(container.querySelectorAll('h3').length === 2 && zone('queue-running').contains(container.querySelector('[data-testid="activity-film-running"]')!)

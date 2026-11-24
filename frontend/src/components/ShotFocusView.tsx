@@ -1,8 +1,8 @@
 /** 镜头三栏视图：左栏按集分组的镜头列表，中栏选中镜头的完整编辑，右栏关键帧 / 成片段与原文出处。 */
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { CSSProperties, KeyboardEvent } from 'react'
 import { motion } from 'motion/react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Search } from 'lucide-react'
 import { StepPrimaryContext } from '@/components/workflow/chapterHead'
 import { useI18n } from '@/i18n/core'
 import { primaryArgs } from '@/lib/fmt'
@@ -73,7 +73,13 @@ export function ShotFocusView({
 
   useEffect(() => {
     if (!curId) return
-    document.getElementById(optId(curId))?.scrollIntoView?.({ block: 'nearest' })
+    const list = listRef.current
+    const item = document.getElementById(optId(curId))
+    if (!list || !item || !list.contains(item)) return
+    const box = list.getBoundingClientRect()
+    const row = item.getBoundingClientRect()
+    if (row.top < box.top) list.scrollTop -= box.top - row.top
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom
   }, [curId, showList])
 
   const shown = useMemo(() => filterShots(rows, query), [rows, query])
@@ -135,9 +141,11 @@ export function ShotFocusView({
   const claim = step?.claim
   useEffect(() => {
     if (!claim) return
-    claim(true)
+    // 手机列表页把详情栏（连同里面的主按钮）藏起来了：
+    // 这里不能再接管通栏按钮，否则整页会失去唯一的下一步入口。
+    claim(!narrow)
     return () => claim(false)
-  }, [claim])
+  }, [claim, narrow])
   const stepAct = !showSave && step && step.primary.action !== 'none' && step.primary.action !== 'save'
     ? step : null
 
@@ -145,10 +153,13 @@ export function ShotFocusView({
     <div className="focus">
       {showList && (
         <div className="focus__list">
-          <input
-            className="focus__search" type="search" value={query} placeholder={t('board.focus.search')}
-            aria-label={t('board.focus.search')} onChange={(e) => setQuery(e.target.value)}
-          />
+          <label className="focus__searchbox">
+            <Search size={14} aria-hidden />
+            <input
+              className="focus__search" type="search" value={query} placeholder={t('board.focus.search')}
+              aria-label={t('board.focus.search')} onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
           <div
             ref={listRef} className="focus__scroll" role="listbox" tabIndex={0}
             aria-label={t('board.focus.listAria')} onKeyDown={onKey}
@@ -169,17 +180,22 @@ export function ShotFocusView({
                 {closed ? null : g.rows.map(({ shot: s }) => (
                   <div
                     key={s.id} id={optId(s.id)} role="option" tabIndex={-1} data-shot={s.id} aria-selected={s.id === curId}
-                    data-issue={issues.get(s.id)} className="focus__item" onClick={() => pick(s.id)}
+                    data-issue={issues.get(s.id)} className="focus__item" title={s.action} onClick={() => pick(s.id)}
                   >
                     {urls[s.id]
                       ? <img className="focus__thumb" src={urls[s.id]} alt="" />
                       : <span className="focus__thumb" style={{ background: hue(s) }} />}
-                    <span className="focus__item-id">{s.id}</span>
-                    <span className={`deriv deriv--${s.source?.derivation}`}>
-                      {label(DERIVATION, s.source?.derivation)}
+                    <span className="focus__item-body">
+                      <span className="focus__item-top">
+                        <span className="focus__item-id">{s.id}</span>
+                        <span className={`deriv deriv--${s.source?.derivation}`}>
+                          {label(DERIVATION, s.source?.derivation)}
+                        </span>
+                        <span className="focus__item-dur">{playableSeconds(s).toFixed(1)}s</span>
+                        {issues.has(s.id) && <span className="focus__dot" data-issue={issues.get(s.id)} />}
+                      </span>
+                      <span className="focus__item-summary">{s.action}</span>
                     </span>
-                    <span className="focus__item-dur">{playableSeconds(s).toFixed(1)}s</span>
-                    {issues.has(s.id) && <span className="focus__dot" data-issue={issues.get(s.id)} />}
                   </div>
                 ))}
                 </div>
@@ -220,7 +236,8 @@ export function ShotFocusView({
               </div>
             )}
             <div
-              className="focus__frame" data-testid="focus-frame" style={{ aspectRatio: ratio, background: hue(shot) }}
+              className="focus__frame" data-testid="focus-frame"
+              style={{ aspectRatio: ratio, '--frame-hue': hue(shot) } as CSSProperties}
             >
               {mode === 'clip' && clipUrl
                 ? <video src={clipUrl} controls />
@@ -254,7 +271,7 @@ export function ShotFocusView({
             )}
             {stepAct ? (
               <button
-                type="button" className="focus__primary" data-testid="focus-primary"
+                type="button" className="focus__primary focus__primary--step" data-testid="focus-primary"
                 disabled={!!stepAct.primary.blocked || stepAct.busy} onClick={stepAct.run}
               >
                 {t(stepAct.primary.label, primaryArgs(stepAct.primary))}

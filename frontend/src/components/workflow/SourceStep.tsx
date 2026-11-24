@@ -19,7 +19,7 @@ export function SourceStep({ title, text, locked, onTitle, onText, onDelete }: {
   return (
     <div className="chap__text flex flex-col gap-3">
       <header className="chap__head">
-        <input className="chap__title" value={title} onChange={(e) => onTitle(e.target.value)} />
+        <input className="chap__title" aria-label={t('flow.chapter.title')} value={title} onChange={(e) => onTitle(e.target.value)} />
         <Button size="sm" variant="ghost" onClick={onDelete}>{t('flow.chapter.remove')}</Button>
       </header>
       <p className="text-[13px] text-muted-foreground">
@@ -41,7 +41,7 @@ export function SourceStep({ title, text, locked, onTitle, onText, onDelete }: {
             </>
           )}
         </div>
-        <textarea id="chapter-source" value={text} readOnly={locked} spellCheck={false}
+        <textarea id="chapter-source" aria-label={t('flow.chapter.source')} value={text} readOnly={locked} spellCheck={false}
                   placeholder={t('flow.chapter.placeholder')}
                   onChange={(e) => onText(e.target.value)} />
       </div>

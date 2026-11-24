@@ -1,17 +1,21 @@
 /** 标志：一枚带品牌渐变的胶片格（墨滴变胶片），加名字。size 控制图形边长。 */
+import { useId } from 'react'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 
 export function LogoMark({ size = 24, className }: { size?: number; className?: string }) {
+  const rawId = useId()
+  const gradientId = `logo-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className={className}>
       <defs>
-        <linearGradient id="inkreel-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="var(--brand-from)" />
-          <stop offset="1" stopColor="var(--brand-to)" />
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor="#231a15" />
+          <stop offset=".58" stopColor="#3a2118" />
+          <stop offset="1" stopColor="#a63f1d" />
         </linearGradient>
       </defs>
-      <rect x="3" y="3" width="26" height="26" rx="8" fill="url(#inkreel-g)" />
+      <rect x="3" y="3" width="26" height="26" rx="8" fill={`url(#${gradientId})`} stroke="#a63f1d" strokeOpacity=".28" />
       <path d="M16 8c3.5 4.2 5.5 7.3 5.5 10a5.5 5.5 0 0 1-11 0c0-2.7 2-5.8 5.5-10Z" fill="white" fillOpacity=".92" />
       <rect x="7" y="7" width="2" height="3" rx=".6" fill="white" fillOpacity=".55" />
       <rect x="7" y="22" width="2" height="3" rx=".6" fill="white" fillOpacity=".55" />

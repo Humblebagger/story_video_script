@@ -1,8 +1,10 @@
-/** 拉片表：每镜一行、按集分组的只读总表（设计 docs/specs/2026-11-17-shot-breakdown-sheet-design.md §3）。
+/** 拉片表：桌面是每镜一行、按集分组的只读总表，手机切换为逐镜卡片
+ *  （设计 docs/specs/2026-11-17-shot-breakdown-sheet-design.md §3）。
  *  列：镜号与时长、关键帧、景别、运镜 / 角度、画面、台词 / 旁白、视频提示词。
  *  视频提示词取出片会话里这一镜所在的段，同一集内相邻的同段镜头合并成一格；点行跳到镜头视图。
  *  分组与合并的计算在 shotSheet.ts；关键帧图与镜头视图共用 useShotImages（只读已上传的图）。 */
 import { useMemo, useState } from 'react'
+import { ArrowUpRight } from 'lucide-react'
 import { useI18n } from '@/i18n/core'
 import { cn } from '@/lib/utils'
 import { DIALOGUE_TYPE, label, SHOT_SIZE } from '../labels'
@@ -69,7 +71,8 @@ export function ShotSheet({ doc, idx, film = null, version = null, imagesKey, on
                 const voiced = !!s.dialogue?.length || !!s.narration?.text
                 const opened = !!clip && open.has(clip.id)
                 return (
-                  <tr key={s.id} className="sheet__row" data-shot={s.id} onClick={() => onJump(s.id)}>
+                  <tr key={s.id} className="sheet__row" data-shot={s.id} data-voice={voiced ? '' : undefined}
+                      onClick={() => onJump(s.id)}>
                     <td>
                       {/* 点击冒泡到行上；按钮只为了键盘能聚焦、回车能跳 */}
                       <button type="button" className="sheet__id" title={t('board.sheet.jump')}>{s.id}</button>
@@ -125,6 +128,121 @@ export function ShotSheet({ doc, idx, film = null, version = null, imagesKey, on
             </tbody>
           ))}
         </table>
+      </div>
+
+      <div className="sheet__cards" role="region" aria-label={t('board.sheet.aria')}>
+        {groups.map(({ ep, rows }) => (
+          <section className="sheet__mep" key={ep.id}>
+            <header className="sheet__mep-head">
+              <span className="sheet__mep-id">{ep.id}</span>
+              {ep.title && <span className="sheet__mep-title">{ep.title}</span>}
+              <span className="sheet__mep-n">{t('board.ep.count', { n: rows.length })}</span>
+            </header>
+            <div className="sheet__mlist">
+              {rows.map(({ shot: s, clip, span }) => {
+                const voiced = !!s.dialogue?.length || !!s.narration?.text
+                const opened = !!clip && open.has(clip.id)
+                const size = label(SHOT_SIZE, s.shot_size)
+                const camera = cameraText(s)
+                return (
+                  <article
+                    key={s.id}
+                    className="sheet__mcard"
+                    data-card-shot={s.id}
+                    data-voice={voiced ? '' : undefined}
+                    onClick={() => onJump(s.id)}
+                  >
+                    <header className="sheet__mhead">
+                      <div className="sheet__mtitle">
+                        <strong className="sheet__mid">{s.id}</strong>
+                        <span className="sheet__mdur">{sec(s.duration_sec)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="sheet__mopen"
+                        aria-label={t('board.sheet.jump')}
+                        title={t('board.sheet.jump')}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onJump(s.id)
+                        }}
+                      >
+                        <ArrowUpRight aria-hidden />
+                      </button>
+                    </header>
+
+                    <div className="sheet__mbody">
+                      <div className="sheet__mframe">
+                        {urls[s.id]
+                          ? <img className={cn('sheet__mthumb', h > w && 'sheet__mthumb--tall')} src={urls[s.id]} alt=""
+                                 style={{ aspectRatio: w > 0 && h > 0 ? `${w} / ${h}` : '16 / 9' }} />
+                          : (
+                            <span
+                              className={cn('sheet__mthumb', 'sheet__mthumb--empty', h > w && 'sheet__mthumb--tall')}
+                              style={{ aspectRatio: w > 0 && h > 0 ? `${w} / ${h}` : '16 / 9' }}
+                            >
+                              {t('board.sheet.noFrame')}
+                            </span>
+                          )}
+                      </div>
+
+                      <div className="sheet__mmeta">
+                        {(size || camera) && (
+                          <div className="sheet__mspecs">
+                            {size && <span className="sheet__mspec">{size}</span>}
+                            {camera && <span className="sheet__mspec">{camera}</span>}
+                          </div>
+                        )}
+                        <p className="sheet__maction">{s.action}</p>
+                        {s.atmosphere && <p className="sheet__matmo">{s.atmosphere}</p>}
+                      </div>
+                    </div>
+
+                    {voiced && (
+                      <div className="sheet__mvoice">
+                        <span className="sheet__mlabel">{t('board.sheet.col.voice')}</span>
+                        {(s.dialogue ?? []).map((d, i) => (
+                          <p key={i} className="sheet__line">
+                            {d.character_ref && <b>{idx.assetName(d.character_ref)}</b>}
+                            {d.type && d.type !== 'dialogue' && <span className="chip">{label(DIALOGUE_TYPE, d.type)}</span>}
+                            <span>{d.text}</span>
+                          </p>
+                        ))}
+                        {s.narration?.text && (
+                          <p className="sheet__line sheet__line--nar">
+                            <b>{t('shot.narrator')}</b>
+                            <span>{s.narration.text}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {span > 0 && (
+                      <div className={cn('sheet__mclipblock', !clip && 'is-empty')}
+                           onClick={(e) => e.stopPropagation()}>
+                        <div className="sheet__mcliphead">
+                          <span className="sheet__mlabel">{t('board.sheet.col.prompt')}</span>
+                          {clip && <span className="sheet__mclipid">{clip.id} · {sec(clip.duration)}</span>}
+                        </div>
+                        {clip ? (
+                          <>
+                            <p className={cn('sheet__mprompt', opened && 'is-open')}>{clip.prompt}</p>
+                            {needsFold(clip.prompt) && (
+                              <button type="button" className="sheet__mmore" aria-expanded={opened}
+                                      onClick={() => toggle(clip.id)}>
+                                {t(opened ? 'board.sheet.less' : 'board.sheet.more')}
+                              </button>
+                            )}
+                          </>
+                        ) : <span className="sheet__mnone">{t('board.sheet.unplanned')}</span>}
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   )

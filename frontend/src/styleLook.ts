@@ -25,7 +25,7 @@ export const STYLE_LOOKS: StyleLook[] = [
     prefix: P('水彩风格，淡彩晕染，纸张纹理，柔和边缘', 'presets.lookPrefix.watercolor') },
   { id: '3d_render', swatch: 'linear-gradient(135deg, oklch(0.75 0.12 280), oklch(0.6 0.15 200))',
     prefix: P('三维渲染风格，柔和全局光照，细腻材质', 'presets.lookPrefix.render3d') },
-  { id: 'pixel_art', swatch: 'repeating-conic-gradient(oklch(0.7 0.15 150) 0 25%, oklch(0.55 0.15 260) 0 50%) 0 0 / 16px 16px',
+  { id: 'pixel_art', swatch: 'repeating-conic-gradient(oklch(0.7 0.15 300) 0 25%, oklch(0.55 0.15 260) 0 50%) 0 0 / 16px 16px',
     prefix: P('像素风格，低分辨率方块，复古游戏配色', 'presets.lookPrefix.pixel_art') },
 ]
 

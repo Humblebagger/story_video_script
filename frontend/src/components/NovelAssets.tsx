@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Boxes, Search } from 'lucide-react'
+import { Boxes, Check, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -31,7 +31,12 @@ function nextId(assets: Assets, kind: AssetKind): string {
 type AnyCard = { id: string; name: string; aliases?: string[]; outfits?: unknown[]; states?: unknown[]
   reference_images?: { uri?: string }[]; angles?: { uri?: string }[] }
 
-function AssetTile({ kind, card, onOpen }: { kind: AssetKind; card: AnyCard; onOpen: () => void }) {
+const TILE_TONES = ['clay', 'blue', 'violet', 'sand', 'rose', 'slate'] as const
+type TileTone = (typeof TILE_TONES)[number]
+
+function AssetTile({ kind, card, tone, onOpen }: {
+  kind: AssetKind; card: AnyCard; tone: TileTone; onOpen: () => void
+}) {
   const { t } = useI18n()
   const url = assetThumb(card)
   const meta = [
@@ -40,9 +45,10 @@ function AssetTile({ kind, card, onOpen }: { kind: AssetKind; card: AnyCard; onO
     card.states?.length ? t('assets.grid.states', { n: card.states.length }) : '',
   ].filter(Boolean).join(' · ')
   return (
-    <button type="button" className="agrid__tile" data-testid="asset-tile" aria-label={card.name} onClick={onOpen}>
+    <button type="button" className="agrid__tile" data-testid="asset-tile" data-kind={kind} data-tone={tone}
+            aria-label={card.name} onClick={onOpen}>
       <span className="agrid__thumb" data-kind={kind}>
-        {url ? <img src={url} alt="" /> : <span aria-hidden>{(card.name || card.id).slice(0, 1)}</span>}
+        {url ? <img src={url} alt="" /> : <span className="agrid__monogram" aria-hidden>{(card.name || card.id).slice(0, 1)}</span>}
       </span>
       <span className="agrid__name" aria-hidden>{card.name}</span>
       <span className="agrid__id" aria-hidden>{card.id}</span>
@@ -171,10 +177,10 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
   const openCard = kind && open ? (assets[kind] ?? []).find((c) => c.id === open) ?? null : null
 
   return (
-    <div className="lib">
+    <div className="lib" data-kind={kind ?? 'all'}>
       {confirmUi}
       <p className="lib__hint">{t('assets.hint')}</p>
-      <div className="lib__bar">
+      <div className="lib__bar" data-kind={newKind}>
         <div className="lib__add">
           {!kind && <select value={newKind} onChange={(e) => setNewKind(e.target.value as AssetKind)}>
             {(Object.keys(KIND_TITLE) as AssetKind[]).map((k) => (
@@ -203,8 +209,15 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
           />
         </div>}
         <div className="lib__acts">
-          <Button size="sm" disabled={!dirty.size || busy} onClick={() => void save()}>
-            {busy ? t('assets.saving') : dirty.size ? t('assets.save', { n: dirty.size }) : t('assets.saved')}
+          <Button size="sm" className="lib__save" disabled={!dirty.size || busy}
+                  title={!dirty.size && !busy ? t('assets.saved') : undefined}
+                  onClick={() => void save()}>
+            {busy ? t('assets.saving') : dirty.size ? t('assets.save', { n: dirty.size }) : (
+              <>
+                <Check aria-hidden />
+                <span className="max-sm:sr-only">{t('assets.saved')}</span>
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -225,7 +238,10 @@ export function NovelAssets({ nid, assets: initial, onSaved, kind, focusAdd }: P
       {kind && !openCard && (
         <div className="agrid" data-testid="asset-grid"
              aria-label={t('assets.grid.aria', { kind: t(`assets.grid.kinds.${kind}`) })}>
-          {(shown[kind] ?? []).map((c) => <AssetTile key={c.id} kind={kind} card={c} onOpen={() => setOpen(c.id)} />)}
+          {(shown[kind] ?? []).map((c, i) => (
+            <AssetTile key={c.id} kind={kind} card={c} tone={TILE_TONES[i % TILE_TONES.length]}
+                       onOpen={() => setOpen(c.id)} />
+          ))}
         </div>
       )}
       {kind && openCard && (
